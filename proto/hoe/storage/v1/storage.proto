@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package cw_ho.storage.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Storage-specific types
+message StorageQuery {
+  optional string session_id = 1;
+  optional string user_id = 2;
+  optional google.protobuf.Timestamp start_time = 3;
+  optional google.protobuf.Timestamp end_time = 4;
+  optional uint32 limit = 5;
+  optional uint32 offset = 6;
+  map<string, string> filters = 7;
+}
+
+message StorageIndex {
+  string key = 1;
+  string value = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message StorageSnapshot {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  string state_root = 3;
+  uint64 version = 4;
+  map<string, bytes> data = 5;
+}
+
+message StorageMetrics {
+  uint64 total_entries = 1;
+  uint64 storage_size_bytes = 2;
+  uint64 index_size_bytes = 3;
+  google.protobuf.Timestamp last_compaction = 4;
+  double fragmentation_ratio = 5;
+}
+
+// Keep existing API types for backward compatibility
+message QueryRequest {
+  optional string session_id = 1;
+  optional string user_id = 2;
+  optional google.protobuf.Timestamp start_time = 3;
+  optional google.protobuf.Timestamp end_time = 4;
+  optional uint32 limit = 5;
+}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+  uint64 uptime_seconds = 3;
+  string storage_status = 4;
+  optional string network_status = 5;
+}
+
+message ErrorResponse {
+  string error = 1;
+  string code = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+message BootstrapRequest {
+  string target_node = 1;
+}
+
+message BootstrapResponse {
+  string id = 1;
+  string target_node = 2;
+  string status = 3;
+  string summary = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  uint64 duration_ms = 6;
+}

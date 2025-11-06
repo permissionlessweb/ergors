@@ -1,0 +1,15 @@
+[submodule "monorepo"]
+	path = sub-modules/monorepo
+	url = https://github.com/commonwarexyz/monorepo
+[submodule "sub-modules/cnidarium"]
+	path = sub-modules/cnidarium
+	url = https://github.com/penumbra-zone/cnidarium
+[submodule "sub-modules/socratic"]
+	path = sub-modules/socratic
+	url = https://github.com/elsehow/socratic
+[submodule "sub-modules/project_alice"]
+	path = sub-modules/project_alice
+	url = https://github.com/MarianoMolina/project_alice
+[submodule "sub-modules/wavers"]
+	path = sub-modules/wavers
+	url = https://github.com/jmg049/wavers

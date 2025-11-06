@@ -1,0 +1,1 @@
+automate scripting for deployment developmetn & configuration/update of dependencies

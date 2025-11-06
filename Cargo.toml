@@ -1,0 +1,12 @@
+[workspace]
+members = ["packages/*","proto" ]
+exclude = ["submodules/*","packages/ho-core", "sub-modules/*", "art/visual/rust/*"]
+resolver = "2"
+
+[workspace.metadata]
+is_workspace_root = true
+
+[workspace.dependencies]
+# Re-export commonware dependencies
+bytes = "1.7.1"
+thiserror = "2.0.12"

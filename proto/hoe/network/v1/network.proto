@@ -1,0 +1,193 @@
+syntax = "proto3";
+
+package cw_ho.network.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "hoe/types/v1/common.proto";
+
+// Network Configuration
+message NetworkLimits {
+  uint32 max_message_size = 1;
+  uint32 max_peers = 2;
+  uint64 connection_timeout = 3;
+}
+
+message ChannelConfig {
+  uint32 discovery_buffer = 1;
+  uint32 task_buffer = 2;
+  uint32 state_buffer = 3;
+  uint32 health_buffer = 4;
+}
+
+// Network Configuration
+message NewNetworkConfig {}
+
+// Network Configuration
+message NetworkConfig {
+    string node_type = 1;
+  repeated string bootstrap_peers = 2;
+  repeated string known_peers = 3;
+  uint32 listen_port = 4;
+  string listen_address = 5;
+  uint32 max_peers = 6;
+  uint32 connection_timeout_ms = 7;
+  bool enable_discovery = 8;
+  NetworkLimits limits = 9;
+  ChannelConfig channels = 10;
+}
+
+// Network Communication Types
+message NetworkMessage {
+  oneof message_type {
+    NodeAnnounce node_announce = 1;
+    cw_ho.types.v1.TaskCoordination task_coordination = 2;
+    SandloopState sandloop_state = 3;
+    FractalSync fractal_sync = 4;
+    TetrahedralPing tetrahedral_ping = 5;
+    Request request = 6;
+    Response response = 7;
+  }
+}
+
+message TetrahedralPing {
+  string from_node = 1;
+  uint64 timestamp = 2;
+  cw_ho.types.v1.NetworkTopology network_topology = 3;
+}
+ 
+message FractalSync {
+  uint64 state_version = 1;
+  uint32 fractal_depth = 2;
+  string state_root = 3;
+  repeated cw_ho.types.v1.FractalOperation delta_operations = 4;
+}
+
+message SandloopState {
+string loop_id = 1;
+uint64 iteration = 2;
+string phase = 3;
+google.protobuf.Struct metrics = 4;
+}
+enum HostOS {
+  HOST_OS_UNSPECIFIED = 0;
+  HOST_OS_LINUX = 1;
+  HOST_OS_MACOS = 2;
+  HOST_OS_WINDOWS = 3;
+  HOST_OS_CONTAINER_LINUX = 4;
+}
+
+// Network Node Types
+message NodeIdentity {
+  string host = 1;
+  uint32 p2p_port = 2;
+  uint32 api_port = 3;
+  string user = 4;
+  HostOS os = 5;
+  uint32 ssh_port = 6;
+  string node_type = 7;
+  optional bytes public_key = 8;
+  optional bytes private_key = 9; // Only included when needed, should be handled carefully
+}
+
+
+message NodeInfo {
+  string node_id = 1;
+  string node_type = 2;
+  bool online = 3;
+  uint64 last_seen = 4;
+}
+
+
+message NodeAnnounce {
+  string node_id = 1;
+  cw_ho.types.v1.NodeType role = 2;
+  repeated string capabilities = 3;
+  string load_factor = 4;
+}
+
+message Request {
+  string request_id = 1;
+  google.protobuf.Struct payload = 2;
+}
+
+message Response {
+  string request_id = 1;
+  bool success = 2;
+  google.protobuf.Struct payload = 3;
+}
+
+
+// Network Events
+message NetworkEvent {
+  oneof event_type {
+    PeerConnected peer_connected = 1;
+    PeerDisconnected peer_disconnected = 2;
+    MessageReceived message_received = 3;
+    TopologyChanged topology_changed = 4;
+    NetworkError error = 5;
+  }
+}
+
+message PeerConnected {
+  bytes peer_id = 1;
+  NodeInfo node_info = 2;
+}
+
+message PeerDisconnected {
+  bytes peer_id = 1;
+  string reason = 2;
+}
+
+message MessageReceived {
+  bytes from = 1;
+  NetworkMessage message = 2;
+  uint32 channel = 3;
+}
+
+message TopologyChanged {
+  cw_ho.types.v1.NetworkTopology topology = 1;
+}
+
+message NetworkError {
+  string error = 1;
+}
+
+message DeploymentConfig {
+  BootstrapMethod bootstrap_method = 1;
+  optional string ssh_key_path = 2;
+  optional string env_file_path = 3;
+  bool install_dependencies = 4;
+  bool auto_start_services = 5;
+}
+
+message BootstrapMethod {
+  oneof method {
+    SshFullInstall ssh_full_install = 1;
+    CloudDeployment cloud_deployment = 2;
+    LocalDevelopment local_development = 3;
+  }
+}
+
+
+message SshFullInstall {}
+
+message CloudDeployment {
+  string provider = 1;
+}
+
+message LocalDevelopment {}
+
+message NodeType {
+  oneof method {
+    Coordinator coordinator = 1;
+    Executor executor = 2;
+    Referee referee = 3;
+    Development development = 4;
+  }
+}
+
+message Coordinator {}
+message Executor {}
+message Referee {}
+message Development {}

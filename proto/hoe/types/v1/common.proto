@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package cw_ho.types.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// Represents the CLI command to execute
+message HoCommand {
+  oneof command {
+    StartHo start = 1;
+    InitHo init = 2;
+    HealthHo health = 3;
+  }
+}
+
+message StartHo {
+  optional uint32 port = 1;
+}
+
+message InitHo {
+  string output = 1;
+}
+
+message HealthHo {
+  string endpoint = 1;
+}
+
+// Basic node types used across all services
+enum NodeType {
+  NODE_TYPE_UNSPECIFIED = 0;
+  NODE_TYPE_COORDINATOR = 1;
+  NODE_TYPE_EXECUTOR = 2;
+  NODE_TYPE_REFEREE = 3;
+  NODE_TYPE_DEVELOPMENT = 4;
+}
+
+// Basic operation types for state management
+message InsertOperation {
+  string key = 1;
+  google.protobuf.Struct value = 2;
+}
+
+message UpdateOperation {
+  string key = 1;
+  google.protobuf.Struct value = 2;
+}
+
+message DeleteOperation {
+  string key = 1;
+}
+
+message FractalOperation {
+  oneof operation {
+    InsertOperation insert = 1;
+    UpdateOperation update = 2;
+    DeleteOperation delete = 3;
+  }
+}
+
+// Basic network topology
+message NetworkTopology {
+  repeated NodeInfo nodes = 1;
+  repeated Connection connections = 2;
+}
+
+message NodeInfo {
+  string node_id = 1;
+  string node_type = 2;
+  bool online = 3;
+  uint64 last_seen = 4;
+}
+
+message Connection {
+  string from_node_id = 1;
+  string to_node_id = 2;
+}
+
+message TaskCoordination {
+  string task_id = 1;
+  NodeType from_role = 2;
+  NodeType to_role = 3;
+  string task_type = 4;
+  google.protobuf.Struct payload = 5;
+}
+ 

@@ -1,0 +1,18 @@
+ 
+| **Actor** | **Core Responsibility** | **Typical Implementation** | **Why it matters** |
+|-----------|--------------------------|----------------------------|--------------------|
+| **Planner / Orchestrator** | Break a high‑level user request into sub‑tasks and decide their execution order. | Prompt‑templates, ReAct‑style reasoning, or a dedicated planning LLM. | Keeps long‑running or multi‑step jobs from spiralling out of control. |
+| **Task Dispatcher** | Sends each sub‑task to the appropriate *Tool* / *Executor* and tracks its status. | Simple queue (RabbitMQ, Celery), async‑await scheduler, or a custom “TaskRouter”. | Decouples planning from execution, enabling parallelism and retries. |
+| **Tool / Capability Wrapper** | Provides a concrete, deterministic function the model can call (e.g., search, DB query, code exec). | Structured tool specs (OpenAI function‑calling, LangChain tools, custom API adapters). | Turns vague LLM suggestions into reproducible, auditable actions. |
+| **Executor / Worker** | Runs the code or external call requested by a tool, returns raw results. | Sandboxed containers, serverless functions, Jupyter kernels, or OS‑level subprocesses. | Isolates potentially unsafe operations and collects deterministic results. |
+| **Validator / Guardrails** | Checks the raw output of an executor for policy violations, format errors, or unsafe content. | Regex checks, PII scrubbing, policy LLMs, OpenAI Moderation API, custom rule engine. | Guarantees compliance and prevents the model from hallucinating harmful data. |
+| **Memory / Knowledge Store** | Persists context across turns (user preferences, prior results, embeddings). | Vector DB (FAISS, Pinecone), relational DB, in‑memory cache, or a Retrieval‑Augmented Generation (RAG) index. | Gives the agent “long‑term memory” so it can refer back without re‑prompting everything. |
+| **Critic / Self‑Reflection Loop** | Re‑examines the model’s answer, asks follow‑up questions, or rates confidence. | “Self‑Ask” prompting, separate “critic” LLM, Monte‑Carlo sampling of answers. | Improves answer quality and surfaces uncertainty for downstream handling. |
+| **Scheduler / Rate‑Limiter** | Controls how often the model or tools can be invoked (cost / API‑quota protection). | Token‑bucket, leaky‑bucket, or a simple counter with back‑off. | Stops runaway loops and keeps expenses predictable. |
+| **Human‑in‑the‑Loop (HITL) / Reviewer** | Allows a person to intervene, approve, or correct the agent’s output before final publishing. | UI modal, Slack/Teams bot, email review step, or a “review” tool endpoint. | Adds an extra safety net for high‑risk domains (finance, health, legal). |
+| **Logger / Audit Trail** | Records every request, tool call, and response for debugging & compliance. | Structured logging (JSON), centralized log aggregation (ELK, Loki), immutable storage. | Enables traceability, post‑mortem analysis, and regulatory reporting. |
+| **Metrics & Telemetry Collector** | Tracks performance (latency, error rates), usage stats, and model confidence. | Prometheus exporters, OpenTelemetry, custom dashboards. | Provides data‑driven insight to optimize the pipeline. |
+| **Feedback Loop / RL‑HF Trainer** | Feeds back user ratings or automated quality signals to fine‑tune the model. | Preference‑based reward models, reinforcement learning from human feedback pipelines. | Continuously improves the model’s behavior over time. |
+
+---
+ 

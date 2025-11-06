@@ -1,0 +1,328 @@
+{
+  "_metadata": {
+    "version": "1.0.0",
+    "description": "CW-HO API Keys Configuration Template - Sacred Geometric LLM Provider Authentication",
+    "created": "2024-01-01T00:00:00Z",
+    "updated": "2024-01-01T00:00:00Z",
+    "encryption": "none",
+    "notes": [
+      "This template defines API keys for all supported LLM providers",
+      "Copy this file to 'api-keys.json' and fill in your actual keys",
+      "Keep api-keys.json in .gitignore to prevent accidental commits",
+      "Use relative paths in config files for portable deployments"
+    ]
+  },
+  "providers": {
+    "primary_chain": {
+      "_description": "Primary LLM providers following sacred geometric principles (61.8% allocation)",
+      "akash_chat": {
+        "api_key": "${AKASH_API_KEY}",
+        "enabled": true,
+        "priority": 1,
+        "fallback_enabled": true,
+        "rate_limit": {
+          "requests_per_minute": 60,
+          "tokens_per_minute": 120000
+        },
+        "model_configs": {
+          "default": "akash-7b-chat",
+          "alternatives": ["akash-13b-chat", "akash-70b-chat"],
+          "temperature": 0.7,
+          "max_tokens": 2048
+        },
+        "endpoints": {
+          "base_url": "https://api.akash.network/chat/v1",
+          "health_check": "/health",
+          "models": "/models"
+        }
+      },
+      "kimi_research": {
+        "api_key": "${KIMI_API_KEY}",
+        "enabled": true,
+        "priority": 2,
+        "fallback_enabled": true,
+        "rate_limit": {
+          "requests_per_minute": 30,
+          "tokens_per_minute": 200000
+        },
+        "model_configs": {
+          "default": "moonshot-v1-32k",
+          "alternatives": ["moonshot-v1-8k", "moonshot-v1-128k"],
+          "temperature": 0.3,
+          "max_tokens": 4096
+        },
+        "endpoints": {
+          "base_url": "https://api.moonshot.cn/v1",
+          "health_check": "/ping",
+          "models": "/models"
+        }
+      },
+      "grok": {
+        "api_key": "${GROK_API_KEY}",
+        "enabled": true,
+        "priority": 3,
+        "fallback_enabled": true,
+        "rate_limit": {
+          "requests_per_minute": 50,
+          "tokens_per_minute": 150000
+        },
+        "model_configs": {
+          "default": "grok-beta",
+          "alternatives": ["grok-1", "grok-1.5"],
+          "temperature": 0.8,
+          "max_tokens": 3000
+        },
+        "endpoints": {
+          "base_url": "https://api.x.ai/v1",
+          "health_check": "/health",
+          "models": "/models"
+        }
+      }
+    },
+    "fallback_chain": {
+      "_description": "Fallback LLM providers for resilience (38.2% allocation)",
+      "ollama_local": {
+        "api_key": null,
+        "enabled": true,
+        "priority": 4,
+        "fallback_enabled": false,
+        "rate_limit": {
+          "requests_per_minute": 1000,
+          "tokens_per_minute": 500000
+        },
+        "model_configs": {
+          "default": "llama3.2:latest",
+          "alternatives": ["llama3.1:8b", "llama3.1:70b", "codellama:13b", "mistral:latest"],
+          "temperature": 0.7,
+          "max_tokens": 2048
+        },
+        "endpoints": {
+          "base_url": "http://localhost:11434",
+          "health_check": "/api/tags",
+          "models": "/api/tags"
+        },
+        "local_config": {
+          "host": "localhost",
+          "port": 11434,
+          "timeout_seconds": 120,
+          "gpu_enabled": true,
+          "context_length": 8192
+        }
+      },
+      "openai": {
+        "api_key": "${OPENAI_API_KEY}",
+        "enabled": true,
+        "priority": 5,
+        "fallback_enabled": true,
+        "rate_limit": {
+          "requests_per_minute": 60,
+          "tokens_per_minute": 90000
+        },
+        "model_configs": {
+          "default": "gpt-4o",
+          "alternatives": ["gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+          "temperature": 0.7,
+          "max_tokens": 2048
+        },
+        "endpoints": {
+          "base_url": "https://api.openai.com/v1",
+          "health_check": "/models",
+          "models": "/models"
+        },
+        "cost_tracking": {
+          "input_cost_per_1k": {
+            "gpt-4": 0.03,
+            "gpt-4o": 0.005,
+            "gpt-3.5-turbo": 0.0015
+          },
+          "output_cost_per_1k": {
+            "gpt-4": 0.06,
+            "gpt-4o": 0.015,
+            "gpt-3.5-turbo": 0.002
+          }
+        }
+      },
+      "anthropic": {
+        "api_key": "${ANTHROPIC_API_KEY}",
+        "enabled": true,
+        "priority": 6,
+        "fallback_enabled": true,
+        "rate_limit": {
+          "requests_per_minute": 50,
+          "tokens_per_minute": 100000
+        },
+        "model_configs": {
+          "default": "claude-3-5-sonnet-20241022",
+          "alternatives": ["claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+          "temperature": 0.7,
+          "max_tokens": 2048
+        },
+        "endpoints": {
+          "base_url": "https://api.anthropic.com/v1",
+          "health_check": "/messages",
+          "models": "/models"
+        },
+        "cost_tracking": {
+          "input_cost_per_1k": {
+            "claude-3-5-sonnet": 0.003,
+            "claude-3-5-haiku": 0.00025,
+            "claude-3-opus": 0.015
+          },
+          "output_cost_per_1k": {
+            "claude-3-5-sonnet": 0.015,
+            "claude-3-5-haiku": 0.00125,
+            "claude-3-opus": 0.075
+          }
+        }
+      },
+      "google_gemini": {
+        "api_key": "${GOOGLE_API_KEY}",
+        "enabled": false,
+        "priority": 7,
+        "fallback_enabled": true,
+        "rate_limit": {
+          "requests_per_minute": 60,
+          "tokens_per_minute": 120000
+        },
+        "model_configs": {
+          "default": "gemini-1.5-pro",
+          "alternatives": ["gemini-1.5-flash", "gemini-pro"],
+          "temperature": 0.7,
+          "max_tokens": 2048
+        },
+        "endpoints": {
+          "base_url": "https://generativelanguage.googleapis.com/v1beta",
+          "health_check": "/models",
+          "models": "/models"
+        }
+      },
+      "cohere": {
+        "api_key": "${COHERE_API_KEY}",
+        "enabled": false,
+        "priority": 8,
+        "fallback_enabled": true,
+        "rate_limit": {
+          "requests_per_minute": 100,
+          "tokens_per_minute": 200000
+        },
+        "model_configs": {
+          "default": "command-r-plus",
+          "alternatives": ["command-r", "command-nightly"],
+          "temperature": 0.7,
+          "max_tokens": 2048
+        },
+        "endpoints": {
+          "base_url": "https://api.cohere.ai/v1",
+          "health_check": "/check-api-key",
+          "models": "/models"
+        }
+      }
+    },
+    "specialized": {
+      "_description": "Specialized providers for specific use cases",
+      "hugging_face": {
+        "api_key": "${HUGGINGFACE_API_KEY}",
+        "enabled": false,
+        "priority": 10,
+        "fallback_enabled": false,
+        "rate_limit": {
+          "requests_per_minute": 30,
+          "tokens_per_minute": 50000
+        },
+        "model_configs": {
+          "default": "microsoft/DialoGPT-large",
+          "alternatives": ["facebook/blenderbot-1B-distill", "microsoft/DialoGPT-medium"],
+          "temperature": 0.7,
+          "max_tokens": 1024
+        },
+        "endpoints": {
+          "base_url": "https://api-inference.huggingface.co",
+          "health_check": "/models",
+          "models": "/models"
+        },
+        "use_cases": ["code_completion", "text_summarization", "translation"]
+      },
+      "replicate": {
+        "api_key": "${REPLICATE_API_KEY}",
+        "enabled": false,
+        "priority": 11,
+        "fallback_enabled": false,
+        "rate_limit": {
+          "requests_per_minute": 100,
+          "tokens_per_minute": 100000
+        },
+        "model_configs": {
+          "default": "meta/llama-2-70b-chat",
+          "alternatives": ["meta/llama-2-13b-chat", "meta/llama-2-7b-chat"],
+          "temperature": 0.7,
+          "max_tokens": 2048
+        },
+        "endpoints": {
+          "base_url": "https://api.replicate.com/v1",
+          "health_check": "/models",
+          "models": "/models"
+        },
+        "use_cases": ["image_generation", "long_context", "fine_tuned_models"]
+      }
+    }
+  },
+  "global_settings": {
+    "timeout_seconds": 60,
+    "retry_attempts": 3,
+    "retry_delay_seconds": 2,
+    "golden_ratio_allocation": {
+      "primary_weight": 0.618,
+      "fallback_weight": 0.382
+    },
+    "monitoring": {
+      "enable_metrics": true,
+      "log_api_calls": true,
+      "track_costs": true,
+      "alert_on_failures": true
+    },
+    "security": {
+      "mask_keys_in_logs": true,
+      "validate_ssl": true,
+      "max_key_age_days": 365,
+      "rotate_keys_automatically": false
+    }
+  },
+  "environment_variables": {
+    "_description": "Environment variable names for API keys (use ${VAR_NAME} syntax in keys above)",
+    "akash_chat": "AKASH_API_KEY",
+    "kimi_research": "KIMI_API_KEY", 
+    "grok": "GROK_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "google_gemini": "GOOGLE_API_KEY",
+    "cohere": "COHERE_API_KEY",
+    "hugging_face": "HUGGINGFACE_API_KEY",
+    "replicate": "REPLICATE_API_KEY"
+  },
+  "deployment_profiles": {
+    "development": {
+      "enabled_providers": ["ollama_local", "openai"],
+      "fallback_enabled": true,
+      "cost_limits": {
+        "daily_max_usd": 10.0,
+        "monthly_max_usd": 100.0
+      }
+    },
+    "staging": {
+      "enabled_providers": ["akash_chat", "kimi_research", "ollama_local", "openai", "anthropic"],
+      "fallback_enabled": true,
+      "cost_limits": {
+        "daily_max_usd": 50.0,
+        "monthly_max_usd": 1000.0
+      }
+    },
+    "production": {
+      "enabled_providers": ["akash_chat", "kimi_research", "grok", "ollama_local", "openai", "anthropic"],
+      "fallback_enabled": true,
+      "cost_limits": {
+        "daily_max_usd": 200.0,
+        "monthly_max_usd": 5000.0
+      }
+    }
+  }
+}

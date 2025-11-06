@@ -1,0 +1,68 @@
+[package]
+name = "cw-ho"
+version = "0.1.0"
+edition = "2021"
+authors = ["CW-Agent Contributors"]
+description = "Minimal prompt capture service with Cnidarium storage"
+license = "MIT"
+
+[[bin]]
+name = "cw-ho"
+path = "src/main.rs"
+
+[dependencies]
+ho-std = { path = "../ho-std"  }
+# cw-ho-proto = { path = "../../proto" }
+
+# HTTP server
+axum = "0.8.4"
+tokio = { version = "1.0", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+pprof = { version = "0.15", features = ["flamegraph"] }
+
+
+# Storage
+cnidarium = { path = "../../sub-modules/cnidarium" }
+futures = "0.3"
+
+# Configuration
+toml = "0.8"
+clap = { version = "4.4", features = ["derive"] }
+
+# Async utilities
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time and ID generation
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# HTTP client for LLM providers
+reqwest = { version = "0.11", features = ["json"] }
+
+# Networking dependencies (commonware)
+commonware-cryptography = "0.0.57"
+commonware-codec        = "0.0.57"
+commonware-runtime = "0.0.57"
+commonware-storage = "0.0.57"
+commonware-p2p = "0.0.57"
+commonware-utils = "0.0.57"
+commonware-broadcast = "0.0.57"
+commonware-collector = "0.0.57"
+governor = "0.6.3" 
+hex = "0.4"
+
+# Additional networking utilities
+bytes = "1.5"
+prost = "0.12"
+rand = "0.8"
+
+[dev-dependencies]
+tokio-test = "0.4"

@@ -1,0 +1,1 @@
+// deployment cycle for renting resources on akash network

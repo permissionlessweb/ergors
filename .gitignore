@@ -1,0 +1,20 @@
+# hide sub-modules
+target
+sub-modules
+data
+
+
+## configuration files
+config.toml
+
+## private data 
+logs
+priv
+.env
+api-keys.json
+ssh-config.json
+
+# art processsing
+captures/*
+
+archive

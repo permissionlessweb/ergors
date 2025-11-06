@@ -1,0 +1,208 @@
+version: '3.8'
+services:
+  # Node Services with Sandloop Support
+  agent-node-1:
+    build: .
+    ports:
+      - "8001:8000"
+    environment:
+      - NODE_ID=node-1
+      - NETWORK_DISCOVERY_URL=consul:8500
+      - REDIS_URL=redis://network-redis:6379/1
+      - POSTGRES_URL=postgresql://network_admin:network_secret@network-postgres:5432/network_state
+      - SANDLOOPS_ENABLED=true
+      - PROMPT_REFINEMENT_MAX_ITERATIONS=5
+      - AUDIT_REPORTING_ENABLED=true
+    depends_on:
+      - network-redis
+      - network-postgres
+      - consul
+    volumes:
+      - ./src:/app/src
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  agent-node-2:
+    build: .
+    ports:
+      - "8002:8000"
+    environment:
+      - NODE_ID=node-2
+      - NETWORK_DISCOVERY_URL=consul:8500
+      - REDIS_URL=redis://network-redis:6379/2
+      - POSTGRES_URL=postgresql://network_admin:network_secret@network-postgres:5432/network_state
+      - SANDLOOPS_ENABLED=true
+      - PROMPT_REFINEMENT_MAX_ITERATIONS=5
+      - AUDIT_REPORTING_ENABLED=true
+    depends_on:
+      - network-redis
+      - network-postgres
+      - consul
+    volumes:
+      - ./src:/app/src
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  agent-node-3:
+    build: .
+    ports:
+      - "8003:8000"
+    environment:
+      - NODE_ID=node-3
+      - NETWORK_DISCOVERY_URL=consul:8500
+      - REDIS_URL=redis://network-redis:6379/3
+      - POSTGRES_URL=postgresql://network_admin:network_secret@network-postgres:5432/network_state
+      - SANDLOOPS_ENABLED=true
+      - PROMPT_REFINEMENT_MAX_ITERATIONS=5
+      - AUDIT_REPORTING_ENABLED=true
+    depends_on:
+      - network-redis
+      - network-postgres
+      - consul
+    volumes:
+      - ./src:/app/src
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  # Network Infrastructure
+  network-redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - network_redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+
+  network-postgres:
+    image: postgres:15
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=network_state
+      - POSTGRES_USER=network_admin
+      - POSTGRES_PASSWORD=network_secret
+      - POSTGRES_SHARED_PRELOAD_LIBRARIES=pg_stat_statements
+    volumes:
+      - network_postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  # Service Discovery and Configuration Management
+  consul:
+    image: consul:1.15
+    ports:
+      - "8500:8500"
+    command: consul agent -server -bootstrap -ui -client=0.0.0.0 -datacenter=agent-network
+    volumes:
+      - consul_data:/consul/data
+    restart: unless-stopped
+
+  # Referee Service for Audit Loops
+  referee-service:
+    build: 
+      context: .
+      dockerfile: Dockerfile.referee
+    ports:
+      - "8004:8000"
+    environment:
+      - SERVICE_NAME=referee-service
+      - NETWORK_NODES=agent-node-1:8000,agent-node-2:8000,agent-node-3:8000
+      - CONSUL_URL=consul:8500
+      - REDIS_URL=redis://network-redis:6379/0
+      - POSTGRES_URL=postgresql://network_admin:network_secret@network-postgres:5432/network_state
+      - AUDIT_INTERVAL_MIN=300
+      - AUDIT_INTERVAL_MAX=1800
+      - RANDOM_SNAPSHOT_ENABLED=true
+    depends_on:
+      - consul
+      - network-redis
+      - network-postgres
+    restart: unless-stopped
+
+  # Network Load Balancer
+  nginx-lb:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - agent-node-1
+      - agent-node-2
+      - agent-node-3
+    restart: unless-stopped
+
+  # Monitoring and Observability
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # Log Aggregation
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+volumes:
+  network_redis_data:
+    driver: local
+  network_postgres_data:
+    driver: local
+  consul_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

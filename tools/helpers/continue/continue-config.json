@@ -1,0 +1,121 @@
+{
+  "models": [
+    {
+      "title": "Akash Chat",
+      "provider": "openai",
+      "model": "Meta-Llama-4-Maverick-17B-128E-Instruct-FP8",
+      "apiKey": "${AKASH_API_KEY}",
+      "apiBase": "https://chatapi.akash.network/api/v1"
+    },
+    {
+      "title": "Claude Sonnet (fallback)",
+      "provider": "anthropic",
+      "model": "claude-3-5-sonnet-latest",
+      "apiKey": "${ANTHROPIC_API_KEY}",
+      "apiBase": "https://api.anthropic.com"
+    },
+    {
+      "title": "Ollama Local",
+      "provider": "ollama",
+      "model": "mistral",
+      "apiKey": "",
+      "apiBase": "http://127.0.0.1:11434/api"
+    }
+  ],
+
+  "customCommands": [
+    {
+      "name": "test",
+      "prompt": "{{{ input }}}\n\nWrite a comprehensive set of unit tests for the selected code. Include edge‑cases, set‑up, tear‑down and assertions. Return **only** the test code as plain text.",
+      "description": "Generate high‑quality unit tests for highlighted code"
+    },
+    {
+      "name": "prompt_loop",
+      "prompt": "{{{ input }}}\n\nRun a **Prompt‑Request Loop** (PR‑Loop) with a maximum of {{max_iterations}} iterations. Return the final refined prompt, the intermediate consensus scores and a short log of each iteration.",
+      "description": "Execute a Möbius‑style prompt refinement sandloop"
+    },
+    {
+      "name": "ingest",
+      "prompt": "{{{ input }}}\n\nIngest the supplied artefacts (code, docs, diff, terminal output) into a **fractally structured knowledge graph**. Return the generated embedding ids and a short summary of the stored metadata.",
+      "description": "Create a Data‑Ingestion sandloop entry"
+    }
+  ],
+
+  "contextProviders": [
+    { "name": "code",    "params": {} },
+    { "name": "docs",    "params": {} },
+    { "name": "diff",    "params": {} },
+    { "name": "terminal","params": {} },
+    { "name": "problems","params": {} },
+    { "name": "folder",  "params": {} },
+    { "name": "codebase","params": {} },
+    { "name": "embeddings","params": { "provider": "local", "dimension": 768 } }
+  ],
+
+  "slashCommands": [
+    { "name": "edit",      "description": "Edit selected code" },
+    { "name": "comment",   "description": "Write comments for the selected code" },
+    { "name": "share",     "description": "Export the current chat session to markdown" },
+    { "name": "cmd",       "description": "Generate a shell command" },
+    { "name": "commit",    "description": "Generate a git commit message" },
+    { "name": "sandloop",  "description": "Trigger a sandloop (pr/di/et/ra) on the orchestrator" }
+  ],
+
+  "node": {
+    "node_id":   "${NODE_ID}",
+    "node_type": "Coordinator",
+    "bind_port": 8000,
+    "fast_path_cpu_ratio": 0.618,
+    "slow_path_cpu_ratio": 0.382,
+    "bootstrap_peers": [
+      "127.0.0.1:8001",
+      "127.0.0.1:8002",
+      "127.0.0.1:8003"
+    ]
+  },
+
+  "network": {
+    "max_message_size": 10485760,
+    "golden_ratio_split": {
+      "fast": 0.618,
+      "slow": 0.382
+    },
+    "retry_policy": {
+      "max_retries": 5,
+      "base_backoff_ms": 250,
+      "max_backoff_ms": 5000
+    },
+    "metrics_endpoint": "http://127.0.0.1:9090/metrics"
+  },
+
+  "sandloops": {
+    "pr_loop": {
+      "max_iterations": 8,
+      "priority_threshold": 161,          // 0‑255 split at golden‑ratio
+      "resource_budget": {
+        "cpu_fast": 0.618,
+        "cpu_slow": 0.382
+      }
+    },
+    "di_loop": {
+      "fractal_depth": 4,
+      "packing_target_density": 0.74
+    },
+    "et_loop": {
+      "exhaustive_ratio": 0.618,
+      "fuzz_ratio": 0.382
+    },
+    "ra_loop": {
+      "audit_interval_seconds": 300,
+      "random_factor": 0.2
+    }
+  },
+
+  "logging": {
+    "level": "INFO",
+    "format": "[{timestamp}] {level} {module}: {message}",
+    "file": "/var/log/cw-ho/agent.log"
+  },
+
+  "docs": []
+}

@@ -1,0 +1,1 @@
+# create a folder for each nodes config & env file to propigate to during inital network configuration

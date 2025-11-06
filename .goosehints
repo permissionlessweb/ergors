@@ -1,0 +1,1 @@
+- never look through target or node_module packages in rust when searching for logic, unless explicitly asked to.

@@ -1,0 +1,274 @@
+# ┌─────────────────────────────────────────────────────────────────────────────────┐
+# │                        🌌 CW-HO NODE CONFIGURATION 🌌                          │
+# │                      Single Node Deployment Template                            │
+# │                   Sacred Geometric & Tetrahedral Design                        │
+# └─────────────────────────────────────────────────────────────────────────────────┘
+
+# ┌─────────────────────────────────────────────────────────────────────────────────┐
+# │                            🆔 NODE IDENTITY 🆔                                 │
+# │                   Unique Identity in Tetrahedral Mesh                          │
+# └─────────────────────────────────────────────────────────────────────────────────┘
+
+[identity]
+# Unique cryptographic node identifier (ed25519 public key in hex)
+node_id = "3cfd87c557d28ad4090ccd00716acd44e03e190bf41b9b65540e9b87e6dcd3f1"
+
+# Node type in tetrahedral topology
+node_type = "Development"  # Options: "Coordinator", "Executor", "Referee", "Development"
+
+# Human-readable node name
+name = "dev-node-01"
+
+# Optional description
+description = "CW-HO Development Node - Sacred Geometric Agent Orchestration"
+
+# Task execution limits
+max_concurrent_tasks = 5
+task_timeout_secs = 1000
+
+# ┌─────────────────────────────────────────────────────────────────────────────────┐
+# │                          🚀 DEPLOYMENT CONFIG 🚀                              │
+# │                     Bootstrap & Installation Settings                          │
+# └─────────────────────────────────────────────────────────────────────────────────┘
+
+[deployment]
+# Installation dependencies automatically
+install_dependencies = true
+
+# Auto-start services after deployment
+auto_start_services = true
+
+[deployment.host]
+# Target host information
+ip_address = "192.168.1.100"
+user = "cwho"
+ssh_port = 22
+os = "Linux"  # Options: "Linux", "MacOS", "Windows", "ContainerLinux"
+
+# Bootstrap method for deployment
+bootstrap_method = "LocalDevelopment"  # This will be parsed as an enum variant
+
+# SSH private key path (for SshFullInstall method)
+ssh_key_path = "~/.ssh/id_ed25519"
+
+# Environment variables file path
+env_file_path = ".env"
+
+# ┌─────────────────────────────────────────────────────────────────────────────────┐
+# │                          🌐 NETWORK CONFIGURATION 🌐                          │
+# │                     Tetrahedral Mesh Connectivity                              │
+# └─────────────────────────────────────────────────────────────────────────────────┘
+
+[network]
+# API server port (HTTP/REST interface)
+api_port = 8083
+
+# P2P networking port (commonware-crypto)
+p2p_port = 9093
+
+# This node's external IP address
+external_ip = "192.168.1.1"
+
+# Known peer nodes for initial tetrahedral connectivity  
+bootstrap_nodes = [
+    # Example coordinator node
+    # { node_id = "coordinator_node_id_hex", ip_address = "192.168.1.10", p2p_port = 9090, node_type = "Coordinator" },
+    
+    # Example executor node  
+    # { node_id = "executor_node_id_hex", ip_address = "192.168.1.20", p2p_port = 9091, node_type = "Executor" },
+    
+    # Example referee node
+    # { node_id = "referee_node_id_hex", ip_address = "192.168.1.30", p2p_port = 9092, node_type = "Referee" },
+]
+
+# Known peers as simple strings (for legacy compatibility)
+known_peers = []
+
+[network.discovery]
+# Enable automatic peer discovery
+enabled = true
+
+# Consul endpoints for service discovery (NetworkQuickStart integration)
+consul_endpoints = ["http://localhost:8500"]
+
+# Service discovery namespace
+namespace = "cw-ho-tetrahedral"
+
+# ┌─────────────────────────────────────────────────────────────────────────────────┐
+# │                        💾 CNIDARIUM STORAGE CONFIG 💾                         │
+# │                      Sacred State Management                                   │
+# └─────────────────────────────────────────────────────────────────────────────────┘
+
+[storage]
+# Storage data directory
+data_dir = "./data/dev-node-01"
+
+# Enable state compression
+enable_compression = true
+
+# Snapshot interval (blocks)
+snapshot_interval = 1000
+
+# Keep historical snapshots count
+keep_snapshots = 10
+
+[storage.consensus]
+# Block time in milliseconds (Golden Ratio: ~1618ms)
+block_time_ms = 1618
+
+# Maximum block size
+max_block_size = 1048576  # 1MB
+
+# Validator set size (Tetrahedral)
+validator_set_size = 4
+
+# ┌─────────────────────────────────────────────────────────────────────────────────┐
+# │                          🤖 LLM PROVIDERS CONFIG 🤖                           │
+# │                        AI Model Integration                                     │
+# └─────────────────────────────────────────────────────────────────────────────────┘
+
+[llm]
+# Path to API keys JSON file
+api_keys_file = "api-keys.json"
+
+# Default model selection strategy
+default_strategy = "GoldenRatio"  # Options: "Priority", "RoundRobin", "GoldenRatio", "LoadBalanced"
+
+# Enable fallback chains
+enable_fallbacks = true
+
+# Available LLM providers (in priority order)
+providers = [
+    {
+        name = "ollama_local",
+        provider_type = "Ollama",
+        endpoint = "http://localhost:11434",
+        models = ["llama3.2:latest", "llama3.1:8b"],
+        default_model = "llama3.2:latest",
+        priority = 1,
+        enabled = true
+    },
+    {
+        name = "akash_chat",
+        provider_type = "AkashChat", 
+        endpoint = "https://api.akash.network/chat/v1",
+        models = ["akash-7b-chat", "akash-13b-chat"],
+        default_model = "akash-7b-chat",
+        priority = 2,
+        enabled = false  # Requires API key
+    },
+    {
+        name = "openai",
+        provider_type = "OpenAI",
+        endpoint = "https://api.openai.com/v1", 
+        models = ["gpt-4o-mini", "gpt-4"],
+        default_model = "gpt-4o-mini",
+        priority = 3,
+        enabled = false  # Requires API key
+    }
+]
+
+# ┌─────────────────────────────────────────────────────────────────────────────────┐
+# │                        🔄 SANDLOOP CONFIGURATION 🔄                           │
+# │                   Möbius Pattern Participation                                 │
+# └─────────────────────────────────────────────────────────────────────────────────┘
+
+[sandloop]
+# Enable sandloop participation
+enabled = true
+
+# Maximum concurrent sandloop participation
+max_concurrent_loops = 6
+
+# Sandloop iteration timeout (seconds)
+iteration_timeout_secs = 300
+
+# Golden ratio resource allocation for sandloops (61.8%)
+resource_allocation = 0.618
+
+# Individual loop type enables (required fields)
+enable_prompt_request_loops = false
+enable_data_ingestion_loops = true  
+enable_edge_case_loops = true
+enable_audit_loops = true
+
+[sandloop.loop_types]
+# Participate in meta-prompt refinement loops
+meta_prompt_loops = true
+
+# Participate in data ingestion loops
+data_ingestion_loops = true
+
+# Participate in edge case testing loops
+edge_case_loops = true
+
+# Participate in audit/validation loops
+audit_loops = false
+
+# Custom loop type preferences
+[sandloop.loop_types.custom_loops]
+# ml_training_loops = true
+# code_review_loops = false
+
+[sandloop.quality_thresholds]
+# Minimum convergence threshold to exit loop
+convergence_threshold = 0.95
+
+# Minimum quality score to accept results
+min_quality_score = 0.8
+
+# Maximum iterations before forced exit (Golden Ratio: ~16)
+max_iterations = 16
+
+# Geometric validation tolerance
+geometric_tolerance = 0.01
+
+[sandloop.intervals]
+prompt_request = 60
+data_ingestion = 97
+edge_case_testing = 157
+audit_snapshot = 254
+
+# ┌─────────────────────────────────────────────────────────────────────────────────┐
+# │                       🎯 CONDUCTOR CONFIGURATION 🎯                           │
+# │                   (Only for non-Coordinator nodes)                             │
+# └─────────────────────────────────────────────────────────────────────────────────┘
+
+[conductor]
+# Conductor node ID (only needed for non-coordinator nodes)
+node_id = "COORDINATOR_NODE_ID_PLACEHOLDER"
+
+# Coordinator IP address
+ip_address = "192.168.1.1"
+
+# Coordinator API port
+api_port = 8080
+
+# Coordinator P2P port
+p2p_port = 9090
+
+# ┌─────────────────────────────────────────────────────────────────────────────────┐
+# │                           📝 CONFIGURATION NOTES 📝                           │
+# │                         Sacred Geometry Guidelines                             │
+# └─────────────────────────────────────────────────────────────────────────────────┘
+
+# Golden Ratio (φ ≈ 1.618) Resource Allocation:
+# - 61.8% fast-path messaging for coordination
+# - 38.2% state finality for consensus operations
+# - Sandloop resource allocation follows φ principles
+
+# Tetrahedral Connectivity:
+# - Coordinator (Apex): Task orchestration and global state
+# - Executor (Processing): Sandboxed task execution
+# - Referee (Validation): Quality assurance and auditing  
+# - Development (Innovation): Development tools and testing
+
+# Möbius Sandloops:
+# - Continuous feedback where output becomes input
+# - Iterative improvement through geometric patterns
+# - Quality thresholds based on convergence metrics
+
+# Security:
+# - Ed25519 cryptographic identities
+# - Commonware-crypto authenticated discovery
+# - Rate limiting based on geometric patterns

@@ -1,0 +1,2 @@
+- Instead of creating redundant functionality, I should focus on extending the existing system to support `X` implementation. Let me create a simpler, focused approach, yet functional approach
+- Try not to completely rewrite existing implementations.

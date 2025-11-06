@@ -1,0 +1,35 @@
+[package]
+authors = [
+    "CW-HO Agent Team",
+    "Generated from cw-ho and ho-std packages",
+]
+edition = "2021"
+name = "cw-ho-proto"
+description = "Protocol buffer definitions for CW-HO storage and orchestration layers"
+publish = false
+version = "0.1.0"
+
+[dependencies]
+heck = "0.4.0"
+itertools = "0.10.3"
+log = "0.4.17"
+pretty_env_logger = "0.4.0"
+prettyplease = "0.1.16"
+proc-macro2 = "1.0.52"
+prost = "0.14.1"
+prost-build = "0.14.1"
+prost-types = "0.14.1"
+quote = "1.0.26"
+regex = "1"
+schemars = "0.8.4"
+syn = { version = "1.0.98", features = ["full", "parsing", "extra-traits"] }
+tonic = "0.14.1"
+tonic-build = "0.14.1"
+walkdir = "2"
+[build-dependencies]
+prost-build = "0.14.1"
+tonic-build = "0.14.1"
+
+[lib]
+name = "cw_hoe_proto"
+path = "src/lib.rs"

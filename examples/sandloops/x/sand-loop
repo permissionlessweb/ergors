@@ -1,0 +1,185 @@
+To add a custom API endpoint that serves an artistic representation inspired by the provided C code (an animated Möbius strip rendered as ASCII art), you should reimplement the core rendering logic in Go within the BitsongApp. This avoids serving raw C source code (which users would need to compile and run locally) and instead directly serves the current frame of the ASCII art as plain text via a REST endpoint. The generation will use a hash of the current block height as the entropy source for initial rotation angles, and deterministically advance the rotation based on the elapsed time since the last block's timestamp (to simulate "real-time" progression from the block).
+
+This approach fits naturally into the Cosmos SDK structure:
+- Use a custom HTTP handler registered in the app's API routes.
+- Query the latest block height and timestamp internally using the registered CometBFT (Tendermint) gRPC service.
+- Port the Möbius strip rendering logic from C to Go, adapting it to compute a single frame based on the deterministic inputs.
+- The endpoint can accept optional query parameters for `width` and `height` to customize the output size (defaulting to 80x24).
+
+Avoid using antehandlers or preblockers, as those are for transaction validation or per-block state changes. This is a read-only query operation, so it belongs in the API layer.
+
+### Step 1: Add the Custom Handler Function
+In `app/app.go`, define a helper function for the djb2 hash (ported from the C code) and the handler. Place this near the `RegisterAPIRoutes` function for organization.
+
+```go
+import (
+    // ... existing imports
+    "context"
+    "fmt"
+    "math"
+    "net/http"
+    "strconv"
+    "strings"
+    "time"
+
+    cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+)
+
+// hashToAngle ports the C hash_to_angle function using djb2.
+func hashToAngle(input string) float64 {
+    hash := uint64(5381)
+    for _, c := range input {
+        hash = ((hash << 5) + hash) + uint64(c)
+    }
+    return float64(hash % 1000) * 2.0 * math.Pi / 1000.0
+}
+
+// mobiusHandler returns a handler that generates and serves a single frame of the Möbius strip ASCII art.
+func mobiusHandler(clientCtx client.Context) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        // Query latest block info via internal gRPC.
+        cmtCli := cmtservice.NewServiceClient(clientCtx)
+        resp, err := cmtCli.GetLatestBlock(r.Context(), &cmtservice.GetLatestBlockRequest{})
+        if err != nil {
+            http.Error(w, fmt.Sprintf("failed to get latest block: %v", err), http.StatusInternalServerError)
+            return
+        }
+        height := resp.Block.Header.Height
+        blockTime := resp.Block.Header.Time
+
+        // Compute elapsed time since block.
+        now := time.Now()
+        elapsed := now.Sub(blockTime).Seconds()
+        frameDelay := 0.10 // seconds per frame, from C code.
+        numFrames := elapsed / frameDelay
+
+        // Hash the block height as string for entropy (mimicking C input).
+        inputStr := fmt.Sprintf("%d", height)
+        baseX := hashToAngle(inputStr)
+        baseY := hashToAngle(inputStr[1:]) // Equivalent to input+1 in C.
+        baseZ := hashToAngle(inputStr[2:]) // Equivalent to input+2 in C.
+
+        // Advance rotations deterministically.
+        rotationX := baseX + numFrames * 0.03 // rotation_speed_x from C.
+        rotationY := baseY + numFrames * 0.05 // rotation_speed_y from C.
+        rotationZ := baseZ + numFrames * 0.02 // rotation_speed_z from C.
+
+        // Normalize to [0, 2π).
+        rotationX = math.Mod(rotationX, 2.0*math.Pi)
+        rotationY = math.Mod(rotationY, 2.0*math.Pi)
+        rotationZ = math.Mod(rotationZ, 2.0*math.Pi)
+
+        // Get dimensions from query params (default 80x24).
+        widthStr := r.URL.Query().Get("width")
+        heightStr := r.URL.Query().Get("height")
+        width, err := strconv.Atoi(widthStr)
+        if err != nil || width <= 0 {
+            width = 80
+        }
+        height, err := strconv.Atoi(heightStr)
+        if err != nil || height <= 0 {
+            height = 24
+        }
+
+        // Ported rendering logic from C code (single frame).
+        shades := " .:-=+*#%@"
+        screen := make([]byte, width*height)
+        zbuf := make([]float64, width*height)
+        for i := range zbuf {
+            screen[i] = ' '
+            zbuf[i] = -math.MaxFloat64 // Farthest possible.
+        }
+
+        du := 2.0 / 80.0
+        dv := 2.0 * math.Pi / 720.0
+        sx := float64(width) * 0.45
+        sy := float64(height) * 0.90
+        cx := width / 2
+        cy := height / 2
+
+        for u := -1.0; u <= 1.0; u += du {
+            for v := 0.0; v < 2.0*math.Pi; v += dv {
+                cu := math.Cos(v * 0.5)
+                su := math.Sin(v * 0.5)
+
+                x := (1.0 + (u * 0.5) * cu) * math.Cos(v)
+                y := (1.0 + (u * 0.5) * cu) * math.Sin(v)
+                z := (u * 0.5) * su
+
+                // Rotate around X.
+                tmpY := y*math.Cos(rotationX) - z*math.Sin(rotationX)
+                tmpZ := y*math.Sin(rotationX) + z*math.Cos(rotationX)
+                y = tmpY
+                z = tmpZ
+
+                // Rotate around Y.
+                tmpX := x*math.Cos(rotationY) + z*math.Sin(rotationY)
+                tmpZ = -x*math.Sin(rotationY) + z*math.Cos(rotationY)
+                x = tmpX
+                z = tmpZ
+
+                // Rotate around Z.
+                tmpX = x*math.Cos(rotationZ) - y*math.Sin(rotationZ)
+                tmpY = x*math.Sin(rotationZ) + y*math.Cos(rotationZ)
+                x = tmpX
+                y = tmpY
+
+                // Isometric projection.
+                ix := int(float64(cx) + sx*(x+0.3*z))
+                iy := int(float64(cy) - sy*y)
+
+                if ix >= 0 && ix < width && iy >= 0 && iy < height {
+                    idx := iy*width + ix
+                    if z > zbuf[idx] {
+                        zbuf[idx] = z
+                        // Map z (-0.5 to 0.5) to shade index.
+                        shadeIdx := int(((z + 0.5) / 1.0) * float64(len(shades)-1))
+                        if shadeIdx < 0 {
+                            shadeIdx = 0
+                        }
+                        if shadeIdx >= len(shades) {
+                            shadeIdx = len(shades) - 1
+                        }
+                        screen[idx] = shades[shadeIdx]
+                    }
+                }
+            }
+        }
+
+        // Build output string.
+        var sb strings.Builder
+        for y := 0; y < height; y++ {
+            sb.Write(screen[y*width : (y+1)*width])
+            sb.WriteByte('\n')
+        }
+
+        // Serve as plain text.
+        w.Header().Set("Content-Type", "text/plain")
+        fmt.Fprint(w, sb.String())
+    }
+}
+```
+
+### Step 2: Register the Endpoint
+In the `RegisterAPIRoutes` function (in `app/app.go`), add the route using the handler defined above. This integrates with the existing mux.Router and leverages the client context for querying the latest block.
+
+```go
+func (app *BitsongApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
+    clientCtx := apiSvr.ClientCtx
+    // ... existing registrations (authtx, cmtservice, etc.)
+
+    // Custom endpoint for Möbius strip ASCII art.
+    apiSvr.Router.HandleFunc("/mobius", mobiusHandler(clientCtx)).Methods("GET")
+
+    // ... existing swagger if enabled
+}
+```
+
+### Usage and Testing
+- Rebuild and run the node app.
+- Query the endpoint: `curl http://localhost:1317/mobius?width=100&height=30` (adjust port if needed; default API port is 1317).
+- The response is plain text ASCII art representing the current frame, seeded by the block height hash and advanced by elapsed time since the block.
+- For animation, users can script repeated curls (e.g., in a loop with sleep 0.1s).
+- If you need full animation syncing (beyond single frames), consider WebSockets, but that's outside standard Cosmos API routes.
+
+This keeps the implementation self-contained, avoids custom modules (since no state or genesis is needed), and ensures determinism tied to the chain's block data. If you insist on a full module for scalability (e.g., gRPC support), create one under `/x/mobius` with a `QueryServer` implementation mirroring the handler logic—add it to `app.mm` in `NewBitsongApp`.
