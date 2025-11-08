@@ -1,12 +1,123 @@
 [workspace]
-members = ["packages/*","proto" ]
-exclude = ["submodules/*","packages/ho-core", "sub-modules/*", "art/visual/rust/*"]
 resolver = "2"
+
+exclude = ["sub-modules/*"]
+members = ["packages/*", "proto"]
 
 [workspace.metadata]
 is_workspace_root = true
 
+# config for 'cargo release'
+[workspace.metadata.release]
+# Instruct cargo-release to increment versions for all packages in the workspace in lockstep.
+shared-version = true
+# Format spec for the auto-generated git tag, based on new version for release.
+tag-name = "v{{version}}"
+# The message is required for an annotated tag to be created.
+tag-message                = "Ergors version {{version}}"
+pre-release-commit-message = "chore: release version {{version}}"
+# Permit publishing to crates.io; local developers should run `cargo release --no-publish`
+# to prepare the git info, then pushing to remote with tag will trigger crates.io publication.
+publish = true
+# Do commit, tag, and push the version bump, triggering a new release.
+tag = true
+# Don't push, since we're still evaluating the new release workflow.
+push = false
+# Edit each crate's Cargo.toml, bumping versions for other workspace crates.
+dependent-version = "upgrade"
+# Increase default ratelimit on publishing packages
+rate-limit = { existing-packages = 50 }
+# Permit publishing from any branch, because in GHA CI context, HEAD is checked out.
+allow-branch = ["*"]
+
+[workspace.package]
+authors    = ["PermissionlesWeb <team@permissionless.money"]
+edition    = "2021"
+version    = "0.0.1"
+repository = "https://github.com/permissionlessweb/ergors"
+homepage   = "https://permissionless.money"
+license    = "MIT OR Apache-2.0"
+
 [workspace.dependencies]
-# Re-export commonware dependencies
+anyhow = "1.0"
+async-trait = "0.1"
+axum = { version = "0.8.4" }
+axum-macros = "0.5.0"
+base64 = "0.22.1"
 bytes = "1.7.1"
-thiserror = "2.0.12"
+chrono = { version = "0.4.40", default-features = false, features = ["serde","clock"] }
+clap = { version = "4.5", features = ["derive"] }
+cnidarium = { path = "./sub-modules/cnidarium" }
+commonware-broadcast  = "0.0.63"
+commonware-codec         = { version = "0.0.63" }
+commonware-collector  = "0.0.63"
+commonware-cryptography = { version = "0.0.63" }
+commonware-p2p = { version = "0.0.63" }
+commonware-runtime  = { version = "0.0.63" }
+commonware-storage = { version = "0.0.63" }
+commonware-utils  = { version = "0.0.63" }
+cosmos-sdk-proto = { version = "0.28.0", default-features = false, git = "https://github.com/permissionlessweb/cosmos-rust" }
+cosmwasm-std = { version = "3.0.1", features = ["stargate"] }
+dirs = "6.0.0"
+dotenv = "0.15"
+dotenvy = "0.15.7"
+ed25519-consensus = "2.1.0"
+flate2 = "1.0"
+fmt = "0.1.0"
+futures = "0.3"
+futures-util = "0.3"
+governor = "0.6.3" 
+heck = "0.4.0"
+hex = "0.4"
+ho-std = { path = "packages/ho-std" } 
+http-body-util = "0.1.3"
+itertools = "0.10.3"
+jmt = "0.9"
+layer-climb-proto = "0.7.3"
+log = "0.4.17"
+pprof = { version = "0.15", features = ["flamegraph"] }
+pretty_env_logger = "0.4.0"
+prettyplease = "0.1.16"
+proc-macro2 = "1.0.52"
+prof = { version = "0.15", features = ["flamegraph"] }
+prost = { version = "0.14.1", default-features = false, features = ["derive"] }
+prost-types = { version = "0.14.1", default-features = false }
+quote = "1.0.26"
+rand = "0.8"
+regex = "1"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+rocksdb = "0.21"
+rs-derive = { version = "0.0.1", path = "../../proto/rs-derive" }
+schemars = "1.0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde-cw-value = "0.7.0"
+serde_json = "1.0"
+sha2 = "0.10"
+syn = { version = "1.0.98", features = ["full", "parsing", "extra-traits"] }
+tempfile = "3.20.0"
+tendermint-proto = { version = "0.40.4", git = "https://github.com/permissionlessweb/tendermint-rs" }
+thiserror = "2.0.17"
+tokio = { version = "1.40", features = ["full", "process"] }
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+toml = "0.8"
+tonic = "0.14.1"
+tonic-build = "0.14.1"
+tower = "0.5"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+walkdir = "2"
+
+cw-ho = { path = "packages/cw-ho" } 
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+
+
+ 
+
+
+ 

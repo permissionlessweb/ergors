@@ -6,98 +6,76 @@ description = "CW-HO: Life Creativity Engine - Minimal Rust orchestrator for P2P
 authors = ["CW-Ho Team"]
 license = "MIT OR Apache-2.0"
 
-[dependencies]
-
-# Core utilities
-bytes = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-uuid = { version = "1.10", features = ["v4", "serde"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-anyhow = "1.0"
-governor = "0.6.3"
-rand = "0.8"
-tempfile = "3.20.0"
-thiserror = "1.0"
-dotenvy = "0.15.7"
-# Network and HTTP
-axum = { version = "0.8.4" }
-axum-macros = "0.5.0"
-tower = "0.5"
-tokio = { version = "1.40", features = ["full", "process"] }
-tower-http = { version = "0.5", features = ["cors", "trace"] }
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
-tokio-util = { version = "0.7", features = ["codec"] }
-futures-util = "0.3"
-futures = "0.3"
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
-
-# Commonware networking dependencies  
-commonware-cryptography = { version = "0.0.57"  }
-commonware-codec        = "0.0.57"
-commonware-runtime = "0.0.57"
-commonware-storage = { version = "0.0.57" }
-commonware-p2p = "0.0.57"
-commonware-utils = "0.0.57"
-
-sha2 = "0.10"
-ed25519-consensus = "2.1.0"
-base64 = "0.22.1"
-hex = "0.4"
-
-fmt = "0.1.0"
-
-
-# Cnidarium storage for advanced merkle-tree state management
-cnidarium = { path = "../../sub-modules/cnidarium" }
-rocksdb = "0.21"
-jmt = "0.9"
-flate2 = "1.0"
-
-async-trait = "0.1"
-
-# Configuration and CLI
-clap = { version = "4.5", features = ["derive"] }
-toml = "0.8"
-chrono = { version = "0.4.40",default-features = false, features = ["serde"] }
-
-# gRPC support
-prost = {version = "0.14.1", default-features = false, features = ["derive"]}
-prost-types = {version = "0.14.1", default-features = false}
-
-# proto-gen specific crates
-tendermint-proto = { version = "0.40.4", git = "https://github.com/permissionlessweb/tendermint-rs" }
-cosmos-sdk-proto = { version = "0.28.0", default-features = false, git = "https://github.com/permissionlessweb/cosmos-rust" }
-cosmwasm-std = {version = "3.0.1", features = ["stargate"]}
-rs-derive = {version = "0.0.1", path = "../../proto/rs-derive"}
-schemars = "1.0.4"
-http-body-util = "0.1.3"
-layer-climb-proto = "0.7.3"
-serde-cw-value = "0.7.0"
-
-# Optional dependencies
-tonic = { version = "0.14.1", optional = true, default-features = false, features = ["codegen"] }
-tonic-prost = { version = "0.14.1", optional = true, default-features = false }
-pbjson = { package = "informalsystems-pbjson", optional = true, default-features = false, version = "0.7" }
-
-
-[dev-dependencies]
-tempfile = "3.8"
-tokio-test = "0.4"
-
- 
-
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["grpc-transport"]
 std = ["prost/std", "tendermint-proto/std", "cosmos-sdk-proto/std"]
-grpc = ["std", "tonic","tonic-prost"]
+grpc = ["std", "tonic", "tonic-prost"]
 grpc-transport = ["grpc", "tonic/transport"]
-cosmwasm = []
-# serde = ["dep:serde", "pbjson", "cosmos-sdk-proto/serde"]
 
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+# Network and HTTP
+axum = { workspace = true }
+axum-macros = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+cnidarium = { path = "../../sub-modules/cnidarium" }
+commonware-codec = { workspace = true }
+commonware-cryptography = { workspace = true }
+commonware-p2p = { workspace = true }
+commonware-runtime = { workspace = true }
+commonware-storage = { workspace = true }
+commonware-utils = { workspace = true }
+cosmos-sdk-proto = { workspace = true }
+cosmwasm-std = { workspace = true }
+dirs = { workspace = true }
+dotenvy = { workspace = true }
+ed25519-consensus = { workspace = true }
+flate2 = { workspace = true }
+fmt = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+governor = { workspace = true }
+hex = { workspace = true }
+http-body-util = { workspace = true }
+jmt = { workspace = true }
+layer-climb-proto = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+rocksdb = { workspace = true }
+rs-derive = { path = "../../proto/rs-derive" }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde-cw-value = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }
+tendermint-proto = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
+toml = { workspace = true }
 
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+# Optional dependencies
+pbjson = { package = "informalsystems-pbjson", optional = true, default-features = false, version = "0.7" }
+tonic = { version = "0.14.1", optional = true, default-features = false, features = ["codegen"] }
+tonic-prost = { version = "0.14.1", optional = true, default-features = false }
+tower = "0.5"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tempfile = "3.8"
+tokio-test = "0.4"

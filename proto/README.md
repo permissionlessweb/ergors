@@ -1,4 +1,4 @@
-# CW-HO Protocol Buffer Definitions
+# Ergors Protocol Buffer Definitions
 
 This package contains Protocol Buffer definitions for the CW-HO (CommonWare Host Orchestrator) system, organized into two main layers following the sacred geometry principles:
 
@@ -55,7 +55,7 @@ let task = CosmicTask {
 Proto files are built automatically via `build.rs` using `prost-build`. To regenerate:
 
 ```bash
-cd packages/cw-ho-proto
+cd packages/ergors
 cargo build
 ```
 
