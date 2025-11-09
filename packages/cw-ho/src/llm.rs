@@ -37,21 +37,46 @@ impl LlmRouter {
     async fn load_api_keys(path: &str) -> Result<ApiKeys> {
         if std::path::Path::new(path).exists() {
             let content = std::fs::read_to_string(path)?;
-            let keys: HashMap<String, String> = serde_json::from_str(&content)
-                .map_err(|e| CwHoError::Config(format!("Failed to parse API keys: {}", e)))?;
+
+            // Parse the new JSON structure with ProviderWithAuth
+            let config: serde_json::Value = serde_json::from_str(&content)
+                .map_err(|e| CwHoError::Config(format!("Failed to parse API keys JSON: {}", e)))?;
+
+            // Helper function to extract and resolve API key (handles ${ENV_VAR} syntax)
+            let get_key = |provider_name: &str| -> Option<String> {
+                let provider = config.get("providers")?.get(provider_name)?;
+
+                // Get the api_key field
+                let key_value = provider.get("api_key")?;
+
+                // Handle null values
+                if key_value.is_null() {
+                    return None;
+                }
+
+                let key_str = key_value.as_str()?;
+
+                // Check if it's an env var reference like ${OPENAI_API_KEY}
+                if key_str.starts_with("${") && key_str.ends_with('}') {
+                    let env_var = &key_str[2..key_str.len() - 1];
+                    std::env::var(env_var).ok()
+                } else {
+                    Some(key_str.to_string())
+                }
+            };
 
             Ok(ApiKeys {
-                openai: keys.get(OPEN_AI).cloned(),
-                anthropic: keys.get(ANTHROPIC).cloned(),
-                grok: keys.get(GROK).cloned(),
-                akash: keys.get(AKASH_CHAT).cloned(),
-                kimi: keys.get(AKASH_CHAT).cloned(),
-                qwen: keys.get(QUEN).cloned(),
-                venice: keys.get(VENICE).cloned(),
+                openai: get_key("openai"),
+                anthropic: get_key("anthropic"),
+                grok: get_key("grok"),
+                akash: get_key("akash_chat"),
+                kimi: get_key("kimi"),
+                qwen: get_key("qwen"),
+                venice: get_key("venice"),
             })
         } else {
             warn!("API keys file not found: {}", path);
-            // Updated code block
+            // Fall back to environment variables
             Ok(ApiKeys {
                 openai: std::env::var(OPENAI_API_KEY).ok(),
                 anthropic: std::env::var(ANTHROPIC_API_KEY).ok(),

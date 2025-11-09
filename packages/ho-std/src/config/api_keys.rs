@@ -9,6 +9,7 @@ use termion::input::{MouseTerminal, TermRead};
 use termion::raw::IntoRawMode;
 use termion::{clear, color, cursor, style};
 
+use crate::orchestrate::ModelSelectionStrategy;
 use crate::prelude::{LlmEntity, LlmModel};
 use crate::traits::LlmModelTrait;
 
@@ -17,7 +18,7 @@ use crate::traits::LlmModelTrait;
 pub struct ApiKeysJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub _metadata: Option<ApiKeysMetadata>,
-    pub providers: HashMap<String, ProviderConfig>,
+    pub providers: HashMap<String, ProviderWithAuth>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub global_settings: Option<GlobalSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -32,16 +33,25 @@ pub struct ApiKeysMetadata {
     pub golden_ratio_note: Option<String>,
 }
 
+/// Provider configuration with authentication
+/// Combines LlmEntity (standard type) with api_key and prompt defaults
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderConfig {
+pub struct ProviderWithAuth {
+    /// API key for authentication (can use ${ENV_VAR} syntax)
     pub api_key: Option<String>,
-    pub enabled: bool,
-    pub endpoint: String,
-    pub models: Vec<String>,
-    pub default_model: String,
+    /// Standard LLM entity configuration (name, base_url, models, etc.)
+    #[serde(flatten)]
+    pub entity: LlmEntity,
+    /// Default prompt configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_defaults: Option<PromptDefaults>,
+}
+
+/// Default prompt parameters for a provider
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptDefaults {
     pub temperature: f32,
     pub max_tokens: u32,
-    pub timeout_seconds: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,18 +76,15 @@ impl ApiKeysJson {
 
         // Add ollama_local by default (no API key needed)
         let ollama = LlmModel::OllamaLocal;
-        let (default_model, models) = ollama.models();
         providers.insert(
             "ollama_local".to_string(),
-            ProviderConfig {
+            ProviderWithAuth {
                 api_key: None,
-                enabled: true,
-                endpoint: ollama.default_base_url(),
-                models,
-                default_model,
-                temperature: 0.7,
-                max_tokens: 4096,
-                timeout_seconds: 60,
+                entity: ollama.default_entity(),
+                prompt_defaults: Some(PromptDefaults {
+                    temperature: 0.7,
+                    max_tokens: 4096,
+                }),
             },
         );
 
@@ -236,7 +243,7 @@ pub fn configure_api_keys_interactive(api_keys_path: &Utf8PathBuf) -> Result<()>
     for provider in &mut all_providers {
         let key = get_provider_key(provider.model);
         if let Some(cfg) = config.providers.get(key) {
-            provider.selected = cfg.enabled;
+            provider.selected = cfg.entity.enabled;
         }
     }
 
@@ -667,14 +674,13 @@ fn save_configuration(config: &mut ApiKeysJson, providers: &[ProviderMenuItem]) 
             // Disable non-selected providers
             let key = get_provider_key(provider.model);
             if let Some(cfg) = config.providers.get_mut(key) {
-                cfg.enabled = false;
+                cfg.entity.enabled = false;
             }
             continue;
         }
 
         // Create configuration for selected providers
         let key = get_provider_key(provider.model);
-        let (default_model, models) = provider.model.models();
 
         let api_key = if !matches!(provider.model, LlmModel::OllamaLocal) {
             Some(format!("${{{}}}", get_env_var_name(provider.model)))
@@ -682,15 +688,13 @@ fn save_configuration(config: &mut ApiKeysJson, providers: &[ProviderMenuItem]) 
             None
         };
 
-        let provider_config = ProviderConfig {
+        let provider_config = ProviderWithAuth {
             api_key,
-            enabled: true,
-            endpoint: provider.model.default_base_url(),
-            models,
-            default_model,
-            temperature: 0.7,
-            max_tokens: 4096,
-            timeout_seconds: 60,
+            entity: provider.model.default_entity(),
+            prompt_defaults: Some(PromptDefaults {
+                temperature: 0.7,
+                max_tokens: 4096,
+            }),
         };
 
         config.providers.insert(key.to_string(), provider_config);

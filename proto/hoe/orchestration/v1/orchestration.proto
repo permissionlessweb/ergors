@@ -180,7 +180,7 @@ enum ModelSelectionStrategy {
   MODEL_SELECTION_STRATEGY_LOAD_BALANCED = 4;
 }
  
-// Llm config is the global configuration of 
+// Llm config is the global configuration of all llm models available, and their subconfigurations.
 message LlmRouterConfig {
   string api_keys_file = 1;
   repeated LlmEntity entities = 2;
@@ -190,7 +190,7 @@ message LlmRouterConfig {
   uint32 default_entity = 6;
 }
  
-/// LlmEntity is a single llm model entity. 
+/// LlmEntity is a single llm model entity. Contains information about available models, stragegy in use of the framework, and other configuration files 
 message LlmEntity {
   string name = 1;
   string base_url = 2;
