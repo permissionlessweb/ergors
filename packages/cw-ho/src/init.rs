@@ -68,7 +68,7 @@ fn prompt_for_password(msg: &str) -> Result<String> {
 }
 
 impl InitCmd {
-    pub async fn init(&self, home_dir: &Utf8Path) -> Result<()> {
+    pub fn init(&self, home_dir: &Utf8Path) -> Result<()> {
         let config_path = home_dir.join(ho_std::constants::CONFIG_FILE_NAME);
         let config = match self.subcmd.clone() {
             InitTopSubCmd::New {} => CwHoConfig::new(home_dir),

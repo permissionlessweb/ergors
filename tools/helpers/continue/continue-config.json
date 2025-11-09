@@ -22,7 +22,6 @@
       "apiBase": "http://127.0.0.1:11434/api"
     }
   ],
-
   "customCommands": [
     {
       "name": "test",
@@ -40,29 +39,71 @@
       "description": "Create a Data‑Ingestion sandloop entry"
     }
   ],
-
   "contextProviders": [
-    { "name": "code",    "params": {} },
-    { "name": "docs",    "params": {} },
-    { "name": "diff",    "params": {} },
-    { "name": "terminal","params": {} },
-    { "name": "problems","params": {} },
-    { "name": "folder",  "params": {} },
-    { "name": "codebase","params": {} },
-    { "name": "embeddings","params": { "provider": "local", "dimension": 768 } }
+    {
+      "name": "code",
+      "params": {}
+    },
+    {
+      "name": "docs",
+      "params": {}
+    },
+    {
+      "name": "diff",
+      "params": {}
+    },
+    {
+      "name": "terminal",
+      "params": {}
+    },
+    {
+      "name": "problems",
+      "params": {}
+    },
+    {
+      "name": "folder",
+      "params": {}
+    },
+    {
+      "name": "codebase",
+      "params": {}
+    },
+    {
+      "name": "embeddings",
+      "params": {
+        "provider": "local",
+        "dimension": 768
+      }
+    }
   ],
-
   "slashCommands": [
-    { "name": "edit",      "description": "Edit selected code" },
-    { "name": "comment",   "description": "Write comments for the selected code" },
-    { "name": "share",     "description": "Export the current chat session to markdown" },
-    { "name": "cmd",       "description": "Generate a shell command" },
-    { "name": "commit",    "description": "Generate a git commit message" },
-    { "name": "sandloop",  "description": "Trigger a sandloop (pr/di/et/ra) on the orchestrator" }
+    {
+      "name": "edit",
+      "description": "Edit selected code"
+    },
+    {
+      "name": "comment",
+      "description": "Write comments for the selected code"
+    },
+    {
+      "name": "share",
+      "description": "Export the current chat session to markdown"
+    },
+    {
+      "name": "cmd",
+      "description": "Generate a shell command"
+    },
+    {
+      "name": "commit",
+      "description": "Generate a git commit message"
+    },
+    {
+      "name": "sandloop",
+      "description": "Trigger a sandloop (pr/di/et/ra) on the orchestrator"
+    }
   ],
-
   "node": {
-    "node_id":   "${NODE_ID}",
+    "node_id": "${NODE_ID}",
     "node_type": "Coordinator",
     "bind_port": 8000,
     "fast_path_cpu_ratio": 0.618,
@@ -73,7 +114,6 @@
       "127.0.0.1:8003"
     ]
   },
-
   "network": {
     "max_message_size": 10485760,
     "golden_ratio_split": {
@@ -87,11 +127,10 @@
     },
     "metrics_endpoint": "http://127.0.0.1:9090/metrics"
   },
-
   "sandloops": {
     "pr_loop": {
       "max_iterations": 8,
-      "priority_threshold": 161,          // 0‑255 split at golden‑ratio
+      "priority_threshold": 161,
       "resource_budget": {
         "cpu_fast": 0.618,
         "cpu_slow": 0.382
@@ -110,12 +149,10 @@
       "random_factor": 0.2
     }
   },
-
   "logging": {
     "level": "INFO",
     "format": "[{timestamp}] {level} {module}: {message}",
     "file": "/var/log/cw-ho/agent.log"
   },
-
   "docs": []
 }

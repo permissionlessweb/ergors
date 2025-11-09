@@ -52,13 +52,17 @@
 
 ### STORAGE LAYER ARCHITECTURE
 
+- save non sensitive config values into storage layer
+
 #### TODOS
 
-- document storage layer structure assigments accurately via proto files
-- document minimal current trait requirements for the storage layer
-- document visualation demo
+- document each layers types & traits:
+  - configuration
+  - storage
+  - network
+  - tools
 
-### NODE CONFIG
+### CONFIG
 
 - Capabilities: Description of the resources for the local environment this nodes engine is running on.
 - Networking Consensus: snapshots of health status for nodes, net sure.
@@ -66,8 +70,13 @@
 
 ## ORCHESTRATOR SERVICE
 
-- ENSURE ORCHESTRATOR SERVICE RUNS TO PROCESS AS API
+- unit + integration tetss
+
 - Sandloops: Extend sandloop execution so outputs from one node become inputs for another node, maintaining Möbius continuity over the network. This requires state synchronization and inter-node messaging.
+
+## TESTING
+
+- ci testing: simulated api for determinstic responses and known workflows
 
 ## AI
 

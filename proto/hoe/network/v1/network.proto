@@ -25,7 +25,7 @@ message NewNetworkConfig {}
 
 // Network Configuration
 message NetworkConfig {
-    string node_type = 1;
+  NodeType node_type = 1;
   repeated string bootstrap_peers = 2;
   repeated string known_peers = 3;
   uint32 listen_port = 4;
