@@ -45,8 +45,9 @@ def contains_prohibited(text: str) -> bool:
 
 ```
 
-## PAISS GPU index 
-```py 
+## PAISS GPU index
+
+```py
 DIM = embedder.get_sentence_embedding_dimension()   # 384 for MiniLM‑L6
 INDEX = faiss.IndexFlatIP(DIM)                     # inner‑product (cosine after norm)
 # Wrap in GPU resources – this will copy the index to the K620

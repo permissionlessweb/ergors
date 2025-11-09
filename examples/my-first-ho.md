@@ -7,28 +7,30 @@ We will walkthrough the entire workflow for using this engine to orchestrate a c
 - Then we will test out orchestrating the main ho to make a request to the side ho to request from the main ho to make an external api request.
 
 ## GOALS
-- install hoe,create config files necessary(CREATING/USING CONFIG/API/SSH FILES): 
+
+- install hoe,create config files necessary(CREATING/USING CONFIG/API/SSH FILES):
 - route first prompt through a single hoe e (ACTUALLY USING CORE PRODUCT):
 - use ssh to connect to dev env and boostrap second hoe to network
 - route LLM chat request: (Ollama, embedding model, etc) from orchestrator node to another node in network,
 - create network snapshot folder for that deveoper session
 
+## Requirements
 
-## Requirements:
 - 1 LLM API (Private,ideally)
 - 2 Comnputers (both using linux instances)
 - ho-core source code
 
-
 ## Step 1: Prepare Resources & Goals For Agentic Task
+
 First, we generate a default template with the following command:
+
 ```sh
 # build node binary
 cargo build
 # initalize node config
 RUST_BACKTRACE=1 cargo run -- init # TODO: use CONFIG_UI=1 for ui to manage config
 ```
- 
+
 ```
 Next, we can start the main ho node to begin use:
 ```sh
@@ -36,24 +38,27 @@ RUST_BACKTRACE=1 cargo run --bin cw-ho -- start
 ```
 
 Now, we can use the ho node to self-replicate, via the network command. Lets call the command to create an ssh client between the coordinator & the dev environment. This will install everything we need on linux as well:
+
 ```sh
 cargo run -- orchestrate --task-type meta-prompt --prompt "Use the ssh client script to create a client between our agents"
 ```
 
-We can see from the logs that the python script request has been triggered and saved to state, as well as the response. 
+We can see from the logs that the python script request has been triggered and saved to state, as well as the response.
 
 To query the state with our requests (just to check that it was saved to our nodes storage), use the following:
+
 ```
 
 ```
 
 Now we want to connect another node to our network. We can command our conductor node to SSH into the dev node, and configure our node so it is running an instance of ollama we can use to make api calls
+
 ```sh
  cargo run -- orchestrate --task-type network  --prompt "Use the ssh client script to create a client between our agents" --dev-node conductor-1
 ```
- 
 
 ## Step 2: Create Config File (Use LLM to help)
+
 Heres a prompt you can try to help you configure the config file:
 
 ```
@@ -66,10 +71,8 @@ DEV_HELPER_HO_PORT=7100
 create the folder and config/env variable format so i can add my api keys manually into the env variables, and show me the command to use to start the process. Ensure we specify the correct file path for the sample command.
 ```
 
-
-
-
 ### Single Node (Development/Testing)
+
 ```bash
 # Using single node config
 cargo run -- start --config config-example.toml --node-type development
@@ -79,15 +82,15 @@ cargo run -- start --config config-fractal.toml --node-type auto
 
 # Override ports
 cargo run -- start --config config-example.toml --port 8080 --p2p-port 9003
-``` 
+```
 
 <!-- Lets use our prompt-for-prompt generator to create the prompt to configure the config file for use:
 ```
 ```
  -->
 
-
 ### Single Node (Development/Testing)
+
 ```bash
 # Using single node config
 cargo run -- start --config config-example.toml --node-type development
@@ -98,9 +101,6 @@ cargo run -- start --config config-fractal.toml --node-type auto
 # Override ports
 cargo run -- start --config config-example.toml --port 8080 --p2p-port 9003
 ```
-
- 
-
 
 ### Fractal Deployment (Full Tetrahedral Network)
 
@@ -121,6 +121,7 @@ CW_HO_NODE_TYPE=development cargo run -- start --config config-fractal.toml --no
 ```
 
 ### Quick Demo Setup
+
 ```bash
 # 1. Start a single development node for testing
 cargo run -- start --config config-example.toml
@@ -134,13 +135,13 @@ cargo run -- orchestrate --task-type meta-prompt --prompt "Generate a creative s
 ```
 
 ### Full Tetrahedral Demo
+
 ```bash
 # 1. Start all four nodes using fractal config (separate terminals)
 # 2. Monitor network topology formation
 # 3. Execute distributed agent workflows
 cargo run -- orchestrate --task-type tetrahedral --prompt "Distributed creativity test"
 ```
-
 
 ## 🔍 Troubleshooting
 
@@ -152,11 +153,13 @@ cargo run -- orchestrate --task-type tetrahedral --prompt "Distributed creativit
 4. **Config Parsing**: Validate TOML syntax with `toml` command
 
 ### Debug Mode
+
 ```bash
 cargo run -- start --config config-fractal.toml --log-level debug
 ```
 
 ### Health Checks
+
 ```bash
 # Check node health
 curl http://localhost:8000/health  # coordinator
@@ -168,6 +171,7 @@ curl http://localhost:8003/health  # development
 ## 🧪 Testing Configuration
 
 ### Validate Configuration
+
 ```bash
 # Test config loading
 cargo run -- init --output ./test-config
@@ -179,6 +183,7 @@ cargo run -- status --endpoint http://localhost:8080
 ```
 
 ### Debug API Key Loading
+
 ```bash
 # Enable debug logging
 RUST_LOG=debug cargo run -- start --config config.toml --node-type development
@@ -189,25 +194,31 @@ RUST_LOG=debug cargo run -- start --config config.toml --node-type development
 ### Common Issues
 
 #### 1. API Keys File Not Found
+
 ```
 Error: Failed to read API keys file: "./api-keys.json"
 ```
+
 **Solution:** Ensure the file exists relative to your config file location.
 
 #### 2. Environment Variable Not Found
+
 ```
 Warning: Environment variable 'OPENAI_API_KEY' not found
 ```
+
 **Solution:** Set the environment variable or use a literal key in the JSON file.
 
 #### 3. Invalid JSON Format
+
 ```
 Error: Failed to parse API keys JSON file
 ```
+
 **Solution:** Validate JSON syntax with `jq . api-keys.json` or similar tool.
 
-
 ### Debug Commands
+
 ```bash
 # Check config parsing
 cargo run -- init --output ./debug-test

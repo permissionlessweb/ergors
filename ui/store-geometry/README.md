@@ -11,21 +11,21 @@
 
   Core Storage Architecture
 
-  - Cnidarium Storage: RocksDB-based storage with prefix-based multistore routing
-  - Storage Prefixes: task, sandloop, peer, consensus, snapshot, capabilities, params, llm_response, node_registry, node_identity
-  - Data Types:
-    - PromptResponse (LLM requests/responses with context)
-    - NodeInfo (network topology and node metadata)
-    - NetworkTopology (tetrahedral mesh connections)
-    - Indexed data by session_id, user_id, and timestamp
+- Cnidarium Storage: RocksDB-based storage with prefix-based multistore routing
+- Storage Prefixes: task, sandloop, peer, consensus, snapshot, capabilities, params, llm_response, node_registry, node_identity
+- Data Types:
+  - PromptResponse (LLM requests/responses with context)
+  - NodeInfo (network topology and node metadata)
+  - NetworkTopology (tetrahedral mesh connections)
+  - Indexed data by session_id, user_id, and timestamp
 
   Current HTTP API Endpoints
 
-  - POST /api/prompt - Store LLM prompt/response
-  - GET /api/prompts - Query stored prompts with filters
-  - GET /health - Storage and network health status
-  - GET /network/topology - Current network topology
-  - POST /orchestrate/bootstrap - Node bootstrapping operations
+- POST /api/prompt - Store LLM prompt/response
+- GET /api/prompts - Query stored prompts with filters
+- GET /health - Storage and network health status
+- GET /network/topology - Current network topology
+- POST /orchestrate/bootstrap - Node bootstrapping operations
 
   Data Schema (Current Implementation)
 
@@ -595,21 +595,24 @@
   8. Pagination: Efficient loading of large datasets
 
   Performance Requirements:
-  - Maximum 200 items per gRPC call
-  - Cache responses for 30 seconds
-  - Lazy loading for large result sets
-  - Background health checks every 5 seconds
+
+- Maximum 200 items per gRPC call
+- Cache responses for 30 seconds
+- Lazy loading for large result sets
+- Background health checks every 5 seconds
 
   Sacred Geometric Elements:
-  - Use golden ratio (1.618) for UI proportions
-  - Tetrahedral node layout visualization
-  - Fractal-like data organization in tree views
-  - Golden ratio-based color scheme
+
+- Use golden ratio (1.618) for UI proportions
+- Tetrahedral node layout visualization
+- Fractal-like data organization in tree views
+- Golden ratio-based color scheme
 
   Testing Requirements:
-  - Unit tests for gRPC service methods
-  - Integration tests with live Cnidarium storage
-  - UI automation tests for Textual widgets
-  - Load testing with 1000+ stored prompts
+
+- Unit tests for gRPC service methods
+- Integration tests with live Cnidarium storage
+- UI automation tests for Textual widgets
+- Load testing with 1000+ stored prompts
 
   This implementation provides a comprehensive storage visualization system that maintains the sacred geometric principles while offering practical real-time insights into the CW-HOE network state and storage contents.

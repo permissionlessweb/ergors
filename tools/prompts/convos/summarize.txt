@@ -1,0 +1,17 @@
+Summarise this entire conversation as a narrative decision tree (or "microblog") that compresses its meaning semantically.
+
+Structure the output into short titled sections that show:
+
+- The core intent and first-principles framing of the core request or requests (the “why”).
+- Each major decision or branch point as a node in a decision tree, with short quotes, key terms, and any important links.
+- Emergent terminology or concepts (in a small glossary-style table).
+- A meta-insight section explaining what the requests in this converation itself reveals about our process or cognition (“look under the hood”).
+- End with a compact, code-like summary block that maps the architecture or reasoning tree (a microblog of this microblog).
+
+Style: clean, minimal, skim-readable, a thought-map you could read aloud in 30-60 seconds.
+
+Tone: half analytical, half narrative.
+
+Don't forget to coin or highlight new terms that naturally emerge (e.g., semantic compression, story canon, alive architecture — but not everyday dictionary words) in the glossary.
+
+Optionally: end with a "PS." that surfaces something the reader may have missed about the topics at hand, or themself. Be honest and do not worry about hurting anyone's feelings.
