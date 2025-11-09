@@ -14,8 +14,9 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 axum = { workspace = true }
 bytes = { workspace = true }
+camino = { workspace = true }
 chrono = { workspace = true }
-clap = { workspace = true }
+clap = {workspace = true, features = ["derive", "env"]}
 cnidarium = { workspace = true }
 commonware-codec = { workspace = true }
 commonware-cryptography = { workspace = true }

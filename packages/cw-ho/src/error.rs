@@ -13,7 +13,7 @@ pub enum CwHoError {
 
     #[error("Storage error: {0}")]
     Storage(#[from] anyhow::Error),
-    
+
     #[error("HoError error: {0}")]
     HoError(#[from] HoError),
 

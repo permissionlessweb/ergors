@@ -7,17 +7,13 @@ use ho_std::{
 use crate::{error::*, AppState, CwHoConfig, CwHoNetworkManifold, CwHoStorage, LlmRouter};
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
-    response::{IntoResponse, Json, Response},
-    routing::{get, post},
-    Router,
+    response::Json,
 };
 use commonware_runtime::tokio::Context;
 use std::{ops::Deref, sync::Arc, time::Instant};
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{error, info};
-use uuid::Uuid;
 
 pub struct Server {
     state: AppState,
@@ -34,7 +30,7 @@ impl Server {
         let llm_router = Arc::new(LlmRouter::new(llm_config.deref()).await?);
         // NETWORK MANIFOLD
         let mut network_manifold =
-            CwHoNetworkManifold::new(config.identity().clone(), context).await?;
+            CwHoNetworkManifold::new(config.identity().clone(), context).await;
 
         // Start the network
         network_manifold
@@ -103,7 +99,7 @@ async fn handle_fractal_hoe_creation(// State(_state): State<AppState>,
 }
 
 async fn handle_bootstrap(
-    State(state): State<AppState>,
+    State(..): State<AppState>,
     Json(request): Json<BootstrapRequest>,
 ) -> Json<serde_json::Value> {
     let start_time = Instant::now();

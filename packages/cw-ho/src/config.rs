@@ -2,8 +2,9 @@ use crate::error::{CwHoError, Result};
 use crate::traits::Wrap;
 use crate::{CwHoConfig, CwHoLlmRouterConfig, CwHoNodeIdentity, CwHoStorageConfig};
 
+use anyhow::Context;
 use commonware_cryptography::ed25519;
-use ho_std::llm::HoResult;
+use ho_std::llm::{HoError, HoResult};
 use ho_std::orchestrate::HoConfig;
 use ho_std::prelude::*;
 
@@ -108,10 +109,10 @@ impl HoConfigTrait for CwHoConfig {
 
     fn default() -> Self {
         Self(HoConfig {
-            network: None,
-            identity: None,
-            storage: None,
-            llm: None,
+            network: Some(NetworkConfig::default()),
+            identity: Some(NodeIdentity::default()),
+            storage: Some(StorageConfig::default()),
+            llm: Some(LlmRouterConfig::default()),
         })
     }
 
@@ -124,6 +125,28 @@ impl HoConfigTrait for CwHoConfig {
         Self: Sized,
     {
         Ok(DefaultFileOps::from_toml_file(path)?)
+    }
+
+    fn load<P: AsRef<std::path::Path> + std::fmt::Display>(path: P) -> HoResult<Self>
+    where
+        Self: Sized,
+    {
+        let contents = std::fs::read_to_string(&path).map_err(|e| {
+            HoError::Io(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "ho config file not found: {}. hint: run 'init' to create new config",
+                    path.to_string()
+                ),
+            ))
+        })?;
+        Ok(toml::from_str(&contents)?)
+    }
+
+    fn save<P: AsRef<std::path::Path>>(&self, path: P) -> HoResult<()> {
+        let contents = toml::to_string_pretty(&self)?;
+        std::fs::write(path, contents)?;
+        Ok(())
     }
 }
 

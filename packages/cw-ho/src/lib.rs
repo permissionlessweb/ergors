@@ -11,13 +11,16 @@ pub mod traits;
 use crate::llm::ApiKeys;
 use crate::network::{manager::PeerInfo, topology::NetworkTopology};
 use crate::server::Server;
+use camino::{Utf8Path, Utf8PathBuf};
 use clap::{Parser, Subcommand};
 use cnidarium::Storage as CnidariumStorage;
-use commonware_cryptography::{ed25519, Signer};
-use commonware_p2p::{authenticated, Recipients};
+use commonware_cryptography::ed25519;
+use commonware_p2p::authenticated;
+use commonware_runtime::tokio::Context;
 use commonware_runtime::tokio::{Config as RuntimeConfig, Runner};
 use commonware_runtime::Runner as _;
-use commonware_runtime::{tokio::Context, Metrics, Spawner};
+use ho_std::config::env::default_home;
+use ho_std::constants::CONFIG_FILE_NAME;
 use ho_std::prelude::*;
 use ho_std::traits::HoConfigTrait;
 use reqwest::Client;
@@ -90,9 +93,9 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 
-    /// Configuration file path
-    #[arg(short, long, default_value = "config.toml")]
-    pub config: String,
+    /// The home directory used to store configuration and data.
+    #[clap(long, default_value_t = default_home(), env = "PENUMBRA_PCLI_HOME")]
+    pub home: Utf8PathBuf,
 
     /// Log level
     #[arg(long, default_value = "info")]
@@ -108,11 +111,7 @@ pub enum Commands {
         port: Option<u16>,
     },
     /// Generate a sample configuration file
-    Init {
-        /// Output path for configuration file
-        #[arg(short, long, default_value = "config.toml")]
-        output: String,
-    },
+    Init {},
     /// Check service health
     Health {
         /// API endpoint to check
@@ -121,31 +120,36 @@ pub enum Commands {
     },
 }
 
-pub fn init(output: String) -> Result<()> {
-    info!("📝 Generating sample configuration file: {}", output);
-    let config: HoConfig = HoConfig::default();
-    let toml_content = toml::to_string_pretty(&config)?;
-    std::fs::write(&output, toml_content)?;
-    info!("✅ Configuration template saved to {}", output);
-    info!("📋 Edit the file and configure your LLM API keys");
+pub fn init(home_dir: &Utf8Path) -> Result<()> {
+    let config = {
+        let config_path = home_dir.join(ho_std::constants::CONFIG_FILE_NAME);
+        if config_path.exists() {
+            CwHoConfig::load(config_path)?
+        } else {
+            CwHoConfig::default()
+        }
+    };
+    let config_path = home_dir.join(ho_std::constants::CONFIG_FILE_NAME);
+    println!("Writing generated config to {}", config_path);
+    config.save(config_path)?;
+
     Ok(())
 }
 
 pub fn start(cli: Cli, port: Option<u16>) -> Result<()> {
     info!("🚀 Starting CW-AGENT Minimal Prompt Capture Service");
-
+    let path = cli.home.as_path().join(CONFIG_FILE_NAME);
     // Load configuration
-    let config = if std::path::Path::new(&cli.config).exists() {
-        CwHoConfig::from_file(&cli.config)?
-    } else {
-        info!("⚠️  Config file not found, using defaults");
-        CwHoConfig::default()
-    };
+    let config = CwHoConfig::load(&path)?;
 
     // Override port if provided
     let server_port = port.unwrap_or(config.identity().api_port.try_into().unwrap());
-    info!("🔌 Server will listen on port {}", server_port);
-    info!("💾 Data directory: {}", config.storage().data_dir);
+    info!(
+        "🔌 Server will listen on port {}\n
+        💾 Data directory: {}\n",
+        server_port,
+        config.storage().data_dir
+    );
 
     // Create commonware runtime configuration
     let runtime_config = RuntimeConfig::default();

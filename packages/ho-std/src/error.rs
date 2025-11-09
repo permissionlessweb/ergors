@@ -4,7 +4,7 @@ use thiserror::Error;
 
 pub type HoResult<T> = std::result::Result<T, HoError>;
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum HoError {
     #[error("Configuration error: {0}")]
     Config(String),
@@ -32,6 +32,10 @@ pub enum HoError {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("TomlDeErr error: {0}")]
+    TomlDeErr(#[from] toml::de::Error),
+    #[error("TomlSerErr error: {0}")]
+    TomlSerErr(#[from] toml::ser::Error),
 
     #[error("Other error: {0}")]
     Other(String),

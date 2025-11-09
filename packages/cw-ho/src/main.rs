@@ -1,7 +1,10 @@
-use anyhow::Result;
+use std::fs;
+
+use anyhow::{Context, Result};
 use clap::Parser;
 
 use cw_ho::{init, start, Cli, Commands};
+use ho_std::config::env::init_env;
 
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -9,6 +12,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    //Ensure that the data_path exists, in case this is a cold start
+    fs::create_dir_all(&cli.home)
+        .with_context(|| format!("Failed to create home directory {}", cli.home))?;
+
+    init_env();
     // Initialize tracing
     tracing_subscriber::registry()
         .with(
@@ -19,7 +27,7 @@ fn main() -> Result<()> {
         .init();
 
     match cli.command {
-        Commands::Init { output } => init(output)?,
+        Commands::Init {} => init(cli.home.as_path())?,
         Commands::Start { port } => start(cli, port)?,
         Commands::Health { endpoint } => health(endpoint)?,
     }

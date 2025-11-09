@@ -1,5 +1,6 @@
 //! Configuration-related traits for CW-HO system
 
+use anyhow::Context;
 use async_trait::async_trait;
 use std::path::Path;
 
@@ -13,6 +14,11 @@ pub trait HoConfigTrait {
     type StorageConfig;
     type LLMConfig;
     type HoConfigResult;
+
+    fn load<P: AsRef<Path> + std::fmt::Display>(path: P) -> HoResult<Self>
+    where
+        Self: Sized;
+    fn save<P: AsRef<Path>>(&self, path: P) -> HoResult<()>;
 
     /// Get network configuration
     fn default() -> Self;

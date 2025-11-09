@@ -45,6 +45,7 @@ axum = { version = "0.8.4" }
 axum-macros = "0.5.0"
 base64 = "0.22.1"
 bytes = "1.7.1"
+camino  = { version = "1" }
 chrono = { version = "0.4.40", default-features = false, features = ["serde","clock"] }
 clap = { version = "4.5", features = ["derive"] }
 cnidarium = { path = "./sub-modules/cnidarium" }
@@ -58,6 +59,7 @@ commonware-storage = { version = "0.0.63" }
 commonware-utils  = { version = "0.0.63" }
 cosmos-sdk-proto = { version = "0.28.0", default-features = false, git = "https://github.com/permissionlessweb/cosmos-rust" }
 cosmwasm-std = { version = "3.0.1", features = ["stargate"] }
+directories = "5"
 dirs = "6.0.0"
 dotenv = "0.15"
 dotenvy = "0.15.7"
