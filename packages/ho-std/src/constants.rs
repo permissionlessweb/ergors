@@ -4,6 +4,7 @@ use std::collections::HashMap;
 // TODO: model-cost rate metric constants map. Store, update, & export versioned cost mappings in very optimized manner (bitwise mapping w vecotrized & encoded format)
 //
 pub const CONFIG_FILE_NAME: &str = "config.toml";
+pub const DATA_FOLDER_NAME: &str = "memories";
 pub const OPENAI_API_KEY: &str = "OPENAI_API_KEY";
 pub const ANTHROPIC_API_KEY: &str = "ANTHROPIC_API_KEY";
 pub const GROK_API_KEY: &str = "GROK_API_KEY";

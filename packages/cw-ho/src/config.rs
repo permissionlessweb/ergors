@@ -1,9 +1,8 @@
-use crate::error::{CwHoError, Result};
+use crate::error::Result;
 use crate::traits::Wrap;
-use crate::{CwHoConfig, CwHoLlmRouterConfig, CwHoNodeIdentity, CwHoStorageConfig};
+use crate::{CwHoConfig, CwHoLlmRouterConfig};
 
-use anyhow::Context;
-use commonware_cryptography::ed25519;
+use camino::Utf8Path;
 use ho_std::llm::{HoError, HoResult};
 use ho_std::orchestrate::HoConfig;
 use ho_std::prelude::*;
@@ -12,26 +11,27 @@ use ho_std::traits::file_ops::ConfigLoaderTrait;
 use ho_std::traits::{HoConfigTrait, LLMRouterConfigTrait, NetworkConfigTrait, NodeIdentityTrait};
 use ho_std::utils::DefaultFileOps;
 
-use crate::network::config::CwHoNetworkConfig;
-
 // Network trait implementations for proto types
 impl HoConfigTrait for CwHoConfig {
-    type NetworkConfig = CwHoNetworkConfig;
-    type Identity = CwHoNodeIdentity;
-    type StorageConfig = CwHoStorageConfig;
+    type Identity = NodeIdentity;
+    type StorageConfig = StorageConfig;
     type LLMConfig = CwHoLlmRouterConfig;
     type HoConfigResult = Result<()>;
 
-    fn network(&self) -> &Self::NetworkConfig {
-        todo!()
+    fn network(&self) -> &NetworkConfig {
+        self.network.as_ref().expect("network config should exist")
     }
 
     fn identity(&self) -> &Self::Identity {
-        CwHoNodeIdentity::wrap_ref(self.identity.as_ref().expect("ego is useful in moderation"))
+        self.identity
+            .as_ref()
+            .expect("ego is useful in moderation (cannot access node identity")
     }
 
     fn storage(&self) -> &Self::StorageConfig {
-        CwHoStorageConfig::wrap_ref(self.storage.as_ref().expect("ego is useful in moderation"))
+        self.storage
+            .as_ref()
+            .expect("memories seed ego (cannot find storage config)")
     }
 
     fn llm(&self) -> &Self::LLMConfig {
@@ -91,27 +91,27 @@ impl HoConfigTrait for CwHoConfig {
         Ok(())
     }
 
-    fn set_network_config(&mut self, config: Self::NetworkConfig) {
-        self.0.network = Some((*config).clone())
+    fn set_network_config(&mut self, config: NetworkConfig) {
+        self.0.network = Some(config)
     }
 
     fn set_identity(&mut self, identity: Self::Identity) {
-        self.0.identity = Some(identity.unwrap());
+        self.0.identity = Some(identity);
     }
 
     fn set_storage_config(&mut self, config: Self::StorageConfig) {
-        self.0.storage = Some(config.unwrap())
+        self.0.storage = Some(config)
     }
 
     fn set_llm_config(&mut self, config: Self::LLMConfig) {
         self.0.llm = Some(config.unwrap());
     }
 
-    fn default() -> Self {
+    fn default(home_dir: &Utf8Path) -> Self {
         Self(HoConfig {
-            network: Some(NetworkConfig::default()),
-            identity: Some(NodeIdentity::default()),
-            storage: Some(StorageConfig::default()),
+            network: Some(NetworkConfig::new()),
+            identity: Some(NodeIdentity::new()),
+            storage: Some(StorageConfig::new(home_dir)),
             llm: Some(LlmRouterConfig::default()),
         })
     }
@@ -150,40 +150,6 @@ impl HoConfigTrait for CwHoConfig {
     }
 }
 
-impl NetworkConfigTrait for CwHoConfig {
-    fn from_toml(&self) -> toml::Table {
-        todo!()
-    }
-
-    fn validate(&self) -> ho_std::commonware::error::CommonwareNetworkResult<()> {
-        todo!()
-    }
-
-    fn bootstrap_peers(&self) -> &[String] {
-        todo!()
-    }
-
-    fn listen_port(&self) -> u32 {
-        todo!()
-    }
-
-    fn listen_address(&self) -> &str {
-        todo!()
-    }
-
-    fn max_peers(&self) -> u32 {
-        todo!()
-    }
-
-    fn connection_timeout_ms(&self) -> u32 {
-        todo!()
-    }
-
-    fn is_discovery_enabled(&self) -> bool {
-        todo!()
-    }
-}
-
 impl LLMRouterConfigTrait for CwHoLlmRouterConfig {
     fn default_provider(&self) -> &str {
         todo!()
@@ -217,57 +183,48 @@ impl LLMRouterConfigTrait for CwHoLlmRouterConfig {
     }
 }
 
-impl NodeIdentityTrait for CwHoNodeIdentity {
-    type HostOS = HostOs;
-    type NodeType = NodeType;
-    type PrivateKey = ed25519::PrivateKey;
-    type PublicKey = ed25519::PublicKey;
+// impl NodeIdentityTrait for CwHoNodeIdentity {
+//     type HostOS = HostOs;
+//     type NodeType = NodeType;
+//     type PrivateKey = ed25519::PrivateKey;
+//     type PublicKey = ed25519::PublicKey;
 
-    fn new_node(
-        host: String,
-        p2p_port: u16,
-        api_port: u16,
-        user: String,
-        os: Self::HostOS,
-        ssh_port: u16,
-        node_type: Self::NodeType,
-        private_key: Self::PrivateKey,
-    ) -> Self {
-        todo!()
-    }
+//     fn new() -> Self {
+//         todo!()
+//     }
 
-    fn generate_keypair<R: rand::RngCore + rand::CryptoRng>(
-        &mut self,
-        rng: &mut R,
-    ) -> ho_std::commonware::error::CommonwareNetworkResult<()> {
-        todo!()
-    }
+//     fn generate_keypair<R: rand::RngCore + rand::CryptoRng>(
+//         &mut self,
+//         rng: &mut R,
+//     ) -> ho_std::commonware::error::CommonwareNetworkResult<()> {
+//         todo!()
+//     }
 
-    fn set_keypair(&mut self, private_key: Self::PrivateKey) {
-        todo!()
-    }
+//     fn set_keypair(&mut self, private_key: Self::PrivateKey) {
+//         todo!()
+//     }
 
-    fn p2p_identity(&self) -> String {
-        todo!()
-    }
+//     fn p2p_identity(&self) -> String {
+//         todo!()
+//     }
 
-    fn p2p_address(&self) -> std::net::SocketAddr {
-        todo!()
-    }
+//     fn p2p_address(&self) -> std::net::SocketAddr {
+//         todo!()
+//     }
 
-    fn api_address(&self) -> String {
-        todo!()
-    }
+//     fn api_address(&self) -> String {
+//         todo!()
+//     }
 
-    fn display_id(&self) -> String {
-        todo!()
-    }
+//     fn display_id(&self) -> String {
+//         todo!()
+//     }
 
-    fn get_private_key_from_env() -> ho_std::commonware::identity::NodePrivKey {
-        todo!()
-    }
+//     fn get_private_key_from_env() -> ho_std::commonware::identity::NodePrivKey {
+//         todo!()
+//     }
 
-    fn private_key_from_hex(hex_string: &str) -> Option<ho_std::commonware::identity::NodePrivKey> {
-        todo!()
-    }
-}
+//     fn private_key_from_hex(hex_string: &str) -> Option<ho_std::commonware::identity::NodePrivKey> {
+//         todo!()
+//     }
+// }

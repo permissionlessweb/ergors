@@ -16,7 +16,7 @@ macro_rules! define_wrapper {
         #[serde(transparent)]
         pub struct $wrapper(pub $inner);
 
-        impl Deref for $wrapper {
+        impl std::ops::Deref for $wrapper {
             type Target = $inner;
 
             fn deref(&self) -> &Self::Target {

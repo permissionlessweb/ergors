@@ -5,14 +5,13 @@
 //! The private key lives only inside the `NodeIdentity` struct and can be
 //! generated freshly or from a deterministic seed (useful for tests).
 
-use std::{fmt, io::Read};
-
 use crate::prelude::NodeType;
 use crate::traits::NodeIdentityTrait;
 use crate::types::cw_ho::network::v1::{HostOs, NodeIdentity};
 use commonware_codec::{DecodeExt, Encode, FixedSize};
 use commonware_cryptography::{ed25519, PrivateKeyExt, Signer, Verifier};
 use rand::{CryptoRng, RngCore};
+use rand_core::OsRng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 // Use proto types
@@ -23,28 +22,18 @@ impl NodeIdentityTrait for NodeIdentity {
     type PrivateKey = NodePrivKey;
     type PublicKey = NodePubkey;
 
-    /// Create a new node identity
-    fn new_node(
-        host: String,
-        p2p_port: u16,
-        api_port: u16,
-        user: String,
-        os: HostOs,
-        ssh_port: u16,
-        node_type: NodeType,
-        private_key: NodePrivKey,
-    ) -> NodeIdentity {
-        NodeIdentity {
-            host,
-            p2p_port: p2p_port.into(), // Convert u16 to u32
-            api_port: api_port.into(), // Convert u16 to u32
-            user,
-            os: os as i32,             // Convert enum to i32
-            ssh_port: ssh_port.into(), // Convert u16 to u32
-            node_type: node_type.as_str_name().into(),
-            public_key: Some(private_key.id().0.to_vec()), // Convert to Vec<u8>
-            private_key: Some(private_key.into_bytes().to_vec()), // Convert to Vec<u8>
-        }
+    /// Create a new node identitNodeIdentity
+    fn new() -> NodeIdentity {
+        let mut ego = Self::default();
+        ego.user = "ergors".into();
+        ego.generate_keypair(&mut OsRng).expect("rand err");
+        ego.api_port = 8080;
+        ego.p2p_port = 26969;
+        ego.ssh_port = 22;
+        ego.node_type = NodeType::Unspecified.as_str_name().into();
+        ego.os = HostOs::Unspecified.into();
+        ego.host = "127.0.0.1".into();
+        ego
     }
 
     /// Generate a fresh, random keypair.
@@ -55,15 +44,14 @@ impl NodeIdentityTrait for NodeIdentity {
         rng: &mut R,
     ) -> super::error::CommonwareNetworkResult<()> {
         let private_key = NodePrivKey::new(rng);
-        self.private_key = Some(private_key.into_bytes().to_vec());
+        self.set_keypair(private_key);
         Ok(())
     }
 
     /// Set keypair from existing keys
     fn set_keypair(&mut self, private_key: Self::PrivateKey) {
-        let pubkey = &private_key.id();
         let npk = &private_key;
-        self.public_key = Some(private_key.id().0.to_vec()); // Convert to Vec<u8>
+        self.public_key = Some(private_key.id().0.to_vec());
         self.private_key = Some(npk.private.to_vec());
     }
 
@@ -79,7 +67,9 @@ impl NodeIdentityTrait for NodeIdentity {
 
     /// Get the P2P listen address
     fn p2p_address(&self) -> core::net::SocketAddr {
-        format!("{}:{}", self.host, self.p2p_port).parse().unwrap()
+        format!("{}:{}", self.host, self.p2p_port)
+            .parse()
+            .expect("either identity.host or identity.port is misconfigured")
     }
 
     /// Get the API listen address

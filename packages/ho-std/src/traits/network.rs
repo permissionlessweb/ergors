@@ -15,16 +15,9 @@ pub trait NodeIdentityTrait {
     type PublicKey;
 
     /// Create a new node identity
-    fn new_node(
-        host: String,
-        p2p_port: u16,
-        api_port: u16,
-        user: String,
-        os: Self::HostOS,
-        ssh_port: u16,
-        node_type: Self::NodeType,
-        private_key: Self::PrivateKey,
-    ) -> Self;
+    fn new() -> Self
+    where
+        Self: Sized;
 
     /// Generate a fresh keypair
     fn generate_keypair<R: rand::RngCore + rand::CryptoRng>(

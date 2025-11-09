@@ -6,68 +6,6 @@ use crate::traits::{NetworkConfigTrait, NetworkMessageTrait, NetworkTopologyTrai
 
 use crate::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
 
-impl NetworkConfigTrait for NetworkConfig {
-    fn from_toml(&self) -> toml::Table {
-        // Basic TOML representation
-        let mut table = toml::Table::new();
-        table.insert(
-            "node_type".to_string(),
-            toml::Value::String(self.node_type.clone()),
-        );
-        table.insert(
-            "listen_port".to_string(),
-            toml::Value::Integer(self.listen_port as i64),
-        );
-        table.insert(
-            "listen_address".to_string(),
-            toml::Value::String(self.listen_address.clone()),
-        );
-        table.insert(
-            "max_peers".to_string(),
-            toml::Value::Integer(self.max_peers as i64),
-        );
-        table.insert(
-            "enable_discovery".to_string(),
-            toml::Value::Boolean(self.enable_discovery),
-        );
-        table
-    }
-
-    fn validate(&self) -> CommonwareNetworkResult<()> {
-        // Basic validation - could be expanded
-        if self.listen_port == 0 || self.listen_address.is_empty() {
-            return Err(CommonwareNetworkError::ConfigError(
-                "Listen port must be non-zero".to_string(),
-            ));
-        }
-        Ok(())
-    }
-
-    fn bootstrap_peers(&self) -> &[String] {
-        &self.bootstrap_peers
-    }
-
-    fn listen_port(&self) -> u32 {
-        self.listen_port
-    }
-
-    fn listen_address(&self) -> &str {
-        &self.listen_address
-    }
-
-    fn max_peers(&self) -> u32 {
-        self.max_peers
-    }
-
-    fn connection_timeout_ms(&self) -> u32 {
-        self.connection_timeout_ms
-    }
-
-    fn is_discovery_enabled(&self) -> bool {
-        self.enable_discovery
-    }
-}
-
 impl NetworkTopologyTrait for NetworkTopology {
     type NodeInfo = crate::types::cw_ho::types::v1::NodeInfo;
     type Connection = crate::types::cw_ho::types::v1::Connection;

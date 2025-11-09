@@ -1,15 +1,14 @@
 //! Configuration-related traits for CW-HO system
-
-use anyhow::Context;
-use async_trait::async_trait;
+use camino::Utf8Path;
 use std::path::Path;
 
 use crate::commonware::error::CommonwareNetworkResult;
+
 use crate::error::HoResult;
+use crate::prelude::NetworkConfig;
 
 /// Core trait for application configuration
 pub trait HoConfigTrait {
-    type NetworkConfig;
     type Identity;
     type StorageConfig;
     type LLMConfig;
@@ -21,7 +20,7 @@ pub trait HoConfigTrait {
     fn save<P: AsRef<Path>>(&self, path: P) -> HoResult<()>;
 
     /// Get network configuration
-    fn default() -> Self;
+    fn default(home_dir: &Utf8Path) -> Self;
     /// Get network configuration
     fn from_file(path: &str) -> HoResult<Self>
     where
@@ -30,7 +29,7 @@ pub trait HoConfigTrait {
     /// Get network configuration
     fn file_path(&self) -> &str;
     /// Get network configuration
-    fn network(&self) -> &Self::NetworkConfig;
+    fn network(&self) -> &NetworkConfig;
 
     /// Get node identity
     fn identity(&self) -> &Self::Identity;
@@ -45,7 +44,7 @@ pub trait HoConfigTrait {
     fn validate(&self) -> Self::HoConfigResult;
 
     /// Set network config
-    fn set_network_config(&mut self, config: Self::NetworkConfig);
+    fn set_network_config(&mut self, config: NetworkConfig);
 
     /// Set identity
     fn set_identity(&mut self, identity: Self::Identity);
@@ -189,6 +188,8 @@ pub trait LLMConfigTrait {
 
 /// Core trait for network configuration
 pub trait NetworkConfigTrait {
+    /// Get bootstrap peers
+    fn new() -> Self;
     /// Get bootstrap peers
     fn from_toml(&self) -> toml::Table;
 

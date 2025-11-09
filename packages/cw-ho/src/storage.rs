@@ -18,6 +18,7 @@ const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
 
 impl StorageConfigTrait for CwHoStorage {
     fn data_dir(&self) -> &str {
+        // TODO: default data dir should be in the node_data folder along with config
         todo!()
     }
     fn max_size_mb(&self) -> u32 {

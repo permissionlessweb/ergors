@@ -1,10 +1,10 @@
 //! Minimal network manager implementation using commonware libraries
+use commonware_codec::DecodeExt;
 use ho_std::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
 use ho_std::llm::HoResult;
 use ho_std::prelude::*;
 
 use bytes::Bytes;
-use commonware_codec::DecodeExt;
 use commonware_cryptography::{ed25519, Signer};
 use commonware_runtime::{tokio::Context, Metrics, Spawner};
 
@@ -18,16 +18,15 @@ use tokio::sync::{mpsc, RwLock};
 use tokio::time;
 use tracing::info;
 
-use commonware_p2p::{authenticated, Recipients};
+use commonware_p2p::{authenticated, Manager, Recipients};
 
 use governor::Quota;
 use std::num::NonZeroU32;
 
 use ho_std::commonware::identity::NodePubkey;
 
-use crate::network::config::CwHoNetworkConfig;
 use crate::network::topology::NetworkTopology;
-use crate::{CwHoNetworkManifold, CwHoNodeIdentity};
+use crate::CwHoNetworkManifold;
 
 /// Peer information
 #[derive(Debug, Clone)]
@@ -41,21 +40,18 @@ impl CwHoNetworkManifold {
     /// Initialize and start the network
     pub async fn new(
         // config: NetworkConfig,
-        identity: CwHoNodeIdentity,
+        identity: NodeIdentity,
         context: Context,
-    ) -> CommonwareNetworkResult<Self> {
+    ) -> Self {
         // Validate config
         // config.validate().map_err(|e| CommonwareNetworkError::P2P(e))?;
         println!(
             "new identity: public_key_bytes - {:#?}",
             identity.private_key
         );
-        // Ensure we have keys
-        let private_key = identity
-            .private_key
-            .as_ref()
-            .ok_or_else(|| CommonwareNetworkError::NodePrivKeyNotFound)?
-            .clone();
+        if identity.private_key.is_none() {
+            panic!("{}", CommonwareNetworkError::NodePrivKeyNotFound)
+        }
 
         // Create event channel
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -70,14 +66,22 @@ impl CwHoNetworkManifold {
 
         // Add ourselves to the topology
         let our_info = NodeInfo {
-            node_id: format!("{:?}", identity.public_key.clone().expect("neva")),
+            node_id: format!(
+                "{:?}",
+                identity
+                    .public_key
+                    .clone()
+                    .expect("unidentifiable (public key not set)")
+            ),
             node_type: identity.node_type.clone(),
             online: true,
             last_seen: chrono::Utc::now().timestamp() as u64,
         };
         topology.add_node(our_info);
 
-        let mut manager = Self {
+        // Network will be started separately using start_network method
+        // Background tasks and announcements will be handled there
+        Self {
             identity,
             context,
             network_running: Arc::new(RwLock::new(false)),
@@ -88,19 +92,11 @@ impl CwHoNetworkManifold {
             event_tx,
             event_rx: Some(event_rx),
             shutdown: Arc::new(RwLock::new(false)),
-        };
-
-        // Network will be started separately using start_network method
-        // Background tasks and announcements will be handled there
-
-        Ok(manager)
+        }
     }
 
     /// Start the network using commonware runtime pattern
-    pub async fn start_network(
-        &mut self,
-        config: CwHoNetworkConfig,
-    ) -> CommonwareNetworkResult<()> {
+    pub async fn start_network(&mut self, config: &NetworkConfig) -> CommonwareNetworkResult<()> {
         // Get the private key
         let private_key = self
             .identity
@@ -124,7 +120,7 @@ impl CwHoNetworkManifold {
         let public_key = ed25519_private_key.public_key();
         let namespace = b"cw-ho-network";
 
-        let commonware_config = authenticated::lookup::Config::aggressive(
+        let commonware_config = authenticated::lookup::Config::recommended(
             ed25519_private_key,
             namespace,
             listen_addr,
@@ -138,11 +134,13 @@ impl CwHoNetworkManifold {
             commonware_config,
         );
 
-        oracle.register(0, vec![(public_key, listen_addr)]).await;
+        oracle
+            .update(0, vec![(public_key, listen_addr)].into())
+            .await;
 
         // Register channels and get senders/receivers
         let rate_quota = Quota::per_second(NonZeroU32::new(100).unwrap());
-        let channels = config.0.channels.expect("channels exists");
+        let channels = config.channels.expect("channels does not exist");
         // Channel 0: Discovery
         let (_discovery_sender, _discovery_receiver) =
             network.register(0, rate_quota, channels.discovery_buffer.try_into().unwrap());
@@ -208,7 +206,7 @@ impl CwHoNetworkManifold {
         let channel = msg.channel()?;
         let bytes = self.serialize_message(&msg)?;
 
-        let mut sender = self.channel_senders.get_mut(&channel).ok_or_else(|| {
+        let sender = self.channel_senders.get_mut(&channel).ok_or_else(|| {
             CommonwareNetworkError::ChannelError(format!("Channel {} not found", channel))
         })?;
 
@@ -232,7 +230,7 @@ impl CwHoNetworkManifold {
         //     // TODO: Implement broadcast integration
         // }
 
-        let mut sender = self.channel_senders.get_mut(&channel).ok_or_else(|| {
+        let sender = self.channel_senders.get_mut(&channel).ok_or_else(|| {
             CommonwareNetworkError::ChannelError(format!("Channel {} not found", channel))
         })?;
 
@@ -254,7 +252,7 @@ impl CwHoNetworkManifold {
     ) -> CommonwareNetworkResult<NetworkMessage> {
         let msgtype = &req.message_type;
 
-        let request_id = match &msgtype.clone().expect("always will have MessageType") {
+        let _request_id = match &msgtype.clone().expect("always will have MessageType") {
             MessageType::Request(r) => &r.request_id,
             _ => &uuid::Uuid::new_v4().to_string(),
         };
@@ -266,7 +264,7 @@ impl CwHoNetworkManifold {
         let channel = req.channel()?;
         let bytes = self.serialize_message(&req)?;
 
-        let mut sender = self.channel_senders.get_mut(&channel).expect("yuh");
+        let sender = self.channel_senders.get_mut(&channel).expect("yuh");
 
         use commonware_p2p::Sender;
         sender.send(Recipients::One(peer), bytes, true).await?;
@@ -327,7 +325,7 @@ impl CwHoNetworkManifold {
         mut receiver: authenticated::lookup::Receiver<ed25519::PublicKey>,
     ) {
         let peers = self.peers.clone();
-        let topology = self.topology.clone();
+        let _topology = self.topology.clone();
         let event_tx = self.event_tx.clone();
         let shutdown = self.shutdown.clone();
 
@@ -371,7 +369,7 @@ impl CwHoNetworkManifold {
         let peers = self.peers.clone();
         let topology = self.topology.clone();
         let event_tx = self.event_tx.clone();
-        let identity = self.identity.clone();
+        let _identity = self.identity.clone();
         let shutdown = self.shutdown.clone();
 
         // Periodic health check

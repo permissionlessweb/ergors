@@ -27,7 +27,6 @@ use reqwest::Client;
 use tracing::{error, info};
 
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
 use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{mpsc, RwLock};
@@ -37,8 +36,6 @@ use anyhow::Result;
 // Define all wrapper types using the macro
 define_wrapper!(CwHoConfig, HoConfig);
 define_wrapper!(CwHoLlmRouterConfig, LlmRouterConfig);
-define_wrapper!(CwHoStorageConfig, StorageConfig);
-define_wrapper!(CwHoNodeIdentity, NodeIdentity);
 
 /// Defines the storage used for this CwHo.
 /// implemenations in ./storage.rs
@@ -74,7 +71,7 @@ pub struct CwHoNetworkManifold {
     /// Shutdown signal
     shutdown: Arc<RwLock<bool>>,
     /// Our node identity
-    identity: CwHoNodeIdentity,
+    identity: NodeIdentity,
 }
 
 #[derive(Clone)]
@@ -87,14 +84,14 @@ pub struct AppState {
 }
 
 #[derive(Parser)]
-#[command(name = "cw-ho", version = "0.1.0")]
-#[command(about = "CW-HOE Minimal Helper Orchestration Engine")]
+#[command(name = "ergors: cw-hoe", version = "0.1.0")]
+#[command(about = "HOE: Helper Orchestration Engine")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 
     /// The home directory used to store configuration and data.
-    #[clap(long, default_value_t = default_home(), env = "PENUMBRA_PCLI_HOME")]
+    #[clap(long, default_value_t = default_home(), env = "NODE_DATA_PATH")]
     pub home: Utf8PathBuf,
 
     /// Log level
@@ -121,12 +118,15 @@ pub enum Commands {
 }
 
 pub fn init(home_dir: &Utf8Path) -> Result<()> {
+    // TODO: subcommands for overwriting specific config values:
+    // -  (node-identity (requires password, confirmation))
+    // - ?
     let config = {
         let config_path = home_dir.join(ho_std::constants::CONFIG_FILE_NAME);
         if config_path.exists() {
             CwHoConfig::load(config_path)?
         } else {
-            CwHoConfig::default()
+            CwHoConfig::default(home_dir)
         }
     };
     let config_path = home_dir.join(ho_std::constants::CONFIG_FILE_NAME);

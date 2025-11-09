@@ -86,6 +86,7 @@ prost = { version = "0.14.1", default-features = false, features = ["derive"] }
 prost-types = { version = "0.14.1", default-features = false }
 quote = "1.0.26"
 rand = "0.8"
+rand_core                        = { version = "0.6.4" }
 regex = "1"
 reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
 rocksdb = "0.21"

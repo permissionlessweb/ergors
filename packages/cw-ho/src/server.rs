@@ -33,9 +33,7 @@ impl Server {
             CwHoNetworkManifold::new(config.identity().clone(), context).await;
 
         // Start the network
-        network_manifold
-            .start_network(config.network().clone())
-            .await?;
+        network_manifold.start_network(config.network()).await?;
         info!("🌐 Network manager initialized and started");
 
         let state = AppState {

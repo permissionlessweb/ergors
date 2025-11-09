@@ -36,6 +36,7 @@ pub mod orchestrate;
 pub mod prelude;
 pub mod python;
 pub mod routes;
+pub mod storage;
 pub mod transports;
 pub mod utils;
 
