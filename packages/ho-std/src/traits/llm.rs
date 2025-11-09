@@ -2,7 +2,7 @@
 
 use crate::constants::*;
 use crate::error::HoResult;
-use crate::prelude::LlmModel;
+use crate::prelude::{LlmEntity, LlmModel};
 use crate::traits::LLMRouterConfigTrait;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -199,6 +199,7 @@ pub trait LLMProviderTrait {
 pub trait LlmModelTrait {
     fn models(&self) -> (String, Vec<String>);
     fn default_base_url(&self) -> String;
+    fn default_entity(&self) -> LlmEntity;
 }
 
 #[async_trait]

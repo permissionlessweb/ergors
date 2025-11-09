@@ -4,6 +4,7 @@ use std::collections::HashMap;
 // TODO: model-cost rate metric constants map. Store, update, & export versioned cost mappings in very optimized manner (bitwise mapping w vecotrized & encoded format)
 //
 pub const CONFIG_FILE_NAME: &str = "config.toml";
+pub const LLM_API_KEYS_FILE: &str = "api-keys.json";
 pub const DATA_FOLDER_NAME: &str = "memories";
 pub const OPENAI_API_KEY: &str = "OPENAI_API_KEY";
 pub const ANTHROPIC_API_KEY: &str = "ANTHROPIC_API_KEY";
@@ -132,41 +133,3 @@ pub const FRACTAL_RECURSION: &str = "fractal-recursion";
 pub const GEOMETRIC_VALIDATION: &str = "geometric-validation";
 pub const TETRAHEDRAL_CONNECTIVITY: &str = "tetrahedral-connectivity";
 pub const GOLDEN_RATIO_SCALING: &str = "golden-ratio-scaling";
-
-pub mod llm {
-    use crate::traits::LlmModelTrait;
-
-    use super::*;
-    use crate::prelude::LlmModel;
-
-    impl LlmModelTrait for LlmModel {
-        /// (default_model, all_available_models)
-        fn models(&self) -> (String, Vec<String>) {
-            let all: Vec<String> = match self {
-                LlmModel::AkashChat => AKASH_CHAT_MODELS,
-                LlmModel::KimiResearch => KIMI_RESEARCH_MODELS,
-                LlmModel::Grok => GROK_MODELS,
-                LlmModel::OllamaLocal => OLLAMA_LOCAL_MODELS,
-                LlmModel::OpenAi => OPENAI_MODELS,
-                LlmModel::Anthropic => ANTHROPIC_MODELS,
-                LlmModel::Custom { .. } => EXTERNAL_MODELS,
-            }
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect();
-
-            (all.first().cloned().unwrap_or_default(), all)
-        }
-        fn default_base_url(&self) -> String {
-            match self {
-                LlmModel::AkashChat => AKASH_CHAT_BASE_URL.to_string(),
-                LlmModel::KimiResearch => KIMI_RESEARCH_BASE_URL.to_string(),
-                LlmModel::Grok => GROK_BASE_URL.to_string(),
-                LlmModel::OpenAi => OPENAI_BASE_URL.to_string(),
-                LlmModel::Anthropic => ANTHROPIC_BASE_URL.to_string(),
-                // Any other variant (e.g., `Custom`) gets an empty string.
-                _ => String::new(),
-            }
-        }
-    }
-}

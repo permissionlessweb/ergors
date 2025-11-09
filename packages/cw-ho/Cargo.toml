@@ -28,6 +28,7 @@ ho-std  = { workspace = true }
 pprof = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
+rpassword = {workspace = true}
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

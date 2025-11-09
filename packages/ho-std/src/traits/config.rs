@@ -20,7 +20,7 @@ pub trait HoConfigTrait {
     fn save<P: AsRef<Path>>(&self, path: P) -> HoResult<()>;
 
     /// Get network configuration
-    fn default(home_dir: &Utf8Path) -> Self;
+    fn new(home_dir: &Utf8Path) -> Self;
     /// Get network configuration
     fn from_file(path: &str) -> HoResult<Self>
     where

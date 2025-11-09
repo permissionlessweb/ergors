@@ -1,5 +1,6 @@
 pub mod config;
 pub mod error;
+pub mod init;
 pub mod llm;
 pub mod network;
 pub mod server;
@@ -8,6 +9,7 @@ pub mod traits;
 
 // Re-export the macro for external use
 
+use crate::init::InitCmd;
 use crate::llm::ApiKeys;
 use crate::network::{manager::PeerInfo, topology::NetworkTopology};
 use crate::server::Server;
@@ -108,32 +110,13 @@ pub enum Commands {
         port: Option<u16>,
     },
     /// Generate a sample configuration file
-    Init {},
+    Init(InitCmd),
     /// Check service health
     Health {
         /// API endpoint to check
         #[arg(long, default_value = "http://localhost:8080")]
         endpoint: String,
     },
-}
-
-pub fn init(home_dir: &Utf8Path) -> Result<()> {
-    // TODO: subcommands for overwriting specific config values:
-    // -  (node-identity (requires password, confirmation))
-    // - ?
-    let config = {
-        let config_path = home_dir.join(ho_std::constants::CONFIG_FILE_NAME);
-        if config_path.exists() {
-            CwHoConfig::load(config_path)?
-        } else {
-            CwHoConfig::default(home_dir)
-        }
-    };
-    let config_path = home_dir.join(ho_std::constants::CONFIG_FILE_NAME);
-    println!("Writing generated config to {}", config_path);
-    config.save(config_path)?;
-
-    Ok(())
 }
 
 pub fn start(cli: Cli, port: Option<u16>) -> Result<()> {

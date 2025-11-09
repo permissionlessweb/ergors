@@ -57,7 +57,6 @@ commonware-p2p = { version = "0.0.63" }
 commonware-runtime  = { version = "0.0.63" }
 commonware-storage = { version = "0.0.63" }
 commonware-utils  = { version = "0.0.63" }
-cosmos-sdk-proto = { version = "0.28.0", default-features = false, git = "https://github.com/permissionlessweb/cosmos-rust" }
 cosmwasm-std = { version = "3.0.1", features = ["stargate"] }
 directories = "5"
 dirs = "6.0.0"
@@ -90,6 +89,7 @@ rand_core                        = { version = "0.6.4" }
 regex = "1"
 reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
 rocksdb = "0.21"
+rpassword                        = { version = "7" }
 rs-derive = { version = "0.0.1", path = "../../proto/rs-derive" }
 schemars = "1.0.4"
 serde = { version = "1.0", features = ["derive"] }
@@ -98,6 +98,7 @@ serde_json = "1.0"
 sha2 = "0.10"
 syn = { version = "1.0.98", features = ["full", "parsing", "extra-traits"] }
 tempfile = "3.20.0"
+termion                          = { version = "3" }
 tendermint-proto = { version = "0.40.4", git = "https://github.com/permissionlessweb/tendermint-rs" }
 thiserror = "2.0.17"
 tokio = { version = "1.40", features = ["full", "process"] }

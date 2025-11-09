@@ -18,6 +18,15 @@ impl HoConfigTrait for CwHoConfig {
     type LLMConfig = CwHoLlmRouterConfig;
     type HoConfigResult = Result<()>;
 
+    fn new(home_dir: &Utf8Path) -> Self {
+        Self(HoConfig {
+            network: Some(NetworkConfig::new()),
+            identity: Some(NodeIdentity::new()),
+            storage: Some(StorageConfig::new(home_dir)),
+            llm: Some(LlmRouterConfig::new(home_dir)),
+        })
+    }
+
     fn network(&self) -> &NetworkConfig {
         self.network.as_ref().expect("network config should exist")
     }
@@ -105,15 +114,6 @@ impl HoConfigTrait for CwHoConfig {
 
     fn set_llm_config(&mut self, config: Self::LLMConfig) {
         self.0.llm = Some(config.unwrap());
-    }
-
-    fn default(home_dir: &Utf8Path) -> Self {
-        Self(HoConfig {
-            network: Some(NetworkConfig::new()),
-            identity: Some(NodeIdentity::new()),
-            storage: Some(StorageConfig::new(home_dir)),
-            llm: Some(LlmRouterConfig::default()),
-        })
     }
 
     fn file_path(&self) -> &str {

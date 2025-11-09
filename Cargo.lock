@@ -1163,19 +1163,8 @@ dependencies = [
  "informalsystems-pbjson",
  "prost 0.13.5",
  "serde",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "tonic 0.13.1",
-]
-
-[[package]]
-name = "cosmos-sdk-proto"
-version = "0.28.0"
-source = "git+https://github.com/permissionlessweb/cosmos-rust#66b0c8fcf6f8b51b364bac35fe3683c8427507bf"
-dependencies = [
- "bytes",
- "http-body-util",
- "prost 0.14.1",
- "tendermint-proto 0.40.4 (git+https://github.com/permissionlessweb/tendermint-rs)",
 ]
 
 [[package]]
@@ -1426,6 +1415,7 @@ dependencies = [
  "pprof",
  "rand 0.8.5",
  "reqwest 0.11.27",
+ "rpassword",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
@@ -2343,7 +2333,6 @@ dependencies = [
  "commonware-runtime",
  "commonware-storage",
  "commonware-utils",
- "cosmos-sdk-proto 0.28.0",
  "cosmwasm-std",
  "directories",
  "dirs",
@@ -2365,6 +2354,7 @@ dependencies = [
  "rand_core 0.6.4",
  "reqwest 0.11.27",
  "rocksdb",
+ "rpassword",
  "rs-derive",
  "schemars 1.0.4",
  "serde",
@@ -2372,7 +2362,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
- "tendermint-proto 0.40.4 (git+https://github.com/permissionlessweb/tendermint-rs)",
+ "termion",
  "thiserror 2.0.17",
  "tokio",
  "tokio-test",
@@ -2608,14 +2598,14 @@ checksum = "a650b51e384e54264b53974feb38e95e37aac70f7f2f9c07eb8022fe15eb8e20"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "cosmos-sdk-proto 0.27.0",
+ "cosmos-sdk-proto",
  "flex-error",
  "ics23 0.12.0",
  "informalsystems-pbjson",
  "prost 0.13.5",
  "serde",
  "subtle-encoding",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "tonic 0.13.1",
 ]
 
@@ -2664,7 +2654,7 @@ dependencies = [
  "sha2 0.10.9",
  "subtle-encoding",
  "tendermint",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "time",
  "tracing",
 ]
@@ -2691,7 +2681,7 @@ dependencies = [
  "sha2 0.10.9",
  "subtle-encoding",
  "tendermint",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "time",
 ]
 
@@ -2723,7 +2713,7 @@ dependencies = [
  "subtle-encoding",
  "tendermint",
  "tendermint-light-client-verifier",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "time",
  "tracing",
  "uint",
@@ -2754,7 +2744,7 @@ dependencies = [
  "sha2 0.10.9",
  "subtle-encoding",
  "tendermint",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "time",
 ]
 
@@ -2809,7 +2799,7 @@ dependencies = [
  "subtle-encoding",
  "tendermint",
  "tendermint-light-client-verifier",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "time",
  "tracing",
  "uint",
@@ -2833,7 +2823,7 @@ dependencies = [
  "serde_json",
  "subtle-encoding",
  "tendermint",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "time",
 ]
 
@@ -2851,7 +2841,7 @@ dependencies = [
  "serde_json",
  "subtle-encoding",
  "tendermint",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "time",
 ]
 
@@ -3276,9 +3266,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80df0e09cd3b6a33123fe9dc5f031772c25ef8a88afdd1129c22f6d82570edbe"
 dependencies = [
  "anyhow",
- "cosmos-sdk-proto 0.27.0",
+ "cosmos-sdk-proto",
  "ibc-proto",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "thiserror 2.0.17",
 ]
 
@@ -3315,6 +3305,17 @@ name = "libm"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
+
+[[package]]
+name = "libredox"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3af92c55d7d839293953fcd0fda5ecfe93297cfde6ffbdec13b41d99c0ba6607"
+dependencies = [
+ "bitflags 2.9.4",
+ "libc",
+ "redox_syscall 0.4.1",
+]
 
 [[package]]
 name = "libredox"
@@ -3621,6 +3622,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "numtoa"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8f8bdf33df195859076e54ab11ee78a1b208382d3a26ec40d142ffc1ecc49ef"
+
+[[package]]
 name = "object"
 version = "0.36.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3857,7 +3864,7 @@ checksum = "bc838d2a56b5b1a6c25f55575dfc605fabb63bb2365f6c2353ef9159aa69e4a5"
 dependencies = [
  "cfg-if",
  "libc",
- "redox_syscall",
+ "redox_syscall 0.5.17",
  "smallvec",
  "windows-targets 0.52.6",
 ]
@@ -4427,6 +4434,15 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4722d768eff46b75989dd134e5c353f0d6296e5aaa3132e776cbdb56be7731aa"
+dependencies = [
+ "bitflags 1.3.2",
+]
+
+[[package]]
+name = "redox_syscall"
 version = "0.5.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5407465600fb0548f1442edf71dd20683c6ed326200ace4b1ef0763521bb3b77"
@@ -4435,13 +4451,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_termios"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20145670ba436b55d91fc92d25e71160fbfbdd57831631c8d7d36377a476f1cb"
+
+[[package]]
 name = "redox_users"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
  "getrandom 0.2.16",
- "libredox",
+ "libredox 0.1.10",
  "thiserror 1.0.69",
 ]
 
@@ -4452,7 +4474,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
 dependencies = [
  "getrandom 0.2.16",
- "libredox",
+ "libredox 0.1.10",
  "thiserror 2.0.17",
 ]
 
@@ -4658,6 +4680,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpassword"
+version = "7.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66d4c8b64f049c6721ec8ccec37ddfc3d641c4a7fca57e8f2a89de509c73df39"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "rs-derive"
 version = "0.0.1"
 dependencies = [
@@ -4670,6 +4703,16 @@ dependencies = [
  "serde",
  "syn 1.0.109",
  "trybuild",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7cc970b249fbe527d6e02e0a227762c9108b2f49d81094fe357ffc6d14d7f6f"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5477,7 +5520,7 @@ dependencies = [
  "signature",
  "subtle",
  "subtle-encoding",
- "tendermint-proto 0.40.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendermint-proto",
  "time",
  "zeroize",
 ]
@@ -5511,26 +5554,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "tendermint-proto"
-version = "0.40.4"
-source = "git+https://github.com/permissionlessweb/tendermint-rs#ead63760138b7f8f130aabcabd824c621f07abd3"
-dependencies = [
- "bytes",
- "flex-error",
- "prost 0.14.1",
- "serde",
- "serde_bytes",
- "subtle-encoding",
- "time",
-]
-
-[[package]]
 name = "termcolor"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "termion"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "417813675a504dfbbf21bfde32c03e5bf9f2413999962b479023c02848c1c7a5"
+dependencies = [
+ "libc",
+ "libredox 0.0.2",
+ "numtoa",
+ "redox_termios",
 ]
 
 [[package]]
