@@ -1,14 +1,14 @@
 use crate::error::HoResult;
 use crate::llm::HoError;
-use crate::prelude::{MessageType, NetworkConfig, NetworkMessage, NetworkTopology, Response};
+use crate::prelude::{MessageType, NetworkMessage, NetworkTopology, Response};
 use crate::traits::Message as _;
 use crate::traits::{NetworkConfigTrait, NetworkMessageTrait, NetworkTopologyTrait};
 
 use crate::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
 
 impl NetworkTopologyTrait for NetworkTopology {
-    type NodeInfo = crate::types::cw_ho::types::v1::NodeInfo;
-    type Connection = crate::types::cw_ho::types::v1::Connection;
+    type NodeInfo = crate::types::cw_ho::network::v1::NodeInfo;
+    type Connection = crate::types::cw_ho::network::v1::Connection;
 
     fn nodes(&self) -> &[Self::NodeInfo] {
         &self.nodes

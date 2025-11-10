@@ -77,6 +77,8 @@
 ## TESTING
 
 - ci testing: simulated api for determinstic responses and known workflows
+- mutation testing
+- migrations: ensure new features have support for dro-in replacements
 
 ## AI
 
@@ -93,6 +95,15 @@
 ### OPENAI TOOLS
 
 ### CLAUDE TOOLS
+
+> API CALL GRANULARITY:
+>
+> - [`container`](https://docs.claude.com/en/api/messages#body-container)
+> - [`context_management`](https://docs.claude.com/en/api/messages#body-context-management).
+> - [`mcp_servers`](https://docs.claude.com/en/api/messages#body-mcp-servers)
+> - [`metadata`](https://docs.claude.com/en/api/messages#body-metadata)
+> - [`tools`](https://docs.claude.com/en/api/messages#body-tool-choice)
+
 
 - JSON EXTRACTOR,CALCULATOR,
 - TOKEN EFFECIENT TOOL USE

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package cw_ho.storage.v1;
+package hoe.storage.v1;
 
 import "google/protobuf/timestamp.proto";
 

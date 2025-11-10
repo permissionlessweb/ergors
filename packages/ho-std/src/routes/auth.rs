@@ -1,14 +1,17 @@
 //! Authentication middleware for route protection
 
 use axum::{
+    body::Body,
     extract::Request,
     http::{HeaderMap, StatusCode},
-    middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
 };
-use commonware_codec::{DecodeExt, Encode};
-use commonware_cryptography::Verifier;
-use hex::ToHex;
+use commonware_codec::DecodeExt;
+use commonware_cryptography::{blake3, Hasher, Verifier};
+use futures_util::future::BoxFuture;
+use http_body_util::BodyExt;
+use std::task::{Context, Poll};
+use tower::{Layer, Service};
 use tracing::{debug, warn};
 
 /// Authentication error types
@@ -26,6 +29,30 @@ pub enum AuthError {
     RequestExpired,
 }
 
+impl IntoResponse for AuthError {
+    fn into_response(self) -> Response {
+        use axum::http::StatusCode;
+        use serde::Serialize;
+
+        #[derive(Serialize)]
+        struct ErrorResponse {
+            error: String,
+        }
+
+        let (status, message) = match self {
+            AuthError::MissingSignature | AuthError::MissingTimestamp => {
+                (StatusCode::UNAUTHORIZED, self.to_string())
+            }
+            AuthError::InvalidSignature | AuthError::VerificationFailed => {
+                (StatusCode::FORBIDDEN, self.to_string())
+            }
+            AuthError::RequestExpired => (StatusCode::REQUEST_TIMEOUT, self.to_string()),
+        };
+
+        (status, axum::Json(ErrorResponse { error: message })).into_response()
+    }
+}
+
 impl From<AuthError> for StatusCode {
     fn from(err: AuthError) -> Self {
         match err {
@@ -34,47 +61,6 @@ impl From<AuthError> for StatusCode {
             AuthError::RequestExpired => StatusCode::REQUEST_TIMEOUT,
         }
     }
-}
-
-/// Authentication middleware that validates crypto signatures
-///
-/// Expected headers:
-/// - `x-signature`: Ed25519 signature of the request
-/// - `x-timestamp`: Unix timestamp to prevent replay attacks
-/// - `x-public-key`: Public key for signature verification
-///
-/// # Example
-/// ```rust
-/// use axum::{middleware, Router};
-/// use ho_std::routes::auth::auth_middleware;
-///
-/// let protected_router = Router::new()
-///     .route("/protected", get(handler))
-///     .layer(middleware::from_fn(auth_middleware));
-/// ```
-pub async fn auth_middleware(mut request: Request, next: Next) -> Result<Response, StatusCode> {
-    let headers = request.headers();
-
-    // Extract required headers
-    let signature =
-        extract_header(headers, "x-signature").map_err(|_| AuthError::MissingSignature)?;
-
-    let timestamp =
-        extract_header(headers, "x-timestamp").map_err(|_| AuthError::MissingTimestamp)?;
-
-    let public_key =
-        extract_header(headers, "x-public-key").map_err(|_| AuthError::MissingSignature)?;
-
-    debug!("Validating request signature for timestamp: {}", timestamp);
-
-    // Validate timestamp (prevent replay attacks)
-    validate_timestamp(&timestamp)?;
-
-    // Validate signature
-    validate_crypto_signature(&signature, &timestamp, &public_key, &request).await?;
-
-    debug!("Request signature validated successfully");
-    Ok(next.run(request).await)
 }
 
 /// Extract header value as string
@@ -116,81 +102,130 @@ fn validate_timestamp(timestamp_str: &str) -> Result<(), AuthError> {
     Ok(())
 }
 
-/// Validate crypto signature using Ed25519
-async fn validate_crypto_signature(
+/// Custom Tower layer for authentication
+#[derive(Clone)]
+pub struct AuthLayer;
+
+impl<S> Layer<S> for AuthLayer {
+    type Service = AuthMiddleware<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        AuthMiddleware { inner }
+    }
+}
+
+/// Auth middleware service
+#[derive(Clone)]
+pub struct AuthMiddleware<S> {
+    inner: S,
+}
+
+impl<S> Service<Request> for AuthMiddleware<S>
+where
+    S: Service<Request, Response = Response> + Send + Clone + 'static,
+    S::Future: Send + 'static,
+{
+    type Response = Response;
+    type Error = S::Error;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: Request) -> Self::Future {
+        // Move the inner service into the future
+        let mut inner = self.inner.clone();
+
+        Box::pin(async move {
+            // Extract headers
+            let headers = request.headers().clone();
+
+            let signature = match extract_header(&headers, "x-signature") {
+                Ok(sig) => sig,
+                Err(_) => return Ok(AuthError::MissingSignature.into_response()),
+            };
+
+            let timestamp = match extract_header(&headers, "x-timestamp") {
+                Ok(ts) => ts,
+                Err(_) => return Ok(AuthError::MissingTimestamp.into_response()),
+            };
+
+            let public_key = match extract_header(&headers, "x-public-key") {
+                Ok(pk) => pk,
+                Err(_) => return Ok(AuthError::MissingSignature.into_response()),
+            };
+
+            // Validate timestamp
+            debug!("Validating request signature for timestamp: {}", timestamp);
+            if let Err(e) = validate_timestamp(&timestamp) {
+                return Ok(e.into_response());
+            }
+
+            // Collect body to include in signature validation
+            let (parts, body) = request.into_parts();
+            let body_bytes = match body.collect().await {
+                Ok(collected) => collected.to_bytes(),
+                Err(_) => return Ok(AuthError::InvalidSignature.into_response()),
+            };
+
+            // Validate signature with body contents
+            if let Err(e) = validate_crypto_signature_with_body(
+                &signature,
+                &timestamp,
+                &public_key,
+                &body_bytes,
+            ) {
+                return Ok(e.into_response());
+            }
+
+            debug!("Request signature validated successfully");
+
+            // Reconstruct request with body for inner service
+            let request = Request::from_parts(parts, Body::from(body_bytes));
+
+            // Call inner service with validated request
+            inner.call(request).await
+        })
+    }
+}
+
+/// Validate crypto signature with body contents included
+fn validate_crypto_signature_with_body(
     signature_hex: &str,
     timestamp: &str,
     public_key_hex: &str,
-    request: &Request,
+    body_bytes: &[u8],
 ) -> Result<(), AuthError> {
     use commonware_cryptography::ed25519::{PublicKey, Signature};
 
     // Parse signature from hex
-    let signature_bytes = hex::decode(signature_hex).map_err(|_| AuthError::InvalidSignature)?;
-
-    let signature =
-        Signature::decode(signature_bytes.as_slice()).map_err(|_| AuthError::InvalidSignature)?;
+    let signature = Signature::decode(
+        hex::decode(signature_hex)
+            .map_err(|_| AuthError::InvalidSignature)?
+            .as_slice(),
+    )
+    .map_err(|_| AuthError::InvalidSignature)?;
 
     // Parse public key from hex
-    let public_key_bytes = hex::decode(public_key_hex).map_err(|_| AuthError::InvalidSignature)?;
+    let public_key = PublicKey::decode(
+        hex::decode(public_key_hex)
+            .map_err(|_| AuthError::InvalidSignature)?
+            .as_slice(),
+    )
+    .map_err(|_| AuthError::InvalidSignature)?;
 
-    let public_key =
-        PublicKey::decode(public_key_bytes.as_slice()).map_err(|_| AuthError::InvalidSignature)?;
-
-    // Create message to verify (method + path + timestamp)
-    let method = request.method().as_str();
-    let path = request.uri().path();
-    let message = format!("{}:{}:{}", method, path, timestamp);
+    // Create message to verify: H(body||timestamp)
+    let mut contents = Vec::new();
+    contents.extend_from_slice(body_bytes);
+    contents.extend_from_slice(timestamp.as_bytes());
+    let message = blake3::Blake3::hash(&contents);
 
     // Verify signature
-    if public_key.verify(None, message.as_bytes(), &signature) {
+    if public_key.verify(None, &message, &signature) {
         Ok(())
     } else {
-        warn!("Signature verification failed for message: {}", message);
+        warn!("Signature verification failed");
         Err(AuthError::VerificationFailed)
     }
-}
-
-/// Configuration for authentication behavior
-#[derive(Debug, Clone)]
-pub struct AuthConfig {
-    /// Maximum age of requests in seconds
-    pub max_request_age: u64,
-    /// Whether to require authentication (can be disabled for development)
-    pub require_auth: bool,
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        Self {
-            max_request_age: 300, // 5 minutes
-            require_auth: true,
-        }
-    }
-}
-
-/// Configurable auth middleware that accepts custom settings
-pub async fn auth_middleware_with_config(
-    config: AuthConfig,
-    request: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    if !config.require_auth {
-        return Ok(next.run(request).await);
-    }
-
-    auth_middleware(request, next).await
-}
-
-/// Simple auth middleware that can be disabled for development
-pub async fn optional_auth_middleware(
-    request: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    // Check if auth is disabled via environment variable
-    if std::env::var("DISABLE_AUTH").is_ok() {
-        return Ok(next.run(request).await);
-    }
-
-    auth_middleware(request, next).await
 }

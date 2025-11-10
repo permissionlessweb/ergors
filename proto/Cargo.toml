@@ -11,6 +11,7 @@ publish = false
 
 
 [dependencies]
+anyhow = { workspace = true }
 heck = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
@@ -25,10 +26,11 @@ schemars = { workspace = true }
 syn = { workspace = true }
 tonic = { workspace = true }
 walkdir = { workspace = true }
-
-[build-dependencies]
 prost-build = "0.14.1"
-tonic-build = "0.14.1"
+tonic-build = { version = "0.14.1" }
+tonic-prost-build = { version = "0.14.1" }
+pbjson-build = "0.7.0"
+pbjson-types = "0.7.0"
 
 [lib]
 name = "cw_hoe_proto"

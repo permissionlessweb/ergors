@@ -45,10 +45,6 @@ impl CwHoNetworkManifold {
     ) -> Self {
         // Validate config
         // config.validate().map_err(|e| CommonwareNetworkError::P2P(e))?;
-        println!(
-            "new identity: public_key_bytes - {:#?}",
-            identity.private_key
-        );
         if identity.private_key.is_none() {
             panic!("{}", CommonwareNetworkError::NodePrivKeyNotFound)
         }
@@ -111,10 +107,6 @@ impl CwHoNetworkManifold {
         // Create commonware config using the signer from private key
         // First convert Vec<u8> to PrivateKey
         let private_key_bytes: &[u8] = private_key.as_slice();
-        println!(
-            "start network manifold first: public_key_bytes - {:#?}",
-            private_key_bytes
-        );
         let ed25519_private_key = ed25519::PrivateKey::decode(private_key_bytes)
             .map_err(|_| CommonwareNetworkError::NodePrivKeyNotFound)?;
         let public_key = ed25519_private_key.public_key();

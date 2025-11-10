@@ -1,5 +1,6 @@
 use ho_std::{
     prelude::*,
+    routes::AuthLayer,
     traits::{HoConfigTrait, NodeIdentityTrait},
     transports::ssh::SSHConnectionManager,
 };
@@ -7,7 +8,7 @@ use ho_std::{
 use crate::{error::*, AppState, CwHoConfig, CwHoNetworkManifold, CwHoStorage, LlmRouter};
 use axum::{
     extract::{Query, State},
-    response::Json,
+    Json, Router,
 };
 use commonware_runtime::tokio::Context;
 use std::{ops::Deref, sync::Arc, time::Instant};
@@ -48,32 +49,33 @@ impl Server {
     }
 
     pub async fn run(self, port: u16) -> Result<()> {
-        // Use the new route structure from ho-std
-        let app = ho_std::create_routes! {
-            public: {
-                health => handle_health,
-            },
-            protected: {
-                api_prompts => handle_query,
-                orchestrate_bootstrap => handle_bootstrap,
-                api_prompt => handle_prompt,
-                orchestrate_fractal => handle_fractal_hoe_creation,
-                orchestrate_prune => handle_prune,
-                network_topology => handle_network_topology,
-            }
-        }
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(self.state);
-
-        let addr = format!("{}:{}", "0.0.0.0", port);
+        // Use the new generic route structure from ho-std
+        let (public_router, protected_router) = ho_std::define_routes! {
+            public_routes: [
+                { path: "/health", method: get, handler: handle_health },
+            ],
+            protected_routes: [
+                { path: "/api/prompts", method: get, handler: handle_query },
+                { path: "/orchestrate/bootstrap", method: post, handler: handle_bootstrap },
+                { path: "/api/prompt", method: post, handler: handle_prompt },
+                { path: "/orchestrate/fractal", method: post, handler: handle_fractal_hoe_creation },
+                { path: "/orchestrate/prune", method: post, handler: handle_prune },
+                { path: "/network/topology", method: get, handler: handle_network_topology },
+            ]
+        };
+        let addr = format!("{}:{}", self.state.config.network().listen_address, port);
+        axum::serve(
+            TcpListener::bind(&addr).await?,
+            Router::new()
+                .merge(public_router)
+                .merge(protected_router.route_layer(AuthLayer))
+                .layer(CorsLayer::permissive())
+                .layer(TraceLayer::new_for_http())
+                .with_state(self.state),
+        )
+        .await
+        .map_err(|e| CwHoError::Config(format!("Server error: {}", e)))?;
         info!("🌐 Server listening on {}", addr);
-
-        let listener = TcpListener::bind(&addr).await?;
-        axum::serve(listener, app)
-            .await
-            .map_err(|e| CwHoError::Config(format!("Server error: {}", e)))?;
-
         Ok(())
     }
 }
@@ -237,6 +239,9 @@ async fn handle_query(
             Json(error_json(&format!("Query failed: {}", e), "QUERY_ERROR"))
         }
     }
+}
+async fn handle_auth(State(state): State<AppState>) -> Json<()> {
+    Json(())
 }
 
 async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse> {

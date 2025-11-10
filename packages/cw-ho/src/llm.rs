@@ -1,9 +1,14 @@
 use crate::error::{CwHoError, Result};
 use crate::LlmRouter;
+use chrono::DateTime;
+use commonware_cryptography::{blake3, Hasher};
 use ho_std::constants::*;
+use ho_std::llm::CostCalculator;
 use ho_std::orchestrate::*;
+use ho_std::traits::MessageExt;
+use pbjson_types::Timestamp;
 use reqwest::Client;
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tracing::{error, warn};
 
 #[derive(Debug, Clone)]
@@ -16,7 +21,6 @@ pub struct ApiKeys {
     pub qwen: Option<String>,
     pub venice: Option<String>,
 }
-
 
 impl LlmRouter {
     pub async fn new(config: &LlmRouterConfig) -> Result<Self> {
@@ -141,13 +145,19 @@ impl LlmRouter {
             .await?;
 
         if response.status().is_success() {
-            let openai_response: OpenAiResponse = response.json().await?;
+            let timestap: Timestamp = DateTime::parse_from_rfc2822(
+                response.headers().get("date").unwrap().to_str().unwrap(),
+            )
+            .unwrap()
+            .to_utc()
+            .into();
 
-            let content = openai_response
+            let openai_response: OpenAiResponse = response.json().await?;
+            let content: Vec<String> = openai_response
                 .choices
-                .first()
-                .map(|c| c.message.clone().expect("should have msgs").content.clone())
-                .unwrap_or_else(|| "No response".to_string());
+                .iter()
+                .map(|c| c.message.clone().expect("should have msgs").content)
+                .collect();
 
             let usage = openai_response.usage.unwrap_or(OpenAiUsage {
                 prompt_tokens: 0,
@@ -162,13 +172,18 @@ impl LlmRouter {
                     total: usage.total_tokens,
                 }),
                 model: req.model.to_string(),
-                prompt: "".into(), //TODO: create idenifiable prompt hash
+                prompt: blake3::Blake3::hash(&req.to_bytes().unwrap()).to_string(),
                 response: content.clone(),
-                timestamp: todo!(),
-                cost: todo!(),
-                latency_ms: todo!(),
-                id: todo!(),
-                provider: todo!(),
+                timestamp: Some(timestap),
+                cost: Some(CostCalculator::calculate_cost(
+                    &"akash",
+                    &req.model,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                )),
+                latency_ms: None,
+                id: vec![],
+                provider: req.model.clone(),
             })
         } else {
             let error_text = response.text().await?;
@@ -278,7 +293,7 @@ impl LlmRouter {
             "model": req.model,
             "max_tokens": req.llm_config.clone().expect("hah").max_tokens,
             "messages": messages,
-            "temperature":  req.llm_config.clone().expect("hah").temperature,
+            "temperature":  req.llm_config.clone().expect("huh").temperature,
         });
 
         if let Some(system) = system_opt {
@@ -287,7 +302,7 @@ impl LlmRouter {
 
         let response = self
             .client
-            .post("https://api.anthropic.com/v1/messages")
+            .post(ANTHROPIC_MESSAGE_URL)
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
             .header("Content-Type", "application/json")

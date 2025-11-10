@@ -59,7 +59,12 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
 
         table.insert(
             "node_type".to_string(),
-            toml::Value::String(self.node_type.clone()),
+            toml::Value::String(
+                NodeType::try_from(self.node_type)
+                    .unwrap()
+                    .as_str_name()
+                    .into(),
+            ),
         );
         table.insert(
             "listen_port".to_string(),
@@ -82,7 +87,7 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
 
     fn new() -> Self {
         Self {
-            node_type: NodeType::Executor.as_str_name().into(),
+            node_type: NodeType::Executor.into(),
             bootstrap_peers: Default::default(),
             known_peers: Default::default(),
             listen_port: 69699,

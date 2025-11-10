@@ -1,73 +1,14 @@
+use crate::prelude::*;
+use crate::traits::LlmModelTrait;
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
-use serde::{Deserialize, Serialize};
+
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::path::Path;
 use termion::event::{Event, Key, MouseButton, MouseEvent};
 use termion::input::{MouseTerminal, TermRead};
 use termion::raw::IntoRawMode;
 use termion::{clear, color, cursor, style};
-
-use crate::orchestrate::ModelSelectionStrategy;
-use crate::prelude::{LlmEntity, LlmModel};
-use crate::traits::LlmModelTrait;
-
-/// JSON structure for the api-keys.json file
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiKeysJson {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _metadata: Option<ApiKeysMetadata>,
-    pub providers: HashMap<String, ProviderWithAuth>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub global_settings: Option<GlobalSettings>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub instructions: Option<Instructions>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiKeysMetadata {
-    pub version: String,
-    pub description: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub golden_ratio_note: Option<String>,
-}
-
-/// Provider configuration with authentication
-/// Combines LlmEntity (standard type) with api_key and prompt defaults
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderWithAuth {
-    /// API key for authentication (can use ${ENV_VAR} syntax)
-    pub api_key: Option<String>,
-    /// Standard LLM entity configuration (name, base_url, models, etc.)
-    #[serde(flatten)]
-    pub entity: LlmEntity,
-    /// Default prompt configuration
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prompt_defaults: Option<PromptDefaults>,
-}
-
-/// Default prompt parameters for a provider
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PromptDefaults {
-    pub temperature: f32,
-    pub max_tokens: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GlobalSettings {
-    pub default_timeout_seconds: u32,
-    pub max_retry_attempts: u32,
-    pub golden_ratio_weighting: bool,
-    pub fallback_enabled: bool,
-    pub health_check_interval_seconds: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Instructions {
-    pub setup: Vec<String>,
-    pub security: Vec<String>,
-}
 
 impl ApiKeysJson {
     /// Create a new default configuration with ollama_local enabled
@@ -80,16 +21,12 @@ impl ApiKeysJson {
             "ollama_local".to_string(),
             ProviderWithAuth {
                 api_key: None,
-                entity: ollama.default_entity(),
-                prompt_defaults: Some(PromptDefaults {
-                    temperature: 0.7,
-                    max_tokens: 4096,
-                }),
+                entity: Some(ollama.default_entity()),
             },
         );
 
         Self {
-            _metadata: Some(ApiKeysMetadata {
+            metadata: Some(ApiKeysMetadata {
                 version: "2.0.0".to_string(),
                 description: "CW-HO Node API Keys - Configure your LLM providers".to_string(),
                 golden_ratio_note: Some(
@@ -225,7 +162,13 @@ pub fn configure_api_keys_interactive(api_keys_path: &Utf8PathBuf) -> Result<()>
     let mut stdout = MouseTerminal::from(io::stdout().into_raw_mode()?);
 
     // Clear screen and hide cursor
-    write!(stdout, "{}{}{}", clear::All, cursor::Goto(1, 1), cursor::Hide)?;
+    write!(
+        stdout,
+        "{}{}{}",
+        clear::All,
+        cursor::Goto(1, 1),
+        cursor::Hide
+    )?;
     stdout.flush()?;
 
     // All available providers
@@ -243,7 +186,7 @@ pub fn configure_api_keys_interactive(api_keys_path: &Utf8PathBuf) -> Result<()>
     for provider in &mut all_providers {
         let key = get_provider_key(provider.model);
         if let Some(cfg) = config.providers.get(key) {
-            provider.selected = cfg.entity.enabled;
+            provider.selected = cfg.entity.clone().expect("dange").enabled;
         }
     }
 
@@ -390,7 +333,13 @@ pub fn configure_api_keys_interactive(api_keys_path: &Utf8PathBuf) -> Result<()>
     }
 
     // Cleanup
-    write!(stdout, "{}{}{}", clear::All, cursor::Goto(1, 1), cursor::Show)?;
+    write!(
+        stdout,
+        "{}{}{}",
+        clear::All,
+        cursor::Goto(1, 1),
+        cursor::Show
+    )?;
     stdout.flush()?;
 
     Ok(())
@@ -551,7 +500,12 @@ fn draw_configure_provider<W: Write>(
         style::Reset,
         default_model
     )?;
-    write!(stdout, "\r\n{}Available models:{}\r\n", style::Bold, style::Reset)?;
+    write!(
+        stdout,
+        "\r\n{}Available models:{}\r\n",
+        style::Bold,
+        style::Reset
+    )?;
     for model in models.iter().take(5) {
         write!(stdout, "  • {}\r\n", model)?;
     }
@@ -566,12 +520,7 @@ fn draw_configure_provider<W: Write>(
     }
 
     write!(stdout, "\r\n")?;
-    write!(
-        stdout,
-        "{}Configuration:{}\r\n",
-        style::Bold,
-        style::Reset
-    )?;
+    write!(stdout, "{}Configuration:{}\r\n", style::Bold, style::Reset)?;
     write!(stdout, "  • Temperature: 0.7\r\n")?;
     write!(stdout, "  • Max Tokens: 4096\r\n")?;
     write!(stdout, "  • Timeout: 60s\r\n")?;
@@ -674,7 +623,7 @@ fn save_configuration(config: &mut ApiKeysJson, providers: &[ProviderMenuItem]) 
             // Disable non-selected providers
             let key = get_provider_key(provider.model);
             if let Some(cfg) = config.providers.get_mut(key) {
-                cfg.entity.enabled = false;
+                cfg.entity.clone().unwrap().enabled = false;
             }
             continue;
         }
@@ -690,11 +639,7 @@ fn save_configuration(config: &mut ApiKeysJson, providers: &[ProviderMenuItem]) 
 
         let provider_config = ProviderWithAuth {
             api_key,
-            entity: provider.model.default_entity(),
-            prompt_defaults: Some(PromptDefaults {
-                temperature: 0.7,
-                max_tokens: 4096,
-            }),
+            entity: Some(provider.model.default_entity()),
         };
 
         config.providers.insert(key.to_string(), provider_config);

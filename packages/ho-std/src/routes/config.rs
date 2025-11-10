@@ -1,198 +1,156 @@
 //! Route configuration and definitions
+//!
+//! This module provides a type-safe way to define routes using proto-generated types
+//! following the type/value tuple pattern for standardized transport layer communication.
 
-/// Represents a single API route with metadata
+use core::any::Any;
+
+use prost::Name;
+
+use crate::prelude::*;
+
+/// Generic route definition using proto types
+/// This follows the type/value pattern where request/response types are proto messages
 #[derive(Debug, Clone)]
-pub struct Route {
-    pub path: &'static str,
-    pub name: &'static str,
-    pub method: &'static str,
+pub struct RouteDefinition {
+    pub requires_auth: bool,
+    pub request_type: String,  // Proto type URL
+    pub response_type: String, // Proto type URL
 }
 
-/// All available routes in the CW-HO API
-pub mod routes {
-    use super::Route;
+/// Registry of all available routes
+pub struct RouteRegistry {
+    routes: Vec<RouteDefinition>,
+}
 
-    // Public routes (no authentication required)
-    pub mod public {
-        use super::Route;
-
-        pub const HEALTH: Route = Route {
-            path: "/health",
-            name: "health",
-            method: "GET",
-        };
+impl RouteRegistry {
+    pub fn new() -> Self {
+        Self {
+            routes: Self::default_routes(),
+        }
     }
 
-    // Protected routes (authentication required)
-    pub mod protected {
-        use super::Route;
+    pub fn routes(&self) -> &[RouteDefinition] {
+        &self.routes
+    }
 
-        pub const API_PROMPTS: Route = Route {
-            path: "/api/prompts",
-            name: "query",
-            method: "GET",
-        };
-
-        pub const ORCHESTRATE_BOOTSTRAP: Route = Route {
-            path: "/orchestrate/bootstrap",
-            name: "bootstrap",
-            method: "POST",
-        };
-
-        pub const API_PROMPT: Route = Route {
-            path: "/api/prompt",
-            name: "prompt",
-            method: "POST",
-        };
-
-        pub const ORCHESTRATE_FRACTAL: Route = Route {
-            path: "/orchestrate/fractal",
-            name: "fractal_creation",
-            method: "POST",
-        };
-
-        pub const ORCHESTRATE_PRUNE: Route = Route {
-            path: "/orchestrate/prune",
-            name: "prune",
-            method: "POST",
-        };
-
-        pub const NETWORK_TOPOLOGY: Route = Route {
-            path: "/network/topology",
-            name: "network_topology",
-            method: "GET",
-        };
+    /// Default routes for the CW-HO system
+    fn default_routes() -> Vec<RouteDefinition> {
+        vec![
+            // Public routes
+            RouteDefinition {
+                requires_auth: false,
+                request_type: HealthRequest::type_url(),
+                response_type: HealthResponse::type_url(),
+            },
+            // Protected routes
+            RouteDefinition {
+                requires_auth: true,
+                request_type: QueryPromptsRequest::type_url(),
+                response_type: QueryPromptsResponse::type_url(),
+            },
+            RouteDefinition {
+                requires_auth: true,
+                request_type: PromptRequest::type_url(),
+                response_type: PromptResponse::type_url(),
+            },
+            RouteDefinition {
+                requires_auth: true,
+                request_type: BootstrapNodeRequest::type_url(),
+                response_type: BootstrapNodeResponse::type_url(),
+            },
+            RouteDefinition {
+                requires_auth: true,
+                request_type: CreateFractalRequest::type_url(),
+                response_type: CreateFractalResponse::type_url(),
+            },
+            RouteDefinition {
+                requires_auth: true,
+                request_type: PruneNodeRequest::type_url(),
+                response_type: PruneNodeResponse::type_url(),
+            },
+            RouteDefinition {
+                requires_auth: true,
+                request_type: GetTopologyRequest::type_url(),
+                response_type: GetTopologyResponse::type_url(),
+            },
+        ]
     }
 }
 
-/// Configure routes with nested router pattern for authentication
+impl Default for RouteRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Generic macro to create routes with custom handlers
 ///
-/// This function creates a router with two sections:
-/// - Public routes: No authentication required
-/// - Protected routes: Authentication middleware applied
+/// This macro allows you to define routes with complete flexibility:
+/// - No hardcoded route names or paths
+/// - Routes explicitly separated into public and protected
+/// - Returns tuple of (public_router, protected_router) for external auth layer application
 ///
 /// # Example
 /// ```rust
-/// use ho_std::routes::configure_routes;
-/// use axum::{Router, routing::{get, post}};
+/// use ho_std::define_routes;
+/// use axum::middleware;
 ///
-/// let app = configure_routes(Router::new())
-///     .layer(cors_layer)
-///     .with_state(app_state);
-/// ```
-/// Configure routes without authentication (for development or when auth is handled elsewhere)
-pub fn configure_routes_no_auth<S>() -> axum::Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
-    use axum::routing::{get, post};
-
-    axum::Router::new()
-        // Public routes
-        .route(
-            routes::public::HEALTH.path,
-            get(|| async { "Health endpoint - implement in your crate" }),
-        )
-        // Protected routes (without auth middleware for development)
-        .route(
-            routes::protected::API_PROMPTS.path,
-            get(|| async { "Query endpoint - implement in your crate" }),
-        )
-        .route(
-            routes::protected::ORCHESTRATE_BOOTSTRAP.path,
-            post(|| async { "Bootstrap endpoint - implement in your crate" }),
-        )
-        .route(
-            routes::protected::API_PROMPT.path,
-            post(|| async { "Prompt endpoint - implement in your crate" }),
-        )
-        .route(
-            routes::protected::ORCHESTRATE_FRACTAL.path,
-            post(|| async { "Fractal endpoint - implement in your crate" }),
-        )
-        .route(
-            routes::protected::ORCHESTRATE_PRUNE.path,
-            post(|| async { "Prune endpoint - implement in your crate" }),
-        )
-        .route(
-            routes::protected::NETWORK_TOPOLOGY.path,
-            get(|| async { "Topology endpoint - implement in your crate" }),
-        )
-}
-
-/// Configure routes with authentication (production use)
-/// Note: This is a template - you'll need to implement your own middleware
-pub fn configure_routes_with_auth<S>() -> axum::Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
-    // For now, just return the no-auth version
-    // Users can add their own middleware after calling this function
-    configure_routes_no_auth()
-}
-
-/// Default route configuration (no auth for development ease)
-pub fn configure_routes<S>() -> axum::Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
-    configure_routes_no_auth()
-}
-
-/// Helper macro to create routes with custom handlers
-///
-/// # Example
-/// ```rust
-/// use ho_std::create_routes;
-///
-/// let app = create_routes! {
-///     public: {
-///         health => handle_health,
-///     },
-///     protected: {
-///         api_prompts => handle_query,
-///         orchestrate_bootstrap => handle_bootstrap,
-///         api_prompt => handle_prompt,
-///         orchestrate_fractal => handle_fractal_hoe_creation,
-///         orchestrate_prune => handle_prune,
-///         network_topology => handle_network_topology,
-///     }
+/// let (public_router, protected_router) = define_routes! {
+///     public_routes: [
+///         { path: "/health", method: get, handler: handle_health },
+///     ],
+///     protected_routes: [
+///         { path: "/api/prompts", method: get, handler: handle_query },
+///         { path: "/orchestrate/bootstrap", method: post, handler: handle_bootstrap },
+///         { path: "/api/prompt", method: post, handler: handle_prompt },
+///         { path: "/orchestrate/fractal", method: post, handler: handle_fractal },
+///         { path: "/orchestrate/prune", method: post, handler: handle_prune },
+///         { path: "/network/topology", method: get, handler: handle_topology },
+///     ]
 /// };
+///
+/// let auth_layer = middleware::from_fn(auth_middleware);
+/// let app = Router::new()
+///     .merge(public_router)
+///     .merge(protected_router.layer(auth_layer));
 /// ```
 #[macro_export]
-macro_rules! create_routes {
+macro_rules! define_routes {
     (
-        public: {
-            $($pub_route:ident => $pub_handler:expr),* $(,)?
-        },
-        protected: {
-            $($prot_route:ident => $prot_handler:expr),* $(,)?
-        } $(,)?
+        public_routes: [
+            $(
+                { path: $pub_path:expr, method: $pub_method:ident, handler: $pub_handler:expr }
+            ),* $(,)?
+        ],
+        protected_routes: [
+            $(
+                { path: $prot_path:expr, method: $prot_method:ident, handler: $prot_handler:expr }
+            ),* $(,)?
+        ]
     ) => {{
-        use axum::{routing::{get, post}, middleware, Router};
-        use $crate::routes::routes::{public, protected};
+        use axum::{routing::{get, post, put, delete, patch}, Router};
 
+        // Build public routes
         let public_router = Router::new()
-            $(.route(public::HEALTH.path, get($pub_handler)))*;
+            $(.route($pub_path, $pub_method($pub_handler)))*;
 
+        // Build protected routes (no layer applied)
         let protected_router = Router::new()
-            $(.route(match stringify!($prot_route) {
-                "api_prompts" => protected::API_PROMPTS.path,
-                "orchestrate_bootstrap" => protected::ORCHESTRATE_BOOTSTRAP.path,
-                "api_prompt" => protected::API_PROMPT.path,
-                "orchestrate_fractal" => protected::ORCHESTRATE_FRACTAL.path,
-                "orchestrate_prune" => protected::ORCHESTRATE_PRUNE.path,
-                "network_topology" => protected::NETWORK_TOPOLOGY.path,
-                _ => panic!("Unknown route: {}", stringify!($prot_route)),
-            }, match stringify!($prot_route) {
-                "api_prompts" | "network_topology" => get($prot_handler),
-                _ => post($prot_handler),
-            }))*
-            // Auth middleware can be added separately by the user
-            ;
+            $(.route($prot_path, $prot_method($prot_handler)))*;
+
+        (public_router, protected_router)
+    }};
+    (
+        routes: [
+            $(
+                { path: $path:expr, method: $method:ident, handler: $handler:expr }
+            ),* $(,)?
+        ]
+    ) => {{
+        use axum::{routing::{get, post, put, delete, patch}, Router};
 
         Router::new()
-            .merge(public_router)
-            .merge(protected_router)
+            $(.route($path, $method($handler)))*
     }};
 }

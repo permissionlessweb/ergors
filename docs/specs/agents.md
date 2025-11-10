@@ -1,30 +1,27 @@
- 
+
 # Agentic Workflow Specification for CW-HO
 
 ## Overview
 
-CW-HO (Life Creativity Engine) is a distributed multi-LLM agent orchestration platform designed to streamline creative workflows through intelligent automation. A key component of CW-HO is its agentic workflow system, which enables the coordination of multiple AI agents across a peer-to-peer (P2P) network to achieve complex, asynchronous, and long-running tasks. This specification outlines the structure, implementation, and management of agentic workflows within the CW-HO ecosystem, reflecting the recursive nature of the project where the system itself serves as the development environment, API, and product.
+CW-HO (Life Creativity Engine) is a distributed multi-LLM agent orchestration platform designed to streamline creative workflows through intelligent automation. A key component of CW-HO is its agentic workflow system, which enables the recursive coordination of multiple AI agents across a peer-to-peer (P2P) network to achieve complex, asynchronous, and long-running tasks.
+
+ This specification outlines the structure, implementation, and management of agentic workflows within the CW-HO ecosystem, reflecting the recursive nature of the project where the system itself serves as the development environment, API, and product.
 
 ## Core Principles of Agentic Workflows
 
 1. **Recursive Design**: Agentic workflows in CW-HO are built on a recursive model where each task or sub-task inherits the same API contract as its parent, mirroring fractal self-similarity. This allows for seamless nesting of workflows and tasks, enabling complex operations to be broken down into manageable, reusable components.
-   
+
 2. **Distributed Orchestration**: Agents operate across a decentralized network of nodes, each with specific roles (Development, Execution, Coordinator, Referee). The central orchestrator binary, implemented in Rust, manages task distribution, state synchronization, and workflow execution across these nodes using Commonware for P2P networking.
 
 3. **Deterministic State Management**: Using Cnidarium, CW-HO ensures that agent workflows are reproducible and auditable. State snapshots are created and shared across nodes, reducing storage overhead and enabling recovery or rollback during long-running tasks.
 
 4. **Sandloop Intelligence**: Agentic workflows incorporate a Möbius-strip-like feedback loop called "Sandloop." This continuous iteration mechanism allows agents to refine outputs by feeding results back into the input, ensuring seamless improvement without divergent states.
 
-5. **Multi-LLM Collaboration**: Workflows leverage multiple large language models (LLMs) such as Qwen Coder, Claude Coder, OpenAI Code, and Grok, each with specialized roles. The orchestrator routes tasks to the most suitable LLM based on the task requirements and uses meta-prompts to generate tailored prompts for agent interactions.
+5. **Multi-LLM Collaboration**: Workflows leverage multiple large language models (LLMs) each with specialized roles. The orchestrator routes tasks to the most suitable LLM based on the task requirements and uses meta-prompts to generate tailored prompts for agent interactions.
 
 ## Agent Types and Roles
 
 CW-HO defines several agent types, each with distinct roles within the workflow:
-
-- **AkashChat**: Focuses on initial prompt generation and task analysis. It is shared across nodes and generates meta-prompts for downstream models.
-- **Kimi-Research/Dev**: Handles technical implementation, issue resolution, workflow generation, and debugging tasks.
-- **Grok**: Performs final validation, optimization, and creative enhancement of outputs.
-- **Fallback Agents**: Local Ollama instances provide offline capability, while specialized models cater to domain-specific tasks (e.g., Rust testing, Python testing).
 
 Agents are managed by the central orchestrator, which assigns tasks based on agent capabilities and network state, ensuring efficient resource utilization.
 

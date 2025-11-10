@@ -1,7 +1,7 @@
 use anyhow::Result;
 use camino::Utf8Path;
 use ho_std::config::api_keys::configure_api_keys_interactive;
-use ho_std::constants::LLM_API_KEYS_FILE;
+use ho_std::constants::{ENV_VARIABLES_FILE, LLM_API_KEYS_FILE};
 use ho_std::traits::HoConfigTrait;
 use std::io::{IsTerminal, Read};
 
@@ -25,6 +25,9 @@ pub enum InitTopSubCmd {
     // configure
     #[clap(display_order = 900)]
     UnsafeWipe {},
+    // used for migrating from major versions if applicable
+    #[clap(display_order = 1000)]
+    Migrate {},
 }
 
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -49,7 +52,7 @@ pub enum SoftKmsInitCmd {
 }
 
 // Reusable function for prompting interactively for key material.
-fn prompt_for_password(msg: &str) -> Result<String> {
+fn _prompt_for_password(msg: &str) -> Result<String> {
     let mut password = String::new();
     // The `rpassword` crate doesn't support reading from stdin, so we check
     // for an interactive session. We must support non-interactive use cases,
@@ -71,23 +74,28 @@ impl InitCmd {
     pub fn init(&self, home_dir: &Utf8Path) -> Result<()> {
         let config_path = home_dir.join(ho_std::constants::CONFIG_FILE_NAME);
         let config = match self.subcmd.clone() {
-            InitTopSubCmd::New {} => CwHoConfig::new(home_dir),
+            InitTopSubCmd::New {} => {
+                let config = CwHoConfig::new(home_dir);
+                // generate env file in home dir as well
+                let env_file_path = home_dir.join(ENV_VARIABLES_FILE);
+                config
+            }
             InitTopSubCmd::LlmApiKeys {} => {
-                let config = CwHoConfig::load(&config_path)?;
-
                 // Run interactive API keys configuration
                 let api_keys_path = home_dir.join(LLM_API_KEYS_FILE);
                 configure_api_keys_interactive(&api_keys_path)?;
-
                 println!("\n✅ API keys configured successfully!");
                 println!("   File: {}", api_keys_path);
                 println!("   Remember to add this file to .gitignore!");
-
-                config
+                CwHoConfig::load(&config_path)?
             }
             InitTopSubCmd::UnsafeWipe {} => {
                 let config = CwHoConfig::load(&config_path)?;
                 config
+            }
+            InitTopSubCmd::Migrate {} => {
+                // TODO: implement interface for modular migrations
+                CwHoConfig::load(&config_path)?
             }
         };
 

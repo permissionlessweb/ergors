@@ -78,6 +78,14 @@ The first feature of this rust binary is a an network node for our agent develop
 4. Lifecycle Mgmt: Guide iterative dev from concept to ops.
 5. Design Definition: Optimize architectures via trades for goal-oriented behavior.
 
+## Packages
+
+| Package | Default | Description |
+|----------|---------|-------------|
+| Cw-Hoe | Main Node Engine ||
+| Ho-Std | Standard Library ||
+| Ergors-Proto (Derive) | Proto Definitions & Derive Macros ||
+
 ## QUICKSTART
 
 First a node must be initialized:
@@ -100,7 +108,9 @@ Now, you can start the engine:
 # initialize the storage layer, transport layer, and any other services
 cargo run  --bin cw-ho start 
 ```
- cargo run  --bin cw-ho init llm-api-keys 
+
+ cargo run  --bin cw-ho init llm-api-keys
+
 ## Environment Variables
 
 [for a dedicated list of environment variables and their defaults check here.](./packages/ho-std/src/config/README.md)

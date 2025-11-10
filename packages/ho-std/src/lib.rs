@@ -49,7 +49,6 @@ extern crate alloc;
 pub const GO_BITSONG_VERSION: &str = include_str!("types/CW_HO_COMMIT");
 
 mod serde;
-pub mod shim;
 pub mod traits;
 #[allow(deprecated, unused_imports, clippy::large_enum_variant)]
 pub mod types;

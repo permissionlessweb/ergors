@@ -2,13 +2,22 @@
 
 ## Overview
 
-CW-HO provides a minimal HTTP API for capturing and retrieving LLM prompt/response interactions with deterministic Cnidarium storage.
-
-**Base URL**: `http://localhost:8080`
+CW-HO provides a minimal HTTP API for capturing and retrieving LLM prompt/response interactions. There are two types of API's served by nodes, public & protected.
 
 ## Authentication
 
-Currently no authentication required. API keys for LLM providers are configured server-side.
+Authenticaton is required for granular control in how api are accessed. Each node has its own identity key pair, and is used to register to the network other keys that are able to access the protected apis.
+
+### Keys
+
+### 1. Node Keys
+
+### 2. Operator Keys
+
+## Using The Engine
+
+* blake3 hash of entire prompt
+* signature of hash
 
 ---
 
@@ -45,14 +54,14 @@ Content-Type: application/json
 
 #### Request Fields
 
-- **prompt** (required): The text prompt to send to the LLM
-- **context** (optional): Contextual information for indexing
-  - **session_id** (optional): Session identifier for grouping
-  - **user_id** (optional): User identifier for tracking
-  - **metadata** (optional): Additional key-value data (defaults to empty object)
-- **model** (optional): Specific model to use (defaults to config default)
-- **temperature** (optional): Response randomness (0.0-1.0)
-- **max_tokens** (optional): Maximum response length
+* **prompt** (required): The text prompt to send to the LLM
+* **context** (optional): Contextual information for indexing
+  * **session_id** (optional): Session identifier for grouping
+  * **user_id** (optional): User identifier for tracking
+  * **metadata** (optional): Additional key-value data (defaults to empty object)
+* **model** (optional): Specific model to use (defaults to config default)
+* **temperature** (optional): Response randomness (0.0-1.0)
+* **max_tokens** (optional): Maximum response length
 
 #### Response
 
@@ -151,11 +160,11 @@ Retrieve historical prompt/response interactions with filtering options.
 
 #### Query Parameters
 
-- **session_id** (optional): Filter by session ID
-- **user_id** (optional): Filter by user ID  
-- **start_time** (optional): ISO 8601 timestamp for start of time range
-- **end_time** (optional): ISO 8601 timestamp for end of time range
-- **limit** (optional): Maximum results to return (default: 100, max: 1000)
+* **session_id** (optional): Filter by session ID
+* **user_id** (optional): Filter by user ID  
+* **start_time** (optional): ISO 8601 timestamp for start of time range
+* **end_time** (optional): ISO 8601 timestamp for end of time range
+* **limit** (optional): Maximum results to return (default: 100, max: 1000)
 
 #### Response
 
@@ -274,9 +283,9 @@ All endpoints return error responses in this format:
 
 ### Common HTTP Status Codes
 
-- **200**: Success
-- **400**: Bad Request (invalid parameters)
-- **500**: Internal Server Error (LLM provider or storage issues)
+* **200**: Success
+* **400**: Bad Request (invalid parameters)
+* **500**: Internal Server Error (LLM provider or storage issues)
 
 ### Example Error Response
 
@@ -296,19 +305,19 @@ The service supports models from multiple providers based on configuration:
 
 ### OpenAI Models
 
-- `gpt-3.5-turbo`
-- `gpt-4`
-- `gpt-4-turbo`
+* `gpt-3.5-turbo`
+* `gpt-4`
+* `gpt-4-turbo`
 
 ### Anthropic Models
 
-- `claude-3-haiku-20240307`
-- `claude-3-sonnet-20240229`
-- `claude-3-opus-20240229`
+* `claude-3-haiku-20240307`
+* `claude-3-sonnet-20240229`
+* `claude-3-opus-20240229`
 
 ### Grok Models
 
-- `grok-beta`
+* `grok-beta`
 
 **Note**: Model availability depends on API keys configured in `api-keys.json`
 
@@ -324,9 +333,9 @@ Currently no rate limits enforced, but LLM providers may have their own limits.
 
 All prompt/response interactions are stored deterministically in Cnidarium with:
 
-- **Indexing**: By session ID, user ID, and timestamp
-- **Persistence**: Append-only storage for audit trails
-- **Snapshots**: Periodic state snapshots for recovery
+* **Indexing**: By session ID, user ID, and timestamp
+* **Persistence**: Append-only storage for audit trails
+* **Snapshots**: Periodic state snapshots for recovery
 
 ---
 

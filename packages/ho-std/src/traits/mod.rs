@@ -16,6 +16,7 @@
 //! ## Usage Pattern
 
 pub mod config;
+mod domain;
 pub mod file_ops;
 pub mod fractals;
 pub mod llm;
@@ -26,6 +27,7 @@ pub mod storage;
 
 // Re-export all traits for convenience
 pub use config::*;
+pub use domain::*;
 pub use fractals::*;
 pub use llm::*;
 pub use message::*;

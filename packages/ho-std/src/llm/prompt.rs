@@ -45,7 +45,7 @@ impl PromptRequestTrait for PromptRequest {
 impl PromptResponseTrait for PromptResponse {
     type TokenUsage = TokenUsage;
     type Context = PromptContext;
-    type Timestamp = crate::shim::Timestamp;
+    type Timestamp = pbjson_types::Timestamp;
 
     fn id(&self) -> &Vec<u8> {
         &self.id
@@ -61,10 +61,6 @@ impl PromptResponseTrait for PromptResponse {
 
     fn prompt(&self) -> &str {
         &self.prompt
-    }
-
-    fn response(&self) -> &str {
-        &self.response
     }
 
     fn tokens_used(&self) -> &TokenUsage {
@@ -84,8 +80,8 @@ impl PromptResponseTrait for PromptResponse {
     }
 
     fn timestamp(&self) -> &Self::Timestamp {
-        static DEFAULT_TIMESTAMP: std::sync::LazyLock<crate::shim::Timestamp> =
-            std::sync::LazyLock::new(|| crate::shim::Timestamp::default());
+        static DEFAULT_TIMESTAMP: std::sync::LazyLock<pbjson_types::Timestamp> =
+            std::sync::LazyLock::new(|| pbjson_types::Timestamp::default());
         self.timestamp.as_ref().unwrap_or(&DEFAULT_TIMESTAMP)
     }
 
@@ -93,7 +89,7 @@ impl PromptResponseTrait for PromptResponse {
     //     self.cas_ref()
     // }
 
-    fn set_response(&mut self, response: String) {
+    fn set_response(&mut self, response: Vec<String>) {
         self.response = response;
     }
 

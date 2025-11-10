@@ -5,6 +5,7 @@ use std::collections::HashMap;
 //
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 pub const LLM_API_KEYS_FILE: &str = "api-keys.json";
+pub const ENV_VARIABLES_FILE: &str = ".env";
 pub const DATA_FOLDER_NAME: &str = "memories";
 pub const OPENAI_API_KEY: &str = "OPENAI_API_KEY";
 pub const ANTHROPIC_API_KEY: &str = "ANTHROPIC_API_KEY";
@@ -41,6 +42,7 @@ pub const KIMI_RESEARCH_BASE_URL: &str = "https://api.moonshot.cn/v1";
 pub const GROK_BASE_URL: &str = "https://api.x.ai/v1";
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
+pub const ANTHROPIC_MESSAGE_URL: &str = "https://api.anthropic.com/v1/messages";
 
 pub const OLLAMA_LOCAL_HOST: &str = "localhost";
 pub const OLLAMA_LOCAL_PORT: u16 = 11_434;

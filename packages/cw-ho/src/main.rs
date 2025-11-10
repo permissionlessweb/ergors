@@ -3,11 +3,9 @@ use std::fs;
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use cw_ho::init::InitCmd;
-use cw_ho::{init, start, Cli, Commands};
+use cw_ho::{start, Cli, Commands};
 use ho_std::config::env::init_env;
 
-use tracing::{error, info};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -31,34 +29,8 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Init(cmd) => cmd.init(cli.home.as_path())?,
         Commands::Start { port } => start(cli, port)?,
-        Commands::Health { endpoint } => health(endpoint)?,
+        Commands::ManageAuth(cmd) => cmd.exec(cli.home.as_path())?,
     }
 
-    Ok(())
-}
-
-fn health(endpoint: String) -> Result<()> {
-    info!("🔍 Checking health at: {}", endpoint);
-
-    // Use a simple tokio runtime for the health check
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        let client = reqwest::Client::new();
-
-        match client.get(&format!("{}/health", endpoint)).send().await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    info!("✅ Service is healthy");
-                } else {
-                    error!("❌ Service returned status: {}", response.status());
-                    std::process::exit(1);
-                }
-            }
-            Err(e) => {
-                error!("❌ Failed to connect: {}", e);
-                std::process::exit(1);
-            }
-        }
-    });
     Ok(())
 }

@@ -4,7 +4,7 @@
 //! protobuf generated types and common utility functions from ho-std.
 
 use crate::error::{CwHoError, Result};
-use ho_std::types::cw_ho::orchestration::v1::{
+use ho_std::types::cw_ho::v1::{
     LlmPromptConfig, LocalLlmConfig, Message, PromptRequest, PromptResponse, TokenUsage,
 };
 use ho_std::types::constants::*;
@@ -82,7 +82,7 @@ impl LlmRouter {
             stop_sequences: vec![],
         });
 
-        let request = OpenAIRequest {
+        let request = OpenAiRequest {
             model: req.model.clone(),
             messages: req
                 .messages
@@ -285,7 +285,7 @@ impl LlmRouter {
         });
 
         // Grok uses OpenAI-compatible API
-        let request = OpenAIRequest {
+        let request = OpenAiRequest {
             model: req.model.clone(),
             messages: req
                 .messages
@@ -373,7 +373,7 @@ impl LlmRouter {
             stop_sequences: vec![],
         });
 
-        let request = OpenAIRequest {
+        let request = OpenAiRequest {
             model: req.model.clone(),
             messages: req
                 .messages

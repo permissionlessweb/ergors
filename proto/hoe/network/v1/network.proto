@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-package cw_ho.network.v1;
+package hoe.network.v1;
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
-import "hoe/types/v1/common.proto";
+import "types/v1/common.proto";
 
 // Network Configuration
 message NetworkLimits {
@@ -41,7 +41,7 @@ message NetworkConfig {
 message NetworkMessage {
   oneof message_type {
     NodeAnnounce node_announce = 1;
-    cw_ho.types.v1.TaskCoordination task_coordination = 2;
+    TaskCoordination task_coordination = 2;
     SandloopState sandloop_state = 3;
     FractalSync fractal_sync = 4;
     TetrahedralPing tetrahedral_ping = 5;
@@ -52,15 +52,24 @@ message NetworkMessage {
 
 message TetrahedralPing {
   string from_node = 1;
-  uint64 timestamp = 2;
-  cw_ho.types.v1.NetworkTopology network_topology = 3;
+  google.protobuf.Timestamp time = 2;
+  NetworkTopology network_topology = 3;
 }
+
+message TaskCoordination {
+  string task_id = 1;
+  NodeType from_role = 2;
+  NodeType to_role = 3;
+  string task_type = 4;
+  google.protobuf.Struct payload = 5;
+}
+ 
  
 message FractalSync {
   uint64 state_version = 1;
   uint32 fractal_depth = 2;
   string state_root = 3;
-  repeated cw_ho.types.v1.FractalOperation delta_operations = 4;
+  repeated types.v1.FractalOperation delta_operations = 4;
 }
 
 message SandloopState {
@@ -101,7 +110,7 @@ message NodeInfo {
 
 message NodeAnnounce {
   string node_id = 1;
-  cw_ho.types.v1.NodeType role = 2;
+  NodeType role = 2;
   repeated string capabilities = 3;
   string load_factor = 4;
 }
@@ -146,7 +155,7 @@ message MessageReceived {
 }
 
 message TopologyChanged {
-  cw_ho.types.v1.NetworkTopology topology = 1;
+  NetworkTopology topology = 1;
 }
 
 message NetworkError {
@@ -169,6 +178,14 @@ message BootstrapMethod {
   }
 }
 
+// Basic node types used across all services
+enum NodeType {
+  NODE_TYPE_UNSPECIFIED = 0;
+  NODE_TYPE_COORDINATOR = 1;
+  NODE_TYPE_EXECUTOR = 2;
+  NODE_TYPE_REFEREE = 3;
+  NODE_TYPE_DEVELOPMENT = 4;
+}
 
 message SshFullInstall {}
 
@@ -178,16 +195,14 @@ message CloudDeployment {
 
 message LocalDevelopment {}
 
-message NodeType {
-  oneof method {
-    Coordinator coordinator = 1;
-    Executor executor = 2;
-    Referee referee = 3;
-    Development development = 4;
-  }
+// Basic network topology
+message NetworkTopology {
+  repeated NodeInfo nodes = 1;
+  repeated Connection connections = 2;
 }
 
-message Coordinator {}
-message Executor {}
-message Referee {}
-message Development {}
+
+message Connection {
+  string from_node_id = 1;
+  string to_node_id = 2;
+}

@@ -2,13 +2,6 @@
 
 This package contains Protocol Buffer definitions for the CW-HO (CommonWare Host Orchestrator) system, organized into two main layers following the sacred geometry principles:
 
-## 📁 Structure
-
-```
-storage: related to storage layout and struct definitions
-orchestration: related to 
-```
-
 ## 📦 Layers
 
 ### Storage Layer (`storage/v1/`)
@@ -17,56 +10,12 @@ orchestration: related to
 
 ### Network Layer (`network/v1/`)
 
-## 🛠 Usage
-
-```rust
-use cw_hoe_proto::{
-    StoragePromptRequest, StoragePromptResponse,
-    CosmicTask, NetworkMessage, NodeType,
-    constants::GOLDEN_RATIO
-};
-
-// Create a storage request
-let request = StoragePromptRequest {
-    provider: "akash_chat".to_string(),
-    model: "DeepSeek-R1-0528".to_string(),
-    messages: vec![...],
-    temperature: Some(0.7),
-    max_tokens: Some(2048),
-    context: Some(...),
-};
-
-// Create a cosmic task following fractal requirements
-let task = CosmicTask {
-    id: uuid::Uuid::new_v4().to_string(),
-    task_type: OrchestrateTask::Recursive as i32,
-    fractal_requirements: Some(FractalRequirements {
-        recursion_depth: 3,
-        golden_ratio_compliance: true,
-        fractal_coherence: GOLDEN_RATIO - 1.0, // ≈ 0.618
-        ..Default::default()
-    }),
-    ..Default::default()
-};
-```
-
 ## 🔄 Generation
 
-Proto files are built automatically via `build.rs` using `prost-build`. To regenerate:
+To rebuild type definitions:
 
 ```bash
-cd packages/ergors
-cargo build
-```
-
-For external tooling (buf, protoc):
-
-```bash
-# Using buf (recommended)
-buf generate
-
-# Using protoc directly  
-protoc --rust_out=src hoe/**/*.proto
+cargo run 
 ```
 
 ## 🎯 Design Principles

@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod config;
 pub mod error;
 pub mod init;
@@ -9,6 +10,7 @@ pub mod traits;
 
 // Re-export the macro for external use
 
+use crate::auth::AuthCmd;
 use crate::init::InitCmd;
 use crate::llm::ApiKeys;
 use crate::network::{manager::PeerInfo, topology::NetworkTopology};
@@ -111,12 +113,8 @@ pub enum Commands {
     },
     /// Generate a sample configuration file
     Init(InitCmd),
-    /// Check service health
-    Health {
-        /// API endpoint to check
-        #[arg(long, default_value = "http://localhost:8080")]
-        endpoint: String,
-    },
+    /// register/revoke
+    ManageAuth(AuthCmd),
 }
 
 pub fn start(cli: Cli, port: Option<u16>) -> Result<()> {

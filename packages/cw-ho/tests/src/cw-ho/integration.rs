@@ -4,7 +4,7 @@
 //! functional CW-HO instance that respects the sacred geometric principles.
 
 use cw_ho::{HoConfig, HoOrchestrator};
-use ho_std::types::cw_ho::orchestration::v1::{CosmicTaskStatus, OrchestrateTask};
+use ho_std::types::cw_ho::v1::{CosmicTaskStatus, OrchestrateTask};
 use std::time::Duration;
 use tokio;
 use tracing::{error, info};
@@ -87,9 +87,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn demonstrate_network_operations() -> Result<(), Box<dyn std::error::Error>> {
+    use ho_std::shared_impl::NetworkShareImpl;
     use ho_std::types::cw_ho::network::v1::NodeIdentity;
     use ho_std::types::cw_ho::types::v1::{NodeInfo, NodeType};
-    use ho_std::shared_impl::NetworkShareImpl;
 
     // Create a mock node identity
     let identity = NodeIdentity {
@@ -142,9 +142,8 @@ async fn demonstrate_network_operations() -> Result<(), Box<dyn std::error::Erro
 }
 
 /// Example of creating custom fractal requirements
-pub fn create_advanced_fractal_requirements(
-) -> ho_std::types::cw_ho::orchestration::v1::FractalRequirements {
-    use ho_std::types::cw_ho::orchestration::v1::*;
+pub fn create_advanced_fractal_requirements() -> ho_std::types::cw_ho::v1::FractalRequirements {
+    use ho_std::types::cw_ho::v1::*;
     use ho_std::utils::IdGenerator;
 
     let cosmic_context = CosmicContext {

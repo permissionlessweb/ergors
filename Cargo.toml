@@ -80,6 +80,7 @@ pprof = { version = "0.15", features = ["flamegraph"] }
 pretty_env_logger = "0.4.0"
 prettyplease = "0.1.16"
 proc-macro2 = "1.0.52"
+pbjson-types                     = { version = "0.8.0" }
 prof = { version = "0.15", features = ["flamegraph"] }
 prost = { version = "0.14.1", default-features = false, features = ["derive"] }
 prost-types = { version = "0.14.1", default-features = false }

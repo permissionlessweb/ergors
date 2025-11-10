@@ -115,7 +115,11 @@ impl NetworkShareImpl {
         };
 
         NetworkMessage {
-            message_type: Some(ho_std::types::cw_ho::network::v1::network_message::MessageType::TetrahedralPing(ping)),
+            message_type: Some(
+                ho_std::types::cw_ho::network::v1::network_message::MessageType::TetrahedralPing(
+                    ping,
+                ),
+            ),
         }
     }
 

@@ -138,14 +138,6 @@ impl<'de> Deserialize<'de> for NodePubkey {
     }
 }
 
-// impl fmt::Debug for NodeId {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         // Show the public key as a short hex string (first 8 bytes)
-//         let bytes = self.0.as_ref();
-//         write!(f, "NodeId({})", hex::encode(&bytes[..8]))
-//     }
-// }
-
 impl NodePubkey {
     /// Verify `sig` on `msg` using the given *optional* namespace.
     ///

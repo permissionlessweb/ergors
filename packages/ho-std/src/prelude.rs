@@ -5,37 +5,60 @@
 
 // // Re-export commonly used types from different modules
 pub use crate::types::cw_ho::types::v1::{
-    Connection,
-    DeleteOperation,
-    FractalOperation,
-    // SandloopState, TaskCoordination, FractalSync,
-    InsertOperation,
-    NetworkTopology,
-    NodeInfo,
-    NodeType,
-    UpdateOperation,
+    DeleteOperation, FractalOperation, InsertOperation, UpdateOperation,
 };
 
 pub use crate::types::cw_ho::network::v1::{
     network_event::EventType, network_message::MessageType, HostOs, MessageReceived, NetworkConfig,
-    NetworkError, NetworkEvent, NetworkMessage, NodeAnnounce, NodeIdentity, PeerConnected,
-    PeerDisconnected, Request, Response, TetrahedralPing, TopologyChanged,
+    NetworkError, NetworkEvent, NetworkMessage, NetworkTopology, NodeAnnounce, NodeIdentity,
+    NodeInfo, NodeType, PeerConnected, PeerDisconnected, Request, Response, TetrahedralPing,
+    TopologyChanged,
 };
 
 pub use crate::types::cw_ho::orchestration::v1::{
-    CosmicContext, CosmicTask, CosmicTaskStatus, FractalRequirements, HoConfig, LlmEntity,
-    LlmModel, LlmRouterConfig, LocalLlmConfig, OrchestrateTask, PromptContext, PromptMessage,
-    PromptRequest, PromptResponse, StorageConfig, TokenUsage,
+    ApiKeysJson,
+    ApiKeysMetadata,
+    // Route request/response types
+    BootstrapNodeRequest,
+    BootstrapNodeResponse,
+    // Orchestration types
+    CosmicContext,
+    CosmicTask,
+    CosmicTaskStatus,
+    CreateFractalRequest,
+    CreateFractalResponse,
+    FractalRequirements,
+    GetTopologyRequest,
+    GetTopologyResponse,
+    GlobalSettings,
+    HealthRequest,
+    HealthResponse,
+    HoConfig,
+    // Route metadata types
+    HttpMethod,
+    Instructions,
+    LlmEntity,
+    LlmModel,
+    LlmRouterConfig,
+    LocalLlmConfig,
+    OrchestrateTask,
+    PromptContext,
+    PromptMessage,
+    PromptRequest,
+    PromptResponse,
+    ProviderWithAuth,
+    PruneNodeRequest,
+    PruneNodeResponse,
+    QueryPromptsRequest,
+    QueryPromptsResponse,
+    RouteMetadata,
+    RouteRegistry as ProtoRouteRegistry,
+    StorageConfig,
+    TokenUsage,
 };
-
 pub use crate::types::cw_ho::storage::v1::{
-    BootstrapRequest, BootstrapResponse, ErrorResponse, HealthResponse, QueryRequest, StorageIndex,
-    StorageMetrics, StorageQuery, StorageSnapshot,
-};
-
-// Re-export shim types that are commonly used with proto messages
-pub use crate::shim::{
-    Any as ProtobufStruct, Duration as ProtobufDuration, Timestamp as ProtobufTimestamp,
+    BootstrapRequest, BootstrapResponse, ErrorResponse, HealthResponse as StorageHealthResponse,
+    QueryRequest, StorageIndex, StorageMetrics, StorageQuery, StorageSnapshot,
 };
 
 // Re-export other prost types that don't need shimming

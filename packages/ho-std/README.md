@@ -27,7 +27,7 @@ Trait | description | location |
 Trait | description | location |
 --- | --- | --- |
 `OpenAITrait` | --- | --- |
-`OpenAIRequest` | --- | --- |
+`OpenAiRequest` | --- | --- |
 `PromptRequestTrait` | --- | --- |
 `PromptResponseTrait` | --- | --- |
 `PromptContextTrait` | --- | --- |

@@ -47,10 +47,16 @@ pub fn error_json(message: &str, code: &str) -> serde_json::Value {
 
 /// Helper function to create API error responses
 pub fn api_error(status: StatusCode, message: &str, code: &str) -> Json<serde_json::Value> {
-    Json(error_json(message, code))
+    Json(error_json(
+        message,
+        &format!("code:{},status: {}", code, status),
+    ))
 }
 
 /// Helper function to create error responses
 pub fn error_response(status: StatusCode, message: &str, code: &str) -> Json<serde_json::Value> {
-    Json(error_json(message, code))
+    Json(error_json(
+        message,
+        &format!("code:{},status: {}", code, status),
+    ))
 }

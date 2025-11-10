@@ -1,5 +1,6 @@
 mod cost;
 mod prompt;
+use crate::orchestrate::ModelSelectionStrategy;
 use crate::prelude::LlmEntity;
 use anyhow::Result;
 pub use cost::*;
@@ -8,7 +9,6 @@ pub use prompt::*;
 use {
     crate::{
         constants::*,
-        orchestrate::ModelSelectionStrategy,
         prelude::{LlmModel, LlmRouterConfig},
         traits::LlmModelTrait,
     },

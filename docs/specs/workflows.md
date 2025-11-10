@@ -11,7 +11,8 @@ The Workflows system provides **intelligent orchestration** of multi-agent tasks
 **Purpose**: Orchestrate multiple AI agents working on complex tasks through geometric distribution patterns.
 
 **Sacred Geometry Integration**:
-- **Tetrahedral Task Distribution**: Work is distributed across all four node types 
+
+- **Tetrahedral Task Distribution**: Work is distributed across all four node types
 - **Golden Ratio Load Balancing**: 61.8% allocation to primary tasks, 38.2% to validation/oversight
 - **Fractal Decomposition**: Complex tasks are broken down using self-similar patterns
 

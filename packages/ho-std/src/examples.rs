@@ -305,8 +305,7 @@ pub mod custom_llm {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    #[serde(transparent)]
+    #[derive(Debug, Clone)]
     pub struct MockLLMRouterConfig {
         pub config: LlmRouterConfig,
     }
@@ -390,7 +389,7 @@ pub mod custom_llm {
                 provider: self.default_provider.clone(),
                 model: model.to_string(),
                 prompt: "Mock prompt".to_string(),
-                response: "This is a mock response from the custom LLM provider".to_string(),
+                response: vec!["This is a mock response from the custom LLM provider".to_string()],
                 timestamp: None,
                 tokens_used: Some(TokenUsage {
                     prompt: 10,
@@ -594,7 +593,7 @@ pub mod generic_functions {
         println!("📤 Response received:");
         println!("   Provider: {}", response.provider());
         println!("   Model: {}", response.model());
-        println!("   Response: {}", response.response());
+        println!("   Response: {:#?}", response.response);
 
         let tokens = response.tokens_used();
         println!("   Tokens used: {}", tokens.total);

@@ -1,8 +1,7 @@
 //! LLM-related traits for CW-HO system
 
-use crate::constants::*;
 use crate::error::HoResult;
-use crate::prelude::{LlmEntity, LlmModel};
+use crate::prelude::LlmEntity;
 use crate::traits::LLMRouterConfigTrait;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -10,7 +9,7 @@ use std::collections::HashMap;
 /// Core trait for LLM routing and processing
 #[async_trait]
 pub trait OpenAITrait {
-    type OpenAIRequest: PromptRequestTrait;
+    type OpenAiRequest: PromptRequestTrait;
     type OpenAiResponse: PromptResponseTrait;
     type OpenAiMessage: PromptRequestTrait;
     fn process_request(&self) -> HoResult<Self::OpenAiResponse>;
@@ -63,9 +62,6 @@ pub trait PromptResponseTrait {
     /// Get original prompt
     fn prompt(&self) -> &str;
 
-    /// Get response content
-    fn response(&self) -> &str;
-
     /// Get timestamp
     fn timestamp(&self) -> &Self::Timestamp;
 
@@ -82,7 +78,7 @@ pub trait PromptResponseTrait {
     // fn context(&self) -> Option<&Self::Context>;
 
     /// Set response content
-    fn set_response(&mut self, response: String);
+    fn set_response(&mut self, response: Vec<String>);
 
     /// Set cost
     fn set_cost(&mut self, cost: f64);

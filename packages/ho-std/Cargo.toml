@@ -50,6 +50,7 @@ jmt = { workspace = true }
 layer-climb-proto = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
+pbjson-types = { workspace = true }
 rand = { workspace = true }
 rpassword = { workspace = true }
 rand_core = { workspace = true }
