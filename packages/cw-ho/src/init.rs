@@ -1,11 +1,18 @@
-use anyhow::Result;
+use crate::CwHoConfig;
+use anyhow::{Context, Result};
 use camino::Utf8Path;
 use ho_std::config::api_keys::configure_api_keys_interactive;
 use ho_std::constants::{ENV_VARIABLES_FILE, LLM_API_KEYS_FILE};
+use ho_std::traits::DomainType;
 use ho_std::traits::HoConfigTrait;
-use std::io::{IsTerminal, Read};
-
-use crate::CwHoConfig;
+use ho_std_keys::keys::{SeedPhrase, SpendKey};
+use rand_core::OsRng;
+use std::{env, fs};
+use std::{
+    io::{stdin, IsTerminal as _, Read, Write},
+    str::FromStr,
+};
+use termion::screen::IntoAlternateScreen;
 
 #[derive(Debug, clap::Parser)]
 pub struct InitCmd {
@@ -37,6 +44,15 @@ pub enum InitSubCmd {
     SoftKms(SoftKmsInitCmd),
 }
 
+/// Which kind of initialization are we doing?
+#[derive(Clone, Debug, Copy)]
+enum InitType {
+    /// Initialize from scratch with a spend key.
+    SpendKey,
+    /// Add a governance key to an existing configuration.
+    GovernanceKey,
+}
+
 #[derive(Debug, Clone, clap::Subcommand)]
 pub enum SoftKmsInitCmd {
     /// Generate a new seed phrase and import its corresponding key.
@@ -52,7 +68,7 @@ pub enum SoftKmsInitCmd {
 }
 
 // Reusable function for prompting interactively for key material.
-fn _prompt_for_password(msg: &str) -> Result<String> {
+fn prompt_for_password(msg: &str) -> Result<String> {
     let mut password = String::new();
     // The `rpassword` crate doesn't support reading from stdin, so we check
     // for an interactive session. We must support non-interactive use cases,
@@ -71,18 +87,24 @@ fn _prompt_for_password(msg: &str) -> Result<String> {
 }
 
 impl InitCmd {
-    pub fn init(&self, home_dir: &Utf8Path) -> Result<()> {
-        let config_path = home_dir.join(ho_std::constants::CONFIG_FILE_NAME);
+    pub fn init(&self, home_dir: impl AsRef<camino::Utf8Path>) -> Result<()> {
+        let config_path = home_dir.as_ref().join(ho_std::constants::CONFIG_FILE_NAME);
         let config = match self.subcmd.clone() {
             InitTopSubCmd::New {} => {
-                let config = CwHoConfig::new(home_dir);
-                // generate env file in home dir as well
-                let env_file_path = home_dir.join(ENV_VARIABLES_FILE);
+                let config = CwHoConfig::new(home_dir.as_ref());
+                let current = env::current_dir().unwrap();
+                let template_path = camino::Utf8Path::new(current.to_str().unwrap());
+                let output_path = home_dir.as_ref().join(".env");
+
+                println!("{:#?}", output_path);
+                let env_content = fs::read_to_string(template_path.join("templates/example.env"))
+                    .expect("Failed to read templates/example.env. Make sure it exists.");
+                std::fs::write(output_path, env_content).expect("Failed to write.");
                 config
             }
             InitTopSubCmd::LlmApiKeys {} => {
                 // Run interactive API keys configuration
-                let api_keys_path = home_dir.join(LLM_API_KEYS_FILE);
+                let api_keys_path = home_dir.as_ref().join(LLM_API_KEYS_FILE);
                 configure_api_keys_interactive(&api_keys_path)?;
                 println!("\n✅ API keys configured successfully!");
                 println!("   File: {}", api_keys_path);
@@ -90,8 +112,10 @@ impl InitCmd {
                 CwHoConfig::load(&config_path)?
             }
             InitTopSubCmd::UnsafeWipe {} => {
-                let config = CwHoConfig::load(&config_path)?;
-                config
+                let new_config = self.fresh(home_dir.as_ref());
+                println!("Deleting all data in {}...", home_dir.as_ref());
+                std::fs::remove_dir_all(home_dir.as_ref())?;
+                new_config
             }
             InitTopSubCmd::Migrate {} => {
                 // TODO: implement interface for modular migrations
@@ -103,5 +127,44 @@ impl InitCmd {
         config.save(config_path)?;
 
         Ok(())
+    }
+
+    fn fresh(&self, home_dir: impl AsRef<camino::Utf8Path>) -> CwHoConfig {
+        let config = CwHoConfig::new(home_dir.as_ref());
+        // generate default env file in home dir as well
+
+        config
+    }
+}
+
+impl SoftKmsInitCmd {
+    fn spend_key(&self, init_type: InitType) -> Result<SpendKey> {
+        Ok(match self {
+            SoftKmsInitCmd::Generate { stdout } => {
+                let seed_phrase = SeedPhrase::generate(OsRng);
+                let seed_msg = format!(
+                    "YOUR PRIVATE SEED PHRASE ({init_type:?}):\n\n\
+                   {seed_phrase}\n\n\
+                   Save this in a safe place!\n\
+                   DO NOT SHARE WITH ANYONE!\n"
+                );
+
+                let mut output = std::io::stdout();
+                let mut screen = output.into_alternate_screen()?;
+                writeln!(screen, "{seed_msg}")?;
+                screen.flush()?;
+                println!("Press enter to proceed.");
+                let _ = stdin().bytes().next();
+
+                SpendKey::from_seed_phrase_bip39(seed_phrase, 0)
+            }
+            SoftKmsInitCmd::ImportPhrase {} => {
+                let seed_phrase = prompt_for_password("Enter seed phrase: ")?;
+                let seed_phrase = SeedPhrase::from_str(&seed_phrase)
+                    .context("failed to parse input as seed phrase")?;
+
+                SpendKey::from_seed_phrase_bip39(seed_phrase, 0)
+            }
+        })
     }
 }

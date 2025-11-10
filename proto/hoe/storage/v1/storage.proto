@@ -60,15 +60,3 @@ message ErrorResponse {
   google.protobuf.Timestamp timestamp = 3;
 }
 
-message BootstrapRequest {
-  string target_node = 1;
-}
-
-message BootstrapResponse {
-  string id = 1;
-  string target_node = 2;
-  string status = 3;
-  string summary = 4;
-  google.protobuf.Timestamp timestamp = 5;
-  uint64 duration_ms = 6;
-}

@@ -30,7 +30,6 @@ message NetworkConfig {
   repeated string known_peers = 3;
   uint32 listen_port = 4;
   string listen_address = 5;
-  uint32 max_peers = 6;
   uint32 connection_timeout_ms = 7;
   bool enable_discovery = 8;
   NetworkLimits limits = 9;
@@ -162,20 +161,15 @@ message NetworkError {
   string error = 1;
 }
 
-message DeploymentConfig {
-  BootstrapMethod bootstrap_method = 1;
-  optional string ssh_key_path = 2;
-  optional string env_file_path = 3;
-  bool install_dependencies = 4;
-  bool auto_start_services = 5;
+// Basic network topology
+message NetworkTopology {
+  repeated NodeInfo nodes = 1;
+  repeated Connection connections = 2;
 }
 
-message BootstrapMethod {
-  oneof method {
-    SshFullInstall ssh_full_install = 1;
-    CloudDeployment cloud_deployment = 2;
-    LocalDevelopment local_development = 3;
-  }
+message Connection {
+  string from_node_id = 1;
+  string to_node_id = 2;
 }
 
 // Basic node types used across all services
@@ -185,24 +179,4 @@ enum NodeType {
   NODE_TYPE_EXECUTOR = 2;
   NODE_TYPE_REFEREE = 3;
   NODE_TYPE_DEVELOPMENT = 4;
-}
-
-message SshFullInstall {}
-
-message CloudDeployment {
-  string provider = 1;
-}
-
-message LocalDevelopment {}
-
-// Basic network topology
-message NetworkTopology {
-  repeated NodeInfo nodes = 1;
-  repeated Connection connections = 2;
-}
-
-
-message Connection {
-  string from_node_id = 1;
-  string to_node_id = 2;
 }

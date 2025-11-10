@@ -2,16 +2,12 @@
 //!
 //! This module provides a type-safe way to define routes using proto-generated types
 //! following the type/value tuple pattern for standardized transport layer communication.
-
-use core::any::Any;
-
-use prost::Name;
-
 use crate::prelude::*;
+use prost::Name;
 
 /// Generic route definition using proto types
 /// This follows the type/value pattern where request/response types are proto messages
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct RouteDefinition {
     pub requires_auth: bool,
     pub request_type: String,  // Proto type URL
@@ -75,12 +71,6 @@ impl RouteRegistry {
                 response_type: GetTopologyResponse::type_url(),
             },
         ]
-    }
-}
-
-impl Default for RouteRegistry {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

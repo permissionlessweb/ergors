@@ -236,8 +236,54 @@ message QueryPromptsResponse {
   uint32 total_count = 2;
 }
 
+
+message BootstrapRequest {
+  // bootstrap method
+  BootstrapMethod bootstrap_method = 1;
+  // node-identity 
+  network.v1.NodeIdentity identity = 2;
+}
+
+message BootstrapMethod {
+  oneof method {
+    Ssh ssh = 1;
+    Cloud cloud = 2;
+    Docker docker = 3;
+    Bluetooth bluetooth = 4;
+  }
+}
+
+message Ssh {
+  string ssh_key_path = 1;
+}
+
+message Cloud {
+oneof provider {
+  Akash akash = 1;
+  Wavs wavs = 2;
+  Phala phala = 3;
+}
+}
+
+message Bluetooth {}
+message Local {}
+message Docker {}
+message Akash {}
+message Wavs {}
+message Phala {}
+
+message BootstrapResponse {
+  string id = 1;
+  string target_node = 2;
+  string status = 3;
+  string summary = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  uint64 duration_ms = 6;
+}
+
 // Bootstrap endpoint
 message BootstrapNodeRequest {
+  // name provided to the node you are bootstrapping
   string target_node = 1;
   optional string ssh_key_path = 2;
   optional string ssh_user = 3;

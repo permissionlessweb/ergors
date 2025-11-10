@@ -23,11 +23,13 @@ signature = sign(Blake3(body || timestamp))
 ```
 
 Where:
+
 - `body` is the raw request body bytes (empty for GET requests)
 - `timestamp` is the Unix timestamp as a string
 - `||` represents concatenation
 
 **Example:**
+
 ```
 body = '{"target_node":"user@192.168.1.100"}'
 timestamp = "1699564800"
@@ -76,10 +78,8 @@ PATH="/orchestrate/bootstrap"
 TIMESTAMP=$(date +%s)
 
 # Create message to sign
-MESSAGE="${METHOD}:${PATH}:${TIMESTAMP}"
-
 # Sign the message (using a signing tool)
-SIGNATURE=$(echo -n "$MESSAGE" | openssl dgst -sha512 -sign <(echo "$PRIVATE_KEY" | xxd -r -p) | xxd -p -c 256)
+
 
 # Make authenticated request
 curl -X POST http://localhost:8080/orchestrate/bootstrap \
@@ -163,17 +163,9 @@ async function makeAuthenticatedRequest() {
     const keyPair = nacl.sign.keyPair.fromSeed(privateKey);
 
     // Request details
-    const method = 'POST';
-    const path = '/orchestrate/bootstrap';
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-
     // Create message to sign
-    const message = `${method}:${path}:${timestamp}`;
-    const messageBytes = Buffer.from(message, 'utf-8');
-
     // Sign the message
-    const signature = nacl.sign.detached(messageBytes, keyPair.secretKey);
-
+ 
     // Make request
     const response = await axios.post(
         `http://localhost:8080${path}`,
@@ -255,12 +247,6 @@ async fn grpc_authenticated_request() -> Result<(), Box<dyn std::error::Error>> 
     let public_key_hex = "...";
 
     // Create gRPC request with metadata
-    let mut request = Request::new(BootstrapNodeRequest {
-        target_node: "user@192.168.1.100".to_string(),
-        ssh_user: Some("ubuntu".to_string()),
-        ssh_port: Some("22".to_string()),
-        ssh_key_path: None,
-    });
 
     // Add auth metadata
     request.metadata_mut().insert(
@@ -358,19 +344,6 @@ curl -X POST http://localhost:8080/rpc \
 }
 ```
 
-**HTTP Status**: 408 Request Timeout
-
-## Testing Authentication
-
-Disable authentication for development/testing:
-
-```bash
-export DISABLE_AUTH=1
-cargo run
-```
-
-With authentication disabled, all endpoints are accessible without signature headers.
-
 ## Proto-based Type/Value Pattern
 
 CW-HO follows a proto-based type/value tuple pattern for all request/response messages. Each endpoint expects:
@@ -381,45 +354,6 @@ CW-HO follows a proto-based type/value tuple pattern for all request/response me
 This ensures type safety and enables versioning control across the API surface.
 
 ## Key Generation
-
-Generate a new Ed25519 key pair:
-
-### Rust
-
-```rust
-use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
-
-let signing_key = SigningKey::generate(&mut OsRng);
-let verifying_key = signing_key.verifying_key();
-
-println!("Private Key: {}", hex::encode(signing_key.to_bytes()));
-println!("Public Key: {}", hex::encode(verifying_key.to_bytes()));
-```
-
-### Python
-
-```python
-from nacl.signing import SigningKey
-from nacl.encoding import HexEncoder
-
-signing_key = SigningKey.generate()
-verify_key = signing_key.verify_key
-
-print(f"Private Key: {signing_key.encode(encoder=HexEncoder).decode('utf-8')}")
-print(f"Public Key: {verify_key.encode(encoder=HexEncoder).decode('utf-8')}")
-```
-
-### JavaScript
-
-```javascript
-const nacl = require('tweetnacl');
-
-const keyPair = nacl.sign.keyPair();
-
-console.log('Private Key:', Buffer.from(keyPair.secretKey).toString('hex'));
-console.log('Public Key:', Buffer.from(keyPair.publicKey).toString('hex'));
-```
 
 ---
 

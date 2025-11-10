@@ -92,6 +92,8 @@ fn main() -> anyhow::Result<()> {
         .compile_with_config(
             config,
             &[
+                "./hoe/keys/v1/keys.proto",
+                "./hoe/custody/v1/custody.proto",
                 "./hoe/network/v1/network.proto",
                 "./hoe/orchestration/v1/orchestration.proto",
                 "./hoe/storage/v1/storage.proto",

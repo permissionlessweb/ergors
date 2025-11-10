@@ -25,8 +25,17 @@
 
 pub use prost::{Message, Name};
 
+pub mod custody {
+    pub mod v1 {
+        include!("gen/hoe.custody.v1.rs");
+    }
+}
+pub mod keys {
+    pub mod v1 {
+        include!("gen/hoe.keys.v1.rs");
+    }
+}
 pub mod network {
-
     pub mod v1 {
         include!("gen/hoe.network.v1.rs");
     }

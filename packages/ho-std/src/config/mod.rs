@@ -3,7 +3,7 @@ pub mod env;
 
 use crate::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
 use crate::prelude::*;
-use crate::types::cw_ho::network::v1::ChannelConfig;
+use crate::types::cw_ho::network::v1::{ChannelConfig, NetworkLimits};
 
 impl crate::traits::NetworkConfigTrait for NetworkConfig {
     /// Validate the network config.
@@ -17,7 +17,6 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
             ));
         }
         if self.listen_address == "" {};
-        if self.max_peers > 10 {};
 
         if let Some(l) = self.limits {
             if l.connection_timeout < 100 || l.max_message_size > 100000000 || l.max_peers > 10 {
@@ -39,10 +38,6 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
 
     fn listen_address(&self) -> &str {
         &self.listen_address
-    }
-
-    fn max_peers(&self) -> u32 {
-        self.max_peers
     }
 
     fn connection_timeout_ms(&self) -> u32 {
@@ -76,7 +71,7 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
         );
         table.insert(
             "max_peers".to_string(),
-            toml::Value::Integer(self.max_peers as i64),
+            toml::Value::Integer(self.limits().max_peers as i64),
         );
         table.insert(
             "enable_discovery".to_string(),
@@ -92,12 +87,15 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
             known_peers: Default::default(),
             listen_port: 69699,
             listen_address: "127.0.0.1".to_owned(),
-            max_peers: 5,
             connection_timeout_ms: 1313131313,
             enable_discovery: true,
-            limits: Default::default(),
+            limits: Some(NetworkLimits::default()),
             channels: Some(ChannelConfig::new()),
         }
+    }
+
+    fn limits(&self) -> crate::types::cw_ho::network::v1::NetworkLimits {
+        self.limits.unwrap_or_default()
     }
 }
 

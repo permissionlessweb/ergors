@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package hoe.custody.v1;
+
+service CustodyService {
+    // Requests authorization of the transaction with the given description.
+  rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+    // Requests the full viewing key from the custodian.
+  //
+  // Custody backends should decide whether to honor this request, and how to
+  // control access to it.
+  rpc ExportFullViewingKey(ExportFullViewingKeyRequest) returns (ExportFullViewingKeyResponse);
+
+}
+
+message AuthorizeRequest {
+  // The transaction plan to authorize.
+
+  // Optionally, pre-authorization data, if required by the custodian.
+  //
+  // Pre-authorization data is backend-specific, and backends are free to ignore it.
+  //
+  // Multiple `PreAuthorization` packets can be included in a single request,
+  // to support multi-party pre-authorizations.
+}
+
+message AuthorizeResponse {}
+
+message ExportFullViewingKeyRequest {}
+
+message ExportFullViewingKeyResponse {}

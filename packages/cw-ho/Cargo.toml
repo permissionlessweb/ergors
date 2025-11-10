@@ -16,20 +16,25 @@ axum = { workspace = true }
 bytes = { workspace = true }
 camino = { workspace = true }
 chrono = { workspace = true }
-clap = {workspace = true, features = ["derive", "env"]}
+clap = { workspace = true, features = ["derive", "env"] }
 cnidarium = { workspace = true }
 commonware-codec = { workspace = true }
 commonware-cryptography = { workspace = true }
 commonware-p2p = { workspace = true }
 commonware-runtime = { workspace = true }
+dotenv = { workspace = true }
+futures = { workspace = true }
 governor = { workspace = true }
 hex = { workspace = true }
 ho-std  = { workspace = true }
+ho-std-keys = { workspace = true }
 pbjson-types = { workspace = true }
 pprof = { workspace = true }
 rand = { workspace = true }
+rand_core = { workspace = true }
+termion = { workspace = true }
 reqwest = { workspace = true }
-rpassword = {workspace = true}
+rpassword = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -39,8 +44,6 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
-dotenv = { workspace = true }
-futures = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

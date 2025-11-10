@@ -30,8 +30,20 @@
   - AKASH workflow (terraform/custom bash scripts)
 - benchmarking via criterion
 
+## NETWORK
+
+- improve node_identity definitions:
+- validate state thoughout network by taking advantage of merkle cnardium merkle tree
+
+## NODE ACTIONS
+
+- update node type
+- grant permissions for auth bypass
+- grant filters on node communication requests
+
 ## SECURITY
 
+- move commonware keys definition into keys ho-std-keys, implement types for local and commonware keys for cross-crate-compatibility.
 - enhance identity key security: use soft-kms for storage and access to node key
 - ephemeral users: create dedicated user profile for containerized instance to granularize access to agents in workflow
 - [api-key storage](https://crates.io/crates/keyring):
@@ -76,9 +88,10 @@
 
 ## TESTING
 
-- ci testing: simulated api for determinstic responses and known workflows
+- ci testing: simulated llm api for determinstic responses and known workflows
 - mutation testing
 - migrations: ensure new features have support for dro-in replacements
+- proptest: <https://proptest-rs.github.io/>
 
 ## AI
 
@@ -103,7 +116,6 @@
 > - [`mcp_servers`](https://docs.claude.com/en/api/messages#body-mcp-servers)
 > - [`metadata`](https://docs.claude.com/en/api/messages#body-metadata)
 > - [`tools`](https://docs.claude.com/en/api/messages#body-tool-choice)
-
 
 - JSON EXTRACTOR,CALCULATOR,
 - TOKEN EFFECIENT TOOL USE

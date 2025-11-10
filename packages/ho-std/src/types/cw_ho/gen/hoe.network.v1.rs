@@ -72,8 +72,6 @@ pub struct NetworkConfig {
     pub listen_port: u32,
     #[prost(string, tag = "5")]
     pub listen_address: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "6")]
-    pub max_peers: u32,
     #[prost(uint32, tag = "7")]
     pub connection_timeout_ms: u32,
     #[prost(bool, tag = "8")]
@@ -437,99 +435,6 @@ impl ::prost::Name for NetworkError {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/hoe.network.v1.NetworkError".into()
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DeploymentConfig {
-    #[prost(message, optional, tag = "1")]
-    pub bootstrap_method: ::core::option::Option<BootstrapMethod>,
-    #[prost(string, optional, tag = "2")]
-    pub ssh_key_path: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "3")]
-    pub env_file_path: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(bool, tag = "4")]
-    pub install_dependencies: bool,
-    #[prost(bool, tag = "5")]
-    pub auto_start_services: bool,
-}
-impl ::prost::Name for DeploymentConfig {
-    const NAME: &'static str = "DeploymentConfig";
-    const PACKAGE: &'static str = "hoe.network.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "hoe.network.v1.DeploymentConfig".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/hoe.network.v1.DeploymentConfig".into()
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct BootstrapMethod {
-    #[prost(oneof = "bootstrap_method::Method", tags = "1, 2, 3")]
-    pub method: ::core::option::Option<bootstrap_method::Method>,
-}
-/// Nested message and enum types in `BootstrapMethod`.
-pub mod bootstrap_method {
-    #[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Method {
-        #[prost(message, tag = "1")]
-        SshFullInstall(super::SshFullInstall),
-        #[prost(message, tag = "2")]
-        CloudDeployment(super::CloudDeployment),
-        #[prost(message, tag = "3")]
-        LocalDevelopment(super::LocalDevelopment),
-    }
-}
-impl ::prost::Name for BootstrapMethod {
-    const NAME: &'static str = "BootstrapMethod";
-    const PACKAGE: &'static str = "hoe.network.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "hoe.network.v1.BootstrapMethod".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/hoe.network.v1.BootstrapMethod".into()
-    }
-}
-#[derive(
-    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, ::prost::Message,
-)]
-pub struct SshFullInstall {}
-impl ::prost::Name for SshFullInstall {
-    const NAME: &'static str = "SshFullInstall";
-    const PACKAGE: &'static str = "hoe.network.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "hoe.network.v1.SshFullInstall".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/hoe.network.v1.SshFullInstall".into()
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CloudDeployment {
-    #[prost(string, tag = "1")]
-    pub provider: ::prost::alloc::string::String,
-}
-impl ::prost::Name for CloudDeployment {
-    const NAME: &'static str = "CloudDeployment";
-    const PACKAGE: &'static str = "hoe.network.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "hoe.network.v1.CloudDeployment".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/hoe.network.v1.CloudDeployment".into()
-    }
-}
-#[derive(
-    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, ::prost::Message,
-)]
-pub struct LocalDevelopment {}
-impl ::prost::Name for LocalDevelopment {
-    const NAME: &'static str = "LocalDevelopment";
-    const PACKAGE: &'static str = "hoe.network.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "hoe.network.v1.LocalDevelopment".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/hoe.network.v1.LocalDevelopment".into()
     }
 }
 /// Basic network topology

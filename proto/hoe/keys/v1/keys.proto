@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package hoe.keys.v1;
+
+
+message SpendKey {
+  bytes inner = 1;
+}
+
+message PayloadKey {
+  bytes inner = 1;
+}
