@@ -262,7 +262,6 @@ pub mod custom_storage {
 /// This example demonstrates how to implement a custom LLM provider that can be
 /// used with the LLM router system.
 pub mod custom_llm {
-    use serde::Serialize;
 
     use crate::types::cw_ho::orchestration::v1::{PromptRequest, PromptResponse};
 

@@ -79,12 +79,7 @@ impl NodeIdentityTrait for NodeIdentity {
 
     /// Get a display-friendly identifier
     fn display_id(&self) -> String {
-        let pubkey_hex = self
-            .public_key
-            .as_ref()
-            .map(|pk| hex::encode(&pk[..8])) // Show first 8 bytes as hex
-            .unwrap_or_else(|| "no_pubkey".to_string());
-        format!("{}-{}", self.node_type, pubkey_hex)
+        hex::encode(self.public_key())
     }
 
     /// Get private key from environment variable or generate a new one

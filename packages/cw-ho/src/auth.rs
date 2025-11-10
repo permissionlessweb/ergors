@@ -1,6 +1,5 @@
 use anyhow::Result;
 use camino::Utf8Path;
-use ho_std::commonware::identity::NodePrivKey;
 
 #[derive(Debug, clap::Parser)]
 pub struct AuthCmd {

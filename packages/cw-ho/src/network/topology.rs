@@ -1,4 +1,5 @@
 //! Network topology management
+//! // TODO: refactor into storage layer
 
 use ho_std::prelude::*;
 use serde::{Deserialize, Serialize};

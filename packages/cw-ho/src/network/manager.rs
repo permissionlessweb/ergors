@@ -40,7 +40,7 @@ impl CwHoNetworkManifold {
     /// Initialize and start the network
     pub async fn new(
         // config: NetworkConfig,
-        identity: NodeIdentity,
+        identity: &NodeIdentity,
         context: Context,
     ) -> Self {
         // Validate config
@@ -62,13 +62,7 @@ impl CwHoNetworkManifold {
 
         // Add ourselves to the topology
         let our_info = NodeInfo {
-            node_id: format!(
-                "{:?}",
-                identity
-                    .public_key
-                    .clone()
-                    .expect("unidentifiable (public key not set)")
-            ),
+            node_id: identity.display_id(),
             node_type: identity.node_type.clone(),
             online: true,
             last_seen: chrono::Utc::now().timestamp() as u64,
@@ -78,7 +72,7 @@ impl CwHoNetworkManifold {
         // Network will be started separately using start_network method
         // Background tasks and announcements will be handled there
         Self {
-            identity,
+            identity: identity.clone(),
             context,
             network_running: Arc::new(RwLock::new(false)),
             channel_senders,
