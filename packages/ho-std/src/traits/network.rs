@@ -4,6 +4,7 @@ use crate::commonware::error::CommonwareNetworkResult;
 use crate::commonware::identity::NodePrivKey;
 use crate::error::HoResult;
 use crate::traits::NetworkConfigTrait;
+use crate::types::cw_ho::network::v1::*;
 use async_trait::async_trait;
 use std::net::SocketAddr;
 
@@ -46,17 +47,25 @@ pub trait NodeIdentityTrait {
 
 /// Core trait for network topology management
 pub trait NetworkTopologyTrait {
+    /// Create a new empty topology
+    fn new() -> Self
+    where
+        Self: Sized;
+
     type NodeInfo;
     type Connection;
 
     /// Get all nodes in topology
     fn nodes(&self) -> &[Self::NodeInfo];
 
-    /// Get all connections in topology
-    fn connections(&self) -> &[Self::Connection];
+    // /// Get all nodes of a specific type
+    fn nodes_by_type(&self, node_type: NodeType) -> Vec<&NodeInfo>;
 
     /// Get online nodes only
     fn online_nodes(&self) -> Vec<&Self::NodeInfo>;
+
+    /// Get all connections in topology
+    fn connections(&self) -> &[Self::Connection];
 
     /// Add a node to topology
     fn add_node(&mut self, node: Self::NodeInfo);
@@ -69,6 +78,70 @@ pub trait NetworkTopologyTrait {
 
     /// Remove a connection
     fn remove_connection(&mut self, from_node: &str, to_node: &str);
+    fn count_nodes_by_type(&self) -> Vec<(String, usize)> {
+        // TODO: implement from access in storage root
+        // let mut counts = HashMap::new();
+        // for node in self.nodes.values() {
+        //     *counts.entry(node.node_type.clone()).or_insert(0) += 1;
+        // }
+        // counts
+        vec![]
+    }
+
+    /// Check if a connection exists
+    fn has_connection(&self, from: &str, to: &str) -> bool;
+
+    // /// Get statistics about the topology
+    fn stats(&self) -> TopologyStatsResponse {
+        TopologyStatsResponse {
+            // total_nodes: self.nodes.len(),
+            // online_nodes: self.online_nodes().len(),
+            // total_connections: self.connections.len(),
+            // is_complete: self.is_complete_tetrahedron(),
+            // nodes_by_type: self.count_nodes_by_type(),
+            max_message_size: todo!(),
+            max_peers: todo!(),
+            connection_timeout: todo!(),
+        }
+    }
+
+    /// Check if the topology forms a complete tetrahedral structure for node
+    /// TODO: implement direct wqieries from storage, implement epoch trigger on each request
+    fn is_complete_tetrahedron(&self) -> bool {
+        let online_nodes = self.online_nodes();
+
+        // // Need exactly 4 nodes (one of each type)
+        // if online_nodes.len() != 4 {
+        //     return false;
+        // }
+
+        // // Check we have one of each type
+        // let types: Vec<NodeType> = online_nodes
+        //     .iter()
+        //     .map(|n| NodeType::from_str_name(&n.clone()).unwrap())
+        //     .collect();
+
+        // let has_coordinator = types.contains(&NodeType::Coordinator);
+        // let has_executor = types.contains(&NodeType::Executor);
+        // let has_referee = types.contains(&NodeType::Referee);
+        // let has_development = types.contains(&NodeType::Development);
+
+        // if !(has_coordinator && has_executor && has_referee && has_development) {
+        //     return false;
+        // }
+
+        // // Check each node is connected to all others (6 edges for 4 nodes)
+        // let expected_connections = 6;
+        // let actual_connections = self.connections().len();
+
+        // actual_connections >= expected_connections
+        false
+    }
+
+    // /// Get the nearest node of a specific type
+    fn nearest_node_of_type(&self, node_type: NodeType) -> Option<&NodeInfo> {
+        self.nodes_by_type(node_type).into_iter().find(|n| n.online)
+    }
 }
 
 /// Core trait for network message handling

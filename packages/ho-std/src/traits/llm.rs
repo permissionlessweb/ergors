@@ -1,7 +1,7 @@
 //! LLM-related traits for CW-HO system
 
 use crate::error::HoResult;
-use crate::prelude::LlmEntity;
+use crate::orchestrate::LlmEntity;
 use crate::traits::LLMRouterConfigTrait;
 use async_trait::async_trait;
 use std::collections::HashMap;

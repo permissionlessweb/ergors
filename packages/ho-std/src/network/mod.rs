@@ -1,10 +1,12 @@
 use crate::error::HoResult;
 use crate::llm::HoError;
-use crate::prelude::{MessageType, NetworkMessage, NetworkTopology, Response};
+
 use crate::traits::Message as _;
 use crate::traits::{NetworkConfigTrait, NetworkMessageTrait, NetworkTopologyTrait};
 
 use crate::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
+use crate::types::cw_ho::network::v1::network_message::*;
+use crate::types::cw_ho::network::v1::*;
 
 impl NetworkTopologyTrait for NetworkTopology {
     type NodeInfo = crate::types::cw_ho::network::v1::NodeInfo;
@@ -37,6 +39,24 @@ impl NetworkTopologyTrait for NetworkTopology {
     fn remove_connection(&mut self, from_node: &str, to_node: &str) {
         self.connections
             .retain(|conn| !(conn.from_node_id == from_node && conn.to_node_id == to_node));
+    }
+
+    fn new() -> Self
+    where
+        Self: Sized,
+    {
+        Self {
+            nodes: vec![],
+            connections: vec![],
+        }
+    }
+
+    fn nodes_by_type(&self, node_type: NodeType) -> Vec<&NodeInfo> {
+        todo!()
+    }
+
+    fn has_connection(&self, from: &str, to: &str) -> bool {
+        todo!()
     }
 }
 

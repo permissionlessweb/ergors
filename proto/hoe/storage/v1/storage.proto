@@ -46,7 +46,7 @@ message QueryRequest {
   optional uint32 limit = 5;
 }
 
-message HealthResponse {
+message StorageHealthResponse {
   string status = 1;
   string version = 2;
   uint64 uptime_seconds = 3;

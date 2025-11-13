@@ -2,8 +2,8 @@ pub mod api_keys;
 pub mod env;
 
 use crate::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
-use crate::prelude::*;
-use crate::types::cw_ho::network::v1::{ChannelConfig, NetworkLimits};
+
+use crate::types::cw_ho::network::v1::*;
 
 impl crate::traits::NetworkConfigTrait for NetworkConfig {
     /// Validate the network config.

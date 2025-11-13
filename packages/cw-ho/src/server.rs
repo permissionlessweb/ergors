@@ -1,9 +1,10 @@
 use ho_std::{
-    prelude::*,
     routes::AuthLayer,
-    traits::{HoConfigTrait, NodeIdentityTrait},
+    traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityTrait},
     transports::ssh::SSHConnectionManager,
+    types::cw_ho::{orchestration::v1::*, storage::v1::*},
 };
+use uuid::Uuid;
 
 use crate::{error::*, AppState, CwHoConfig, CwHoNetworkManifold, CwHoStorage, LlmRouter};
 use axum::{
@@ -30,8 +31,7 @@ impl Server {
         let llm_config = config.llm();
         let llm_router = Arc::new(LlmRouter::new(llm_config.deref()).await?);
         // NETWORK MANIFOLD
-        let mut network_manifold =
-            CwHoNetworkManifold::new(config.identity().clone(), context).await;
+        let mut network_manifold = CwHoNetworkManifold::new(config.identity(), context).await;
 
         // Start the network
         network_manifold.start_network(config.network()).await?;
@@ -61,7 +61,9 @@ impl Server {
                 { path: "/orchestrate/fractal", method: post, handler: handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: handle_prune },
                 { path: "/network/topology", method: get, handler: handle_network_topology },
-            ]
+                ]
+
+
         };
         let addr = format!("{}:{}", self.state.config.network().listen_address, port);
         axum::serve(
@@ -104,48 +106,47 @@ async fn handle_bootstrap(
 ) -> Json<serde_json::Value> {
     let start_time = Instant::now();
     let id = uuid::Uuid::new_v4();
-    let target_node = request.target_node.clone();
 
     // TODO: handle bootstrap via method:
     // /hoe.network.v1.bootstrap.types: (transport connections for nodes,bootstrapping types used in functions for traits )
-
     // Create persistent SSH connection manager
-    info!("🚀 Starting bootstrap process for node: {}", target_node);
-    let mut ssh_manager = SSHConnectionManager::new(target_node.clone());
+    // info!("🚀 Starting bootstrap process for node: {}", target_node);
+    // let mut ssh_manager = SSHConnectionManager::new(target_node.clone());
 
-    match ssh_manager.bootstrap_node().await {
-        Ok(bootstrap_summary) => {
-            info!(
-                "✅ Bootstrap completed successfully for node: {}",
-                target_node
-            );
+    // match ssh_manager.bootstrap_node().await {
+    //     Ok(bootstrap_summary) => {
+    //         info!(
+    //             "✅ Bootstrap completed successfully for node: {}",
+    //             target_node
+    //         );
 
-            // Close SSH connection before returning
-            let _ = ssh_manager.close().await;
+    //         // Close SSH connection before returning
+    //         let _ = ssh_manager.close().await;
 
-            let response = BootstrapResponse {
-                id: id.to_string(),
-                target_node: target_node.clone(),
-                status: "success".to_string(),
-                summary: bootstrap_summary,
-                timestamp: Some(chrono::Utc::now().into()),
-                duration_ms: start_time.elapsed().as_millis() as u64,
-            };
+    //         let response = BootstrapResponse {
+    //             id: id.to_string(),
+    //             target_node: target_node.clone(),
+    //             status: "success".to_string(),
+    //             summary: bootstrap_summary,
+    //             timestamp: Some(chrono::Utc::now().into()),
+    //             duration_ms: start_time.elapsed().as_millis() as u64,
+    //         };
 
-            Json(serde_json::to_value(response).unwrap())
-        }
-        Err(e) => {
-            error!("Bootstrap failed for node {}: {}", target_node, e);
+    //         Json(serde_json::to_value(response).unwrap())
+    //     }
+    //     Err(e) => {
+    //         error!("Bootstrap failed for node {}: {}", target_node, e);
 
-            // Close SSH connection before returning error
-            let _ = ssh_manager.close().await;
+    //         // Close SSH connection before returning error
+    //         let _ = ssh_manager.close().await;
 
-            Json(error_json(
-                &format!("Bootstrap failed: {}", e),
-                "BOOTSTRAP_ERROR",
-            ))
-        }
-    }
+    //         Json(error_json(
+    //             &format!("Bootstrap failed: {}", e),
+    //             "BOOTSTRAP_ERROR",
+    //         ))
+    //     }
+    // }
+    unimplemented!()
 }
 
 async fn handle_prune(// State(state): State<AppState>,
@@ -167,63 +168,63 @@ async fn handle_prune(// State(state): State<AppState>,
     Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
 }
 
-async fn handle_prompt(// State(state): State<AppState>,
-    // Json(request): Json<PromptRequest>,
+async fn handle_prompt(
+    State(state): State<AppState>,
+    Json(request): Json<PromptRequest>,
 ) -> Json<serde_json::Value> {
-    // let start_time = Instant::now();
-    // let id = Uuid::new_v4();
+    let start_time = Instant::now();
+    let id = Uuid::new_v4();
 
-    // let prompt = serde_json::to_string(&request.messages).unwrap();
+    let prompt = serde_json::to_string(&request.messages).unwrap();
 
-    // // Validate request
-    // if request.messages.is_empty() {
-    //     return Json(error_json(
-    //         "Prompt messages cannot be empty",
-    //         "INVALID_PROMPT",
-    //     ));
-    // }
+    // Validate request
+    if request.messages.is_empty() {
+        return Json(error_json(
+            "Prompt messages cannot be empty",
+            "INVALID_PROMPT",
+        ));
+    }
 
-    // // Route to LLM
-    // let model = &request.model;
+    // Route to LLM
+    let model = &request.model;
 
-    // match state.llm_router.process_request(&request, model).await {
-    //     Ok(llm_response) => {
-    //         let duration = start_time.elapsed();
+    match state.llm_router.process_request(&request, model).await {
+        Ok(llm_response) => {
+            let duration = start_time.elapsed();
 
-    //         let response = PromptResponse {
-    //             id: id.into(),
-    //             prompt,
-    //             response: llm_response.response,
-    //             model: model.to_string(),
-    //             timestamp: None, // TODO: Fix timestamp conversion
-    //             tokens_used: llm_response.tokens_used,
-    //             provider: "default".to_string(),
-    //             cost: Some(0.0),
-    //             latency_ms: Some(duration.as_millis() as u64),
-    //             // context: request.context.clone(),
-    //         };
+            let response = PromptResponse {
+                id: id.into(),
+                prompt,
+                response: llm_response.response,
+                model: model.to_string(),
+                timestamp: None, // TODO: Fix timestamp conversion
+                tokens_used: llm_response.tokens_used,
+                provider: "default".to_string(), // TODO: get deterministic provider from storage
+                cost: Some(0.0),
+                latency_ms: Some(duration.as_millis() as u64),
+                // context: request.context.clone(),
+            };
 
-    //         // Store to Cnidarium with original request context
-    //         if let Err(e) = state
-    //             .storage
-    //             .store_prompt_with_context(&response, Some(&request))
-    //             .await
-    //         {
-    //             error!("Failed to store prompt to storage: {}", e);
-    //             // Continue anyway - we don't want to fail the request due to storage issues
-    //         }
+            // Store to Cnidarium with original request context
+            if let Err(e) = state
+                .storage
+                .store_prompt_with_context(&response, Some(&request))
+                .await
+            {
+                error!("Failed to store prompt to storage: {}", e);
+                // Continue anyway - we don't want to fail the request due to storage issues
+            }
 
-    //         Json(serde_json::to_value(response).unwrap())
-    //     }
-    //     Err(e) => {
-    //         error!("LLM processing failed: {}", e);
-    //         Json(error_json(
-    //             &format!("LLM processing failed: {}", e),
-    //             "LLM_ERROR",
-    //         ))
-    //     }
-    // }
-    Json(serde_json::to_value("{}").unwrap())
+            Json(serde_json::to_value(response).unwrap())
+        }
+        Err(e) => {
+            error!("LLM processing failed: {}", e);
+            Json(error_json(
+                &format!("LLM processing failed: {}", e),
+                "LLM_ERROR",
+            ))
+        }
+    }
 }
 
 async fn handle_query(

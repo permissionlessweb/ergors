@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::commonware::error::CommonwareNetworkResult;
 
 use crate::error::HoResult;
-use crate::prelude::NetworkConfig;
+use crate::types::cw_ho::network::v1::*;
 
 /// Core trait for application configuration
 pub trait HoConfigTrait {
@@ -205,8 +205,8 @@ pub trait NetworkConfigTrait {
     /// Get listen address
     fn listen_address(&self) -> &str;
 
-    /// Get maximum peers
-    fn max_peers(&self) -> u32;
+    /// Get defined limitations
+    fn limits(&self) -> NetworkLimits;
 
     /// Get connection timeout
     fn connection_timeout_ms(&self) -> u32;

@@ -33,7 +33,6 @@ pub mod examples;
 pub mod llm;
 pub mod network;
 pub mod orchestrate;
-pub mod prelude;
 pub mod python;
 pub mod routes;
 pub mod storage;

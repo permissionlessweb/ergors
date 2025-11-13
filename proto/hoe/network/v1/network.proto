@@ -6,6 +6,12 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
 import "types/v1/common.proto";
 
+// TopologyStatsResponse
+message TopologyStatsResponse {
+  uint32 max_message_size = 1;
+  uint32 max_peers = 2;
+  uint64 connection_timeout = 3;
+}
 // Network Configuration
 message NetworkLimits {
   uint32 max_message_size = 1;

@@ -7,5 +7,3 @@
 pub mod config;
 pub mod manager;
 pub mod topology;
-
-pub use topology::NetworkTopology;

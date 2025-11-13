@@ -5,9 +5,8 @@
 //! The private key lives only inside the `NodeIdentity` struct and can be
 //! generated freshly or from a deterministic seed (useful for tests).
 
-use crate::prelude::NodeType;
 use crate::traits::NodeIdentityTrait;
-use crate::types::cw_ho::network::v1::{HostOs, NodeIdentity};
+use crate::types::cw_ho::network::v1::*;
 use commonware_codec::{DecodeExt, Encode, FixedSize};
 use commonware_cryptography::{ed25519, PrivateKeyExt, Signer, Verifier};
 use rand::{CryptoRng, RngCore};
@@ -37,7 +36,7 @@ impl NodeIdentityTrait for NodeIdentity {
     }
 
     /// Generate a fresh, random keypair.
-    ///
+    /// TODO: wire into ho-std-keys custodyClient
     /// The function pulls randomness from the supplied `rng`.
     fn generate_keypair<R: RngCore + CryptoRng>(
         &mut self,
@@ -49,13 +48,14 @@ impl NodeIdentityTrait for NodeIdentity {
     }
 
     /// Set keypair from existing keys
+    /// TODO: wire into ho-std-keys custodyClient
     fn set_keypair(&mut self, private_key: Self::PrivateKey) {
         let npk = &private_key;
         self.public_key = Some(private_key.id().0.to_vec());
         self.private_key = Some(npk.private.to_vec());
     }
 
-    /// Get the P2P identity address, includes an identifies via public key appended to the listening socketAddr
+    /// Get the P2P identity address,  
     fn p2p_identity(&self) -> String {
         let pubkey_hex = self
             .public_key

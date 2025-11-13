@@ -5,10 +5,9 @@
 //! patterns for extending the system with custom implementations.
 //!
 
-use crate::prelude::*;
+use crate::types::cw_ho::{network::v1::*, orchestration::v1::*};
 use crate::{error::HoResult, traits::*};
 use async_trait::async_trait;
-use serde::Deserialize;
 use std::{collections::HashMap, path::Path};
 use uuid::Uuid;
 
@@ -18,7 +17,6 @@ use uuid::Uuid;
 /// This could be adapted for Redis, PostgreSQL, or any other storage system.
 pub mod custom_storage {
     use super::*;
-    use crate::types::cw_ho::orchestration::v1::*;
 
     /// A simple in-memory storage implementation for demonstration
     pub struct MemoryStorage {
@@ -262,8 +260,6 @@ pub mod custom_storage {
 /// This example demonstrates how to implement a custom LLM provider that can be
 /// used with the LLM router system.
 pub mod custom_llm {
-
-    use crate::types::cw_ho::orchestration::v1::{PromptRequest, PromptResponse};
 
     use super::*;
 
@@ -540,9 +536,6 @@ pub mod extension_trait_usage {
 /// These functions demonstrate how to write generic code that works with any
 /// implementation of the CW-HO traits.
 pub mod generic_functions {
-
-    use crate::orchestrate::PromptMessage;
-
     use super::*;
 
     /// A generic function that can work with any storage implementation

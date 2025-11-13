@@ -5,8 +5,9 @@ use crate::{
 
 use cnidarium::{StateRead, StateWrite, Storage as CnidariumStorage};
 use futures::StreamExt;
-use ho_std::prelude::*;
+
 use ho_std::traits::StorageConfigTrait;
+use ho_std::types::cw_ho::{orchestration::v1::*, storage::v1::*};
 use std::path::Path;
 use tracing::{debug, info, warn};
 use uuid::Uuid;

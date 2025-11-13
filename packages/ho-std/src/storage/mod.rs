@@ -1,7 +1,7 @@
 use camino::Utf8Path;
 
 use crate::constants::DATA_FOLDER_NAME;
-use crate::prelude::StorageConfig;
+use crate::types::cw_ho::orchestration::v1::StorageConfig;
 
 impl StorageConfig {
     pub fn new(data_dir: &Utf8Path) -> Self {

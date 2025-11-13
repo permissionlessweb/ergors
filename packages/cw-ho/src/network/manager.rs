@@ -2,14 +2,13 @@
 use commonware_codec::DecodeExt;
 use ho_std::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
 use ho_std::llm::HoResult;
-use ho_std::prelude::*;
 
 use bytes::Bytes;
 use commonware_cryptography::{ed25519, Signer};
 use commonware_runtime::{tokio::Context, Metrics, Spawner};
 
 use chrono;
-use ho_std::traits::{NetworkMessageTrait, NodeIdentityTrait};
+use ho_std::traits::{NetworkMessageTrait, NetworkTopologyTrait, NodeIdentityTrait};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,8 +23,8 @@ use governor::Quota;
 use std::num::NonZeroU32;
 
 use ho_std::commonware::identity::NodePubkey;
+use ho_std::types::cw_ho::network::v1::{network_event::*, network_message::*, *};
 
-use crate::network::topology::NetworkTopology;
 use crate::CwHoNetworkManifold;
 
 /// Peer information
