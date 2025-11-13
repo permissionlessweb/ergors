@@ -6,7 +6,7 @@
   - create new session with details about the task we are performing. Saves session information in organized storage structures. Used for creating accurate traiding data for fine tuning.
   - inlcude metadata in data structure with prompts, provide them within context if desired feature that will allow use for guided classification of data during these sessions (prepare,install,start,use,debug,export).
   - SOCRATIC LOOP CUSTOMIZATION: 3-point refactor to make this function -like, where there is a generic template to define for each prompt, with data to include for each granular interfaces: get action to perform, run socratic script with defined actors, even incrementing steps temperature.
-  - Agentic Field Focus: reference various agentic building frameworks that exists in the wild, cherrypick features related to agents and ai models we are not focusing on (<https://docs.letta.com/>)
+  - Agentic Field Focus: reference various agentic building frameworks that exists in the wild, cherrypick features related to agents and ai models we are not focusing on
   - MCP server support: Deployment configuration templates
   - AKASHIC RECORDS: storage layer for active and historical sessions data. Makes use of recursive sublayer structure for accurate data location mappping within 4 dimensions for retroactive fine tuning. Each layer has a dimension to map for its local node data and **a reference (active hash (is this the storage prefix since we make use of pnardium? can we make prefix deterministic))**.
 - CONFIG PATH SANITY TEST: ENSURE OUR CURRENT CONFIGURATION PATHS ARE WIRED IN PROPERLY WITH OUR NEW INTERFACES WITH ACCURATE LOGIC FOR CW-HOE
