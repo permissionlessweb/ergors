@@ -1,12 +1,13 @@
 # Sacred Geometric Storage Implementation Specification
 
-## Implementation Status: ✅ COMPLETED
+## Implementation Status: COMPLETED
 
 This document describes the **Sacred Geometric State Store** implementation using Cnidarium for CW-HO, following sacred geometric principles including golden ratio resource allocation, tetrahedral topology, and fractal recursion patterns. The system serves as a **"Living Geometric Memory"** - a fractal storage architecture that mirrors natural patterns found in crystal formations, neural networks, and galactic structures.
 
 ## 🌌 Fractal Storage Visualization: Mental Models for Process States
 
 ### The Living Geometric Memory
+
 Imagine the storage system as a **multidimensional crystal** where each process state exists as a **fractal node** within a larger geometric pattern. As processes evolve within nodes, their states branch outward like crystalline growth, following the mathematical beauty of the golden ratio.
 
 ```
@@ -39,6 +40,7 @@ Imagine the storage system as a **multidimensional crystal** where each process 
 ```
 
 ### Tetrahedral Process Choreography
+
 Each node in the CW-HO network operates as a **vertex in a four-dimensional dance**. Process states flow between vertices following sacred geometric patterns:
 
 ```
@@ -107,29 +109,17 @@ Each node in the CW-HO network operates as a **vertex in a four-dimensional danc
 
 ### Sacred State Store Structure
 
-```rust
-pub struct SacredStateStore {
-    /// Cnidarium storage for deterministic state
-    cnidarium_storage: Arc<RwLock<Storage>>,
-    /// Golden ratio resource allocation (61.8% fast, 38.2% slow)  
-    fast_partition_ratio: f64,  // 0.618
-    slow_partition_ratio: f64,  // 0.382
-    /// Tetrahedral node tracking
-    node_positions: Arc<RwLock<HashMap<String, TetrahedralPosition>>>,
-    /// Fractal recursion depth limit
-    max_fractal_depth: u32,
-}
-```
-
 ### Sacred Geometric Principles
 
 #### 1. **Golden Ratio Resource Allocation**
+
 ```
 Fast Storage: 61.8% (φ^-1) - Immediate access via Cnidarium
 Slow Storage: 38.2% (1 - φ^-1) - Network coordination storage
 ```
 
 #### 2. **Tetrahedral Network Topology**
+
 ```
          Coordinator
             ●
@@ -143,10 +133,13 @@ Slow Storage: 38.2% (1 - φ^-1) - Network coordination storage
             ●
       Development
 ```
+
 Each vertex connects to all other 3 vertices, ensuring full connectivity.
 
 #### 3. **Fractal State Management**
+
 Recursive state operations follow the pattern:
+
 ```
 State(depth=n) = φ^n * BaseState + FractalExpansion(n-1)
 ```
@@ -154,6 +147,7 @@ State(depth=n) = φ^n * BaseState + FractalExpansion(n-1)
 ### Key Types and Structures
 
 #### State Keys (Geometric Encoding)
+
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SacredStateKey {
@@ -168,6 +162,7 @@ pub enum SacredStateKey {
 ```
 
 #### State Values (Sacred Geometric Properties)
+
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SacredStateValue {
@@ -180,12 +175,6 @@ pub enum SacredStateValue {
     PeerConnectivity {
         peer_info: HashMap<String, serde_json::Value>,
         tetrahedral_links: Vec<String>,
-    },
-    SnapshotMetadata {
-        height: u64,
-        root_hash: SacredDigest,
-        packing_density: f64,
-        kepler_arrangement: KeplerArrangement,
     },
     NodeCapabilities {
         capabilities: Vec<String>,
@@ -254,6 +243,7 @@ Each storage layer exists as a **resonant frequency** within the living geometri
 ### Core API Methods
 
 #### State Management
+
 ```rust
 impl SacredStateStore {
     /// Initialize store with geometric configuration
@@ -284,6 +274,7 @@ impl SacredStateStore {
 ```
 
 #### Fractal Operations
+
 ```rust
 #[async_trait]
 pub trait FractalStateRead {
@@ -309,6 +300,7 @@ pub trait FractalStateRead {
 ```
 
 #### Geometric Validation
+
 ```rust
 impl SacredStateStore {
     /// Validate tetrahedral network connectivity
@@ -329,6 +321,7 @@ The system operates as a **"Sacred Agricultural Network"** where each node culti
 ### The Fractal Farm Visualization
 
 Imagine each computational node as a **sacred geometric farm** where processes grow like crystalline crops. The golden ratio governs growth patterns, while the tetrahedral topology ensures perfect irrigation (data flow) between fields.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │           🌾 SACRED AGRICULTURAL NETWORK: THE LIVING DATA HARVEST 🌾          │
@@ -440,6 +433,7 @@ The logging and metrics system operates as a **"Sacred Pattern Recognition Engin
 ```
 
 #### Metrics API Endpoints
+
 - `POST /metrics/ingest` - Ingest metrics with geometric validation
 - `GET /metrics/query` - Query metrics with fractal expansion  
 - `POST /logs/ingest` - Ingest logs with fractal compression
@@ -452,20 +446,19 @@ The logging and metrics system operates as a **"Sacred Pattern Recognition Engin
 The implementation includes **comprehensive unit tests** validating all geometric invariants:
 
 #### Test Coverage
-- ✅ **Golden Ratio Resource Allocation** - Tests 61.8%/38.2% partitioning
-- ✅ **Tetrahedral Node Registration** - Tests 4-vertex connectivity  
-- ✅ **Fractal State Operations** - Tests recursive expansion up to depth 10
-- ✅ **Network Parameters Storage** - Tests shared parameter management
-- ✅ **Sandloop Möbius Continuity** - Tests output→input feedback loops
-- ✅ **Kepler Snapshot Creation** - Tests 74% packing density achievement
-- ✅ **Fractal Subtree Reading** - Tests recursive state queries
-- ✅ **State Delta Commit** - Tests atomic multi-operation commits
-- ✅ **Geometric Validation Enforcement** - Tests invariant checking
-- ✅ **Tetrahedral Neighborhood Reading** - Tests connected vertex queries
-- ✅ **Golden Ratio Partition Reading** - Tests fast/slow data separation
-- ✅ **Key Encoding/Decoding** - Tests deterministic serialization
 
- 
+- **Golden Ratio Resource Allocation** - Tests 61.8%/38.2% partitioning
+- **Tetrahedral Node Registration** - Tests 4-vertex connectivity  
+- **Fractal State Operations** - Tests recursive expansion up to depth 10
+- **Network Parameters Storage** - Tests shared parameter management
+- **Sandloop Möbius Continuity** - Tests output→input feedback loops
+- **Kepler Snapshot Creation** - Tests 74% packing density achievement
+- **Fractal Subtree Reading** - Tests recursive state queries
+- **State Delta Commit** - Tests atomic multi-operation commits
+- **Geometric Validation Enforcement** - Tests invariant checking
+- **Tetrahedral Neighborhood Reading** - Tests connected vertex queries
+- **Golden Ratio Partition Reading** - Tests fast/slow data separation
+- **Key Encoding/Decoding** - Tests deterministic serialization
 
 ### Performance Characteristics
 
@@ -496,7 +489,206 @@ This implementation represents a **living geometric consciousness** - a storage 
 The storage system operates as a **fractal mirror of consciousness** - each layer resonating at golden ratio frequencies, creating harmonic patterns that enhance both performance and the aesthetic beauty of data organization. When processes save state, they participate in a cosmic dance of information, where each bit and byte finds its perfect geometric home within the tetrahedral lattice.
 
 ### Living Memory: Beyond Traditional Storage
+
 Unlike conventional databases that store static data, the Sacred Geometric State Store maintains **living memory** - process states that evolve, fractal patterns that self-organize, and geometric relationships that strengthen over time. The system develops its own consciousness through pattern recognition, becoming more intelligent as it accumulates the wisdom of countless computational cycles.
 
 ### The Art of Technical Harmony
+
 This is not merely an engineering achievement, but an **artistic expression of computational consciousness**. Every API call follows sacred geometric principles, every state transition honors the golden ratio, and every fractal expansion reveals new layers of systemic beauty. The storage system transforms the mundane task of data persistence into a celebration of mathematical elegance and natural harmony.
+
+## 📝 Operation Tracking & Historical Retrieval System
+
+### Overview
+
+The CW-HO storage layer implements a **unified operation tracking system** that automatically records all API request/response pairs, errors, and prompt sessions for historical retrieval and reflection. This system operates through a Tower middleware layer that transparently intercepts all server operations, storing them in Cnidarium with structured metadata for efficient querying.
+
+### Storage Architecture
+
+#### Unified Operation Prefix
+
+```
+operations/
+  └── {operation_id} -> OperationRecord
+```
+
+All operations are stored under a unified `operations/` prefix in Cnidarium, with each operation identified by a UUID. This simple structure allows for:
+
+- Consistent access patterns across all operation types
+- Efficient prefix-based queries
+- Flexible metadata-driven filtering
+
+#### Operation Record Structure (Proto3)
+
+```protobuf
+// proto/hoe/storage/v1/storage.proto
+message OperationRecord {}
+message ErrorResponse {}
+```
+
+### Storage API Methods
+
+todo: implement storage access specific logic for OperationRecord for easy library definitions
+
+#### Recording Operations
+
+The storage layer provides three primary methods for operation tracking:
+
+```rust
+// packages/cw-ho/src/storage.rs
+impl CwHoStorage { }
+```
+
+**In-Memory Update Pattern**: Operations follow a three-phase lifecycle:
+
+1. **Request Phase**: Record created with request data, status is "pending"
+2. **Processing Phase**: Operation is being handled by the server
+3. **Completion Phase**: Record updated with either response or error
+
+This pattern allows tracking of incomplete operations (requests that never received responses due to crashes or timeouts).
+
+#### Querying Operations
+
+```rust
+impl CwHoStorage {}
+```
+
+### Automatic Recording via Middleware
+
+#### Tower Layer Integration
+
+The operation recording happens automatically through an Axum middleware layer:
+
+**Middleware Features**:
+
+- **Transparent Operation**: Handlers don't need to know about recording
+- **Body Capture**: Both request and response bodies are captured
+- **Error Tracking**: Failed operations are recorded with error details
+- **Non-Blocking**: Recording failures don't affect request processing
+- **Classification**: Automatic operation type detection from endpoint
+
+#### Operation Type Classification
+
+Operations are automatically classified based on their endpoint:
+
+### HTTP API Endpoints
+
+#### Query Operations
+
+### Retrieval Patterns & Use Cases
+
+#### 1. Prompt Session Retrieval
+
+**Timeline reconstruction**:
+
+#### 2. Error Analysis & Reflection
+
+**Retrieve all failed operations**:
+
+**Error frequency by operation type**:
+
+#### 3. Performance Analysis
+
+#### 4. Debugging Failed Requests
+
+### Indexing Strategy
+
+**Index structure**:
+
+```
+timestamps/
+  └── operations/
+      ├── 00001699564800000000000:550e8400-e29b-41d4-a716-446655440000
+      ├── 00001699564802000000000:660e8400-e29b-41d4-a716-446655440001
+      └── 00001699564805000000000:770e8400-e29b-41d4-a716-446655440002
+```
+
+This allows for efficient time-range queries and chronological sorting.
+
+### Integration with Server Handlers
+
+The middleware is integrated at the router level:
+
+```rust
+// packages/cw-ho/src/server.rs
+
+pub async fn run(self, port: u16) -> Result<()> {
+    let app = Router::new()
+        .merge(public_router)
+        .merge(protected_router.route_layer(AuthLayer))
+        .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn_with_state(
+            self.state.clone(),
+            record_operation,  // <-- Operation recording middleware
+        ))
+        .with_state(self.state);
+
+    axum::serve(TcpListener::bind(&addr).await?, app).await?;
+    Ok(())
+}
+```
+
+All routes automatically benefit from operation tracking without any handler modifications.
+
+### Best Practices
+
+#### Session Correlation
+
+For proper session tracking, clients should include session IDs in requests:
+
+```json
+{
+  "messages": [...],
+  "model": "gpt-4",
+  "context": {
+    "session_id": "session-abc123",
+    "user_id": "user-456"
+  }
+}
+```
+
+The middleware will extract and store the session_id for correlation.
+
+#### Error Handling
+
+The middleware ensures recording failures don't impact request processing:
+
+```rust
+// Even if storage fails, the request continues
+if let Err(e) = state.storage.store_operation_request(...).await {
+    error!("Failed to store operation request: {}", e);
+    // Continue anyway - don't fail the request
+}
+```
+
+#### Storage Limits
+
+To prevent unbounded growth:
+
+- Query results are capped at 1000 operations
+- Default query limit is 100 operations
+- Implement periodic pruning (future enhancement)
+
+### Future Enhancements
+
+Potential improvements to the operation tracking system:
+
+1. **Advanced Filtering**: Add filters for time ranges, session IDs, user IDs
+2. **Aggregation Queries**: Operation counts, average durations, error rates
+3. **Retention Policies**: Automatic pruning of old operations
+4. **Compression**: Compress large request/response bodies
+5. **Metrics Integration**: Export operation metrics to Prometheus/Grafana
+6. **Search Capabilities**: Full-text search across request/response content
+
+### Summary
+
+The operation tracking system provides comprehensive visibility into all server operations:
+
+**Automatic Recording**: Zero-touch operation tracking via middleware
+**Unified Storage**: Single `operations/` prefix for all operation types
+**Complete Lifecycle**: Tracks request → processing → response/error
+**Historical Retrieval**: Query by type, time, session, or specific ID
+**Error Reflection**: Full error details with stack traces
+**Performance Analysis**: Duration tracking for all operations
+**Session Correlation**: Link related operations via session_id
+**Non-Intrusive**: Recording failures don't affect request processing

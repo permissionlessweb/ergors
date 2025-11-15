@@ -160,6 +160,9 @@ pub struct ErrorResponse {
     pub code: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
     pub timestamp: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Stack trace for debugging
+    #[prost(string, optional, tag = "4")]
+    pub stack_trace: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for ErrorResponse {
     const NAME: &'static str = "ErrorResponse";
@@ -169,5 +172,42 @@ impl ::prost::Name for ErrorResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/hoe.storage.v1.ErrorResponse".into()
+    }
+}
+/// Minimal operation record for request/response tracking
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OperationRecord {
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// e.g., "prompt", "bootstrap", "health"
+    #[prost(string, tag = "2")]
+    pub operation_type: ::prost::alloc::string::String,
+    /// API path
+    #[prost(string, tag = "3")]
+    pub endpoint: ::prost::alloc::string::String,
+    /// Serialized request (JSON or proto)
+    #[prost(bytes = "vec", tag = "4")]
+    pub request: ::prost::alloc::vec::Vec<u8>,
+    /// Serialized response
+    #[prost(bytes = "vec", optional, tag = "5")]
+    pub response: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    #[prost(message, optional, tag = "6")]
+    pub error: ::core::option::Option<ErrorResponse>,
+    #[prost(message, optional, tag = "7")]
+    pub started_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "8")]
+    pub completed_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(string, optional, tag = "9")]
+    pub session_id: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for OperationRecord {
+    const NAME: &'static str = "OperationRecord";
+    const PACKAGE: &'static str = "hoe.storage.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "hoe.storage.v1.OperationRecord".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/hoe.storage.v1.OperationRecord".into()
     }
 }

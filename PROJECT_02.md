@@ -1,0 +1,235 @@
+# PROJECT 02: Encrypted API Key Storage with Node Identity
+
+## Context
+
+The CW-HO system currently loads API keys from a JSON file located in the home directory (`~/api-keys.json`) and environment variables. We need to migrate to an encrypted storage solution using the node's identity keys for encryption/decryption.
+
+## Current State
+
+### File Locations
+
+- **API Keys JSON**: `~/.ho/api-keys.json` (home directory)
+- **Environment file**: `~/.ho/.env` (same directory as api-keys.json)
+- **Node identity key management**: `packages/ho-std-keys/src/lib.rs`
+- **LLM Key Accessor**: `packages/cw-ho/src/llm/key_accessor.rs`
+- **Storage implementation**: `packages/cw-ho/src/storage.rs`
+- **Cnidarium storage**: Used via `cnidarium::Storage`
+
+### Current JSON Structure
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "api_key": "${ANTHROPIC_API_KEY}",
+      "entity": {
+        "name": "Anthropic",
+        "base_url": "https://api.anthropic.com/v1",
+        "models": [...],
+        "priority": 1,
+        "enabled": true
+      }
+    }
+  }
+}
+```
+
+### Current Key Loading Flow
+
+1. `EnvKeyAccessor::from_home()` reads `api-keys.json`
+2. Resolves `${ENV_VAR}` references to environment variables
+3. Caches keys in memory for duration of session
+4. Falls back to direct env vars if file not found
+
+## Goal
+
+**Encrypt API keys using node identity keys and store them in the Cnidarium database for network-wide encrypted propagation.**
+
+### Requirements
+
+1. **Encryption**: Use node's Ed25519 identity key (from `ho-std-keys`) to encrypt API keys
+2. **Storage**: Store encrypted keys in Cnidarium database with provider metadata
+3. **Migration**: On first run, load from `api-keys.json`, encrypt, store in DB, then delete plaintext file
+4. **Retrieval**: `ApiKeyMethod` should decrypt keys from DB on-demand
+5. **Ephemeral Nature**: Keys are encrypted at rest, only decrypted when needed for API calls
+6. **Network Propagation**: Encrypted keys sync across nodes via Cnidarium state replication
+
+### Security Model
+
+- API keys encrypted with node's private key
+- Only the node that encrypted can decrypt (or nodes with shared custody)
+- Keys never stored in plaintext in database
+- Plaintext keys only exist in memory during API calls
+- Future: Custody client can manage shared decryption for multi-node scenarios
+
+## Implementation Tasks
+
+### 1. Create Encrypted Storage Schema
+
+Define proto types in `proto/hoe/storage/v1/storage.proto`:
+
+```protobuf
+message EncryptedApiKey {
+  string provider_name = 1;
+  bytes encrypted_key = 2;  // Encrypted with node identity key
+  google.protobuf.Timestamp encrypted_at = 3;
+  string encryption_method = 4;  // e.g., "ed25519-xchacha20poly1305"
+}
+
+message ProviderMetadata {
+  string name = 1;
+  string base_url = 2;
+  repeated string models = 3;
+  int32 priority = 4;
+  bool enabled = 5;
+}
+```
+
+### 2. Implement Encryption in `ho-std-keys`
+
+Add encryption methods to `packages/ho-std-keys/src/lib.rs`:
+
+```rust
+pub fn encrypt_api_key(
+    node_key: &ed25519::SigningKey,
+    plaintext_key: &str,
+) -> Result<Vec<u8>>;
+
+pub fn decrypt_api_key(
+    node_key: &ed25519::SigningKey,
+    encrypted_key: &[u8],
+) -> Result<String>;
+```
+
+### 3. Create Storage-Backed ApiKeyMethod
+
+Implement `StorageKeyAccessor` in `packages/cw-ho/src/llm/key_accessor.rs`:
+
+```rust
+pub struct StorageKeyAccessor {
+    storage: Arc<CwHoStorage>,
+    node_key: ed25519::SigningKey,
+    cache: Arc<RwLock<HashMap<String, CachedKey>>>,
+}
+
+impl StorageKeyAccessor {
+    pub async fn new(storage: Arc<CwHoStorage>, node_key: ed25519::SigningKey) -> Result<Self>;
+
+    pub async fn migrate_from_json(&self, json_path: &Path) -> Result<()>;
+
+    async fn store_encrypted_key(&self, provider: &str, key: &str) -> Result<()>;
+
+    async fn retrieve_encrypted_key(&self, provider: &str) -> Result<Option<String>>;
+}
+```
+
+### 4. Update Storage Implementation
+
+Add methods to `packages/cw-ho/src/storage.rs`:
+
+```rust
+impl CwHoStorage {
+    pub async fn store_encrypted_api_key(
+        &self,
+        provider: &str,
+        encrypted_key: EncryptedApiKey,
+    ) -> Result<()>;
+
+    pub async fn get_encrypted_api_key(
+        &self,
+        provider: &str,
+    ) -> Result<Option<EncryptedApiKey>>;
+
+    pub async fn list_providers_with_keys(&self) -> Result<Vec<String>>;
+}
+```
+
+### 5. Migration Logic
+
+Create migration utility in `packages/cw-ho/src/llm/migration.rs`:
+
+```rust
+pub async fn migrate_api_keys(
+    json_path: &Path,
+    storage: Arc<CwHoStorage>,
+    node_key: &ed25519::SigningKey,
+) -> Result<()> {
+    // 1. Read api-keys.json
+    // 2. Resolve environment variables
+    // 3. Encrypt each key with node identity
+    // 4. Store in Cnidarium with provider metadata
+    // 5. Optionally delete or backup json file
+    // 6. Return success
+}
+```
+
+### 6. Update LlmRouter Initialization
+
+Modify `packages/cw-ho/src/llm/router.rs`:
+
+```rust
+impl LlmRouter {
+    pub async fn new(
+        config: &LlmRouterConfig,
+        storage: Arc<CwHoStorage>,
+        node_key: &ed25519::SigningKey,
+    ) -> Result<Self> {
+        // Create storage-backed key accessor
+        let key_accessor = Arc::new(
+            StorageKeyAccessor::new(storage.clone(), node_key.clone()).await?
+        ) as Arc<dyn ApiKeyMethod>;
+
+        // Check if migration needed
+        let json_path = Path::new(&config.api_keys_file);
+        if json_path.exists() {
+            key_accessor.migrate_from_json(json_path).await?;
+        }
+
+        // Continue with router initialization...
+    }
+}
+```
+
+## Testing Strategy
+
+1. **Unit Tests**: Encryption/decryption roundtrip with node keys
+2. **Integration Tests**:
+   - Store encrypted key → retrieve → decrypt → verify
+   - Migration from JSON → encrypted storage
+3. **E2E Tests**: Full router initialization with encrypted keys from storage
+
+## Benefits
+
+- ✅ API keys encrypted at rest in database
+- ✅ Keys propagate across network encrypted (via Cnidarium replication)
+- ✅ No plaintext keys on disk after migration
+- ✅ Ephemeral decryption only when needed
+- ✅ Foundation for custody client integration
+- ✅ Audit trail of key usage via storage operations
+
+## Files to Modify
+
+1. `proto/hoe/storage/v1/storage.proto` - Add encrypted key types
+2. `packages/ho-std-keys/src/lib.rs` - Add encryption methods
+3. `packages/cw-ho/src/llm/key_accessor.rs` - Implement `StorageKeyAccessor`
+4. `packages/cw-ho/src/storage.rs` - Add encrypted key storage methods
+5. `packages/cw-ho/src/llm/router.rs` - Update initialization
+6. `packages/cw-ho/src/llm/migration.rs` - Create migration utility (new file)
+7. `packages/cw-ho/src/llm/mod.rs` - Export new types
+
+## Success Criteria
+
+- [ ] API keys loaded from storage instead of JSON file
+- [ ] Keys encrypted with node identity (Ed25519)
+- [ ] Migration from JSON to encrypted storage works
+- [ ] Decryption happens on-demand during API calls
+- [ ] No plaintext keys in database
+- [ ] Tests pass for encryption, storage, and retrieval
+- [ ] Documentation updated
+
+## Future Enhancements
+
+- Custody client integration for shared key decryption across nodes
+- Key rotation mechanism
+- Multi-signature key access for critical providers
+- Audit logging of key access patterns

@@ -3,7 +3,7 @@
 *Version: 1.0 | Last Updated: 2025‑08‑10*  
 
 ---  
-
+<!-- Q: how can sandloops be more classified for optimized, yet fully functional specification?: composite-key-formula? deployable wasm-vm scripts? -->
 ## 1. Overview  
 
 The **Sandloops** subsystem implements four Möbius‑strip feedback loops that embed the sacred‑geometry principles of CW‑HO (golden‑ratio resource splits, tetrahedral connectivity, fractal self‑similarity, and Kepler‑optimal packing). Each loop is a deterministic, reusable Rust component that can be invoked via the orchestrator’s HTTP API or directly from other Rust modules.  

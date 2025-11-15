@@ -1,25 +1,33 @@
-# CW-AGENT Minimal Prompt Capture Specification
+# CW-AGENT: prompt message preparation and generation
 
 ## Overview
 
-A minimized version of CW-AGENT that provides a simple HTTP API endpoint for routing LLM prompt requests while deterministically capturing all prompts, context, and responses to Cnidarium storage. This removes all sacred geometry complexity and focuses purely on reliable data capture.
-
 ## Core Requirements
 
+### 0. Messgage Preparation
+
+- apis expected message type definitions
+- message data ingestion and preparation
+- message signature authorization middleware
+
 ### 1. Simple HTTP API Server
+
 - Single endpoint: `POST /api/prompt`
 - Accept prompt requests with context
 - Route to configured LLM providers
 - Return responses to clients
 - Capture all data to Cnidarium storage
+- Authentication Middleware
 
 ### 2. Deterministic Storage
+
 - Use Cnidarium for append-only storage
 - Store each request/response as a versioned entry
 - Include timestamps and metadata
 - Support querying historical data
 
 ### 3. Configuration
+
 - Keep existing TOML config structure
 - Support API keys configuration
 - Remove all sacred geometry parameters
@@ -58,9 +66,14 @@ A minimized version of CW-AGENT that provides a simple HTTP API endpoint for rou
 
 ## API Specification
 
+### Prompts 
+
+Prompts are like messages 
+
 ### POST /api/prompt
 
 Request:
+
 ```json
 {
   "prompt": "string",
@@ -76,6 +89,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "id": "uuid",
@@ -165,24 +179,28 @@ file = "./logs/cw-agent.log"
 ## Implementation Plan
 
 ### Phase 1: Core Infrastructure
+
 1. Strip down existing codebase to essentials
 2. Remove all sacred geometry code
 3. Simplify state management to just Cnidarium
 4. Create minimal HTTP server with single endpoint
 
 ### Phase 2: Storage Implementation
+
 1. Implement deterministic key generation
 2. Create append-only storage pattern
 3. Add basic indexing for queries
 4. Implement snapshot functionality
 
 ### Phase 3: API Integration
+
 1. Integrate existing LLM provider code
 2. Add request routing logic
 3. Implement response capture
 4. Add error handling and retries
 
 ### Phase 4: Query Capabilities
+
 1. Add historical query endpoint
 2. Implement filtering by session/user
 3. Add time-based queries

@@ -4,7 +4,7 @@
 
 CW-HO provides a minimal HTTP API for capturing and retrieving LLM prompt/response interactions. There are two types of API's served by nodes, public & protected.
 
-## Authentication
+## [Authentication Middlware](./API-AUTHENTICATION.md)
 
 Authenticaton is required for granular control in how api are accessed. Each node has its own identity key pair, and is used to register to the network other keys that are able to access the protected apis.
 
@@ -18,6 +18,7 @@ Authenticaton is required for granular control in how api are accessed. Each nod
 
 * blake3 hash of entire prompt
 * signature of hash
+* encode message in header metadata
 
 ---
 
@@ -27,59 +28,74 @@ Authenticaton is required for granular control in how api are accessed. Each nod
 
 Process a prompt through configured LLM providers and store the interaction.
 
+**Proto Type**: `hoe.orchestration.v1.PromptRequest`
+**Type URL**: `/hoe.orchestration.v1.PromptRequest`
+
 #### Request Headers
 
 ```
 Content-Type: application/json
 ```
 
-#### Request Body
+#### Request Body Formats
+
+The API accepts **three flexible formats** that are normalized to the canonical `PromptRequest` type:
+
+**Format 1: Simple Prompt (Recommended for quick testing)**
 
 ```json
 {
-  "prompt": "What is the capital of France?",
+  "prompt": "Did jroc ever have a barber???",
+  "model": "gpt-4"
+}
+```
+
+**Format 2: Direct Content**
+
+```json
+{
+  "content": "Did jroc ever have a barber???",
+  "model": "gpt-4"
+}
+```
+
+**Format 3: Canonical Messages Format (Full Control)**
+
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Did jroc ever have a barber???"
+    }
+  ],
+  "model": "gpt-4",
   "context": {
     "session_id": "user-session-123",
     "user_id": "john_doe",
-    "metadata": {
-      "source": "web-ui",
-      "category": "general-knowledge"
-    }
+    "thread_id": "thread-456"
   },
-  "model": "gpt-3.5-turbo",
-  "temperature": 0.7,
-  "max_tokens": 1000
+  "llm_config": {
+    "temperature": 0.7,
+    "max_tokens": 1000
+  }
 }
 ```
 
-#### Request Fields
+#### Canonical Request Fields (Proto Definition)
 
-* **prompt** (required): The text prompt to send to the LLM
-* **context** (optional): Contextual information for indexing
-  * **session_id** (optional): Session identifier for grouping
-  * **user_id** (optional): User identifier for tracking
-  * **metadata** (optional): Additional key-value data (defaults to empty object)
-* **model** (optional): Specific model to use (defaults to config default)
-* **temperature** (optional): Response randomness (0.0-1.0)
-* **max_tokens** (optional): Maximum response length
-
-#### Response
-
-```json
-{
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "prompt": "Why was JROC depressed?",
-  "response": "He got caught pulling his goalie.",
-  "model": "gpt-3.5-turbo",
-  "timestamp": "2024-01-01T12:00:00.000Z",
-  "tokens_used": {
-    "prompt": 10,
-    "completion": 8,
-    "total": 18
-  },
-  "request_duration_ms": 1250
-}
+```protobuf
+message PromptRequest {}
+message PromptMessage {}
+message PromptContext {}
 ```
+
+#### Field Defaults
+
+* **model**: Defaults to `"gpt-4"` if not specified
+* **messages**: Simplified formats (`prompt`, `content`) are converted to `[{"role": "user", "content": "..."}]`
+* **context**: Optional, omitted if not provided
+* **llm_config**: Optional, omitted if not provided
 
 #### cURL Examples
 
@@ -88,7 +104,7 @@ Simple prompt (minimal):
 ```bash
 curl -X POST http://localhost:8080/api/prompt \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "What is the capital of France?"}'
+  -d '{"messages": [{"role": "user","content": "Did jroc have a barber in sunnyvale?", "model": "claude"}]}'
 ```
 
 Prompt with context (no metadata):

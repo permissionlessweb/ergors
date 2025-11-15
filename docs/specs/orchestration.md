@@ -1,4 +1,4 @@
- 
+
 # Orchestration Implementation Specification for CW-HO
 
 ## Overview
@@ -66,9 +66,13 @@ The orchestrator includes robust validation and reporting mechanisms to ensure g
 
 The orchestration system integrates with the broader CW-HO network and multiple LLM providers to achieve distributed, asynchronous task execution:
 
-- **LLM Routing**: The `LLMRouter` routes tasks to primary and fallback LLM chains, with configurable parameters like token limits and temperature. Task execution methods (`TetrahedralCoordination`, `SandloopExecution`) select providers based on vertex position or iteration index, ensuring diversity and fault tolerance.
-- **Network Coordination Placeholder**: The `NetworkOrchestration` task type is a placeholder for future integration with network deployment logic (e.g., from `network_quickstart.py`), indicating plans to manage node deployment and state synchronization directly within the orchestrator.
-- **Python Legacy Support**: During migration, the `PythonExecutor` enables interaction with existing Python-based meta-prompt generation and orchestration scripts, ensuring continuity as Rust implementations are developed.
+- **LLM Routing**: The `LlmRouter` provides a unified entrypoint for all LLM inference using a macro-based provider system. Providers are defined declaratively via the `llm_entity!` macro, enabling zero-hardcoding extensibility. The router automatically discovers and registers providers at initialization, routing requests based on model support detection.
+
+- **Provider Architecture**: Each provider implements the `LlmProvider` trait through macro-generated code. API handlers (`OpenAICompatible`, `AnthropicJoint`) provide reusable request/response logic, while `ApiKeyMethod` abstractions support multiple key management backends (environment variables, JSON config files, custody client integration).
+
+- **Dynamic Provider Discovery**: Providers are registered using the `inventory` crate, allowing compile-time discovery of all `llm_entity!` definitions. This enables runtime provider enumeration, model querying, and automatic routing without configuration changes.
+
+- **Network Coordination Placeholder**: The `NetworkOrchestration` task type is a placeholder for future integration with network deployment logic, indicating plans to manage node deployment and state synchronization directly within the orchestrator.
 
 ## Task Management and Monitoring
 
@@ -84,7 +88,23 @@ While the current implementation is robust, certain aspects are placeholders or 
 
 - **Network Orchestration**: Full implementation of `execute_network_orchestration` awaits migration of Python scripts like `network_quickstart.py`, which will integrate node deployment and P2P state synchronization.
 - **Python Dependency**: Reliance on `PythonExecutor` for meta-prompt generation and orchestration sequences indicates a transitional phase; future versions aim to fully migrate to Rust for performance and consistency.
-- **State Persistence with Cnidarium**: Although mentioned in project READMEs, direct integration with Cnidarium for deterministic state snapshots is not yet evident in `orchestrator.rs`, suggesting future enhancements for state management across nodes.
+- **State Persistence with Cnidarium**: Access storage statefully across all nodes and sync on a tick basis 
+
+## LLM Provider Extension
+
+The system supports adding new LLM providers without modifying core router logic:
+
+**Conceptual Flow**:
+1. Provider definition via `llm_entity!` macro generates struct, trait implementations, and registry entry
+2. Router initialization discovers providers through `inventory` crate at compile-time
+3. Runtime requests route to providers based on model name matching or explicit provider selection
+4. API key access abstracts credential management, supporting migration to custody client
+
+**Design Principles**:
+- Zero hardcoding: All provider metadata in macro invocations
+- Trait-based dispatch: `LlmProvider` trait enables polymorphic provider handling
+- Separation of concerns: API handlers isolated from provider definitions
+- Future-proof: `ApiKeyMethod` trait enables custody client integration without provider changes
 
 ## API and Interaction Points
 
@@ -93,5 +113,4 @@ The orchestration system supports interaction through internal Rust APIs, with p
 - **Task Execution**: `execute_task` serves as the primary API for initiating workflows, accepting a `CosmicTask` and returning updated results.
 - **Task Creation Helper**: `create_cosmic_task` simplifies task creation with predefined types, prompts, contexts, and constraints.
 - **Status Monitoring**: `get_task_status` and `list_active_tasks` provide programmatic access to task states, suitable for integration with monitoring dashboards or CLI tools.
-
- 
+- **LLM Inference**: `handle_request` provides unified LLM inference across all registered providers, with automatic model-based routing.

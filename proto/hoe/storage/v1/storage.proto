@@ -58,5 +58,20 @@ message ErrorResponse {
   string error = 1;
   string code = 2;
   google.protobuf.Timestamp timestamp = 3;
+  // Stack trace for debugging
+  optional string stack_trace = 4;
+}
+
+// Minimal operation record for request/response tracking
+message OperationRecord {
+  string id = 1;
+  string operation_type = 2; // e.g., "prompt", "bootstrap", "health"
+  string endpoint = 3; // API path
+  bytes request = 4; // Serialized request (JSON or proto)
+  optional bytes response = 5; // Serialized response
+  optional ErrorResponse error = 6;
+  google.protobuf.Timestamp started_at = 7;
+  optional google.protobuf.Timestamp completed_at = 8;
+  optional string session_id = 9;
 }
 
