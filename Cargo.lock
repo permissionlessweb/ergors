@@ -153,6 +153,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0674a1ddeecb70197781e945de4b3b8ffb61fa939a5597bcf48503737663100"
 
 [[package]]
+name = "argon2"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c3610892ee6e0cbce8ae2700349fcf8f98adb0dbfbee85aec3c9179d29cc072"
+dependencies = [
+ "base64ct",
+ "blake2",
+ "cpufeatures",
+ "password-hash",
+]
+
+[[package]]
 name = "ark-bls12-381"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1442,6 +1454,7 @@ name = "cw-ho"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "bytes",
  "camino",
@@ -1458,6 +1471,9 @@ dependencies = [
  "hex",
  "ho-std",
  "ho-std-keys",
+ "http-body 1.0.1",
+ "http-body-util",
+ "inventory",
  "pbjson-types 0.8.0",
  "pprof",
  "rand 0.8.5",
@@ -2441,6 +2457,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "ho-std-custody"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "base64 0.22.1",
+ "bytes",
+ "ed25519-consensus",
+ "futures",
+ "hex",
+ "ho-std",
+ "ho-std-keys",
+ "prost 0.14.1",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.8.23",
+ "tonic 0.14.2",
+ "tracing",
+]
+
+[[package]]
 name = "ho-std-keys"
 version = "0.0.1"
 dependencies = [
@@ -3167,6 +3206,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "inventory"
+version = "0.3.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc61209c082fbeb19919bee74b176221b27223e27b65d781eb91af24eb1fb46e"
+dependencies = [
+ "rustversion",
 ]
 
 [[package]]
@@ -3954,6 +4002,17 @@ dependencies = [
  "redox_syscall 0.5.17",
  "smallvec",
  "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "password-hash"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
+dependencies = [
+ "base64ct",
+ "rand_core 0.6.4",
+ "subtle",
 ]
 
 [[package]]

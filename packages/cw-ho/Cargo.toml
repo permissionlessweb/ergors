@@ -26,8 +26,12 @@ dotenv = { workspace = true }
 futures = { workspace = true }
 governor = { workspace = true }
 hex = { workspace = true }
+http-body = {workspace = true, optional = true}
+http-body-util = {workspace = true}
 ho-std  = { workspace = true }
 ho-std-keys = { workspace = true }
+async-trait = { workspace = true }
+
 pbjson-types = { workspace = true }
 pprof = { workspace = true }
 rand = { workspace = true }
