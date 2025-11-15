@@ -1,8 +1,10 @@
 pub mod auth;
+pub mod call;
 pub mod config;
-pub mod error;
+
 pub mod init;
 pub mod llm;
+pub mod middleware;
 pub mod network;
 pub mod server;
 pub mod storage;
@@ -10,15 +12,16 @@ pub mod traits;
 
 // Re-export the macro for external use
 use crate::{
-    auth::AuthCmd, init::InitCmd, llm::ApiKeys, network::manager::PeerInfo, server::Server,
+    auth::AuthCmd, call::CallCmd, init::InitCmd, network::manager::PeerInfo, server::Server,
 };
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use cnidarium::Storage as CnidariumStorage;
-
+use ho_std::error::HoResult;
 use ho_std::{
-    config::env::default_home,
+    config::env::{default_home, init_env},
     constants::CONFIG_FILE_NAME,
+    llm::LlmRouter,
     traits::HoConfigTrait,
     types::cw_ho::{network::v1::*, orchestration::v1::*},
 };
@@ -31,8 +34,6 @@ use {
     },
 };
 
-use anyhow::Result;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::sync::{mpsc, RwLock};
@@ -48,15 +49,7 @@ pub struct CwHoStorage {
     cnidarium: CnidariumStorage,
 }
 
-/// Defines the Llm router used for this CwHo
-pub struct LlmRouter {
-    client: Client,
-    api_keys: ApiKeys,
-    config: LlmRouterConfig,
-}
-
-/// Minimal network manager for cw-ho/
-/// implementations in ./manager.rs
+/// Minimal network manager for cw-ho/ implementations in ./manager.rs
 pub struct CwHoNetworkManifold {
     context: Context,
     /// Network running flag
@@ -80,10 +73,10 @@ pub struct CwHoNetworkManifold {
 }
 
 #[derive(Clone)]
-pub struct AppState {
+pub struct ErgorsAppState {
     pub storage: Arc<CwHoStorage>,
     pub llm_router: Arc<LlmRouter>,
-    pub network_manifold: Arc<tokio::sync::Mutex<CwHoNetworkManifold>>,
+    pub nm: Arc<tokio::sync::Mutex<CwHoNetworkManifold>>, // Network
     pub start_time: Instant,
     pub config: CwHoConfig,
 }
@@ -107,37 +100,25 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Start the HTTP API server
-    Start {
-        /// HTTP server port (overrides config)
-        #[arg(short, long)]
-        port: Option<u16>,
-    },
+    Start {},
     /// Generate a sample configuration file
     Init(InitCmd),
     /// register/revoke
     ManageAuth(AuthCmd),
+    /// register/revoke
+    Call(CallCmd),
 }
 
-pub fn start(cli: Cli, port: Option<u16>) -> Result<()> {
-    info!("🚀 Starting CW-AGENT Minimal Prompt Capture Service");
-    let path = cli.home.as_path().join(CONFIG_FILE_NAME);
-    // Load configuration
+pub fn start(cli: Cli) -> HoResult<()> {
+    let path: Utf8PathBuf = cli.home.as_path().join(CONFIG_FILE_NAME);
     let config = CwHoConfig::load(&path)?;
-
-    // Override port if provided
-    let server_port = port.unwrap_or(config.identity().api_port.try_into().unwrap());
-    info!(
-        "🔌 Server will listen on port {}\n
-        💾 Data directory: {}\n",
-        server_port,
-        config.storage().data_dir
-    );
-
+    init_env(cli.home.as_path())?;
     // Create commonware runtime configuration
     let runtime_config = RuntimeConfig::default();
     let runner = Runner::new(runtime_config);
+    // info!("  {}\n n", config.t);
 
-    info!("🌐 Starting within commonware runtime context");
+    info!("");
     runner.start(|context| async move {
         let server = match Server::new(config.clone(), context).await {
             Ok(s) => s,
@@ -146,7 +127,7 @@ pub fn start(cli: Cli, port: Option<u16>) -> Result<()> {
                 return;
             }
         };
-        if let Err(e) = server.run(server_port).await {
+        if let Err(e) = server.run().await {
             error!("❌ Server runtime error: {}", e);
         }
     });

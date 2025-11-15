@@ -1,18 +1,19 @@
 pub mod api_keys;
 pub mod env;
 
-use crate::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
+use crate::commonware::HoResult;
 
+use crate::llm::HoError;
 use crate::types::cw_ho::network::v1::*;
 
 impl crate::traits::NetworkConfigTrait for NetworkConfig {
     /// Validate the network config.
-    fn validate(&self) -> CommonwareNetworkResult<()> {
+    fn validate(&self) -> HoResult<()> {
         if self.channels.is_none() {};
         if self.connection_timeout_ms < 100 {}
         // Basic validation - could be expanded
         if self.listen_port == 0 {
-            return Err(CommonwareNetworkError::ConfigError(
+            return Err(HoError::Cfg(
                 "Listen port must be non-zero".to_string(),
             ));
         }
@@ -20,7 +21,7 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
 
         if let Some(l) = self.limits {
             if l.connection_timeout < 100 || l.max_message_size > 100000000 || l.max_peers > 10 {
-                return Err(CommonwareNetworkError::ConfigError(
+                return Err(HoError::Cfg(
                     "Issue with nodes ports, please update".to_string(),
                 ));
             }

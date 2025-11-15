@@ -1,5 +1,5 @@
 use {
-    camino::Utf8PathBuf,
+    camino::{Utf8Path, Utf8PathBuf},
     directories::ProjectDirs,
     std::{env, path::PathBuf},
 };
@@ -100,7 +100,7 @@ pub fn default_config_path() -> PathBuf {
     })
 }
 
-pub fn init_env() {
+pub fn init_env(config_path: &Utf8Path) -> anyhow::Result<()> {
     let debug_flag = std::env::var("DEBUG_ENV").unwrap_or("0".into());
     match debug_flag.as_str() {
         "0" => {}
@@ -128,8 +128,8 @@ pub fn init_env() {
     }
 
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "info"); // default log level
+        env::set_var("RUST_LOG", "info");
     }
 
-    //DEBUG_ENV
+    Ok(())
 }

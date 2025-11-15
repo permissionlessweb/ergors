@@ -1,12 +1,10 @@
-use crate::{
-    error::{CwHoError, Result},
-    CwHoStorage,
-};
+use crate::CwHoStorage;
 
 use cnidarium::{StateRead, StateWrite, Storage as CnidariumStorage};
 use futures::StreamExt;
 
-use ho_std::traits::StorageConfigTrait;
+use ho_std::llm::{HoError, HoResult};
+use ho_std::traits::{MessageExt, StorageConfigTrait};
 use ho_std::types::cw_ho::{orchestration::v1::*, storage::v1::*};
 use std::path::Path;
 use tracing::{debug, info, warn};
@@ -16,6 +14,7 @@ const PROMPT_PREFIX: &str = "prompts/";
 const SESSION_INDEX_PREFIX: &str = "sessions/";
 const USER_INDEX_PREFIX: &str = "users/";
 const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
+const OPERATION_PREFIX: &str = "operations/";
 
 impl StorageConfigTrait for CwHoStorage {
     fn data_dir(&self) -> &str {
@@ -40,7 +39,7 @@ impl StorageConfigTrait for CwHoStorage {
 }
 
 impl CwHoStorage {
-    pub async fn new<P: AsRef<Path>>(data_dir: P) -> Result<Self> {
+    pub async fn new<P: AsRef<Path>>(data_dir: P) -> HoResult<Self> {
         let path = data_dir.as_ref();
         std::fs::create_dir_all(path)?;
 
@@ -52,9 +51,7 @@ impl CwHoStorage {
             "models_tools".to_string(),
         ];
 
-        let cnidarium = CnidariumStorage::load(path.to_path_buf(), prefixes)
-            .await
-            .map_err(|e| CwHoError::Storage(e.into()))?;
+        let cnidarium = CnidariumStorage::load(path.to_path_buf(), prefixes).await?;
 
         Ok(Self { cnidarium })
     }
@@ -63,7 +60,7 @@ impl CwHoStorage {
         &self,
         prompt: &PromptResponse,
         original_request: Option<&PromptRequest>,
-    ) -> Result<()> {
+    ) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cnidarium.latest_snapshot());
         let id = hex::encode(prompt.id.clone());
         // Serialize the prompt response
@@ -107,10 +104,7 @@ impl CwHoStorage {
         debug!("Storing prompt {} with timestamp index", id);
 
         // Commit the changes
-        self.cnidarium
-            .commit(delta)
-            .await
-            .map_err(|e| CwHoError::Storage(e.into()))?;
+        self.cnidarium.commit(delta).await?;
 
         info!(
             "💾 Successfully stored prompt: {} with key: {}",
@@ -131,11 +125,11 @@ impl CwHoStorage {
     }
 
     // Backward compatibility method
-    pub async fn store_prompt(&self, prompt: &PromptResponse) -> Result<()> {
+    pub async fn store_prompt(&self, prompt: &PromptResponse) -> HoResult<()> {
         self.store_prompt_with_context(prompt, None).await
     }
 
-    pub async fn get_prompt(&self, id: &Uuid) -> Result<Option<PromptResponse>> {
+    pub async fn get_prompt(&self, id: &Uuid) -> HoResult<Option<PromptResponse>> {
         let snapshot = self.cnidarium.latest_snapshot();
         let prompt_key = format!("{}{}", PROMPT_PREFIX, id);
 
@@ -147,12 +141,12 @@ impl CwHoStorage {
             Ok(None) => Ok(None),
             Err(e) => {
                 warn!("Failed to get prompt {}: {}", id, e);
-                Err(CwHoError::Storage(e.into()))
+                Err(ho_std::error::HoError::Anyhow(e))
             }
         }
     }
 
-    pub async fn query_prompts(&self, query: &QueryRequest) -> Result<Vec<PromptResponse>> {
+    pub async fn query_prompts(&self, query: &QueryRequest) -> HoResult<Vec<PromptResponse>> {
         let snapshot = self.cnidarium.latest_snapshot();
         let mut results = Vec::new();
         let limit = query.limit.unwrap_or(100).min(1000); // Cap at 1000
@@ -284,7 +278,7 @@ impl CwHoStorage {
         true
     }
 
-    pub async fn health_check(&self) -> Result<()> {
+    pub async fn health_check(&self) -> HoResult<()> {
         // Try to get the latest snapshot to verify storage is accessible
         let _snapshot = self.cnidarium.latest_snapshot();
 
@@ -296,15 +290,15 @@ impl CwHoStorage {
             Ok(_) => Ok(()), // Whether it exists or not, storage is accessible
             Err(e) => {
                 warn!("Storage health check failed: {}", e);
-                Err(CwHoError::Storage(e.into()))
+                Err(HoError::Storage(e.to_string()))
             }
         }
     }
-    pub async fn prune_storage(&self) -> Result<()> {
+    pub async fn prune_storage(&self) -> HoResult<()> {
         unimplemented!();
     }
 
-    pub async fn create_snapshot(&self) -> Result<()> {
+    pub async fn create_snapshot(&self) -> HoResult<()> {
         // Create a named snapshot for backup/recovery
         let snapshot_name = format!("snapshot_{}", chrono::Utc::now().timestamp());
 
@@ -313,5 +307,197 @@ impl CwHoStorage {
         info!("📸 Created logical snapshot: {}", snapshot_name);
 
         Ok(())
+    }
+
+    /// Store operation record (request only, response pending)
+    pub async fn store_operation_request(
+        &self,
+        id: &str,
+        operation_type: &str,
+        endpoint: &str,
+        request_data: Vec<u8>,
+        session_id: Option<String>,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cnidarium.latest_snapshot());
+        let operation_key = format!("{}{}", OPERATION_PREFIX, id);
+        let operation = OperationRecord {
+            id: operation_key.to_string(),
+            operation_type: operation_type.to_string(),
+            endpoint: endpoint.to_string(),
+            request: request_data,
+            response: None,
+            error: None,
+            started_at: Some(pbjson_types::Timestamp {
+                seconds: chrono::Utc::now().timestamp(),
+                nanos: 0,
+            }),
+            completed_at: None,
+            session_id,
+        };
+
+        delta.put_raw(
+            operation_key.clone(),
+            operation.to_bytes().map_err(HoError::EncodeError)?,
+        );
+
+        // Create timestamp index
+        let timestamp_key = format!(
+            "{}operations/{:020}:{}",
+            TIMESTAMP_INDEX_PREFIX,
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+            id
+        );
+        delta.put_raw(timestamp_key, id.as_bytes().to_vec());
+
+        self.cnidarium.commit(delta).await?;
+
+        debug!("📝 Stored operation request: {} ({})", id, operation_type);
+        Ok(())
+    }
+
+    /// Update operation record with response
+    pub async fn store_operation_response(&self, id: &str, response_data: Vec<u8>) -> HoResult<()> {
+        let snapshot = self.cnidarium.latest_snapshot();
+        let operation_key = format!("{}{}", OPERATION_PREFIX, id);
+
+        // Get existing operation
+        let existing_data = snapshot
+            .get_raw(&operation_key)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Operation not found: {}", id))?;
+
+        let mut operation: OperationRecord = serde_json::from_slice(&existing_data)?;
+
+        // Update with response
+        operation.response = Some(response_data);
+        operation.completed_at = Some(pbjson_types::Timestamp {
+            seconds: chrono::Utc::now().timestamp(),
+            nanos: 0,
+        });
+
+        let mut delta = cnidarium::StateDelta::new(snapshot);
+        let operation_data = serde_json::to_vec(&operation)?;
+        delta.put_raw(operation_key, operation_data);
+
+        self.cnidarium.commit(delta).await?;
+
+        debug!("✅ Updated operation with response: {}", id);
+        Ok(())
+    }
+
+    /// Update operation record with error
+    pub async fn store_operation_error(
+        &self,
+        id: &str,
+        error_msg: &str,
+        error_code: &str,
+        stack_trace: Option<String>,
+    ) -> HoResult<()> {
+        let snapshot = self.cnidarium.latest_snapshot();
+        let operation_key = format!("{}{}", OPERATION_PREFIX, id);
+
+        // Get existing operation
+        let existing_data = snapshot
+            .get_raw(&operation_key)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Operation not found: {}", id))?;
+
+        let mut operation: OperationRecord = serde_json::from_slice(&existing_data)?;
+
+        // Update with error
+        operation.error = Some(ErrorResponse {
+            error: error_msg.to_string(),
+            code: error_code.to_string(),
+            timestamp: Some(pbjson_types::Timestamp {
+                seconds: chrono::Utc::now().timestamp(),
+                nanos: 0,
+            }),
+            stack_trace,
+        });
+        operation.completed_at = Some(pbjson_types::Timestamp {
+            seconds: chrono::Utc::now().timestamp(),
+            nanos: 0,
+        });
+
+        let mut delta = cnidarium::StateDelta::new(snapshot);
+        let operation_data = serde_json::to_vec(&operation)?;
+        delta.put_raw(operation_key, operation_data);
+
+        self.cnidarium.commit(delta).await?;
+
+        warn!("❌ Recorded operation error: {} - {}", id, error_msg);
+        Ok(())
+    }
+
+    /// Query operation records
+    pub async fn query_operations(
+        &self,
+        operation_type: Option<&str>,
+        limit: Option<u32>,
+    ) -> HoResult<Vec<OperationRecord>> {
+        let snapshot = self.cnidarium.latest_snapshot();
+        let mut results = Vec::new();
+        let limit = limit.unwrap_or(100).min(1000);
+
+        let mut operation_stream = snapshot.prefix_raw(OPERATION_PREFIX);
+        let mut count = 0;
+
+        while let Some(entry_result) = operation_stream.next().await {
+            if count >= limit {
+                break;
+            }
+
+            match entry_result {
+                Ok((key, value)) => {
+                    match serde_json::from_slice::<OperationRecord>(&value) {
+                        Ok(operation) => {
+                            // Filter by operation type if specified
+                            if let Some(op_type) = operation_type {
+                                if operation.operation_type != op_type {
+                                    continue;
+                                }
+                            }
+                            results.push(operation);
+                            count += 1;
+                        }
+                        Err(e) => {
+                            warn!("Failed to deserialize operation: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading operation stream: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        // Sort by timestamp (most recent first)
+        results.sort_by(|a, b| {
+            let b_ts = b.started_at.as_ref().map(|t| t.seconds).unwrap_or(0);
+            let a_ts = a.started_at.as_ref().map(|t| t.seconds).unwrap_or(0);
+            b_ts.cmp(&a_ts)
+        });
+
+        info!("🔍 Query returned {} operations", results.len());
+        Ok(results)
+    }
+
+    /// Get a specific operation by ID
+    pub async fn get_operation(&self, id: &str) -> HoResult<Option<OperationRecord>> {
+        let snapshot = self.cnidarium.latest_snapshot();
+        let operation_key = format!("{}{}", OPERATION_PREFIX, id);
+
+        match snapshot.get_raw(&operation_key).await {
+            Ok(Some(data)) => {
+                let operation: OperationRecord = serde_json::from_slice(&data)?;
+                Ok(Some(operation))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get operation {}: {}", id, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
     }
 }

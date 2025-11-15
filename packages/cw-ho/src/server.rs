@@ -1,28 +1,33 @@
+use crate::{
+    middleware::record_operation, CwHoConfig, CwHoNetworkManifold, CwHoStorage, ErgorsAppState,
+    LlmRouter,
+};
+use axum::{
+    extract::{Query, State},
+    middleware, Json, Router,
+};
+use commonware_runtime::tokio::Context;
+use ho_std::error::error_json;
+use ho_std::llm::HoError;
 use ho_std::{
+    error::{error_json_detailed, HoResult},
     routes::AuthLayer,
     traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityTrait},
     transports::ssh::SSHConnectionManager,
     types::cw_ho::{orchestration::v1::*, storage::v1::*},
 };
-use uuid::Uuid;
-
-use crate::{error::*, AppState, CwHoConfig, CwHoNetworkManifold, CwHoStorage, LlmRouter};
-use axum::{
-    extract::{Query, State},
-    Json, Router,
-};
-use commonware_runtime::tokio::Context;
 use std::{ops::Deref, sync::Arc, time::Instant};
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::{error, info};
+use tracing::{debug, error, info};
+use uuid::Uuid;
 
 pub struct Server {
-    state: AppState,
+    state: ErgorsAppState,
 }
 
 impl Server {
-    pub async fn new(config: CwHoConfig, context: Context) -> Result<Self> {
+    pub async fn new(config: CwHoConfig, context: Context) -> HoResult<Self> {
         config.validate()?;
         let config_clone = config.clone();
         // STORAGE_INIT
@@ -31,16 +36,16 @@ impl Server {
         let llm_config = config.llm();
         let llm_router = Arc::new(LlmRouter::new(llm_config.deref()).await?);
         // NETWORK MANIFOLD
-        let mut network_manifold = CwHoNetworkManifold::new(config.identity(), context).await;
+        let mut nm = CwHoNetworkManifold::new(config.identity(), context).await;
 
         // Start the network
-        network_manifold.start_network(config.network()).await?;
+        nm.start_network(config.network()).await?;
         info!("🌐 Network manager initialized and started");
 
-        let state = AppState {
+        let state = ErgorsAppState {
             storage,
             llm_router,
-            network_manifold: Arc::new(tokio::sync::Mutex::new(network_manifold)),
+            nm: Arc::new(tokio::sync::Mutex::new(nm)),
             start_time: Instant::now(),
             config: config_clone,
         };
@@ -48,41 +53,66 @@ impl Server {
         Ok(Self { state })
     }
 
-    pub async fn run(self, port: u16) -> Result<()> {
+    pub async fn run(self) -> HoResult<()> {
         // Use the new generic route structure from ho-std
         let (public_router, protected_router) = ho_std::define_routes! {
             public_routes: [
                 { path: "/health", method: get, handler: handle_health },
+                { path: "/api/prompt", method: post, handler: handle_prompt },
             ],
             protected_routes: [
                 { path: "/api/prompts", method: get, handler: handle_query },
+                { path: "/api/operations", method: get, handler: handle_query_operations },
                 { path: "/orchestrate/bootstrap", method: post, handler: handle_bootstrap },
-                { path: "/api/prompt", method: post, handler: handle_prompt },
                 { path: "/orchestrate/fractal", method: post, handler: handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: handle_prune },
                 { path: "/network/topology", method: get, handler: handle_network_topology },
                 ]
-
-
         };
-        let addr = format!("{}:{}", self.state.config.network().listen_address, port);
-        axum::serve(
-            TcpListener::bind(&addr).await?,
-            Router::new()
-                .merge(public_router)
-                .merge(protected_router.route_layer(AuthLayer))
-                .layer(CorsLayer::permissive())
-                .layer(TraceLayer::new_for_http())
-                .with_state(self.state),
-        )
-        .await
-        .map_err(|e| CwHoError::Config(format!("Server error: {}", e)))?;
-        info!("🌐 Server listening on {}", addr);
+        let addr = format!(
+            "{}:{}",
+            self.state.config.network().listen_address,
+            self.state.config.network().listen_port
+        );
+
+        // Build router with operation recording middleware
+        let app = Router::new()
+            .merge(public_router)
+            .merge(protected_router.route_layer(AuthLayer))
+            .layer(CorsLayer::permissive())
+            .layer(TraceLayer::new_for_http())
+            .layer(middleware::from_fn_with_state(
+                self.state.clone(),
+                record_operation,
+            ))
+            .with_state(self.state);
+
+        axum::serve(TcpListener::bind(&addr).await?, app)
+            .await
+            .map_err(|e| HoError::Cfg(format!("Dayum yo: {}", e)))?;
         Ok(())
     }
 }
 
-async fn handle_fractal_hoe_creation(// State(_state): State<AppState>,
+fn parse_prompt_request(value: serde_json::Value) -> HoResult<PromptRequest> {
+    let testing = PromptRequest::default();
+    debug!("deafult prompt_request: {:#?}", testing);
+    debug!(
+        "deafult prompt_request: {:#?}",
+        serde_json::to_string(&testing)
+    );
+    // Try to deserialize as canonical PromptRequest first
+    if let Ok(request) = serde_json::from_value::<PromptRequest>(value.clone()) {
+        return Ok(request);
+    }
+
+    // If we get here, format is not recognized
+    Err(HoError::InvalidRequest(
+        "Request must be in the format serializable for `PromptRequest`".to_string(),
+    ))
+}
+
+async fn handle_fractal_hoe_creation(// State(_state): State<ErgorsAppState>,
     // Json(request): Json<PromptRequest>,
 ) -> Json<serde_json::Value> {
     info!("🌀 Creating fractal hoe");
@@ -96,12 +126,11 @@ async fn handle_fractal_hoe_creation(// State(_state): State<AppState>,
     info!("📊  Step 3: Closing SSH connection before returning");
     // Close SSH connection before returning
     // let _ = ssh_manager.close().await;
-
     Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
 }
 
 async fn handle_bootstrap(
-    State(..): State<AppState>,
+    State(..): State<ErgorsAppState>,
     Json(request): Json<BootstrapRequest>,
 ) -> Json<serde_json::Value> {
     let start_time = Instant::now();
@@ -149,7 +178,7 @@ async fn handle_bootstrap(
     unimplemented!()
 }
 
-async fn handle_prune(// State(state): State<AppState>,
+async fn handle_prune(// State(state): State<ErgorsAppState>,
     // Json(_request): Json<PromptRequest>,
 ) -> Json<serde_json::Value> {
     //TODO: prune all non-coordinator nodes storage state by bradcasting its cnardium state to up to the coordinator node.
@@ -169,11 +198,23 @@ async fn handle_prune(// State(state): State<AppState>,
 }
 
 async fn handle_prompt(
-    State(state): State<AppState>,
-    Json(request): Json<PromptRequest>,
+    State(state): State<ErgorsAppState>,
+    Json(raw_request): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
-    let start_time = Instant::now();
-    let id = Uuid::new_v4();
+    // Try to deserialize into canonical PromptRequest, accepting flexible formats
+    let request = match parse_prompt_request(raw_request) {
+        Ok(req) => req,
+        Err(e) => {
+            error!(
+                error = %e,
+                "❌ Failed to parse prompt request"
+            );
+            return Json(error_json(
+                &format!("Invalid request format: {}. Expected format: {{\"messages\": [{{\"role\": \"user\", \"content\": \"...\"}}, ...], \"model\": \"gpt-4\"}}", e),
+                "INVALID_REQUEST",
+            ));
+        }
+    };
 
     let prompt = serde_json::to_string(&request.messages).unwrap();
 
@@ -188,12 +229,10 @@ async fn handle_prompt(
     // Route to LLM
     let model = &request.model;
 
-    match state.llm_router.process_request(&request, model).await {
+    match state.llm_router.handle_request(&request, model).await {
         Ok(llm_response) => {
-            let duration = start_time.elapsed();
-
             let response = PromptResponse {
-                id: id.into(),
+                id: Uuid::new_v4().into(),
                 prompt,
                 response: llm_response.response,
                 model: model.to_string(),
@@ -201,7 +240,7 @@ async fn handle_prompt(
                 tokens_used: llm_response.tokens_used,
                 provider: "default".to_string(), // TODO: get deterministic provider from storage
                 cost: Some(0.0),
-                latency_ms: Some(duration.as_millis() as u64),
+                latency_ms: None,
                 // context: request.context.clone(),
             };
 
@@ -218,17 +257,23 @@ async fn handle_prompt(
             Json(serde_json::to_value(response).unwrap())
         }
         Err(e) => {
-            error!("LLM processing failed: {}", e);
-            Json(error_json(
-                &format!("LLM processing failed: {}", e),
-                "LLM_ERROR",
-            ))
+            // Log error with full chain if detail enabled
+            let error_chain = e.error_chain();
+            error!(
+                error_type = e.error_type(),
+                error = %e,
+                error_chain = ?error_chain,
+                root_cause = ?error_chain.last(),
+                "❌ LLM processing failed"
+            );
+            // Use detailed error response which respects RUST_LOG_DETAIL env
+            Json(error_json_detailed(&e))
         }
     }
 }
 
 async fn handle_query(
-    State(state): State<AppState>,
+    State(state): State<ErgorsAppState>,
     Query(query): Query<QueryRequest>,
 ) -> Json<serde_json::Value> {
     match state.storage.query_prompts(&query).await {
@@ -236,16 +281,23 @@ async fn handle_query(
             Json(serde_json::to_value(prompts).unwrap_or_else(|_| serde_json::json!([])))
         }
         Err(e) => {
-            error!("Query failed: {}", e);
-            Json(error_json(&format!("Query failed: {}", e), "QUERY_ERROR"))
+            let error_chain = e.error_chain();
+            error!(
+                error_type = e.error_type(),
+                error = %e,
+                error_chain = ?error_chain,
+                root_cause = ?error_chain.last(),
+                "❌ Query failed"
+            );
+            Json(error_json_detailed(&e))
         }
     }
 }
-async fn handle_auth(State(state): State<AppState>) -> Json<()> {
+async fn handle_auth(State(state): State<ErgorsAppState>) -> Json<()> {
     Json(())
 }
 
-async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse> {
+async fn handle_health(State(state): State<ErgorsAppState>) -> Json<HealthResponse> {
     let uptime = state.start_time.elapsed().as_secs();
 
     let storage_status = match state.storage.health_check().await {
@@ -255,8 +307,7 @@ async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse> {
 
     // Check network status
     let network_status = {
-        let network_manifold = state.network_manifold.lock().await;
-        let topology = network_manifold.get_topology().await;
+        let topology = state.nm.lock().await.get_topology().await;
         if topology.online_nodes().is_empty() {
             "no peers connected".to_string()
         } else {
@@ -273,9 +324,8 @@ async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse> {
     })
 }
 
-async fn handle_network_topology(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let network_manifold = state.network_manifold.lock().await;
-    let topology = network_manifold.get_topology().await;
+async fn handle_network_topology(State(state): State<ErgorsAppState>) -> Json<serde_json::Value> {
+    let topology = state.nm.lock().await.get_topology().await;
     let identity = state.config.identity();
     Json(serde_json::json!({
         "topology": topology,
@@ -286,4 +336,40 @@ async fn handle_network_topology(State(state): State<AppState>) -> Json<serde_js
             "api_address": identity.api_address(),
         }
     }))
+}
+
+async fn handle_query_operations(
+    State(state): State<ErgorsAppState>,
+    Query(params): Query<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let operation_type = params
+        .get("operation_type")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|l| l as u32);
+
+    match state
+        .storage
+        .query_operations(operation_type.as_deref(), limit)
+        .await
+    {
+        Ok(operations) => Json(serde_json::json!({
+            "operations": operations,
+            "count": operations.len()
+        })),
+        Err(e) => {
+            let error_chain = e.error_chain();
+            error!(
+                error_type = e.error_type(),
+                error = %e,
+                error_chain = ?error_chain,
+                root_cause = ?error_chain.last(),
+                "❌ Failed to query operations"
+            );
+            Json(error_json_detailed(&e))
+        }
+    }
 }

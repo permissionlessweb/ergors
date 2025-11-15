@@ -44,9 +44,6 @@ pub mod utils;
 
 extern crate alloc;
 
-/// The version (commit hash) of the Cosmos SDK used when generating this library.
-pub const GO_BITSONG_VERSION: &str = include_str!("types/CW_HO_COMMIT");
-
 mod serde;
 pub mod traits;
 #[allow(deprecated, unused_imports, clippy::large_enum_variant)]

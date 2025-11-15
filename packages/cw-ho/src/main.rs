@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 use cw_ho::{start, Cli, Commands};
-use ho_std::config::env::init_env;
 
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -16,7 +15,6 @@ fn main() -> Result<()> {
     fs::create_dir_all(&cli.home)
         .with_context(|| format!("Failed to create home directory {}", cli.home))?;
 
-    init_env();
     // Initialize tracing
     tracing_subscriber::registry()
         .with(
@@ -28,8 +26,9 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Init(cmd) => cmd.init(cli.home.as_path())?,
-        Commands::Start { port } => start(cli, port)?,
+        Commands::Start {} => start(cli)?,
         Commands::ManageAuth(cmd) => cmd.exec(cli.home.as_path())?,
+        Commands::Call(_) => todo!(),
     }
 
     Ok(())

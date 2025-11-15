@@ -1,4 +1,3 @@
-use crate::error::Result;
 use crate::traits::Wrap;
 use crate::{CwHoConfig, CwHoLlmRouterConfig};
 
@@ -15,7 +14,7 @@ impl HoConfigTrait for CwHoConfig {
     type Identity = NodeIdentity;
     type StorageConfig = StorageConfig;
     type LLMConfig = CwHoLlmRouterConfig;
-    type HoConfigResult = Result<()>;
+    type HoConfigResult = HoResult<()>;
 
     fn new(home_dir: &Utf8Path) -> Self {
         Self(HoConfig {
