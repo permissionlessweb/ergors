@@ -1,19 +1,19 @@
 
-# Agentic Workflow Specification for CW-HO
+# Agentic Workflow Specification for ERGORS
 
 ## Overview
 
-CW-HO (Life Creativity Engine) is a distributed multi-LLM agent orchestration platform designed to streamline creative workflows through intelligent automation. A key component of CW-HO is its agentic workflow system, which enables the recursive coordination of multiple AI agents across a peer-to-peer (P2P) network to achieve complex, asynchronous, and long-running tasks.
+ERGORS (Life Creativity Engine) is a distributed multi-LLM agent orchestration platform designed to streamline creative workflows through intelligent automation. A key component of ERGORS is its agentic workflow system, which enables the recursive coordination of multiple AI agents across a peer-to-peer (P2P) network to achieve complex, asynchronous, and long-running tasks.
 
- This specification outlines the structure, implementation, and management of agentic workflows within the CW-HO ecosystem, reflecting the recursive nature of the project where the system itself serves as the development environment, API, and product.
+ This specification outlines the structure, implementation, and management of agentic workflows within the ERGORS ecosystem, reflecting the recursive nature of the project where the system itself serves as the development environment, API, and product.
 
 ## Core Principles of Agentic Workflows
 
-1. **Recursive Design**: Agentic workflows in CW-HO are built on a recursive model where each task or sub-task inherits the same API contract as its parent, mirroring fractal self-similarity. This allows for seamless nesting of workflows and tasks, enabling complex operations to be broken down into manageable, reusable components.
+1. **Recursive Design**: Agentic workflows in ERGORS are built on a recursive model where each task or sub-task inherits the same API contract as its parent, mirroring fractal self-similarity. This allows for seamless nesting of workflows and tasks, enabling complex operations to be broken down into manageable, reusable components.
 
 2. **Distributed Orchestration**: Agents operate across a decentralized network of nodes, each with specific roles (Development, Execution, Coordinator, Referee). The central orchestrator binary, implemented in Rust, manages task distribution, state synchronization, and workflow execution across these nodes using Commonware for P2P networking.
 
-3. **Deterministic State Management**: Using Cnidarium, CW-HO ensures that agent workflows are reproducible and auditable. State snapshots are created and shared across nodes, reducing storage overhead and enabling recovery or rollback during long-running tasks.
+3. **Deterministic State Management**: Using Cnidarium, ERGORS ensures that agent workflows are reproducible and auditable. State snapshots are created and shared across nodes, reducing storage overhead and enabling recovery or rollback during long-running tasks.
 
 4. **Sandloop Intelligence**: Agentic workflows incorporate a Möbius-strip-like feedback loop called "Sandloop." This continuous iteration mechanism allows agents to refine outputs by feeding results back into the input, ensuring seamless improvement without divergent states.
 
@@ -21,13 +21,13 @@ CW-HO (Life Creativity Engine) is a distributed multi-LLM agent orchestration pl
 
 ## Agent Types and Roles
 
-CW-HO defines several agent types, each with distinct roles within the workflow:
+ERGORS defines several agent types, each with distinct roles within the workflow:
 
 Agents are managed by the central orchestrator, which assigns tasks based on agent capabilities and network state, ensuring efficient resource utilization.
 
 ## Workflow Architecture
 
-The agentic workflow in CW-HO follows a reusable loop pattern called "Duck, Duck, Goose," which encapsulates the creative iteration process:
+The agentic workflow in ERGORS follows a reusable loop pattern called "Duck, Duck, Goose," which encapsulates the creative iteration process:
 
 1. **Document Ingest**: Agents absorb context, process data, and understand constraints from the environment or user input.
 2. **Context Refiner**: Distill the essence of the input, enhance clarity, and build a comprehensive understanding for downstream processing.
@@ -48,25 +48,25 @@ Inspired by sacred geometry, agentic workflows are designed with natural pattern
 
 ## Implementation with Core Orchestrator Binary
 
-The core orchestrator binary, written in Rust, serves as the central nervous system for agentic workflows in CW-HO. It provides the following functionalities to manage agents and achieve asynchronous, long-running tasks:
+The core orchestrator binary, written in Rust, serves as the central nervous system for agentic workflows in ERGORS. It provides the following functionalities to manage agents and achieve asynchronous, long-running tasks:
 
 - **Task Scheduling and Distribution**: The orchestrator uses the Workflow Engine to assign tasks to agents based on node capabilities and current network load. Tasks are distributed across Execution nodes for sandboxed processing.
 - **State Synchronization**: Using Cnidarium, the orchestrator manages deterministic state across nodes, creating snapshots to persist workflow progress. This ensures that long-running tasks can recover from interruptions or node failures.
 - **Network Coordination**: The binary leverages Commonware for P2P consensus, allowing agents to call other nodes for complex task coordination, request state for comprehensive context, and execute distributed workflows.
-- **Meta-Prompt Generation**: Integrated with a Python module, the orchestrator generates meta-prompts that guide agents in creating tailored prompts for specific tasks, ensuring alignment with CW-HO’s design principles.
+- **Meta-Prompt Generation**: Integrated with a Python module, the orchestrator generates meta-prompts that guide agents in creating tailored prompts for specific tasks, ensuring alignment with ERGORS’s design principles.
 - **Sandloop Execution**: The orchestrator triggers Sandloop iterations for continuous refinement, enabling agents to improve outputs through feedback loops. This is particularly useful for long-running creative tasks requiring iterative enhancement.
 - **Audit and Quality Assurance**: Referee nodes, managed by the orchestrator, perform self-audits and validate workflow outputs, ensuring high-quality results across distributed agent interactions.
 
 ### Node Interaction and Storage
 
-Each node in the CW-HO network hosts agents and executes workflows as directed by the orchestrator. Nodes are configured with specific workspace environments and store data in layered, deterministic formats using Cnidarium:
+Each node in the ERGORS network hosts agents and executes workflows as directed by the orchestrator. Nodes are configured with specific workspace environments and store data in layered, deterministic formats using Cnidarium:
 
 - **Layered Storage**: Data segments such as agent status, workflow state, and task outputs are stored in separate layers, ensuring efficient access and minimal redundancy.
 - **State Snapshots**: Nodes ingest and return state to the orchestrator in snapshot form, reducing storage overhead during extended workflows and providing fallback mechanisms.
 
 ## Managing Long-Running and Asynchronous Tasks
 
-CW-HO’s agentic workflows are specifically designed to handle asynchronous and long-running tasks through the following mechanisms:
+ERGORS’s agentic workflows are specifically designed to handle asynchronous and long-running tasks through the following mechanisms:
 
 - **Task Decomposition**: Complex tasks are broken down into fractal sub-tasks, each managed independently by agents. The orchestrator ensures sub-tasks are executed in parallel or sequentially as needed, across multiple nodes.
 - **State Persistence**: Deterministic state management with Cnidarium allows workflows to pause and resume without loss of context, critical for tasks spanning days or weeks.
@@ -85,8 +85,8 @@ Agentic workflows are programmable and accessible through the orchestrator’s R
 
 ## Conclusion
 
-The agentic workflow system in CW-HO represents a recursive, network-enhanced approach to AI orchestration, where agents, managed by a Rust-based core orchestrator binary, collaborate across distributed nodes to achieve complex, asynchronous, and long-running tasks. By embedding principles of sacred geometry, deterministic state management, and continuous feedback through Sandloops, CW-HO reduces creative friction and empowers communities to build public goods through intelligent automation. This specification serves as a blueprint for understanding and extending agent management within the CW-HO ecosystem, reflecting the recursive nature of the project itself as a tool for building tools.
+The agentic workflow system in ERGORS represents a recursive, network-enhanced approach to AI orchestration, where agents, managed by a Rust-based core orchestrator binary, collaborate across distributed nodes to achieve complex, asynchronous, and long-running tasks. By embedding principles of sacred geometry, deterministic state management, and continuous feedback through Sandloops, ERGORS reduces creative friction and empowers communities to build public goods through intelligent automation. This specification serves as a blueprint for understanding and extending agent management within the ERGORS ecosystem, reflecting the recursive nature of the project itself as a tool for building tools.
 
 ---
 
-You can copy and paste this content into a new `agents.md` file in your workspace at `/Users/returniflost/cw-ho/specs/agent.md` or the appropriate location. If you need assistance with creating the file directly in your workspace, let me know, and I can use the `developer__text_editor` tool to write this content to the file.
+You can copy and paste this content into a new `agents.md` file in your workspace at `/Users/returniflost/ergors/specs/agent.md` or the appropriate location. If you need assistance with creating the file directly in your workspace, let me know, and I can use the `developer__text_editor` tool to write this content to the file.

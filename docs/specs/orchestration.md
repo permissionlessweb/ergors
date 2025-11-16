@@ -1,15 +1,15 @@
 
-# Orchestration Implementation Specification for CW-HO
+# Orchestration Implementation Specification for ERGORS
 
 ## Overview
 
-The CW-HO (Life Creativity Engine) project implements a sophisticated orchestration system designed to manage distributed multi-LLM agent workflows across a peer-to-peer (P2P) network. The core of this system is the `CosmicOrchestrator`, a Rust-based component that coordinates AI agents, applies geometric principles inspired by sacred geometry, and ensures deterministic, auditable workflows for public goods creation. This specification details the implementation of the orchestration system as found in `packages/ho-core/src/orchestrator.rs`, reflecting the current state of the compiled binary.
+The ERGORS (Life Creativity Engine) project implements a sophisticated orchestration system designed to manage distributed multi-LLM agent workflows across a peer-to-peer (P2P) network. The core of this system is the `CosmicOrchestrator`, a Rust-based component that coordinates AI agents, applies geometric principles inspired by sacred geometry, and ensures deterministic, auditable workflows for public goods creation. This specification details the implementation of the orchestration system as found in `packages/ho-core/src/orchestrator.rs`, reflecting the current state of the compiled binary.
 
 ## Core Components
 
 ### CosmicOrchestrator Struct
 
-The `CosmicOrchestrator` is the central entity responsible for managing agentic workflows in CW-HO. It encapsulates the following key components:
+The `CosmicOrchestrator` is the central entity responsible for managing agentic workflows in ERGORS. It encapsulates the following key components:
 
 - **LLM Router**: An `LLMRouter` instance for routing tasks to various large language model (LLM) providers such as AkashChat, KimiResearch, Grok, and OllamaLocal. This ensures tasks are executed by the most suitable provider based on task type and network conditions.
 - **Python Executor**: A `PythonExecutor` for legacy support during migration from Python-based orchestration scripts. This allows integration with existing Python meta-prompt generation and orchestration logic.
@@ -64,7 +64,7 @@ The orchestrator includes robust validation and reporting mechanisms to ensure g
 
 ## Integration with Network and LLM Providers
 
-The orchestration system integrates with the broader CW-HO network and multiple LLM providers to achieve distributed, asynchronous task execution:
+The orchestration system integrates with the broader ERGORS network and multiple LLM providers to achieve distributed, asynchronous task execution:
 
 - **LLM Routing**: The `LlmRouter` provides a unified entrypoint for all LLM inference using a macro-based provider system. Providers are defined declaratively via the `llm_entity!` macro, enabling zero-hardcoding extensibility. The router automatically discovers and registers providers at initialization, routing requests based on model support detection.
 

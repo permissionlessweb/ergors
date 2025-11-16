@@ -28,7 +28,7 @@
 
   Implementation Strategy:
 
-  1. Snapshot Creation (packages/cw-ho/src/storage.rs:196-210):
+  1. Snapshot Creation (packages/ergors/src/storage.rs:196-210):
   pub async fn create_snapshot(&self) -> Result<Snapshot> {
       Ok(self.cnidarium.latest_snapshot())
   }

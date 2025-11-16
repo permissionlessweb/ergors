@@ -1,8 +1,8 @@
-# CW-HO Minimal Networking Implementation Specification
+# ERGORS Minimal Networking Implementation Specification
 
 ## Overview
 
-This specification defines a minimal networking implementation for cw-ho using commonware libraries, avoiding the fractal complexity that occurred in the previous implementation while maintaining the essential tetrahedral topology.
+This specification defines a minimal networking implementation for ergors using commonware libraries, avoiding the fractal complexity that occurred in the previous implementation while maintaining the essential tetrahedral topology.
 
 ## Architecture Decision
 
@@ -40,7 +40,7 @@ Each node type connects to all other types, forming a complete graph with 4 vert
 
 ### 1. Node Identity
 
-- [NodeIdentity](packages/ho-proto-rs/src/types/cw_ho/network/v1.rs)
+- [NodeIdentity](packages/ho-proto-rs/src/types/ergors/network/v1.rs)
 
 ### 2. Network Manager (commonware-p2p)
 <!-- TODO: Newtork manager is our interface for creating a node in a network. We can plug & play each component with custom structures, so long as we implement the functions the  NetworkManagerTrait expects. -->
@@ -48,7 +48,7 @@ Each node type connects to all other types, forming a complete graph with 4 vert
 
 ### 3. Message Types
 
-- [network types](./packages/ho-proto-rs/src/types/cw_ho/network/v1.rs)
+- [network types](./packages/ho-proto-rs/src/types/ergors/network/v1.rs)
 
 ```rust
 // TODO: implement example of type imports

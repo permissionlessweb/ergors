@@ -3,7 +3,7 @@
 We will walkthrough the entire workflow for using this engine to orchestrate a conversation between two llms on a specific topic. Our main ho will use an external llm api request, and our side ho will use a local llm request.
 
 - First we will test out orchestrating our main ho to make a request to an external llm.
-- Next we will test out orchestrating our main ho to make a request and retrieve it from the llm running that we have deployed via the side hoe.
+- Next we will test out orchestrating our main ho to make a request and retrieve it from the llm running that we have deployed via the side ergors.
 - Then we will test out orchestrating the main ho to make a request to the side ho to request from the main ho to make an external api request.
 
 ## GOALS
@@ -34,7 +34,7 @@ RUST_BACKTRACE=1 cargo run -- init # TODO: use CONFIG_UI=1 for ui to manage conf
 ```
 Next, we can start the main ho node to begin use:
 ```sh
-RUST_BACKTRACE=1 cargo run --bin cw-ho -- start
+RUST_BACKTRACE=1 cargo run --bin ergors -- start
 ```
 
 Now, we can use the ho node to self-replicate, via the network command. Lets call the command to create an ssh client between the coordinator & the dev environment. This will install everything we need on linux as well:

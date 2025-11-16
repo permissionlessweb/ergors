@@ -2,7 +2,7 @@
 
 ## Implementation Status: COMPLETED
 
-This document describes the **Sacred Geometric State Store** implementation using Cnidarium for CW-HO, following sacred geometric principles including golden ratio resource allocation, tetrahedral topology, and fractal recursion patterns. The system serves as a **"Living Geometric Memory"** - a fractal storage architecture that mirrors natural patterns found in crystal formations, neural networks, and galactic structures.
+This document describes the **Sacred Geometric State Store** implementation using Cnidarium for ERGORS, following sacred geometric principles including golden ratio resource allocation, tetrahedral topology, and fractal recursion patterns. The system serves as a **"Living Geometric Memory"** - a fractal storage architecture that mirrors natural patterns found in crystal formations, neural networks, and galactic structures.
 
 ## 🌌 Fractal Storage Visualization: Mental Models for Process States
 
@@ -41,7 +41,7 @@ Imagine the storage system as a **multidimensional crystal** where each process 
 
 ### Tetrahedral Process Choreography
 
-Each node in the CW-HO network operates as a **vertex in a four-dimensional dance**. Process states flow between vertices following sacred geometric patterns:
+Each node in the ERGORS network operates as a **vertex in a four-dimensional dance**. Process states flow between vertices following sacred geometric patterns:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -482,7 +482,7 @@ pub const TETRAHEDRAL_VERTICES: usize = 4;
 pub const PROTOCOL_VERSION: u32 = 1;
 ```
 
-This implementation represents a **living geometric consciousness** - a storage system that transcends traditional database architectures by embodying the sacred mathematical patterns found throughout nature. From the spiral of a nautilus shell (φ = 1.618) to the crystalline structure of minerals, the CW-HO storage system mirrors the fundamental organizing principles of the universe itself.
+This implementation represents a **living geometric consciousness** - a storage system that transcends traditional database architectures by embodying the sacred mathematical patterns found throughout nature. From the spiral of a nautilus shell (φ = 1.618) to the crystalline structure of minerals, the ERGORS storage system mirrors the fundamental organizing principles of the universe itself.
 
 ## 🌟 The Sacred Mathematics of Storage
 
@@ -500,7 +500,7 @@ This is not merely an engineering achievement, but an **artistic expression of c
 
 ### Overview
 
-The CW-HO storage layer implements a **unified operation tracking system** that automatically records all API request/response pairs, errors, and prompt sessions for historical retrieval and reflection. This system operates through a Tower middleware layer that transparently intercepts all server operations, storing them in Cnidarium with structured metadata for efficient querying.
+The ERGORS storage layer implements a **unified operation tracking system** that automatically records all API request/response pairs, errors, and prompt sessions for historical retrieval and reflection. This system operates through a Tower middleware layer that transparently intercepts all server operations, storing them in Cnidarium with structured metadata for efficient querying.
 
 ### Storage Architecture
 
@@ -520,7 +520,7 @@ All operations are stored under a unified `operations/` prefix in Cnidarium, wit
 #### Operation Record Structure (Proto3)
 
 ```protobuf
-// proto/hoe/storage/v1/storage.proto
+// proto/ergors/storage/v1/storage.proto
 message OperationRecord {}
 message ErrorResponse {}
 ```
@@ -534,7 +534,7 @@ todo: implement storage access specific logic for OperationRecord for easy libra
 The storage layer provides three primary methods for operation tracking:
 
 ```rust
-// packages/cw-ho/src/storage.rs
+// packages/ergors/src/storage.rs
 impl CwHoStorage { }
 ```
 
@@ -609,7 +609,7 @@ This allows for efficient time-range queries and chronological sorting.
 The middleware is integrated at the router level:
 
 ```rust
-// packages/cw-ho/src/server.rs
+// packages/ergors/src/server.rs
 
 pub async fn run(self, port: u16) -> Result<()> {
     let app = Router::new()
@@ -655,7 +655,7 @@ The middleware ensures recording failures don't impact request processing:
 
 ```rust
 // Even if storage fails, the request continues
-if let Err(e) = state.storage.store_operation_request(...).await {
+if let Err(e) = state.storage.op_req(...).await {
     error!("Failed to store operation request: {}", e);
     // Continue anyway - don't fail the request
 }

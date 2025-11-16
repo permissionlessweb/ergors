@@ -1,10 +1,10 @@
-# Networking Implementation Specification for CW-HO
+# Networking Implementation Specification for ERGORS
 
 ## Overview
 
-The CW-HO (Life Creativity Engine) project is a distributed multi-LLM agent orchestration platform designed to reduce creative friction through intelligent automation for public goods. Central to this vision is a robust networking layer that enables peer-to-peer (P2P) communication across a tetrahedral mesh of nodes, ensuring seamless coordination and state synchronization. The networking implementation, found in `packages/ho-core/src/network/`, comprises two primary systems: a legacy WebSocket-based P2P network for compatibility and a modern Commonware-based network leveraging authenticated discovery protocols from `commonware-cryptography`. This specification details the networking implementation as reflected in the current compiled binary, capturing the sacred geometry principles—tetrahedral connectivity, golden ratio resource allocation, Möbius strip sandloop feedback, and fractal task scaling—that underpin its design.
+The ERGORS (Life Creativity Engine) project is a distributed multi-LLM agent orchestration platform designed to reduce creative friction through intelligent automation for public goods. Central to this vision is a robust networking layer that enables peer-to-peer (P2P) communication across a tetrahedral mesh of nodes, ensuring seamless coordination and state synchronization. The networking implementation, found in `packages/ho-core/src/network/`, comprises two primary systems: a legacy WebSocket-based P2P network for compatibility and a modern Commonware-based network leveraging authenticated discovery protocols from `commonware-cryptography`. This specification details the networking implementation as reflected in the current compiled binary, capturing the sacred geometry principles—tetrahedral connectivity, golden ratio resource allocation, Möbius strip sandloop feedback, and fractal task scaling—that underpin its design.
 
-**Intention**: Networking in CW-HO is the digital nervous system of a tetrahedral organism, connecting nodes as vertices in a fully-connected mesh. Inspired by nature's resilient structures, it balances fast-path messaging with state finality using the golden ratio, ensuring continuous feedback loops and recursive scalability for a harmonious, distributed creativity engine.
+**Intention**: Networking in ERGORS is the digital nervous system of a tetrahedral organism, connecting nodes as vertices in a fully-connected mesh. Inspired by nature's resilient structures, it balances fast-path messaging with state finality using the golden ratio, ensuring continuous feedback loops and recursive scalability for a harmonious, distributed creativity engine.
 
 
 ```
@@ -96,7 +96,7 @@ The `CommonwareNetworkManager` represents the modern networking layer using `com
 - **Topology Updates**: Dynamically updates `NetworkTopology` based on received messages, tracking node roles for connectivity matrix maintenance.
 - **Shutdown**: Aborts the network runtime handle, ensuring graceful termination.
 
-**Intention**: The Commonware system is a geometric masterpiece, implementing tetrahedral connectivity with cryptographic security. Golden ratio timing optimizes network interactions, while fractal sync and Möbius sandloops ensure state consistency and iterative refinement, aligning with CW-HO's vision of a recursive, nature-inspired tool-building system.
+**Intention**: The Commonware system is a geometric masterpiece, implementing tetrahedral connectivity with cryptographic security. Golden ratio timing optimizes network interactions, while fractal sync and Möbius sandloops ensure state consistency and iterative refinement, aligning with ERGORS's vision of a recursive, nature-inspired tool-building system.
 
 ### Coordination Utilities
 
@@ -105,13 +105,13 @@ The `CommonwareNetworkManager` represents the modern networking layer using `com
 
 **Intention**: Coordination utilities embody fractal scalability—state sync operates at multiple depths, while node selection uses golden ratio weighting to mirror natural balance, reducing friction by matching tasks to the most suitable vertices.
 
-## Integration with CW-HO System
+## Integration with ERGORS System
 
 - **Orchestrator Integration**: Both `NetworkManager` and `CommonwareNetworkManager` are integrated into the `Orchestrator` (in `node/mod.rs`), started during node runtime, and used for event handling (`handle_legacy_network_event`, `handle_commonware_event`) to manage tasks, sandloops, and peer connectivity.
 - **CLI Access**: Networking is indirectly accessed via `start` and `deploy` commands in `main.rs`, enabling node and network initialization with P2P configurations.
 - **State Persistence**: Network events and topology states are stored via `StateManager`, though full Cnidarium integration for deterministic snapshots is pending.
 
-**Intention**: Networking integrates as the connective tissue of CW-HO's tetrahedral organism, linking nodes to the orchestration layer. It supports the recursive workspace-as-API philosophy by enabling programmable interactions across distributed environments.
+**Intention**: Networking integrates as the connective tissue of ERGORS's tetrahedral organism, linking nodes to the orchestration layer. It supports the recursive workspace-as-API philosophy by enabling programmable interactions across distributed environments.
 
 ## Limitations and Future Work
 
@@ -129,10 +129,10 @@ The `CommonwareNetworkManager` represents the modern networking layer using `com
 - **Commonware Networking**: `CommonwareNetworkManager` provides `start`, `broadcast_tetrahedral_message`, `send_to_role`, `start_sandloop`, `sync_fractal_state`, `check_tetrahedral_health`, and `subscribe_events` for tetrahedral mesh coordination.
 - **Coordination Utilities**: `coordinate_state_sync` and `find_best_node_for_task` for state and task distribution logic.
 
-**Intention**: These APIs are the digital pathways of a tetrahedral network, designed for accessibility and programmability. They reflect CW-HO's ethos of transparency and reusability, enabling nodes to interact as vertices in a sacred geometric structure.
+**Intention**: These APIs are the digital pathways of a tetrahedral network, designed for accessibility and programmability. They reflect ERGORS's ethos of transparency and reusability, enabling nodes to interact as vertices in a sacred geometric structure.
 
 ## Conclusion
 
-The networking implementation in CW-HO, spanning `packages/ho-core/src/network/`, represents a dual-layered system of legacy WebSocket P2P and modern Commonware tetrahedral mesh networking. By embedding sacred geometry principles—tetrahedral connectivity across four node roles, golden ratio allocation for messaging versus finality (61.8%/38.2%), Möbius strip sandloop feedback, and fractal task scaling—it ensures balanced, scalable, and secure communication across distributed nodes. The ASCII art above visualizes these principles, capturing the geometric harmony that drives CW-HO's vision of reducing creative friction through intelligent automation. This specification reflects the current state of the binary, providing a clear blueprint for understanding and extending the networking system as CW-HO evolves towards full Commonware integration and enhanced geometric optimizations.
+The networking implementation in ERGORS, spanning `packages/ho-core/src/network/`, represents a dual-layered system of legacy WebSocket P2P and modern Commonware tetrahedral mesh networking. By embedding sacred geometry principles—tetrahedral connectivity across four node roles, golden ratio allocation for messaging versus finality (61.8%/38.2%), Möbius strip sandloop feedback, and fractal task scaling—it ensures balanced, scalable, and secure communication across distributed nodes. The ASCII art above visualizes these principles, capturing the geometric harmony that drives ERGORS's vision of reducing creative friction through intelligent automation. This specification reflects the current state of the binary, providing a clear blueprint for understanding and extending the networking system as ERGORS evolves towards full Commonware integration and enhanced geometric optimizations.
 
-**Final Intention**: Networking in CW-HO is the digital embodiment of a golden spiral, connecting nodes in a tetrahedral dance of communication and coordination. Each message, each connection, flows with the elegance of nature's patterns, building a resilient P2P fabric that empowers public goods creation through distributed agent orchestration.
+**Final Intention**: Networking in ERGORS is the digital embodiment of a golden spiral, connecting nodes in a tetrahedral dance of communication and coordination. Each message, each connection, flows with the elegance of nature's patterns, building a resilient P2P fabric that empowers public goods creation through distributed agent orchestration.

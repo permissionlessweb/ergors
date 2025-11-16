@@ -1,8 +1,8 @@
-# CW-HO Cryptographic Security Specification
+# ERGORS Cryptographic Security Specification
 
 ## Overview
 
-This specification defines the cryptographic security architecture for CW-HO (Commonware Helper Orchestration) nodes, implementing two primary security layers:
+This specification defines the cryptographic security architecture for ERGORS (Commonware Helper Orchestration) nodes, implementing two primary security layers:
 
 1. **API Authentication Layer**: Public key-based authentication for API endpoint access
 2. **Transport Encryption Layer**: ChaCha20-Poly1305 encrypted communication between nodes
@@ -123,7 +123,7 @@ Following commonware's HKDF-SHA256 implementation:
 ```rust
 // Base key derivation parameters
 const BASE_KDF_PREFIX: &[u8] = b"commonware-stream/KDF/v1/";
-const NAMESPACE: &[u8] = b"cw-ho/v1/";
+const NAMESPACE: &[u8] = b"ergors/v1/";
 
 // Directional traffic keys
 let salt = SHA256(BASE_KDF_PREFIX || NAMESPACE || hello_transcript);
@@ -318,4 +318,4 @@ impl CwHoNetworkManifold {
 - Man-in-the-middle resistance
 - Malformed message handling
 
-This specification provides a comprehensive security architecture that balances strong cryptographic protection with practical implementation considerations for the CW-HO distributed orchestration system.
+This specification provides a comprehensive security architecture that balances strong cryptographic protection with practical implementation considerations for the ERGORS distributed orchestration system.

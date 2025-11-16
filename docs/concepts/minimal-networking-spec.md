@@ -1,8 +1,8 @@
-# CW-HO Minimal Networking Implementation Specification
+# ERGORS Minimal Networking Implementation Specification
 
 ## Overview
 
-This specification defines a minimal networking implementation for cw-ho using commonware libraries, avoiding the fractal complexity that occurred in the previous implementation while maintaining the essential tetrahedral topology.
+This specification defines a minimal networking implementation for ergors using commonware libraries, avoiding the fractal complexity that occurred in the previous implementation while maintaining the essential tetrahedral topology.
 
 ## Architecture Decision
 

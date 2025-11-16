@@ -1,10 +1,10 @@
 # API Authentication Guide
 
-This guide explains how to make authenticated calls to CW-HO permissioned endpoints using Ed25519 cryptographic signatures.
+This guide explains how to make authenticated calls to ERGORS permissioned endpoints using Ed25519 cryptographic signatures.
 
 ## Overview
 
-CW-HO uses Ed25519 signature-based authentication to protect sensitive endpoints. Public endpoints (like `/health`) are accessible without authentication, while protected endpoints require valid cryptographic signatures in request headers.
+ERGORS uses Ed25519 signature-based authentication to protect sensitive endpoints. Public endpoints (like `/health`) are accessible without authentication, while protected endpoints require valid cryptographic signatures in request headers.
 
 ## Authentication Requirements
 
@@ -186,7 +186,7 @@ curl -X POST http://localhost:8080/rpc \
 
 ## Proto-based Type/Value Pattern
 
-CW-HO follows a proto-based type/value tuple pattern for all request/response messages. Each endpoint expects:
+ERGORS follows a proto-based type/value tuple pattern for all request/response messages. Each endpoint expects:
 
 - **Request**: Proto-generated message type (e.g., `BootstrapNodeRequest`)
 - **Response**: Proto-generated message type (e.g., `BootstrapNodeResponse`)
@@ -197,4 +197,4 @@ This ensures type safety and enables versioning control across the API surface.
 
 ---
 
-For more information on the CW-HO architecture and API design, see the [main README](../README.md).
+For more information on the ERGORS architecture and API design, see the [main README](../README.md).

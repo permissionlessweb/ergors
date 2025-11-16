@@ -1,8 +1,8 @@
-# CW-HO Configuration System
+# ERGORS Configuration System
 
 ## 📋 Overview
 
-The CW-HO configuration system supports both **single-node** and **fractal deployment** configurations, designed around sacred geometric principles including golden ratio resource allocation, tetrahedral topology, and Möbius sandloop feedback cycles.
+The ERGORS configuration system supports both **single-node** and **fractal deployment** configurations, designed around sacred geometric principles including golden ratio resource allocation, tetrahedral topology, and Möbius sandloop feedback cycles.
 
 ## 🎯 Configuration Files
 
@@ -61,7 +61,7 @@ cargo run -- start --config config-fractal.toml --node-type coordinator --port 8
 Modify `data_dir` in configuration for persistent storage:
 ```toml
 [storage]
-data_dir = "/var/lib/cw-ho/coordinator"  # Persistent storage
+data_dir = "/var/lib/ergors/coordinator"  # Persistent storage
 ```
 
 ### Sandloop Tuning
@@ -76,13 +76,13 @@ audit_snapshot = 127   # 30 * φ³
 
 ## 🌟 Sacred Computing Philosophy
 
-The configuration system embodies CW-HO's core principle: **the workspace is the API, the interface is the product, and sacred geometry is the path** to manifesting human intention through distributed computational consciousness. Each configuration parameter honors natural mathematical principles, creating harmony between technical precision and artistic expression.
+The configuration system embodies ERGORS's core principle: **the workspace is the API, the interface is the product, and sacred geometry is the path** to manifesting human intention through distributed computational consciousness. Each configuration parameter honors natural mathematical principles, creating harmony between technical precision and artistic expression.
 
-# CW-HO API Keys Management System
+# ERGORS API Keys Management System
 
 ## 📋 Overview
 
-The CW-HO API keys management system provides **secure, portable, and scalable** configuration of LLM provider API keys through relative file paths and environment variable expansion. This system enables **recursive scaling** of configurations by allowing modification of key files without changing the core configuration.
+The ERGORS API keys management system provides **secure, portable, and scalable** configuration of LLM provider API keys through relative file paths and environment variable expansion. This system enables **recursive scaling** of configurations by allowing modification of key files without changing the core configuration.
 
 ## 🔧 Key Features
 
@@ -143,7 +143,7 @@ cargo run -- start --config config-fractal.toml --node-type coordinator
 ## 📁 File Structure
 
 ```
-cw-ho/
+ergors/
 ├── config.toml                 # Main configuration
 ├── config-fractal.toml         # Fractal deployment config
 ├── api-keys.json              # API keys configuration
@@ -158,7 +158,7 @@ cw-ho/
 {
   "_metadata": {
     "version": "1.0.0",
-    "description": "CW-HO API Keys Configuration"
+    "description": "ERGORS API Keys Configuration"
   },
   "providers": {
     "primary_chain": {
@@ -354,7 +354,7 @@ api_keys_file = "keys/production.json"             # ./keys/production.json
 api_keys_file = "../shared/api-keys.json"          # ../shared/api-keys.json
 
 # Absolute paths also supported
-api_keys_file = "/etc/cw-ho/api-keys.json"         # Absolute path
+api_keys_file = "/etc/ergors/api-keys.json"         # Absolute path
 ```
 
 ## 🔐 Security Best Practices
@@ -384,7 +384,7 @@ git add config.toml config-fractal.toml
 ### 3. Production Deployment
 ```bash
 # Use secrets management
-kubectl create secret generic cw-ho-api-keys \
+kubectl create secret generic ergors-api-keys \
   --from-env-file=.env
 
 # Or use external secret stores
@@ -430,7 +430,7 @@ for (name, provider) in &api_keys.providers.primary_chain {
 }
 ```
 
-This API keys management system provides the foundation for **scalable, secure, and maintainable** LLM provider configuration in CW-HO, enabling both development flexibility and production robustness through sacred geometric principles and recursive configuration patterns.
+This API keys management system provides the foundation for **scalable, secure, and maintainable** LLM provider configuration in ERGORS, enabling both development flexibility and production robustness through sacred geometric principles and recursive configuration patterns.
 
 
 ### ORCHESTRATOR: REMOTE CONFIG 

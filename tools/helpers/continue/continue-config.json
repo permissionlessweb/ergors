@@ -152,7 +152,7 @@
   "logging": {
     "level": "INFO",
     "format": "[{timestamp}] {level} {module}: {message}",
-    "file": "/var/log/cw-ho/agent.log"
+    "file": "/var/log/ergors/agent.log"
   },
   "docs": []
 }

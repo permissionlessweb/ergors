@@ -114,7 +114,7 @@ impl LlmRouter {
 
 ### Documentation Updated
 
-- `packages/cw-ho/README.md` - Library usage examples
+- `packages/ergors/README.md` - Library usage examples
 - `docs/specs/orchestration.md` - Conceptual architecture
 
 ### Dependencies Added

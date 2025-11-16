@@ -4,7 +4,7 @@
 1. **Initialize Configuration**:
 
    ```bash
-   cargo run --bin cw-ho -- init
+   cargo run --bin ergors -- init
    ```
 
 2. **Configure API Keys**:
@@ -21,7 +21,7 @@
 3. **Start the Service**:
 
    ```bash
-   cargo run --bin cw-ho -- start
+   cargo run --bin ergors -- start
    ```
 
 ## API Endpoints

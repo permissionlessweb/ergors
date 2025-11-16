@@ -2,7 +2,7 @@
 
 ## Overview
 
-CW-HO uses Rust's `tracing` ecosystem for structured logging with configurable verbosity levels. All API operations are automatically traced and errors include full error chains and stack traces based on environment configuration.
+ERGORS uses Rust's `tracing` ecosystem for structured logging with configurable verbosity levels. All API operations are automatically traced and errors include full error chains and stack traces based on environment configuration.
 
 ## Environment Variables
 
@@ -26,12 +26,12 @@ export RUST_LOG=debug          # Detailed debugging information
 export RUST_LOG=trace          # Very verbose trace-level logging
 
 # Module-specific levels
-export RUST_LOG=cw_ho=debug,tower_http=info    # Debug for cw_ho, info for tower_http
-export RUST_LOG=cw_ho::server=trace            # Trace only server module
+export RUST_LOG=ergors=debug,tower_http=info    # Debug for ergors, info for tower_http
+export RUST_LOG=ergors::server=trace            # Trace only server module
 
 # Target specific components
-export RUST_LOG=cw_ho::middleware=debug        # Debug middleware operations
-export RUST_LOG=cw_ho::storage=trace           # Trace storage operations
+export RUST_LOG=ergors::middleware=debug        # Debug middleware operations
+export RUST_LOG=ergors::storage=trace           # Trace storage operations
 ```
 
 ### RUST_LOG_DETAIL
@@ -80,13 +80,13 @@ export RUST_BACKTRACE=1
 ### Standard Operation Logs (info level)
 
 ```
-2024-01-15T10:30:45.123456Z  INFO cw_ho::middleware: 🚀 Request received
+2024-01-15T10:30:45.123456Z  INFO ergors::middleware: 🚀 Request received
     operation_id="550e8400-e29b-41d4-a716-446655440000"
     method="POST"
     endpoint="/api/prompt"
     operation_type="prompt"
 
-2024-01-15T10:30:45.678901Z  INFO cw_ho::middleware: ✅ Request completed successfully
+2024-01-15T10:30:45.678901Z  INFO ergors::middleware: ✅ Request completed successfully
     operation_id="550e8400-e29b-41d4-a716-446655440000"
     status="200 OK"
 ```
@@ -96,7 +96,7 @@ export RUST_BACKTRACE=1
 **Basic (RUST_LOG_DETAIL=false)**:
 
 ```
-2024-01-15T10:30:45.123456Z ERROR cw_ho::server: ❌ LLM processing failed
+2024-01-15T10:30:45.123456Z ERROR ergors::server: ❌ LLM processing failed
     error_type="LLM_ERROR"
     error="LLM provider error: Connection timeout"
 ```
@@ -104,7 +104,7 @@ export RUST_BACKTRACE=1
 **Detailed (RUST_LOG_DETAIL=true or RUST_LOG=debug)**:
 
 ```
-2024-01-15T10:30:45.123456Z ERROR cw_ho::server: ❌ LLM processing failed
+2024-01-15T10:30:45.123456Z ERROR ergors::server: ❌ LLM processing failed
     error_type="LLM_ERROR"
     error="LLM provider error: Connection timeout"
     error_chain=["LLM provider error: Connection timeout", "HTTP client error: connection timeout", "IO error: timeout"]
@@ -116,7 +116,7 @@ export RUST_BACKTRACE=1
 The middleware automatically adds tracing spans with structured fields:
 
 ```
-2024-01-15T10:30:45.123456Z  INFO record_operation{operation_id="..." operation_type="prompt" endpoint="/api/prompt"}: cw_ho::middleware: 🚀 Request received
+2024-01-15T10:30:45.123456Z  INFO record_operation{operation_id="..." operation_type="prompt" endpoint="/api/prompt"}: ergors::middleware: 🚀 Request received
 ```
 
 ## API Error Responses
@@ -202,7 +202,7 @@ cargo run start
 ```bash
 export RUST_LOG=info
 export RUST_LOG_DETAIL=true
-./cw-ho start
+./ergors start
 ```
 
 ### Production - Minimal Logging
@@ -210,14 +210,14 @@ export RUST_LOG_DETAIL=true
 ```bash
 export RUST_LOG=warn
 export RUST_LOG_DETAIL=false
-./cw-ho start
+./ergors start
 ```
 
 ### Debugging Specific Component
 
 ```bash
-export RUST_LOG=info,cw_ho::middleware=trace
-./cw-ho start
+export RUST_LOG=info,ergors::middleware=trace
+./ergors start
 ```
 
 ### Error Investigation
@@ -226,7 +226,7 @@ export RUST_LOG=info,cw_ho::middleware=trace
 export RUST_LOG=debug
 export RUST_LOG_DETAIL=true
 export RUST_BACKTRACE=full
-./cw-ho start
+./ergors start
 ```
 
 ## Querying Logged Errors
@@ -252,7 +252,7 @@ Add JSON formatting to tracing:
 ```bash
 export RUST_LOG=debug
 export RUST_LOG_FORMAT=json  # If implemented
-./cw-ho start 2>&1 | jq 'select(.fields.error_type != null)'
+./ergors start 2>&1 | jq 'select(.fields.error_type != null)'
 ```
 
 ## Best Practices
@@ -306,7 +306,7 @@ export RUST_LOG_FORMAT=json  # If implemented
 
 ### Too Many Logs
 - Reduce level: `info` → `warn` → `error`
-- Use module-specific filters: `RUST_LOG=cw_ho=info,tower_http=warn`
+- Use module-specific filters: `RUST_LOG=ergors=info,tower_http=warn`
 - Disable detailed traces: `RUST_LOG_DETAIL=false`
 
 ### Performance Issues

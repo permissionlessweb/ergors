@@ -1,6 +1,6 @@
 # SELF_IMPROVEMENT_001.md
 
-## TASK 0: Ensure cw-ho api is documented and has inital unit test
+## TASK 0: Ensure ergors api is documented and has inital unit test
 
 - ensure document how type defining and generation occurs
 - ensure we have unit & proptest tests implemented for expected results

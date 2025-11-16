@@ -1,8 +1,8 @@
-# CW-HO API Documentation
+# ERGORS API Documentation
 
 ## Overview
 
-CW-HO provides a minimal HTTP API for capturing and retrieving LLM prompt/response interactions. There are two types of API's served by nodes, public & protected.
+ERGORS provides a minimal HTTP API for capturing and retrieving LLM prompt/response interactions. There are two types of API's served by nodes, public & protected.
 
 ## [Authentication Middlware](./API-AUTHENTICATION.md)
 
@@ -28,8 +28,8 @@ Authenticaton is required for granular control in how api are accessed. Each nod
 
 Process a prompt through configured LLM providers and store the interaction.
 
-**Proto Type**: `hoe.orchestration.v1.PromptRequest`
-**Type URL**: `/hoe.orchestration.v1.PromptRequest`
+**Proto Type**: `ergors.orch.v1.PromptRequest`
+**Type URL**: `/ergors.orch.v1.PromptRequest`
 
 #### Request Headers
 
@@ -360,7 +360,7 @@ All prompt/response interactions are stored deterministically in Cnidarium with:
 1. **Start the service**:
 
    ```bash
-   cd packages/cw-ho
+   cd packages/ergors
    cargo run -- start
    ```
 

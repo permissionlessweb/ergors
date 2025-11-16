@@ -82,7 +82,7 @@ The first feature of this rust binary is a an network node for our agent develop
 
 | Package | Default | Description |
 |----------|---------|-------------|
-| Cw-Hoe | Main Node Engine ||
+| Ergo-Rs | Main Node Engine ||
 | Ho-Std | Standard Library ||
 | Ergors-Proto (Derive) | Proto Definitions & Derive Macros ||
 
@@ -92,24 +92,24 @@ First a node must be initialized:
 
 ```sh
 # creates a nodes home directory, identity keys, and default configuration:
-cargo run  --bin cw-ho init 
+cargo run  --bin ergors init 
 ```
 
 Then you will want to configure your inference providers api-keys:
 
 ```sh
 # invokes an interactive portal to configure the api-keys
-cargo run  --bin cw-ho init llm-api-keys 
+cargo run  --bin ergors init llm-api-keys 
 ```
 
 Now, you can start the engine:
 
 ```sh
 # initialize the storage layer, transport layer, and any other services
-cargo run  --bin cw-ho start 
+cargo run  --bin ergors start 
 ```
 
- cargo run  --bin cw-ho init llm-api-keys
+ cargo run  --bin ergors init llm-api-keys
 
 ## Environment Variables
 

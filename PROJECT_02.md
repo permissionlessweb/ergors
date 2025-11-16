@@ -2,7 +2,7 @@
 
 ## Context
 
-The CW-HO system currently loads API keys from a JSON file located in the home directory (`~/api-keys.json`) and environment variables. We need to migrate to an encrypted storage solution using the node's identity keys for encryption/decryption.
+The ERGORS system currently loads API keys from a JSON file located in the home directory (`~/api-keys.json`) and environment variables. We need to migrate to an encrypted storage solution using the node's identity keys for encryption/decryption.
 
 ## Current State
 
@@ -11,8 +11,8 @@ The CW-HO system currently loads API keys from a JSON file located in the home d
 - **API Keys JSON**: `~/.ho/api-keys.json` (home directory)
 - **Environment file**: `~/.ho/.env` (same directory as api-keys.json)
 - **Node identity key management**: `packages/ho-std-keys/src/lib.rs`
-- **LLM Key Accessor**: `packages/cw-ho/src/llm/key_accessor.rs`
-- **Storage implementation**: `packages/cw-ho/src/storage.rs`
+- **LLM Key Accessor**: `packages/ergors/src/llm/key_accessor.rs`
+- **Storage implementation**: `packages/ergors/src/storage.rs`
 - **Cnidarium storage**: Used via `cnidarium::Storage`
 
 ### Current JSON Structure
@@ -66,7 +66,7 @@ The CW-HO system currently loads API keys from a JSON file located in the home d
 
 ### 1. Create Encrypted Storage Schema
 
-Define proto types in `proto/hoe/storage/v1/storage.proto`:
+Define proto types in `proto/ergors/storage/v1/storage.proto`:
 
 ```protobuf
 message EncryptedApiKey {
@@ -103,7 +103,7 @@ pub fn decrypt_api_key(
 
 ### 3. Create Storage-Backed ApiKeyMethod
 
-Implement `StorageKeyAccessor` in `packages/cw-ho/src/llm/key_accessor.rs`:
+Implement `StorageKeyAccessor` in `packages/ergors/src/llm/key_accessor.rs`:
 
 ```rust
 pub struct StorageKeyAccessor {
@@ -125,7 +125,7 @@ impl StorageKeyAccessor {
 
 ### 4. Update Storage Implementation
 
-Add methods to `packages/cw-ho/src/storage.rs`:
+Add methods to `packages/ergors/src/storage.rs`:
 
 ```rust
 impl CwHoStorage {
@@ -146,7 +146,7 @@ impl CwHoStorage {
 
 ### 5. Migration Logic
 
-Create migration utility in `packages/cw-ho/src/llm/migration.rs`:
+Create migration utility in `packages/ergors/src/llm/migration.rs`:
 
 ```rust
 pub async fn migrate_api_keys(
@@ -165,7 +165,7 @@ pub async fn migrate_api_keys(
 
 ### 6. Update LlmRouter Initialization
 
-Modify `packages/cw-ho/src/llm/router.rs`:
+Modify `packages/ergors/src/llm/router.rs`:
 
 ```rust
 impl LlmRouter {
@@ -209,13 +209,13 @@ impl LlmRouter {
 
 ## Files to Modify
 
-1. `proto/hoe/storage/v1/storage.proto` - Add encrypted key types
+1. `proto/ergors/storage/v1/storage.proto` - Add encrypted key types
 2. `packages/ho-std-keys/src/lib.rs` - Add encryption methods
-3. `packages/cw-ho/src/llm/key_accessor.rs` - Implement `StorageKeyAccessor`
-4. `packages/cw-ho/src/storage.rs` - Add encrypted key storage methods
-5. `packages/cw-ho/src/llm/router.rs` - Update initialization
-6. `packages/cw-ho/src/llm/migration.rs` - Create migration utility (new file)
-7. `packages/cw-ho/src/llm/mod.rs` - Export new types
+3. `packages/ergors/src/llm/key_accessor.rs` - Implement `StorageKeyAccessor`
+4. `packages/ergors/src/storage.rs` - Add encrypted key storage methods
+5. `packages/ergors/src/llm/router.rs` - Update initialization
+6. `packages/ergors/src/llm/migration.rs` - Create migration utility (new file)
+7. `packages/ergors/src/llm/mod.rs` - Export new types
 
 ## Success Criteria
 

@@ -2,7 +2,7 @@
 
 ## Storage Layer of All Actions
 
-- **Logging Activation**: Logging in CW-HO is primarily handled using the `tracing` crate, which is initialized in `main.rs` at the start of the `main` function. The `tracing_subscriber` is set up with an environment filter based on the command-line specified log level (defaulting to "info"), and it outputs formatted logs to the console. Throughout the codebase, macros like `info!`, `warn!`, `error!`, and `debug!` from the `tracing` crate are used to log various events and statuses (e.g., node startup, task execution, network events, and errors). This logging is active and functional for console output, providing detailed runtime information.
+- **Logging Activation**: Logging in ERGORS is primarily handled using the `tracing` crate, which is initialized in `main.rs` at the start of the `main` function. The `tracing_subscriber` is set up with an environment filter based on the command-line specified log level (defaulting to "info"), and it outputs formatted logs to the console. Throughout the codebase, macros like `info!`, `warn!`, `error!`, and `debug!` from the `tracing` crate are used to log various events and statuses (e.g., node startup, task execution, network events, and errors). This logging is active and functional for console output, providing detailed runtime information.
   
 - **Metrics Collection and Storage**: Metrics collection and upstream pushing to a central store are not fully implemented in the current codebase. Here's what I found:
   - **Node Metrics**: In `node/mod.rs`, the `start_node_heartbeat` method in the `Orchestrator` struct periodically updates the `NodeState` with fields like `load` and `active_tasks`. However, these are currently placeholders (set to 0.0 and empty vectors with TODO comments), indicating that actual metrics collection is not yet implemented. The `NodeState` is stored locally via `state_manager.store_node_state`, but there's no mechanism to push this upstream to a central store.
@@ -18,21 +18,21 @@
 
 ### Specification for Logging and Metrics System (specs/logging.md)
 
-Below is the detailed specification for the logging and metrics system in CW-HO, reflecting the anticipated implementation where nodes push metrics upstream to a central Cnidarium state store, identifying what's currently in place, and precisely detailing what's still needed to achieve full functionality. This spec is designed to be placed in `specs/logging.md` in your workspace.
+Below is the detailed specification for the logging and metrics system in ERGORS, reflecting the anticipated implementation where nodes push metrics upstream to a central Cnidarium state store, identifying what's currently in place, and precisely detailing what's still needed to achieve full functionality. This spec is designed to be placed in `specs/logging.md` in your workspace.
 
 ---
 
-# Logging and Metrics System Specification for CW-HO
+# Logging and Metrics System Specification for ERGORS
 
 ## Overview
 
-The CW-HO (Life Creativity Engine) project is a distributed multi-LLM agent orchestration platform designed to reduce creative friction through intelligent automation for public goods. A critical component of this system is a robust logging and metrics framework that provides visibility into node operations, task performance, and network health. This specification outlines the logging and metrics system, focusing on the anticipated implementation where nodes push all their metrics upstream to a central store managed by the Cnidarium state system for network-wide access and analysis. It details the current state of logging and metrics in the `ho-core` package, aligns with sacred geometry principles (tetrahedral connectivity, golden ratio allocation, Möbius strip feedback, and fractal scaling), and precisely identifies what's still needed to achieve full functionality as of the current compiled binary.
+The ERGORS (Life Creativity Engine) project is a distributed multi-LLM agent orchestration platform designed to reduce creative friction through intelligent automation for public goods. A critical component of this system is a robust logging and metrics framework that provides visibility into node operations, task performance, and network health. This specification outlines the logging and metrics system, focusing on the anticipated implementation where nodes push all their metrics upstream to a central store managed by the Cnidarium state system for network-wide access and analysis. It details the current state of logging and metrics in the `ho-core` package, aligns with sacred geometry principles (tetrahedral connectivity, golden ratio allocation, Möbius strip feedback, and fractal scaling), and precisely identifies what's still needed to achieve full functionality as of the current compiled binary.
 
-**Intention**: Logging and metrics in CW-HO are the sensory organs of a tetrahedral organism, capturing the pulse of distributed nodes and channeling it to a central memory for holistic insight. Inspired by nature's balance, this system aims to weave raw operational data into a fractal tapestry of actionable knowledge, ensuring continuous refinement and transparency for public goods creation through geometric harmony.
+**Intention**: Logging and metrics in ERGORS are the sensory organs of a tetrahedral organism, capturing the pulse of distributed nodes and channeling it to a central memory for holistic insight. Inspired by nature's balance, this system aims to weave raw operational data into a fractal tapestry of actionable knowledge, ensuring continuous refinement and transparency for public goods creation through geometric harmony.
 
 ## Foundational Principles in ASCII Art
 
-Below is an ASCII representation of the foundational principles guiding CW-HO's logging and metrics system, reflecting sacred geometry and distributed observability with creative visualization:
+Below is an ASCII representation of the foundational principles guiding ERGORS's logging and metrics system, reflecting sacred geometry and distributed observability with creative visualization:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -71,7 +71,7 @@ Below is an ASCII representation of the foundational principles guiding CW-HO's 
 - **Möbius Strip Feedback**: Visualized as continuous insight where logs feed into analysis that loops back to refine operations, ensuring iterative improvement without visible breaks, akin to a single-sided loop.
 - **Kepler Packing Central Store**: Illustrated as a dense Cnidarium store with 74% density efficiency for metric storage, centralizing snapshots and aggregated data for optimal access and persistence.
 
-**Creative Intention**: This art captures the raw, untamed spirit of CW-HO's logging system—a digital ecosystem where metrics bloom like wildflowers across a tetrahedral field, guided by nature's golden spiral. It's a vivid map of data's journey from node to central hub, pulsing with Möbius energy to fuel continuous growth and insight.
+**Creative Intention**: This art captures the raw, untamed spirit of ERGORS's logging system—a digital ecosystem where metrics bloom like wildflowers across a tetrahedral field, guided by nature's golden spiral. It's a vivid map of data's journey from node to central hub, pulsing with Möbius energy to fuel continuous growth and insight.
 
 ## Current Implementation Review
 
@@ -97,7 +97,7 @@ Below is an ASCII representation of the foundational principles guiding CW-HO's 
 
 ### System Architecture
 
-The anticipated logging and metrics system in CW-HO envisions a distributed observability framework where:
+The anticipated logging and metrics system in ERGORS envisions a distributed observability framework where:
 
 - **Local Logging**: Each node logs runtime events and metrics locally using the `tracing` framework for immediate visibility and debugging.
 - **Metrics Collection**: Nodes collect operational metrics (node load, task performance, sandloop success rates, network latency) during execution of tasks, heartbeats, and sandloop iterations.
@@ -162,7 +162,7 @@ To achieve the anticipated implementation where nodes push metrics upstream to a
 - **Central Cnidarium Store**: Aggregates metrics in `SacredStateStore` using dedicated or extended `SacredStateValue` types (e.g., `NodeMetrics`), managed by Coordinator nodes for network-wide persistence.
 - **Access and Analysis Layer**: API endpoints and fractal query methods (`read_fractal_subtree`) for accessing central metrics, supporting network-wide monitoring and Möbius feedback for optimization.
 
-### Alignment with CW-HO Principles
+### Alignment with ERGORS Principles
 
 - **Tetrahedral Metric Flow**: Metrics from all node roles flow upstream to the central store, ensuring each vertex contributes to a comprehensive network view, implemented via role-specific `TetrahedralPosition` in state keys.
 - **Golden Ratio Allocation**: Prioritize 61.8% of resources for fast local metrics collection and logging, 38.2% for slow central aggregation, as defined in `SacredStateStore` partitioning.
@@ -180,9 +180,9 @@ To achieve the anticipated implementation where nodes push metrics upstream to a
 
 ## Conclusion
 
-The logging and metrics system in CW-HO aims to be a geometrically harmonious observability framework where nodes push metrics upstream to a central Cnidarium state store for network-wide access and analysis. Currently, local logging via `tracing` is fully active for console output, but metrics collection is incomplete (placeholders or local-only storage via Sled), and upstream pushing to a central store is not implemented. The `SacredStateStore` offers the infrastructure for central storage with fractal and tetrahedral access patterns, but integration, metrics collection, upstream transmission, and analysis feedback loops are still needed. This specification provides a precise roadmap for achieving the anticipated functionality, aligning with CW-HO's sacred geometry principles to ensure balanced, scalable, and iterative observability for distributed agent orchestration.
+The logging and metrics system in ERGORS aims to be a geometrically harmonious observability framework where nodes push metrics upstream to a central Cnidarium state store for network-wide access and analysis. Currently, local logging via `tracing` is fully active for console output, but metrics collection is incomplete (placeholders or local-only storage via Sled), and upstream pushing to a central store is not implemented. The `SacredStateStore` offers the infrastructure for central storage with fractal and tetrahedral access patterns, but integration, metrics collection, upstream transmission, and analysis feedback loops are still needed. This specification provides a precise roadmap for achieving the anticipated functionality, aligning with ERGORS's sacred geometry principles to ensure balanced, scalable, and iterative observability for distributed agent orchestration.
 
-**Final Intention**: Logging and metrics are CW-HO's digital senses, capturing the wild pulse of a tetrahedral network and channeling it into a central memory crystal. With raw creativity, this system will evolve into a fractal mirror of nature's balance, turning raw data into refined insight to empower public goods creation with continuous, geometric harmony.
+**Final Intention**: Logging and metrics are ERGORS's digital senses, capturing the wild pulse of a tetrahedral network and channeling it into a central memory crystal. With raw creativity, this system will evolve into a fractal mirror of nature's balance, turning raw data into refined insight to empower public goods creation with continuous, geometric harmony.
 
 ---
 
@@ -191,17 +191,17 @@ The logging and metrics system in CW-HO aims to be a geometrically harmonious ob
 Below is the final specification content for `specs/logging.md`, formatted in Markdown, which you can manually add to your workspace.
 
 ```markdown
-# Logging and Metrics System Specification for CW-HO
+# Logging and Metrics System Specification for ERGORS
 
 ## Overview
 
-The CW-HO (Life Creativity Engine) project is a distributed multi-LLM agent orchestration platform designed to reduce creative friction through intelligent automation for public goods. A critical component of this system is a robust logging and metrics framework that provides visibility into node operations, task performance, and network health. This specification outlines the logging and metrics system, focusing on the anticipated implementation where nodes push all their metrics upstream to a central store managed by the Cnidarium state system for network-wide access and analysis. It details the current state of logging and metrics in the `ho-core` package, aligns with sacred geometry principles (tetrahedral connectivity, golden ratio allocation, Möbius strip feedback, and fractal scaling), and precisely identifies what's still needed to achieve full functionality as of the current compiled binary.
+The ERGORS (Life Creativity Engine) project is a distributed multi-LLM agent orchestration platform designed to reduce creative friction through intelligent automation for public goods. A critical component of this system is a robust logging and metrics framework that provides visibility into node operations, task performance, and network health. This specification outlines the logging and metrics system, focusing on the anticipated implementation where nodes push all their metrics upstream to a central store managed by the Cnidarium state system for network-wide access and analysis. It details the current state of logging and metrics in the `ho-core` package, aligns with sacred geometry principles (tetrahedral connectivity, golden ratio allocation, Möbius strip feedback, and fractal scaling), and precisely identifies what's still needed to achieve full functionality as of the current compiled binary.
 
-**Intention**: Logging and metrics in CW-HO are the sensory organs of a tetrahedral organism, capturing the pulse of distributed nodes and channeling it to a central memory for holistic insight. Inspired by nature's balance, this system aims to weave raw operational data into a fractal tapestry of actionable knowledge, ensuring continuous refinement and transparency for public goods creation through geometric harmony.
+**Intention**: Logging and metrics in ERGORS are the sensory organs of a tetrahedral organism, capturing the pulse of distributed nodes and channeling it to a central memory for holistic insight. Inspired by nature's balance, this system aims to weave raw operational data into a fractal tapestry of actionable knowledge, ensuring continuous refinement and transparency for public goods creation through geometric harmony.
 
 ## Foundational Principles in ASCII Art
 
-Below is an ASCII representation of the foundational principles guiding CW-HO's logging and metrics system, reflecting sacred geometry and distributed observability with creative visualization:
+Below is an ASCII representation of the foundational principles guiding ERGORS's logging and metrics system, reflecting sacred geometry and distributed observability with creative visualization:
 
 ```
 
@@ -241,7 +241,7 @@ Below is an ASCII representation of the foundational principles guiding CW-HO's 
 - **Möbius Strip Feedback**: Visualized as continuous insight where logs feed into analysis that loops back to refine operations, ensuring iterative improvement without visible breaks, akin to a single-sided loop.
 - **Kepler Packing Central Store**: Illustrated as a dense Cnidarium store with 74% density efficiency for metric storage, centralizing snapshots and aggregated data for optimal access and persistence.
 
-**Creative Intention**: This art captures the raw, untamed spirit of CW-HO's logging system—a digital ecosystem where metrics bloom like wildflowers across a tetrahedral field, guided by nature's golden spiral. It's a vivid map of data's journey from node to central hub, pulsing with Möbius energy to fuel continuous growth and insight.
+**Creative Intention**: This art captures the raw, untamed spirit of ERGORS's logging system—a digital ecosystem where metrics bloom like wildflowers across a tetrahedral field, guided by nature's golden spiral. It's a vivid map of data's journey from node to central hub, pulsing with Möbius energy to fuel continuous growth and insight.
 
 ## Current Implementation Review
 
@@ -266,7 +266,7 @@ The anticipated implementation envisions nodes pushing all metrics (e.g., node l
 ## Anticipated Implementation for Logging and Metrics
 
 ### System Architecture
-The anticipated logging and metrics system in CW-HO envisions a distributed observability framework where:
+The anticipated logging and metrics system in ERGORS envisions a distributed observability framework where:
 - **Local Logging**: Each node logs runtime events and metrics locally using the `tracing` framework for immediate visibility and debugging.
 - **Metrics Collection**: Nodes collect operational metrics (node load, task performance, sandloop success rates, network latency) during execution of tasks, heartbeats, and sandloop iterations.
 - **Upstream Push to Central Store**: Metrics are pushed upstream from individual nodes to a central Cnidarium state store, likely managed by a Coordinator node, using synchronization mechanisms like `FractalSync` messages or dedicated metrics channels.
@@ -327,7 +327,7 @@ To achieve the anticipated implementation where nodes push metrics upstream to a
 - **Phase 5 (Long-Term, 8-10 Weeks)**: Validate full system with multi-node tests, ensuring performance adherence to golden ratio constraints and data consistency across tetrahedral roles.
 
 ## Conclusion
-The logging and metrics system in CW-HO aims to be a geometrically harmonious observability framework where nodes push metrics upstream to a central Cnidarium state store for network-wide access and analysis. Currently, local logging via `tracing` is fully active for console output, but metrics collection is incomplete (placeholders or local-only storage via Sled), and upstream pushing to a central store is not implemented. The `SacredStateStore` offers the infrastructure for central storage with fractal and tetrahedral access patterns, but integration, metrics collection, upstream transmission, and analysis feedback loops are still needed. This specification provides a precise roadmap for achieving the anticipated functionality, aligning with CW-HO's sacred geometry principles to ensure balanced, scalable, and iterative observ
+The logging and metrics system in ERGORS aims to be a geometrically harmonious observability framework where nodes push metrics upstream to a central Cnidarium state store for network-wide access and analysis. Currently, local logging via `tracing` is fully active for console output, but metrics collection is incomplete (placeholders or local-only storage via Sled), and upstream pushing to a central store is not implemented. The `SacredStateStore` offers the infrastructure for central storage with fractal and tetrahedral access patterns, but integration, metrics collection, upstream transmission, and analysis feedback loops are still needed. This specification provides a precise roadmap for achieving the anticipated functionality, aligning with ERGORS's sacred geometry principles to ensure balanced, scalable, and iterative observ
 
 
 - q: are we storging node network params as item object in states for retrieval? Things like available tools and functions, nodes and thier list of params and tools

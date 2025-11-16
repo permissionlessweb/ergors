@@ -1,5 +1,5 @@
 # ┌─────────────────────────────────────────────────────────────────────────────────┐
-# │                        🌌 CW-HO NODE CONFIGURATION 🌌                          │
+# │                        🌌 ERGORS NODE CONFIGURATION 🌌                          │
 # │                      Single Node Deployment Template                            │
 # │                   Sacred Geometric & Tetrahedral Design                        │
 # └─────────────────────────────────────────────────────────────────────────────────┘
@@ -20,7 +20,7 @@ node_type = "Development"  # Options: "Coordinator", "Executor", "Referee", "Dev
 name = "dev-node-01"
 
 # Optional description
-description = "CW-HO Development Node - Sacred Geometric Agent Orchestration"
+description = "ERGORS Development Node - Sacred Geometric Agent Orchestration"
 
 # Task execution limits
 max_concurrent_tasks = 5
@@ -92,7 +92,7 @@ enabled = true
 consul_endpoints = ["http://localhost:8500"]
 
 # Service discovery namespace
-namespace = "cw-ho-tetrahedral"
+namespace = "ergors-tetrahedral"
 
 # ┌─────────────────────────────────────────────────────────────────────────────────┐
 # │                        💾 CNIDARIUM STORAGE CONFIG 💾                         │
