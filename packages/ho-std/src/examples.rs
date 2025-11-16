@@ -1,11 +1,11 @@
-//! # CW-HO Trait Implementation Examples
+//! # ERGORS Trait Implementation Examples
 //!
 //! This module provides complete, working examples of how to implement and use
-//! the CW-HO trait system. These examples demonstrate best practices and common
+//! the ERGORS trait system. These examples demonstrate best practices and common
 //! patterns for extending the system with custom implementations.
 //!
 
-use crate::types::cw_ho::{network::v1::*, orchestration::v1::*};
+use crate::types::ergors::{network::v1::*, orch::v1::*};
 use crate::{error::HoResult, traits::*};
 use async_trait::async_trait;
 use std::{collections::HashMap, path::Path};
@@ -259,182 +259,189 @@ pub mod custom_storage {
 ///
 /// This example demonstrates how to implement a custom LLM provider that can be
 /// used with the LLM router system.
-pub mod custom_llm {
+// pub mod custom_llm {
 
-    use super::*;
+//     use reqwest::Client;
 
-    /// A mock LLM provider for demonstration
-    pub struct MockLLMProvider {
-        pub name: String,
-        pub base_url: String,
-        pub models: Vec<String>,
-    }
+//     use super::*;
 
-    impl LLMProviderTrait for MockLLMProvider {
-        type ProviderType = LlmModel;
+//     /// A mock LLM provider for demonstration
+//     pub struct MockLLMProvider {
+//         pub name: String,
+//         pub base_url: String,
+//         pub models: Vec<String>,
+//     }
 
-        fn name(&self) -> &str {
-            &self.name
-        }
+//     impl LlmProviderTrait for MockLLMProvider {
+//         // type ProviderType = LlmModel;
+//         // fn provider_type(&self) -> &Self::ProviderType {
+//         //     &LlmModel::OpenAi
+//         // }
+//         fn name(&self) -> &str {
+//             &self.name
+//         }
 
-        fn base_url(&self) -> &str {
-            &self.base_url
-        }
+//         fn base_url(&self) -> &str {
+//             &self.base_url
+//         }
 
-        fn api_key(&self) -> &str {
-            ""
-        }
+//         fn set_api_key(&mut self, api_key: String) {}
 
-        fn supported_models(&self) -> &[String] {
-            &self.models
-        }
+//         fn add_supported_model(&mut self, model: String) {
+//             self.models.push(model);
+//         }
 
-        fn provider_type(&self) -> &Self::ProviderType {
-            &LlmModel::OpenAi
-        }
+//         #[doc = " Get all models supported by this provider"]
+//         fn supported_models(&self) -> &[&str] {
+//             todo!()
+//         }
 
-        fn set_api_key(&mut self, api_key: String) {}
+//         fn is_configured(&self) -> bool {
+//             todo!()
+//         }
 
-        fn add_supported_model(&mut self, model: String) {
-            self.models.push(model);
-        }
-    }
+//         #[doc = " Check if model is supported"]
+//         fn supports_model(&self, model: &str) -> bool {
+//             self.supported_models()
+//                 .contains(&model.to_string().as_str())
+//         }
+//     }
 
-    #[derive(Debug, Clone)]
-    pub struct MockLLMRouterConfig {
-        pub config: LlmRouterConfig,
-    }
-    pub struct CustomLLMRouter {
-        providers: HashMap<String, MockLLMProvider>,
-        default_provider: String,
-    }
+//     #[derive(Debug, Clone)]
+//     pub struct MockLLMRouterConfig {
+//         pub config: LlmRouterConfig,
+//     }
+//     pub struct CustomLLMRouter {
+//         providers: HashMap<String, MockLLMProvider>,
+//         default_provider: String,
+//     }
 
-    impl LLMRouterConfigTrait for MockLLMRouterConfig {
-        fn default_provider(&self) -> &str {
-            todo!()
-        }
+//     impl LLMRouterConfigTrait for MockLLMRouterConfig {
+//         fn default_provider(&self) -> &str {
+//             todo!()
+//         }
 
-        fn timeout_seconds(&self) -> u32 {
-            todo!()
-        }
+//         fn timeout_seconds(&self) -> u32 {
+//             todo!()
+//         }
 
-        fn retry_attempts(&self) -> u32 {
-            todo!()
-        }
+//         fn retry_attempts(&self) -> u32 {
+//             todo!()
+//         }
 
-        fn remove_provider(&mut self, name: &str) {
-            todo!()
-        }
+//         fn remove_provider(&mut self, name: &str) {
+//             todo!()
+//         }
 
-        fn set_default_provider(&mut self, name: String) {
-            todo!()
-        }
+//         fn set_default_provider(&mut self, name: String) {
+//             todo!()
+//         }
 
-        fn set_timeout(&mut self, timeout: u32) {
-            todo!()
-        }
+//         fn set_timeout(&mut self, timeout: u32) {
+//             todo!()
+//         }
 
-        fn set_retry_attempts(&mut self, attempts: u32) {
-            todo!()
-        }
-    }
+//         fn set_retry_attempts(&mut self, attempts: u32) {
+//             todo!()
+//         }
+//     }
 
-    #[async_trait]
-    impl LLMRouterTrait for CustomLLMRouter {
-        type Request = PromptRequest;
-        type Response = PromptResponse;
-        type Config = MockLLMRouterConfig;
-        type Provider = MockLLMProvider;
+//     #[async_trait]
+//     impl LLMRouterTrait for CustomLLMRouter {
+//         type Request = PromptRequest;
+//         type Response = PromptResponse;
+//         type Config = MockLLMRouterConfig;
+//         type Provider = MockLLMProvider;
 
-        async fn new(config: &Self::Config) -> HoResult<Self>
-        where
-            Self: Sized,
-        {
-            let mut router = Self {
-                providers: HashMap::new(),
-                default_provider: config.default_provider().to_string(),
-            };
+//         async fn new(config: &Self::Config) -> HoResult<Self>
+//         where
+//             Self: Sized,
+//         {
+//             let mut router = Self {
+//                 providers: HashMap::new(),
+//                 default_provider: config.default_provider().to_string(),
+//             };
 
-            // Add providers from config (simplified)
-            for provider in &config.config.entities {
-                let mock_provider = MockLLMProvider {
-                    name: provider.name.clone(),
-                    base_url: provider.base_url.clone(),
+//             // Add providers from config (simplified)
+//             for provider in &config.config.entities {
+//                 let mock_provider = MockLLMProvider {
+//                     name: provider.name.clone(),
+//                     base_url: provider.base_url.clone(),
 
-                    models: provider.models.clone(),
-                };
-                router
-                    .providers
-                    .insert(provider.name.clone(), mock_provider);
-            }
+//                     models: provider.models.clone(),
+//                 };
+//                 router
+//                     .providers
+//                     .insert(provider.name.clone(), mock_provider);
+//             }
 
-            Ok(router)
-        }
+//             Ok(router)
+//         }
 
-        async fn process_request(
-            &self,
-            request: &Self::Request,
-            model: &str,
-        ) -> HoResult<Self::Response> {
-            println!("Processing request with model: {}", model);
+//         async fn handle_request(
+//             &self,
+//             request: &Self::Request,
+//             model: &str,
+//         ) -> HoResult<Self::Response> {
+//             println!("Processing request with model: {}", model);
 
-            // Create a mock response
-            Ok(PromptResponse {
-                id: Uuid::new_v4().into(),
-                provider: self.default_provider.clone(),
-                model: model.to_string(),
-                prompt: "Mock prompt".to_string(),
-                response: vec!["This is a mock response from the custom LLM provider".to_string()],
-                timestamp: None,
-                tokens_used: Some(TokenUsage {
-                    prompt: 10,
-                    completion: 20,
-                    total: 30,
-                }),
-                cost: Some(0.001),
-                latency_ms: Some(150),
-                // context: todo!(),
-            })
-        }
+//             // Create a mock response
+//             Ok(PromptResponse {
+//                 id: Uuid::new_v4().into(),
+//                 provider: self.default_provider.clone(),
+//                 model: model.to_string(),
+//                 prompt: "Mock prompt".to_string(),
+//                 response: vec!["This is a mock response from the custom LLM provider".to_string()],
+//                 timestamp: None,
+//                 tokens_used: Some(TokenUsage {
+//                     prompt: 10,
+//                     completion: 20,
+//                     total: 30,
+//                 }),
+//                 cost: Some(0.001),
+//                 latency_ms: Some(150),
+//                 // context: todo!(),
+//             })
+//         }
 
-        async fn route_to_provider(
-            &self,
-            provider_name: &str,
-            request: &Self::Request,
-        ) -> HoResult<Self::Response> {
-            if let Some(_provider) = self.providers.get(provider_name) {
-                self.process_request(request, "default-model").await
-            } else {
-                Err(crate::error::HoError::Llm(format!(
-                    "Provider not found: {}",
-                    provider_name
-                )))
-            }
-        }
+//         async fn route_to_provider(
+//             &self,
+//             provider_name: &str,
+//             request: &Self::Request,
+//         ) -> HoResult<Self::Response> {
+//             if let Some(_provider) = self.providers.get(provider_name) {
+//                 self.handle_request(request, "default-model").await
+//             } else {
+//                 Err(crate::error::HoError::Llm(format!(
+//                     "Provider not found: {}",
+//                     provider_name
+//                 )))
+//             }
+//         }
 
-        fn providers(&self) -> Vec<&Self::Provider> {
-            self.providers.values().collect()
-        }
+//         fn providers(&self) -> Vec<&Self::Provider> {
+//             self.providers.values().collect()
+//         }
 
-        fn get_provider(&self, name: &str) -> Option<&Self::Provider> {
-            self.providers.get(name)
-        }
+//         fn get_provider(&self, name: &str) -> Option<&Self::Provider> {
+//             self.providers.get(name)
+//         }
 
-        fn add_provider(&mut self, provider: Self::Provider) {
-            let name = provider.name().to_string();
-            self.providers.insert(name, provider);
-        }
+//         fn add_provider(&mut self, provider: Self::Provider) {
+//             let name = provider.name().to_string();
+//             self.providers.insert(name, provider);
+//         }
 
-        fn remove_provider(&mut self, name: &str) {
-            self.providers.remove(name);
-        }
+//         fn remove_provider(&mut self, name: &str) {
+//             self.providers.remove(name);
+//         }
 
-        async fn check_provider_health(&self, provider_name: &str) -> HoResult<bool> {
-            println!("Checking health for provider: {}", provider_name);
-            Ok(true) // Always healthy in this mock
-        }
-    }
-}
+//         async fn check_provider_health(&self, provider_name: &str) -> HoResult<bool> {
+//             println!("Checking health for provider: {}", provider_name);
+//             Ok(true) // Always healthy in this mock
+//         }
+//     }
+// }
 
 /// # Example: Using Extension Traits with Proto Types
 ///
@@ -534,7 +541,7 @@ pub mod extension_trait_usage {
 /// # Example: Generic Functions Using Traits
 ///
 /// These functions demonstrate how to write generic code that works with any
-/// implementation of the CW-HO traits.
+/// implementation of the ERGORS traits.
 pub mod generic_functions {
     use super::*;
 
@@ -544,11 +551,9 @@ pub mod generic_functions {
         S: StorageTrait,
     {
         println!("🔄 Creating backup...");
-
         // Create snapshot
         let snapshot = storage.create_snapshot().await?;
         println!("📸 Snapshot created");
-
         // Get current metrics
         let metrics = storage.get_metrics().await?;
         println!("📊 Current metrics retrieved");
@@ -561,42 +566,42 @@ pub mod generic_functions {
         Ok(())
     }
 
-    /// A function that works with the concrete CustomLLMRouter implementation
-    pub async fn test_llm_provider(
-        router: &custom_llm::CustomLLMRouter,
-        test_prompt: &str,
-    ) -> HoResult<()> {
-        println!("🧠 Testing LLM provider with prompt: '{}'", test_prompt);
+    // /// A function that works with the concrete CustomLLMRouter implementation
+    // pub async fn test_llm_provider(
+    //     router: &custom_llm::CustomLLMRouter,
+    //     test_prompt: &str,
+    // ) -> HoResult<()> {
+    //     println!("🧠 Testing LLM provider with prompt: '{}'", test_prompt);
 
-        // Create a test request
-        let request = PromptRequest {
-            messages: vec![PromptMessage {
-                role: "user".to_string(),
-                content: test_prompt.to_string(),
-            }],
-            model: "test-model".to_string(),
-            context: None,
-            llm_config: None,
-        };
+    //     // Create a test request
+    //     let request = PromptRequest {
+    //         messages: vec![PromptMessage {
+    //             role: "user".to_string(),
+    //             content: test_prompt.to_string(),
+    //         }],
+    //         model: "test-model".to_string(),
+    //         context: None,
+    //         llm_config: None,
+    //     };
 
-        // Process the request
-        let response = router.process_request(&request, "test-model").await?;
+    //     // Process the request
+    //     let response = router.handle_request(&request, "test-model").await?;
 
-        println!("📤 Response received:");
-        println!("   Provider: {}", response.provider());
-        println!("   Model: {}", response.model());
-        println!("   Response: {:#?}", response.response);
+    //     println!("📤 Response received:");
+    //     println!("   Provider: {}", response.provider());
+    //     println!("   Model: {}", response.model());
+    //     println!("   Response: {:#?}", response.response);
 
-        let tokens = response.tokens_used();
-        println!("   Tokens used: {}", tokens.total);
+    //     let tokens = response.tokens_used();
+    //     println!("   Tokens used: {}", tokens.total);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
 
 /// Run all examples to demonstrate the trait system in action
 pub async fn run_all_examples() -> HoResult<()> {
-    println!("🚀 Running CW-HO Trait System Examples\n");
+    println!("🚀 Running ERGORS Trait System Examples\n");
 
     // Extension trait examples
     extension_trait_usage::demonstrate_node_identity().await?;
@@ -613,11 +618,11 @@ pub async fn run_all_examples() -> HoResult<()> {
     generic_functions::backup_prompts(&storage).await?;
     println!();
 
-    // Custom LLM example
-    let config = custom_llm::MockLLMRouterConfig { config: todo!() };
+    // // Custom LLM example
+    // let config = custom_llm::MockLLMRouterConfig { config: todo!() };
 
-    let router = custom_llm::CustomLLMRouter::new(&config).await?;
-    generic_functions::test_llm_provider(&router, "What is the golden ratio?").await?;
+    // let router = custom_llm::CustomLLMRouter::new(&config).await?;
+    // generic_functions::test_llm_provider(&router, "What is the golden ratio?").await?;
 
     println!("\n✅ All examples completed successfully!");
     Ok(())

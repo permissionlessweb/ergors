@@ -4,7 +4,7 @@ use crate::constants::*;
 use crate::traits::{CosmicContextExt, FractalRequirementsExt};
 
 // Re-export proto types for orchestration
-pub use crate::types::cw_ho::orchestration::v1::*;
+pub use crate::types::ergors::orch::v1::*;
 
 impl CosmicContextExt for CosmicContext {
     fn new_context(task_id: String, prompt: &str, recursion_depth: u32) -> CosmicContext {

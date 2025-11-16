@@ -1,7 +1,7 @@
 //! Common utility functions for file operations, config loading, and shared logic
 //!
 //! This module provides reusable helper functions that implement the common patterns
-//! used throughout the CW-HO system, respecting the sacred geometric, fractal requirements
+//! used throughout the ERGORS system, respecting the sacred geometric, fractal requirements
 //! of the workspace for interoperability and effectiveness in organization.
 
 use crate::{
@@ -29,7 +29,7 @@ impl ConfigLoaderTrait for DefaultFileOps {
     fn from_toml_file<T: DeserializeOwned, P: AsRef<Path>>(path: P) -> HoResult<T> {
         let content = DefaultFileOps::read_string(&path)?;
         toml::from_str(&content).map_err(|e| {
-            HoError::Config(format!(
+            HoError::Cfg(format!(
                 "Failed to parse TOML config from '{}': {}",
                 path.as_ref().display(),
                 e
@@ -41,7 +41,7 @@ impl ConfigLoaderTrait for DefaultFileOps {
     fn from_json_file<T: DeserializeOwned, P: AsRef<Path>>(path: P) -> HoResult<T> {
         let content = DefaultFileOps::read_string(&path)?;
         serde_json::from_str(&content).map_err(|e| {
-            HoError::Config(format!(
+            HoError::Cfg(format!(
                 "Failed to parse JSON config from '{}': {}",
                 path.as_ref().display(),
                 e
@@ -52,14 +52,14 @@ impl ConfigLoaderTrait for DefaultFileOps {
     /// Save configuration to TOML file
     fn to_toml_file<T: Serialize, P: AsRef<Path>>(config: &T, path: P) -> HoResult<()> {
         let content = toml::to_string_pretty(config)
-            .map_err(|e| HoError::Config(format!("Failed to serialize config to TOML: {}", e)))?;
+            .map_err(|e| HoError::Cfg(format!("Failed to serialize config to TOML: {}", e)))?;
         DefaultFileOps::write_string(path, &content)
     }
 
     /// Save configuration to JSON file
     fn to_json_file<T: Serialize, P: AsRef<Path>>(config: &T, path: P) -> HoResult<()> {
         let content = serde_json::to_string_pretty(config)
-            .map_err(|e| HoError::Config(format!("Failed to serialize config to JSON: {}", e)))?;
+            .map_err(|e| HoError::Cfg(format!("Failed to serialize config to JSON: {}", e)))?;
         DefaultFileOps::write_string(path, &content)
     }
 

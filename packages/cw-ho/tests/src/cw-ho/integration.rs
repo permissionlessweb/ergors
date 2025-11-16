@@ -1,10 +1,10 @@
-//! Example main.rs showing complete CW-HO workflow
+//! Example main.rs showing complete ERGORS workflow
 //!
 //! This demonstrates how to use all the components together to create a fully
-//! functional CW-HO instance that respects the sacred geometric principles.
+//! functional ERGORS instance that respects the sacred geometric principles.
 
-use cw_ho::{HoConfig, HoOrchestrator};
-use ho_std::types::cw_ho::v1::{CosmicTaskStatus, OrchestrateTask};
+use ergors::{HoConfig, HoOrchestrator};
+use ho_std::types::ergors::v1::{CosmicTaskStatus, OrchestrateTask};
 use std::time::Duration;
 use tokio;
 use tracing::{error, info};
@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    info!("Starting CW-HO System Example");
+    info!("Starting ERGORS System Example");
 
     // Create and initialize the orchestrator
     let orchestrator = match HoOrchestrator::new().await {
@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(Box::new(e));
     }
 
-    info!("CW-HO Orchestrator initialized successfully");
+    info!("ERGORS Orchestrator initialized successfully");
 
     // Demonstrate bootstrap task processing
     info!("Creating and processing bootstrap task...");
@@ -80,23 +80,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::time::sleep(Duration::from_secs(10)).await;
 
     // Graceful shutdown
-    info!("Shutting down CW-HO System...");
+    info!("Shutting down ERGORS System...");
     orchestrator.shutdown().await?;
-    info!("CW-HO System Example completed successfully!");
+    info!("ERGORS System Example completed successfully!");
     Ok(())
 }
 
 async fn demonstrate_network_operations() -> Result<(), Box<dyn std::error::Error>> {
     use ho_std::shared_impl::NetworkShareImpl;
-    use ho_std::types::cw_ho::network::v1::NodeIdentity;
-    use ho_std::types::cw_ho::types::v1::{NodeInfo, NodeType};
+    use ho_std::types::ergors::network::v1::NodeIdentity;
+    use ho_std::types::ergors::types::v1::{NodeInfo, NodeType};
 
     // Create a mock node identity
     let identity = NodeIdentity {
         host: "127.0.0.1".to_string(),
         p2p_port: 26969,
         api_port: 8080,
-        user: "cw-ho-example".to_string(),
+        user: "ergors-example".to_string(),
         os: 0, // Linux
         ssh_port: 22,
         node_type: NodeType::Coordinator.as_str_name().to_string(),
@@ -142,8 +142,8 @@ async fn demonstrate_network_operations() -> Result<(), Box<dyn std::error::Erro
 }
 
 /// Example of creating custom fractal requirements
-pub fn create_advanced_fractal_requirements() -> ho_std::types::cw_ho::v1::FractalRequirements {
-    use ho_std::types::cw_ho::v1::*;
+pub fn create_advanced_fractal_requirements() -> ho_std::types::ergors::v1::FractalRequirements {
+    use ho_std::types::ergors::v1::*;
     use ho_std::utils::IdGenerator;
 
     let cosmic_context = CosmicContext {

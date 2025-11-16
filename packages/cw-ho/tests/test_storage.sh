@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Test script for CW-HO storage and querying functionality (macOS compatible)
+# Test script for ERGORS storage and querying functionality (macOS compatible)
 BASE_URL="http://localhost:8080"
 
-echo "🧪 Testing CW-HO Storage and Query Functionality"
+echo "🧪 Testing ERGORS Storage and Query Functionality"
 echo "================================================"
 
 # Test 1: Submit a simple prompt

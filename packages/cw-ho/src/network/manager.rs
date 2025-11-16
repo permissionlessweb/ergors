@@ -1,13 +1,13 @@
 //! Minimal network manager implementation using commonware libraries
 use commonware_codec::DecodeExt;
-use ho_std::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
-use ho_std::llm::HoResult;
+use ho_std::error::{HoError, HoResult};
 
 use bytes::Bytes;
 use commonware_cryptography::{ed25519, Signer};
 use commonware_runtime::{tokio::Context, Metrics, Spawner};
 
 use chrono;
+use ho_std::keys::commonware::NodePubkey;
 use ho_std::traits::{NetworkMessageTrait, NetworkTopologyTrait, NodeIdentityTrait};
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -22,10 +22,8 @@ use commonware_p2p::{authenticated, Manager, Recipients};
 use governor::Quota;
 use std::num::NonZeroU32;
 
-use ho_std::commonware::identity::NodePubkey;
-use ho_std::types::cw_ho::network::v1::{network_event::*, network_message::*, *};
-
 use crate::CwHoNetworkManifold;
+use ho_std::types::ergors::network::v1::{network_event::*, network_message::*, *};
 
 /// Peer information
 #[derive(Debug, Clone)]
@@ -43,9 +41,9 @@ impl CwHoNetworkManifold {
         context: Context,
     ) -> Self {
         // Validate config
-        // config.validate().map_err(|e| CommonwareNetworkError::P2P(e))?;
+        // config.validate().map_err(|e| HoError::P2P(e))?;
         if identity.private_key.is_none() {
-            panic!("{}", CommonwareNetworkError::NodePrivKeyNotFound)
+            panic!("{}", HoError::NodePrivKeyNotFound)
         }
 
         // Create event channel
@@ -85,13 +83,13 @@ impl CwHoNetworkManifold {
     }
 
     /// Start the network using commonware runtime pattern
-    pub async fn start_network(&mut self, config: &NetworkConfig) -> CommonwareNetworkResult<()> {
+    pub async fn start_network(&mut self, config: &NetworkConfig) -> HoResult<()> {
         // Get the private key
         let private_key = self
             .identity
             .private_key
             .as_ref()
-            .ok_or_else(|| CommonwareNetworkError::NotInitialized)?
+            .ok_or_else(|| HoError::NotInitialized)?
             .clone();
 
         // Parse listen address
@@ -101,9 +99,9 @@ impl CwHoNetworkManifold {
         // First convert Vec<u8> to PrivateKey
         let private_key_bytes: &[u8] = private_key.as_slice();
         let ed25519_private_key = ed25519::PrivateKey::decode(private_key_bytes)
-            .map_err(|_| CommonwareNetworkError::NodePrivKeyNotFound)?;
+            .map_err(|_| HoError::NodePrivKeyNotFound)?;
         let public_key = ed25519_private_key.public_key();
-        let namespace = b"cw-ho-network";
+        let namespace = b"ergors-network";
 
         let commonware_config = authenticated::lookup::Config::recommended(
             ed25519_private_key,
@@ -115,7 +113,7 @@ impl CwHoNetworkManifold {
 
         // Create network instance and oracle using our stored context
         let (mut network, mut oracle) = authenticated::lookup::Network::new(
-            self.context.with_label("cw-ho-network"),
+            self.context.with_label("ergors-network"),
             commonware_config,
         );
 
@@ -170,11 +168,7 @@ impl CwHoNetworkManifold {
     }
 
     /// Send a message to specific node type(s)
-    pub async fn send_to_role(
-        &mut self,
-        role: NodeType,
-        msg: NetworkMessage,
-    ) -> CommonwareNetworkResult<()> {
+    pub async fn send_to_role(&mut self, role: NodeType, msg: NetworkMessage) -> HoResult<()> {
         let peers = self.peers.read().await;
         let targets: Vec<ed25519::PublicKey> = peers
             .values()
@@ -183,29 +177,28 @@ impl CwHoNetworkManifold {
             .collect();
 
         if targets.is_empty() {
-            return Err(CommonwareNetworkError::NoPeersForRole(
-                role.as_str_name().to_string(),
-            ));
+            return Err(HoError::NoPeersForRole(role.as_str_name().to_string()));
         }
 
         let channel = msg.channel()?;
         let bytes = self.serialize_message(&msg)?;
 
-        let sender = self.channel_senders.get_mut(&channel).ok_or_else(|| {
-            CommonwareNetworkError::ChannelError(format!("Channel {} not found", channel))
-        })?;
+        let sender = self
+            .channel_senders
+            .get_mut(&channel)
+            .ok_or_else(|| HoError::ChannelError(format!("Channel {} not found", channel)))?;
 
         use commonware_p2p::Sender;
         sender
             .send(Recipients::Some(targets), bytes, false)
             .await
-            .map_err(|e| CommonwareNetworkError::P2P(format!("{:?}", e)))?;
+            .map_err(|e| HoError::P2P(format!("{:?}", e)))?;
 
         Ok(())
     }
 
     /// Broadcast a message to all peers
-    pub async fn broadcast(&mut self, msg: NetworkMessage) -> CommonwareNetworkResult<()> {
+    pub async fn broadcast(&mut self, msg: NetworkMessage) -> HoResult<()> {
         let channel = msg.channel()?;
         let bytes = self.serialize_message(&msg)?;
 
@@ -215,15 +208,16 @@ impl CwHoNetworkManifold {
         //     // TODO: Implement broadcast integration
         // }
 
-        let sender = self.channel_senders.get_mut(&channel).ok_or_else(|| {
-            CommonwareNetworkError::ChannelError(format!("Channel {} not found", channel))
-        })?;
+        let sender = self
+            .channel_senders
+            .get_mut(&channel)
+            .ok_or_else(|| HoError::ChannelError(format!("Channel {} not found", channel)))?;
 
         use commonware_p2p::Sender;
         sender
             .send(Recipients::All, bytes, false)
             .await
-            .map_err(|e| CommonwareNetworkError::P2P(format!("{:?}", e)))?;
+            .map_err(|e| HoError::P2P(format!("{:?}", e)))?;
 
         Ok(())
     }
@@ -234,7 +228,7 @@ impl CwHoNetworkManifold {
         peer: ed25519::PublicKey,
         req: NetworkMessage,
         timeout: Duration,
-    ) -> CommonwareNetworkResult<NetworkMessage> {
+    ) -> HoResult<NetworkMessage> {
         let msgtype = &req.message_type;
 
         let _request_id = match &msgtype.clone().expect("always will have MessageType") {
@@ -257,10 +251,10 @@ impl CwHoNetworkManifold {
         // Wait for response with timeout
         tokio::time::timeout(timeout, async {
             // TODO: Wait for response using collector
-            Err(CommonwareNetworkError::CollectorTimeout)
+            Err(HoError::CollectorTimeout)
         })
         .await
-        .map_err(|_| CommonwareNetworkError::CollectorTimeout)?
+        .map_err(|_| HoError::CollectorTimeout)?
     }
 
     /// Get current network topology
@@ -274,7 +268,7 @@ impl CwHoNetworkManifold {
     }
 
     /// Announce this node to the network
-    async fn announce_node(&mut self) -> CommonwareNetworkResult<()> {
+    async fn announce_node(&mut self) -> HoResult<()> {
         let msg = MessageType::NodeAnnounce(NodeAnnounce {
             node_id: hex::encode(&self.identity.public_key.clone().expect("no pubkey set yet")),
             role: NodeType::from_str_name(&self.identity.node_type.clone())
@@ -381,9 +375,8 @@ impl CwHoNetworkManifold {
                         topo.remove_node(&peer_info.node_info.node_id);
 
                         let _ = event_tx.send(NetworkEvent {
-                            event_type: Some(EventType::PeerDisconnected(PeerDisconnected {
-                                peer_id: peer_key.to_vec(),
-                                reason: "Timeout".to_string(),
+                            event_type: Some(EventType::Error(NetworkError {
+                                error: "()".to_string(),
                             })),
                         });
                     }

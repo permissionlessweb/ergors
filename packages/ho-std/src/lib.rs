@@ -10,41 +10,43 @@
 #![warn(trivial_casts, trivial_numeric_casts, unused_import_braces)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-//! CW-HO Protocol Buffer Definitions
+//! ERGORS Protocol Buffer Definitions
 //!
-//! This crate provides protocol buffer definitions for the CW-HO (CommonWare Host Orchestrator)
+//! This crate provides protocol buffer definitions for the ERGORS (CommonWare Host Orchestrator)
 //!
 //! 1. **Storage Layer** - LLM prompt/response storage, query operations, and health monitoring
 //! 2. **Node, Networking, Communication Layer** - Node coordination, cosmic task management, network topology
 //! 3. **Orchestration Layer** - Node coordination, cosmic task management, network topology
-//! 4. TODO: **Debugging / Developer APIs** - logging help, historical reference
+//! 4. **Deployment Layer** - Node coordination, cosmic task management, network topology
+//! 5. **Authorization Client** - Node coordination, cosmic task management, network topology
 //!
 //! The proto definitions are organized following the sacred geometry principles embedded
-//! in the CW-HO architecture, with fractal recursion, golden ratio scaling, and tetrahedral
+//! in the ERGORS architecture, with fractal recursion, golden ratio scaling, and tetrahedral
 //! network topologies.
 //!
+extern crate alloc;
 
-pub mod commonware;
+// pub mod action;
 pub mod config;
 pub mod constants;
 pub mod deploy;
 pub mod error;
 pub mod examples;
+pub mod keys;
+pub mod txhash;
 pub mod llm;
 pub mod network;
 pub mod orchestrate;
 pub mod python;
-pub mod routes;
-pub mod storage;
-pub mod transports;
-pub mod utils;
-
-// pub mod shared_impl;
-// pub use types::server::NodeType;
-
-extern crate alloc;
-
 mod serde;
+pub mod storage;
 pub mod traits;
+pub mod transports;
 #[allow(deprecated, unused_imports, clippy::large_enum_variant)]
 pub mod types;
+pub mod utils;
+
+use crate::llm::HoError;
+// pub mod shared_impl;
+
+pub type HoResult<T> = std::result::Result<T, HoError>;

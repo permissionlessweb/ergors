@@ -1,4 +1,4 @@
-//! Shared trait implementations for common CW-HO operations
+//! Shared trait implementations for common ERGORS operations
 //!
 //! This module provides concrete implementations for traits that can be reused
 //! across different parts of the system, following the fractal organizational patterns.
@@ -8,7 +8,7 @@ use crate::traits::*;
 use crate::utils::{FileOps, IdGenerator, NetworkUtils};
 use async_trait::async_trait;
 use ho_std::shim::Timestamp;
-use ho_std::types::cw_ho::{
+use ho_std::types::ergors::{
     network::v1::{NetworkConfig, NetworkMessage, NodeAnnounce, NodeIdentity, TetrahedralPing},
     orchestration::v1::{Message, PromptContext, PromptRequest, PromptResponse, TokenUsage},
     types::v1::{Connection, NetworkTopology, NodeInfo, NodeType},
@@ -99,7 +99,7 @@ impl NetworkShareImpl {
 
         NetworkMessage {
             message_type: Some(
-                ho_std::types::cw_ho::network::v1::network_message::MessageType::NodeAnnounce(
+                ho_std::types::ergors::network::v1::network_message::MessageType::NodeAnnounce(
                     announce,
                 ),
             ),
@@ -116,7 +116,7 @@ impl NetworkShareImpl {
 
         NetworkMessage {
             message_type: Some(
-                ho_std::types::cw_ho::network::v1::network_message::MessageType::TetrahedralPing(
+                ho_std::types::ergors::network::v1::network_message::MessageType::TetrahedralPing(
                     ping,
                 ),
             ),

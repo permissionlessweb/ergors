@@ -1,4 +1,4 @@
-//! Error handling for CW-HO system
+//! Error handling for ERGORS system
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
