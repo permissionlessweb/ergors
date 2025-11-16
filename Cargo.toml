@@ -3,9 +3,9 @@ resolver = "2"
 
 exclude = ["sub-modules/*"]
 members = [
-    "packages/*", 
-"packages/ho-std/src/custody",
-"packages/ho-std/src/keys", "proto"]
+    "packages/*",
+    "proto",
+]
 
 [workspace.metadata]
 is_workspace_root = true
@@ -42,13 +42,28 @@ homepage   = "https://permissionless.money"
 license    = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+ergors = { path = "packages/ergors" }
+ho-std = { path = "packages/ho-std" } 
+
 anyhow = "1.0"
+ark-ec                           = { default-features = false, version = "0.4.2" }
+ark-ff                           = { default-features = false, version = "0.4.2" }
+ark-groth16                      = { default-features = false, version = "0.4.0" }
+ark-r1cs-std                     = { default-features = false, version = "0.4.0" }
+ark-relations                    = { version = "0.4" }
+ark-serialize                    = { version = "0.4.2" }
+ark-snark                        = { version = "0.4.0" }
+ark-std                          = { default-features = false, version = "0.4" }
+assert_cmd                       = { version = "2.0" }
 async-trait = "0.1"
 axum = { version = "0.8.4" }
 base64 = "0.22.1"
 bech32                           = { version = "0.8.1" }
+blake3 = "1.8.2"
+blake2b_simd                     = { version = "1" }
 bytes = "1.7.1"
 camino  = { version = "1" }
+chacha20poly1305                 = { version = "0.9.0" }
 chrono = { version = "0.4.40", default-features = false, features = ["serde","clock"] }
 clap = { version = "4.5", features = ["derive"] }
 cnidarium = { path = "./sub-modules/cnidarium" }
@@ -61,8 +76,11 @@ commonware-runtime  = { version = "0.0.63" }
 commonware-storage = { version = "0.0.63" }
 commonware-utils  = { version = "0.0.63" }
 cosmwasm-std = { version = "3.0.1", features = ["stargate"] }
-
-cw-ho = { path = "packages/cw-ho" }
+decaf377                         = { default-features = false, version = "0.10.1" }
+decaf377-fmd                     = { version = "2.1.0" }
+decaf377-ka                     = { version = "2.1.0" }
+decaf377-rdsa                    = { version = "0.11.0" }
+derivative                       = { version = "2.2" }
 directories = "5"
 dirs = "6.0.0"
 dotenv = "0.15"
@@ -76,20 +94,27 @@ getrandom                        = { version = "0.2", default-features = false }
 governor = "0.6.3" 
 heck = "0.4.0"
 hex = "0.4"
-ho-std = { path = "packages/ho-std" } 
-ho-std-keys = { path = "packages/ho-std/src/keys" } 
+penumbra-sdk-tct = "2.1.0"
 http-body                        = { version = "1.0.1" }
 http-body-util = "0.1.3"
+ics23                            = { version = "0.12.0" }
+ibc-proto                        = { git= "https://github.com/permissionlessweb/ibc-proto-rs", default-features = false, version = "0.52.0" }
+ibc-types                        = { default-features = false, version = "0.15.1" }
 itertools = "0.10.3"
 jmt = "0.9"
 layer-climb-proto = "0.7.3"
 log = "0.4.17"
+num-bigint                       = { version = "0.4" }
+once_cell                        = { version = "1.8" }
 pbjson-types                     = { version = "0.8.0" }
+poseidon377                      = { version = "1.2.0" }
 pprof = { version = "0.15", features = ["flamegraph"] }
 pretty_env_logger = "0.4.0"
 prettyplease = "0.1.16"
 proc-macro2 = "1.0.52"
 prof = { version = "0.15", features = ["flamegraph"] }
+proptest                         = { version = "1.6" }
+proptest-derive                  = { version = "0.5.1" }
 prost = { version = "0.14.1", default-features = false, features = ["derive"] }
 prost-types = { version = "0.14.1", default-features = false }
 quote = "1.0.26"
@@ -107,7 +132,11 @@ serde_json = "1.0"
 sha2 = "0.10"
 syn = { version = "1.0.98", features = ["full", "parsing", "extra-traits"] }
 tempfile = "3.20.0"
+tendermint                       = { default-features = false, version = "0.40.3" }
+tendermint-config                = { version = "0.40.3" }
+tendermint-light-client-verifier = { version = "0.40.3" }
 tendermint-proto = { version = "0.40.4", git = "https://github.com/permissionlessweb/tendermint-rs" }
+tendermint-rpc                   = { version = "0.40.3" }
 termion                          = { version = "3" }
 thiserror = "2.0.17"
 tokio = { version = "1.40", features = ["full", "process"] }

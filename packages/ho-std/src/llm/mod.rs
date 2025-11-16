@@ -1,9 +1,17 @@
+mod macros;
 mod cost;
 mod prompt;
-
+mod providers;
+mod router;
+mod joints;
 use anyhow::Result;
+
+// pub use macros::{find_entity, registered_entities, LlmEntityDescriptor};
 pub use cost::*;
+pub use providers::*;
 pub use prompt::*;
+pub use joints::*;
+pub use router::*;
 
 use {
     crate::{constants::*, orchestrate::*, traits::LlmModelTrait},

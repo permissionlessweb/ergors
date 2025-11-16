@@ -26,7 +26,7 @@ use uuid::Uuid;
 pub struct BluetoothMeshConfig {
     /// Device name for BLE advertisements
     pub device_name: String,
-    /// Service UUID for CW-HO geometric networking
+    /// Service UUID for ERGORS geometric networking
     pub service_uuid: Uuid,
     /// Advertisement interval (should follow golden ratio timing)
     pub advertisement_interval: Duration,
@@ -45,7 +45,7 @@ pub struct BluetoothMeshConfig {
 impl Default for BluetoothMeshConfig {
     fn default() -> Self {
         Self {
-            device_name: "CW-HO-Node".to_string(),
+            device_name: "ERGORS-Node".to_string(),
             service_uuid: Uuid::new_v4(), // Generate unique service ID
             advertisement_interval: Duration::from_millis((1000.0 * GOLDEN_RATIO) as u64), // ~1618ms
             connection_timeout: Duration::from_secs(10),

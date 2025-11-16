@@ -3,7 +3,7 @@ use std::fs;
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use cw_ho::{start, Cli, Commands};
+use ergors::{start, Cli, Commands};
 
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;

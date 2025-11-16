@@ -7,14 +7,12 @@ use axum::{
     middleware, Json, Router,
 };
 use commonware_runtime::tokio::Context;
-use ho_std::error::error_json;
 use ho_std::llm::HoError;
+use ho_std::{error::error_json, network::AuthLayer};
 use ho_std::{
     error::{error_json_detailed, HoResult},
-    routes::AuthLayer,
     traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityTrait},
-    transports::ssh::SSHConnectionManager,
-    types::cw_ho::{orchestration::v1::*, storage::v1::*},
+    types::ergors::{orch::v1::*, storage::v1::*},
 };
 use std::{ops::Deref, sync::Arc, time::Instant};
 use tokio::net::TcpListener;
@@ -29,28 +27,24 @@ pub struct Server {
 impl Server {
     pub async fn new(config: CwHoConfig, context: Context) -> HoResult<Self> {
         config.validate()?;
-        let config_clone = config.clone();
-        // STORAGE_INIT
-        let storage = Arc::new(CwHoStorage::new(&config.storage().data_dir).await?);
-        // LLM_ROUTER_INIT
-        let llm_config = config.llm();
-        let llm_router = Arc::new(LlmRouter::new(llm_config.deref()).await?);
-        // NETWORK MANIFOLD
+
         let mut nm = CwHoNetworkManifold::new(config.identity(), context).await;
 
         // Start the network
         nm.start_network(config.network()).await?;
         info!("🌐 Network manager initialized and started");
 
-        let state = ErgorsAppState {
-            storage,
-            llm_router,
-            nm: Arc::new(tokio::sync::Mutex::new(nm)),
-            start_time: Instant::now(),
-            config: config_clone,
-        };
-
-        Ok(Self { state })
+        Ok(Self {
+            state: ErgorsAppState::new(
+                // r == llm router (app-layer)
+                Arc::new(LlmRouter::new(config.llm().deref()).await?),
+                // s == storage layer
+                Arc::new(CwHoStorage::new(&config.storage().data_dir).await?),
+                Arc::new(tokio::sync::Mutex::new(nm)),
+                Instant::now(),
+                config.clone(),
+            ),
+        })
     }
 
     pub async fn run(self) -> HoResult<()> {
@@ -71,8 +65,8 @@ impl Server {
         };
         let addr = format!(
             "{}:{}",
-            self.state.config.network().listen_address,
-            self.state.config.network().listen_port
+            self.state.c.network().listen_address,
+            self.state.c.network().listen_port
         );
 
         // Build router with operation recording middleware
@@ -131,13 +125,13 @@ async fn handle_fractal_hoe_creation(// State(_state): State<ErgorsAppState>,
 
 async fn handle_bootstrap(
     State(..): State<ErgorsAppState>,
-    Json(request): Json<BootstrapRequest>,
+    Json(..): Json<BootstrapRequest>,
 ) -> Json<serde_json::Value> {
     let start_time = Instant::now();
     let id = uuid::Uuid::new_v4();
 
     // TODO: handle bootstrap via method:
-    // /hoe.network.v1.bootstrap.types: (transport connections for nodes,bootstrapping types used in functions for traits )
+    // /ergors.network.v1.bootstrap.types: (transport connections for nodes,bootstrapping types used in functions for traits )
     // Create persistent SSH connection manager
     // info!("🚀 Starting bootstrap process for node: {}", target_node);
     // let mut ssh_manager = SSHConnectionManager::new(target_node.clone());
@@ -229,7 +223,7 @@ async fn handle_prompt(
     // Route to LLM
     let model = &request.model;
 
-    match state.llm_router.handle_request(&request, model).await {
+    match state.r.handle_request(&request, model).await {
         Ok(llm_response) => {
             let response = PromptResponse {
                 id: Uuid::new_v4().into(),
@@ -246,7 +240,7 @@ async fn handle_prompt(
 
             // Store to Cnidarium with original request context
             if let Err(e) = state
-                .storage
+                .s
                 .store_prompt_with_context(&response, Some(&request))
                 .await
             {
@@ -276,7 +270,7 @@ async fn handle_query(
     State(state): State<ErgorsAppState>,
     Query(query): Query<QueryRequest>,
 ) -> Json<serde_json::Value> {
-    match state.storage.query_prompts(&query).await {
+    match state.s.query_prompts(&query).await {
         Ok(prompts) => {
             Json(serde_json::to_value(prompts).unwrap_or_else(|_| serde_json::json!([])))
         }
@@ -298,9 +292,9 @@ async fn handle_auth(State(state): State<ErgorsAppState>) -> Json<()> {
 }
 
 async fn handle_health(State(state): State<ErgorsAppState>) -> Json<HealthResponse> {
-    let uptime = state.start_time.elapsed().as_secs();
+    let uptime = state.t.elapsed().as_secs();
 
-    let storage_status = match state.storage.health_check().await {
+    let storage_status = match state.s.health_check().await {
         Ok(()) => "healthy".to_string(),
         Err(e) => format!("unhealthy: {}", e),
     };
@@ -326,7 +320,7 @@ async fn handle_health(State(state): State<ErgorsAppState>) -> Json<HealthRespon
 
 async fn handle_network_topology(State(state): State<ErgorsAppState>) -> Json<serde_json::Value> {
     let topology = state.nm.lock().await.get_topology().await;
-    let identity = state.config.identity();
+    let identity = state.c.identity();
     Json(serde_json::json!({
         "topology": topology,
         "node_identity": {
@@ -351,11 +345,7 @@ async fn handle_query_operations(
         .and_then(|v| v.as_u64())
         .map(|l| l as u32);
 
-    match state
-        .storage
-        .query_operations(operation_type.as_deref(), limit)
-        .await
-    {
+    match state.s.q_ops(operation_type.as_deref(), limit).await {
         Ok(operations) => Json(serde_json::json!({
             "operations": operations,
             "count": operations.len()

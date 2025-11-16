@@ -1,4 +1,4 @@
-//! Storage-related traits for CW-HO system
+//! Storage-related traits for ERGORS system
 
 use crate::error::HoResult;
 use async_trait::async_trait;

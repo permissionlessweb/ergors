@@ -1,0 +1,28 @@
+[package]
+name = "ho-std-custody"
+authors = {workspace = true}
+repository = {workspace = true}
+description = "Modular custody for ho-std"
+version = {workspace = true}
+license = {workspace = true}
+edition = {workspace = true}
+
+[dependencies]
+anyhow = {workspace = true}
+argon2 = "0.5"
+base64 = {workspace = true}
+bytes = {workspace = true, features = ["serde"]}
+ed25519-consensus = {workspace = true}
+futures = {workspace = true}
+hex = {workspace = true}
+ho-std = {workspace = true,  default-features = true, features = ["rpc"]}
+prost = {workspace = true}
+rand_core = {workspace = true}
+serde = {workspace = true, features = ["derive"]}
+serde_json = {workspace = true}
+tokio = {workspace = true, features = ["full"]}
+tonic = {workspace = true}
+tracing = {workspace = true}
+
+[dev-dependencies]
+toml = {workspace = true}

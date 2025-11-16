@@ -1,12 +1,12 @@
 # Ergors Protocol Buffer Definitions
 
-This package contains Protocol Buffer definitions for the CW-HO (CommonWare Host Orchestrator) system, organized into two main layers following the sacred geometry principles:
+This package contains Protocol Buffer definitions for the ERGORS (CommonWare Host Orchestrator) system, organized into two main layers following the sacred geometry principles:
 
 ## 📦 Layers
 
 ### Storage Layer (`storage/v1/`)
 
-### Orchestration Layer (`orchestration/v1/`)
+### Orchestration Layer (`orch/v1/`)
 
 ### Network Layer (`network/v1/`)
 

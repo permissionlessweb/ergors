@@ -1,4 +1,4 @@
-//! Orchestrator-related traits for CW-HO system
+//! Orchestrator-related traits for ERGORS system
 
 use crate::error::HoResult;
 use async_trait::async_trait;

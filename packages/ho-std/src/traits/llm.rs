@@ -1,19 +1,69 @@
-//! LLM-related traits for CW-HO system
+//! LLM-related traits for ERGORS system
 
 use crate::error::HoResult;
 use crate::orchestrate::LlmEntity;
-use crate::traits::LLMRouterConfigTrait;
+use crate::types::ergors::orch::v1::*;
 use async_trait::async_trait;
+use reqwest::Client;
 use std::collections::HashMap;
 
-/// Core trait for LLM routing and processing
+/// Core trait that all LLM providers must implement
+/// This allows for a modular, provider-agnostic approach to LLM routing
 #[async_trait]
-pub trait OpenAITrait {
-    type OpenAiRequest: PromptRequestTrait;
-    type OpenAiResponse: PromptResponseTrait;
-    type OpenAiMessage: PromptRequestTrait;
-    fn process_request(&self) -> HoResult<Self::OpenAiResponse>;
-    fn get_available_models(&self) -> Vec<String>;
+pub trait LlmProviderTrait: Send + Sync {
+    /// Get the provider name (e.g., "openai", "anthropic", "grok")
+    fn name(&self) -> &str;
+
+    /// Get the base URL for the provider's API
+    fn base_url(&self) -> &str;
+
+    /// Get all models supported by this provider
+    fn supported_models(&self) -> &[&str];
+
+    /// Call the provider's API with the given request
+    async fn call(&self, client: &Client, request: &PromptRequest) -> HoResult<PromptResponse>;
+
+    /// Validate that the provider has necessary credentials
+    fn is_configured(&self) -> bool;
+
+    // type ProviderType;
+    // /// Get provider type
+    // fn provider_type(&self) -> &Self::ProviderType;
+
+    /// Check if model is supported
+    fn supports_model(&self, model: &str) -> bool {
+        self.supported_models()
+            .contains(&model.to_string().as_str())
+    }
+
+    /// Set API key
+    fn set_api_key(&mut self, api_key: String);
+
+    /// Add supported model
+    fn add_supported_model(&mut self, model: String);
+}
+
+/// Trait for API request handlers
+/// Each API type (OpenAI-compatible, Anthropic, etc.) implements this
+#[async_trait]
+pub trait ApiJoint {
+    // type Request: PromptRequestTrait;
+    // type Response: PromptResponseTrait;
+    // type Message: PromptRequestTrait;
+    async fn handle_request<T>(
+        provider: &T,
+        client: &Client,
+        request: &PromptRequest,
+        base_url: &str,
+        provider_name: &str,
+    ) -> HoResult<PromptResponse>
+    where
+        T: ApiKeyProvider + Send + Sync;
+}
+/// Trait for types that can provide API keys
+#[async_trait]
+pub trait ApiKeyProvider: Send + Sync {
+    async fn get_api_key(&self) -> HoResult<String>;
 }
 
 /// Core trait for LLM prompt requests
@@ -159,37 +209,12 @@ pub trait TokenUsageTrait {
     fn update_total(&mut self);
 }
 
+use crate::orchestrate::{PromptRequest, PromptResponse};
+/// Core trait that all LLM providers must implement
+/// This allows for a modular, provider-agnostic approach to LLM routing
+
 /// Core trait for LLM providers.
 /// LLMProviderTrait is implemented where we define the struct maintaining all llm instances available for a single hoe-instance. This means that different ho-providers may have different
-pub trait LLMProviderTrait {
-    type ProviderType;
-
-    /// Get provider name
-    fn name(&self) -> &str;
-
-    /// Get base URL
-    fn base_url(&self) -> &str;
-
-    /// Get API key
-    fn api_key(&self) -> &str;
-
-    /// Get supported models
-    fn supported_models(&self) -> &[String];
-
-    /// Get provider type
-    fn provider_type(&self) -> &Self::ProviderType;
-
-    /// Check if model is supported
-    fn supports_model(&self, model: &str) -> bool {
-        self.supported_models().contains(&model.to_string())
-    }
-
-    /// Set API key
-    fn set_api_key(&mut self, api_key: String);
-
-    /// Add supported model
-    fn add_supported_model(&mut self, model: String);
-}
 
 #[async_trait]
 pub trait LlmModelTrait {
@@ -202,8 +227,8 @@ pub trait LlmModelTrait {
 pub trait LLMRouterTrait {
     type Request: PromptRequestTrait;
     type Response: PromptResponseTrait;
-    type Config: LLMRouterConfigTrait;
-    type Provider: LLMProviderTrait;
+    type Config: super::LLMRouterConfigTrait;
+    type Provider: LlmProviderTrait;
 
     /// Create new LLM router
     async fn new(config: &Self::Config) -> HoResult<Self>
@@ -211,7 +236,7 @@ pub trait LLMRouterTrait {
         Self: Sized;
 
     /// Process a prompt request
-    async fn process_request(
+    async fn handle_request(
         &self,
         request: &Self::Request,
         model: &str,

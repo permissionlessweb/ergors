@@ -44,3 +44,5 @@
 
   The Cnidarium architecture is perfectly designed for this use case with its multistore prefix system and snapshot capabilities. You can implement selective pruning by substore while maintaining state consistency and cryptographic verification.
 ```
+
+Export to S3 Buckets, Deploy Redundant Instance For Healing/Ecc or recovery ( via akash & encrypted keypair exchange )

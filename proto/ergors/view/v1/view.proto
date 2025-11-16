@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package ergors.view.v1;
+
+import "google/protobuf/any.proto";
+ 
+
+// The view RPC is used by a view client, who wants to do some
+// transaction-related actions, to request data from a view service, which is
+// responsible for synchronizing and scanning the public chain state with one or
+// more full viewing keys.
+service ViewService {
+  // Get current status of chain sync
+  rpc Status(StatusRequest) returns (StatusResponse);
+ 
+}
+ 

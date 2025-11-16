@@ -50,7 +50,7 @@ pub const PLUGIN_ENV_VARS: &[&str] = &[
 ];
 
 pub fn default_home() -> Utf8PathBuf {
-    let path = ProjectDirs::from("", "", "cw-ho")
+    let path = ProjectDirs::from("", "", "ergors")
         .expect("Failed to get platform data dir")
         .data_dir()
         .to_path_buf();
@@ -73,9 +73,9 @@ pub fn default_config_path() -> PathBuf {
     // Local directory (project root)
     paths.push(PathBuf::from("config.toml"));
 
-    // XDG config dir (~/.config/cw-ho/config.toml)
+    // XDG config dir (~/.config/ergors/config.toml)
     if let Some(mut dir) = dirs::config_dir() {
-        dir.push("cw-ho");
+        dir.push("ergors");
         dir.push("config.toml");
         paths.push(dir);
     }
@@ -92,7 +92,7 @@ pub fn default_config_path() -> PathBuf {
         // Fallback: use XDG or `./config.toml`
         dirs::config_dir()
             .map(|mut p| {
-                p.push("cw-ho");
+                p.push("ergors");
                 p.push("config.toml");
                 p
             })

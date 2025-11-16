@@ -1,16 +1,32 @@
+//! Route definitions and configuration for ERGORS servers
+//!
+//! This module provides a centralized way to define and manage API routes
+//! with support for authentication middleware and proto-based type/value patterns.
+//!
+//! Routes are defined using proto-generated request/response types for standardized
+//! transport layer communication.
+
+pub mod auth;
+pub mod config;
+
+pub use auth::AuthLayer;
+pub use config::{RouteDefinition, RouteRegistry};
+
+// Re-export the macro
+pub use crate::define_routes;
+
 use crate::error::HoResult;
 use crate::llm::HoError;
 
 use crate::traits::Message as _;
-use crate::traits::{NetworkConfigTrait, NetworkMessageTrait, NetworkTopologyTrait};
+use crate::traits::{NetworkMessageTrait, NetworkTopologyTrait};
 
-use crate::commonware::error::{CommonwareNetworkError, CommonwareNetworkResult};
-use crate::types::cw_ho::network::v1::network_message::*;
-use crate::types::cw_ho::network::v1::*;
+use crate::types::ergors::network::v1::network_message::*;
+use crate::types::ergors::network::v1::*;
 
 impl NetworkTopologyTrait for NetworkTopology {
-    type NodeInfo = crate::types::cw_ho::network::v1::NodeInfo;
-    type Connection = crate::types::cw_ho::network::v1::Connection;
+    type NodeInfo = crate::types::ergors::network::v1::NodeInfo;
+    type Connection = crate::types::ergors::network::v1::Connection;
 
     fn nodes(&self) -> &[Self::NodeInfo] {
         &self.nodes
@@ -95,7 +111,7 @@ impl NetworkUtils {
     pub fn parse_address(address: &str) -> HoResult<(String, u16)> {
         let parts: Vec<&str> = address.rsplitn(2, ':').collect();
         if parts.len() != 2 {
-            return Err(HoError::Network(format!(
+            return Err(HoError::Other(format!(
                 "Invalid address format: {}",
                 address
             )));
@@ -103,7 +119,7 @@ impl NetworkUtils {
 
         let port = parts[0]
             .parse::<u16>()
-            .map_err(|_| HoError::Network(format!("Invalid port in address: {}", address)))?;
+            .map_err(|_| HoError::Other(format!("Invalid port in address: {}", address)))?;
 
         Ok((parts[1].to_string(), port))
     }
@@ -116,7 +132,7 @@ impl NetworkUtils {
     /// Validate port number is in valid range
     pub fn validate_port(port: u32) -> HoResult<u16> {
         if port == 0 || port > 65535 {
-            return Err(HoError::Network(format!("Invalid port number: {}", port)));
+            return Err(HoError::Other(format!("Invalid port number: {}", port)));
         }
         Ok(port as u16)
     }

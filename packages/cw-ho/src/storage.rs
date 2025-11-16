@@ -5,7 +5,7 @@ use futures::StreamExt;
 
 use ho_std::llm::{HoError, HoResult};
 use ho_std::traits::{MessageExt, StorageConfigTrait};
-use ho_std::types::cw_ho::{orchestration::v1::*, storage::v1::*};
+use ho_std::types::ergors::{orch::v1::*, storage::v1::*};
 use std::path::Path;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -310,7 +310,7 @@ impl CwHoStorage {
     }
 
     /// Store operation record (request only, response pending)
-    pub async fn store_operation_request(
+    pub async fn op_req(
         &self,
         id: &str,
         operation_type: &str,
@@ -356,7 +356,7 @@ impl CwHoStorage {
     }
 
     /// Update operation record with response
-    pub async fn store_operation_response(&self, id: &str, response_data: Vec<u8>) -> HoResult<()> {
+    pub async fn op_res(&self, id: &str, response_data: Vec<u8>) -> HoResult<()> {
         let snapshot = self.cnidarium.latest_snapshot();
         let operation_key = format!("{}{}", OPERATION_PREFIX, id);
 
@@ -386,7 +386,7 @@ impl CwHoStorage {
     }
 
     /// Update operation record with error
-    pub async fn store_operation_error(
+    pub async fn op_err(
         &self,
         id: &str,
         error_msg: &str,
@@ -430,7 +430,7 @@ impl CwHoStorage {
     }
 
     /// Query operation records
-    pub async fn query_operations(
+    pub async fn q_ops(
         &self,
         operation_type: Option<&str>,
         limit: Option<u32>,

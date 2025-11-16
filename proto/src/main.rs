@@ -1,5 +1,5 @@
-//! Build CW-HO proto files. This build script uses the local proto files
-//! in the hoe/ directory to build the required proto types for the CW-HO system.
+//! Build ERGORS proto files. This build script uses the local proto files
+//! in the ergors/ directory to build the required proto types for the ERGORS system.
 //! This is adapted from the proto-compiler code in github.com/informalsystems/ibc-rs
 
 use std::path::PathBuf;
@@ -15,7 +15,7 @@ fn main() -> anyhow::Result<()> {
         .join("ho-std")
         .join("src")
         .join("types")
-        .join("cw_ho")
+        .join("ergors")
         .join("gen");
 
     println!("target_dir: {}", target_dir.display());
@@ -23,57 +23,19 @@ fn main() -> anyhow::Result<()> {
     // prost_build::Config isn't Clone, so we need to make two.
     let mut config = prost_build::Config::new();
 
-    config.compile_well_known_types();
     // As recommended in pbjson_types docs.
     config.extern_path(".google.protobuf", "::pbjson_types");
+    // NOTE: we need this because the rust module that defines the IBC types is external, and not
+    // part of this crate.
+    // See https://docs.rs/prost-build/0.5.0/prost_build/struct.Config.html#method.extern_path
+    config.extern_path(".ibc", "::ibc_proto::ibc");
 
+    config.extern_path(".ics23", "::ics23");
+    config.extern_path(".cosmos.ics23", "::ics23");
+
+    config.compile_well_known_types();
     config.type_attribute(".", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.HoConfig", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.NetworkConfig", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.NodeIdentity", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.StorageConfig", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.ApiKeysJson", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.GlobalSettings", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.ApiKeysMetadata", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.OpenAiRequest", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.OpenAiResponse", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.OpenAiChoice", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.OpenAiUsage", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.OpenAiMessage", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.ProviderWithAuth", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.Instructions", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.LlmRouterConfig", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.LlmEntity", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.PromptRequest", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.PromptResponse", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.TokenUsage", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.PromptMessage", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.PromptContext", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.LlmPromptConfig", SERDE_JSON);
-    // config.type_attribute("hoe.orchestration.v1.HealthResponse", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.NodeInfo", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.NetworkMessage", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.NetworkLimits", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.ChannelConfig", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.NodeAnnounce", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.TaskCoordination", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.FractalSync", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.SandloopState", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.TetrahedralPing", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.Request", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.Response", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.NetworkEvent", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.PeerConnected", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.PeerDisconnected", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.MessageReceived", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.TopologyChanged", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.NetworkError", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.NetworkTopology", SERDE_JSON);
-    // config.type_attribute("hoe.network.v1.Connection", SERDE_JSON);
-    // config.type_attribute("hoe.types.v1.FractalOperation", SERDE_JSON);
-    // config.type_attribute("hoe.types.v1.InsertOperation", SERDE_JSON);
-    // config.type_attribute("hoe.types.v1.UpdateOperation", SERDE_JSON);
-    // config.type_attribute("hoe.types.v1.DeleteOperation", SERDE_JSON);
+
     config
         .out_dir(&target_dir)
         // .file_descriptor_set_path(&target_dir.join(descriptor_file_name))
@@ -92,14 +54,28 @@ fn main() -> anyhow::Result<()> {
         .compile_with_config(
             config,
             &[
-                "./hoe/keys/v1/keys.proto",
-                "./hoe/custody/v1/custody.proto",
-                "./hoe/network/v1/network.proto",
-                "./hoe/orchestration/v1/orchestration.proto",
-                "./hoe/storage/v1/storage.proto",
-                "./hoe/types/v1/common.proto",
+                "./ergors/actions/v1/actions.proto",
+                "./ergors/asset/v1/asset.proto",
+                "./ergors/custody/v1/custody.proto",
+                "./ergors/decaf377_frost/v1/decaf377_frost.proto",
+                "./ergors/decaf377_rdsa/v1/decaf377_rdsa.proto",
+                "./ergors/decaf377_fmd/v1/decaf377_fmd.proto",
+                "./ergors/keys/v1/keys.proto",
+                "./ergors/network/v1/network.proto",
+                "./ergors/orch/v1/orch.proto",
+                "./ergors/storage/v1/storage.proto",
+                "./ergors/sct/v1/sct.proto",
+                "./ergors/tct/v1/tct.proto",
+                "./ergors/types/v1/common.proto",
+                "./rust-vendored/tendermint/p2p/types.proto",
+                "./rust-vendored/tendermint/abci/types.proto",
+                "./rust-vendored/tendermint/types/validator.proto",
+                "./rust-vendored/ibc/applications/transfer/v1/query.proto",
+                "./rust-vendored/ibc/core/channel/v1/query.proto",
+                "./rust-vendored/ibc/core/client/v1/query.proto",
+                "./rust-vendored/ibc/core/connection/v1/query.proto",
             ],
-            &["./hoe/"],
+            &["./ergors/", "./rust-vendored/"],
         )?;
 
     // Finally, build pbjson Serialize, Deserialize impls:

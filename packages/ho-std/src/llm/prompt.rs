@@ -6,7 +6,7 @@ pub use crate::error::{HoError, HoResult};
 // pub use crate::shared_impl::*;
 // Extension trait implementations for proto types
 use crate::traits::llm::*;
-use crate::types::cw_ho::orchestration::v1::*;
+use crate::types::ergors::orch::v1::*;
 
 impl PromptRequestTrait for PromptRequest {
     type Message = PromptMessage;

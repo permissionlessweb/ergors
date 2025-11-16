@@ -1,9 +1,9 @@
 use crate::traits::LlmModelTrait;
-// use crate::types::cw_ho::custody::v1::*;
-// use crate::types::cw_ho::keys::v1::*;
-// use crate::types::cw_ho::network::v1::*;
-// use crate::types::cw_ho::types::v1::*;
-use crate::types::cw_ho::orchestration::v1::*;
+// use crate::types::ergors::custody::v1::*;
+// use crate::types::ergors::keys::v1::*;
+// use crate::types::ergors::network::v1::*;
+// use crate::types::ergors::types::v1::*;
+use crate::types::ergors::orch::v1::*;
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 
@@ -32,7 +32,7 @@ impl ApiKeysJson {
         Self {
             metadata: Some(ApiKeysMetadata {
                 version: "2.0.0".to_string(),
-                description: "CW-HO Node API Keys - Configure your LLM providers".to_string(),
+                description: "ERGORS Node API Keys - Configure your LLM providers".to_string(),
                 golden_ratio_note: Some(
                     "Provider selection uses φ ≈ 1.618 weighting when strategy = 'GoldenRatio'"
                         .to_string(),
@@ -48,7 +48,7 @@ impl ApiKeysJson {
             }),
             instructions: Some(Instructions {
                 setup: vec![
-                    "1. Use 'cw-ho init llm-api-keys' to configure providers interactively"
+                    "1. Use 'ergors init llm-api-keys' to configure providers interactively"
                         .to_string(),
                     "2. Set 'enabled': true for providers you want to use".to_string(),
                     "3. Adjust model selections and parameters as needed".to_string(),

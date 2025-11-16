@@ -1,0 +1,404 @@
+syntax = "proto3";
+
+package ergors.orch.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "types/v1/common.proto";
+import "network/v1/network.proto";
+import "storage/v1/storage.proto";
+
+// Configuration Types  
+message HoConfig {
+  network.v1.NetworkConfig network = 1;
+  network.v1.NodeIdentity identity = 2;
+  ergors.storage.v1.StorageConfig storage = 3;
+  LlmRouterConfig llm = 4;
+}
+
+
+
+// Query operations for the orchestration component.
+service QueryService {
+ 
+
+}
+
+// Cosmic Orchestration Types
+message CosmicTask {
+  string id = 1;
+  OrchestrateTask task_type = 2;
+  CosmicTaskStatus status = 3;
+  string prompt = 4;
+  optional FractalRequirements fractal_requirements = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  optional google.protobuf.Struct result = 8;
+  optional string error = 9;
+}
+
+enum OrchestrateTask {
+  ORCHESTRATE_TASK_UNSPECIFIED = 0;
+  ORCHESTRATE_TASK_BOOTSTRAP = 1;
+  ORCHESTRATE_TASK_RECURSIVE = 2;
+}
+
+enum CosmicTaskStatus {
+  COSMIC_TASK_STATUS_UNSPECIFIED = 0;
+  COSMIC_TASK_STATUS_PENDING = 1;
+  COSMIC_TASK_STATUS_RUNNING = 2;
+  COSMIC_TASK_STATUS_COMPLETED = 3;
+  COSMIC_TASK_STATUS_FAILED = 4;
+  COSMIC_TASK_STATUS_FRACTAL_EXPANSION = 5;
+  COSMIC_TASK_STATUS_GEOMETRIC_VALIDATION = 6;
+}
+
+message CosmicContext {
+  string task_id = 1;
+  string user_input = 2;
+  uint32 current_step = 3;
+  uint32 total_steps = 4;
+  uint32 fractal_level = 5;
+  string golden_ratio_state = 6;
+  repeated PromptResponse previous_responses = 7;
+  map<string, google.protobuf.Struct> cosmic_metadata = 8;
+}
+
+message FractalRequirements {
+  optional CosmicContext context = 1;
+  uint32 recursion_depth = 2;
+  double self_similarity_threshold = 3;
+  bool golden_ratio_compliance = 4;
+  double fractal_dimension_target = 5;
+  bool mobius_continuity = 6;
+  double fractal_coherence = 7;
+  repeated string expansion_criteria = 8;
+}
+
+/// PromptRequest: Parse flexible prompt request formats into canonical PromptRequest
+///
+/// Accepts:
+/// Type URL: `/ergors.orch.v1.PromptRequest`
+/// 1. Full PromptRequest (canonical): `{"messages": [{"role": "user", "content": "..."}], "model": "gpt-4"}`
+message PromptRequest {
+  repeated PromptMessage messages = 1;
+  string model = 2;
+  optional PromptContext context = 3;
+  optional LlmPromptConfig llm_config = 4;
+}
+
+message PromptResponse {
+  bytes id = 1;
+  string provider = 2;
+  string model = 3;
+  string prompt = 4;
+  repeated string response = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  TokenUsage tokens_used = 7;
+  optional double cost = 8;
+  optional uint64 latency_ms = 9;
+}
+
+message PromptMessage {
+  string role = 1;
+  string content = 2;
+}
+
+message PromptContext {
+  optional string session_id = 1;
+  optional string user_id = 2;
+  optional string thread_id = 3;
+}
+
+message TokenUsage {
+  uint32 prompt = 1;
+  uint32 completion = 2;
+  uint32 total = 3;
+}
+
+message LlmPromptConfig {
+  uint32 temperature = 1;
+  uint32 max_tokens = 2;
+  uint32 top_p = 3;
+  repeated string stop_sequences = 4;
+}
+
+// LLM Provider Types
+message LLMProvider {
+  string name = 1;
+  string base_url = 2;
+  repeated string supported_models = 3;
+  LlmModel provider_type = 4;
+}
+
+enum LlmModel {
+  AkashChat = 0;
+  OllamaLocal = 1;
+  KimiResearch = 2;
+  Grok = 3;
+  OpenAI = 4;
+  Anthropic = 5;
+  Custom = 6;
+}
+
+ // Local config structure that matches the existing implementation
+message LocalLlmConfig {
+  uint64 timeout_seconds = 1;
+  string api_keys_file = 2;
+}
+
+message OpenAiRequest {
+  string model = 1;
+  repeated OpenAiMessage messages = 2;
+  optional uint32 temperature = 3;
+  optional uint32 max_tokens = 4;
+}
+
+message OpenAiUsage {
+  uint32 prompt_tokens = 1;
+  uint32 completion_tokens = 2;
+  uint32 total_tokens = 3;
+}
+ 
+message OpenAiMessage {
+  string role = 1;
+  string content = 2;
+}
+
+message OpenAiResponse {
+  repeated OpenAiChoice choices = 1;
+  OpenAiUsage usage  = 2;
+}
+
+
+message OpenAiChoice {
+  OpenAiMessage message  = 1;
+}
+ 
+
+enum ModelSelectionStrategy {
+  MODEL_SELECTION_STRATEGY_UNSPECIFIED = 0;
+  // Always use highest priority available
+  MODEL_SELECTION_STRATEGY_PRIORITY = 1;
+  // Round-robin across available providers
+  MODEL_SELECTION_STRATEGY_ROUND_ROBIN = 2;
+  // Golden ratio weighted selection
+  MODEL_SELECTION_STRATEGY_GOLDEN_RATIO = 3;
+  // Load-based selection
+  MODEL_SELECTION_STRATEGY_LOAD_BALANCED = 4;
+}
+ 
+// Llm config is the global configuration of all llm models available, and their subconfigurations.
+message LlmRouterConfig {
+  string api_keys_file = 1;
+  repeated LlmEntity entities = 2;
+  ModelSelectionStrategy default_strategy = 3;
+  uint64 timeout_seconds = 4;
+  uint32 max_retries = 5;
+  uint32 default_entity = 6;
+}
+ 
+/// LlmEntity is a single llm model entity. Contains information about available models, stragegy in use of the framework, and other configuration files 
+message LlmEntity {
+  string name = 1;
+  string base_url = 2;
+  repeated string models = 3;
+  string default_model = 4;
+  uint32 priority = 5; // Using uint32 for u8
+  bool enabled = 6;
+    ModelSelectionStrategy default_strategy = 7;
+  uint64 timeout_seconds = 8;
+  uint32 max_retries = 9;
+}
+
+message LoggingConfig {
+  string level = 1;
+  optional string file = 2;
+}
+
+// Route Request/Response Messages
+// These follow the type/value tuple pattern for transport layer standardization
+
+// Health endpoint
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+  uint64 uptime_seconds = 3;
+  string storage_status = 4;
+  optional string network_status = 5;
+}
+
+// Query endpoint
+message QueryPromptsRequest {
+  optional string session_id = 1;
+  optional string user_id = 2;
+  optional uint32 limit = 3;
+  optional uint64 before_timestamp = 4;
+  optional uint64 after_timestamp = 5;
+}
+
+message QueryPromptsResponse {
+  repeated PromptResponse prompts = 1;
+  uint32 total_count = 2;
+}
+
+
+message BootstrapRequest {
+  // bootstrap method
+  BootstrapMethod bootstrap_method = 1;
+  // node-identity 
+  network.v1.NodeIdentity identity = 2;
+}
+
+message BootstrapMethod {
+  oneof method {
+    Ssh ssh = 1;
+    Cloud cloud = 2;
+    Docker docker = 3;
+    Bluetooth bluetooth = 4;
+  }
+}
+
+message Ssh {
+  string ssh_key_path = 1;
+}
+
+message Cloud {
+oneof provider {
+  Akash akash = 1;
+  Wavs wavs = 2;
+  Phala phala = 3;
+}
+}
+
+message Bluetooth {}
+message Local {}
+message Docker {}
+message Akash {}
+message Wavs {}
+message Phala {}
+
+message BootstrapResponse {
+  string id = 1;
+  string target_node = 2;
+  string status = 3;
+  string summary = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  uint64 duration_ms = 6;
+}
+
+// Bootstrap endpoint
+message BootstrapNodeRequest {
+  // name provided to the node you are bootstrapping
+  string target_node = 1;
+  optional string ssh_key_path = 2;
+  optional string ssh_user = 3;
+  optional string ssh_port = 4;
+}
+
+message BootstrapNodeResponse {
+  string id = 1;
+  string target_node = 2;
+  string status = 3;
+  string summary = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  uint64 duration_ms = 6;
+}
+
+// Fractal creation endpoint
+message CreateFractalRequest {
+  string prompt = 1;
+  FractalRequirements requirements = 2;
+  optional PromptContext context = 3;
+}
+
+message CreateFractalResponse {
+  string task_id = 1;
+  CosmicTaskStatus status = 2;
+  optional string error = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+// Prune endpoint
+message PruneNodeRequest {
+  bool force = 1;
+  optional uint64 retain_after_timestamp = 2;
+}
+
+message PruneNodeResponse {
+  bool success = 1;
+  uint64 pruned_bytes = 2;
+  uint64 pruned_entries = 3;
+  optional string error = 4;
+}
+
+// Network topology endpoint
+message GetTopologyRequest {}
+
+message GetTopologyResponse {
+  network.v1.NetworkTopology topology = 1;
+  network.v1.NodeIdentity node_identity = 2;
+}
+
+// Route Metadata and Configuration
+enum HttpMethod {
+  HTTP_METHOD_UNSPECIFIED = 0;
+  HTTP_METHOD_GET = 1;
+  HTTP_METHOD_POST = 2;
+  HTTP_METHOD_PUT = 3;
+  HTTP_METHOD_DELETE = 4;
+  HTTP_METHOD_PATCH = 5;
+}
+
+message RouteMetadata {
+  string path = 1;
+  string name = 2;
+  HttpMethod method = 3;
+  bool requires_auth = 4;
+  string request_type = 5;  // Proto type URL (e.g., "ergors.orch.v1.HealthRequest")
+  string response_type = 6; // Proto type URL (e.g., "ergors.orch.v1.HealthResponse")
+  optional string description = 7;
+}
+
+message RouteRegistry {
+  repeated RouteMetadata routes = 1;
+}
+
+
+
+// JSON structure for the api-keys.json file
+message ApiKeysJson {
+  optional ApiKeysMetadata metadata = 1;
+  map<string, ProviderWithAuth> providers = 2;
+  optional GlobalSettings global_settings = 3;
+  optional Instructions instructions = 4;
+}
+
+message ApiKeysMetadata {
+  string version = 1;
+  string description = 2;
+  optional string golden_ratio_note = 3;
+}
+
+/// Provider configuration with authentication
+/// Combines LlmEntity (standard type) with api_key and prompt defaults
+message ProviderWithAuth {
+  optional string api_key = 1;
+  LlmEntity entity = 2;
+}
+
+message GlobalSettings {
+  int32 default_timeout_seconds = 1;
+  int32 max_retry_attempts = 2;
+  bool golden_ratio_weighting = 3;
+  bool fallback_enabled = 4;
+  int32 health_check_interval_seconds = 5;
+}
+
+message Instructions {
+  repeated string setup = 1;
+  repeated string security = 2;
+}
+

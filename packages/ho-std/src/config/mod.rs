@@ -1,10 +1,7 @@
 pub mod api_keys;
 pub mod env;
-
-use crate::commonware::HoResult;
-
-use crate::llm::HoError;
-use crate::types::cw_ho::network::v1::*;
+use crate::types::ergors::network::v1::*;
+use crate::{HoError, HoResult};
 
 impl crate::traits::NetworkConfigTrait for NetworkConfig {
     /// Validate the network config.
@@ -13,9 +10,7 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
         if self.connection_timeout_ms < 100 {}
         // Basic validation - could be expanded
         if self.listen_port == 0 {
-            return Err(HoError::Cfg(
-                "Listen port must be non-zero".to_string(),
-            ));
+            return Err(HoError::Cfg("Listen port must be non-zero".to_string()));
         }
         if self.listen_address == "" {};
 
@@ -95,7 +90,7 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
         }
     }
 
-    fn limits(&self) -> crate::types::cw_ho::network::v1::NetworkLimits {
+    fn limits(&self) -> crate::types::ergors::network::v1::NetworkLimits {
         self.limits.unwrap_or_default()
     }
 }

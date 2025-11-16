@@ -1,11 +1,15 @@
 version: v1
-name: buf.build/cw-agent/cw-ho
+name: buf.build/permissionlessweb/ergors
 deps:
   - buf.build/googleapis/googleapis
   - buf.build/cosmos/gogo-proto
+  - buf.build/cosmos/ibc:7ab44ae956a0488ea04e04511efa5f70
 breaking:
   use:
     - FILE
+  except:
+    - EXTENSION_NO_DELETE
+    - FIELD_SAME_DEFAULT
 lint:
   use:
     - DEFAULT

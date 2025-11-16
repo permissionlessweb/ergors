@@ -1,7 +1,7 @@
 [package]
 authors = [
-    "CW-HO Agent Team",
-    "Generated from cw-ho and ho-std packages",
+    "ERGORS Agent Team",
+    "Generated from ergors and ho-std packages",
 ]
 edition = "2021"
 name = "ergors-proto"

@@ -3,7 +3,7 @@ use crate::{CwHoConfig, CwHoLlmRouterConfig};
 
 use camino::Utf8Path;
 use ho_std::llm::{HoError, HoResult};
-use ho_std::types::cw_ho::{network::v1::*, orchestration::v1::*};
+use ho_std::types::ergors::{network::v1::*, orch::v1::*, storage::v1::*};
 
 use ho_std::traits::file_ops::ConfigLoaderTrait;
 use ho_std::traits::{HoConfigTrait, LLMRouterConfigTrait, NetworkConfigTrait, NodeIdentityTrait};

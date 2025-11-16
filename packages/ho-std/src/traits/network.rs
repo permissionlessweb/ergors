@@ -1,10 +1,9 @@
-//! Network-related traits for CW-HO system
+//! Network-related traits for ERGORS system
 
-use crate::commonware::error::CommonwareNetworkResult;
-use crate::commonware::identity::NodePrivKey;
 use crate::error::HoResult;
+use crate::keys::commonware::NodePrivKey;
 use crate::traits::NetworkConfigTrait;
-use crate::types::cw_ho::network::v1::*;
+use crate::types::ergors::network::v1::*;
 use async_trait::async_trait;
 use std::net::SocketAddr;
 
@@ -21,10 +20,8 @@ pub trait NodeIdentityTrait {
         Self: Sized;
 
     /// Generate a fresh keypair
-    fn generate_keypair<R: rand::RngCore + rand::CryptoRng>(
-        &mut self,
-        rng: &mut R,
-    ) -> CommonwareNetworkResult<()>;
+    fn generate_keypair<R: rand::RngCore + rand::CryptoRng>(&mut self, rng: &mut R)
+        -> HoResult<()>;
 
     /// Set keypair from existing keys
     fn set_keypair(&mut self, private_key: Self::PrivateKey);

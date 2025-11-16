@@ -1,6 +1,6 @@
-//! # CW-HO Trait System
+//! # ERGORS Trait System
 //!
-//! This module provides traits used for the CW-HO engine.
+//! This module provides traits used for the ERGORS engine.
 //!
 //! ## Architecture Overview
 //!
@@ -14,8 +14,12 @@
 //! - [`storage`] - Data persistence, querying, and snapshot management traits
 //!
 //! ## Usage Pattern
+//! 
+//! ### TRAITS -> STRUCTS -> CONFIGS -> IMPLEMENTATIONS
+//! 
 
 pub mod config;
+pub mod custody;
 mod domain;
 pub mod file_ops;
 pub mod fractals;
@@ -27,6 +31,7 @@ pub mod storage;
 
 // Re-export all traits for convenience
 pub use config::*;
+pub use custody::*;
 pub use domain::*;
 pub use fractals::*;
 pub use llm::*;

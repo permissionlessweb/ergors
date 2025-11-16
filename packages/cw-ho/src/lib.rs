@@ -3,7 +3,6 @@ pub mod call;
 pub mod config;
 
 pub mod init;
-pub mod llm;
 pub mod middleware;
 pub mod network;
 pub mod server;
@@ -17,13 +16,13 @@ use crate::{
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use cnidarium::Storage as CnidariumStorage;
-use ho_std::error::HoResult;
 use ho_std::{
     config::env::{default_home, init_env},
     constants::CONFIG_FILE_NAME,
+    error::HoResult,
     llm::LlmRouter,
     traits::HoConfigTrait,
-    types::cw_ho::{network::v1::*, orchestration::v1::*},
+    types::ergors::{network::v1::*, orch::v1::*},
 };
 use {
     commonware_cryptography::ed25519,
@@ -49,7 +48,7 @@ pub struct CwHoStorage {
     cnidarium: CnidariumStorage,
 }
 
-/// Minimal network manager for cw-ho/ implementations in ./manager.rs
+/// Minimal network manager for ergors/ implementations in ./manager.rs
 pub struct CwHoNetworkManifold {
     context: Context,
     /// Network running flag
@@ -74,16 +73,33 @@ pub struct CwHoNetworkManifold {
 
 #[derive(Clone)]
 pub struct ErgorsAppState {
-    pub storage: Arc<CwHoStorage>,
-    pub llm_router: Arc<LlmRouter>,
-    pub nm: Arc<tokio::sync::Mutex<CwHoNetworkManifold>>, // Network
-    pub start_time: Instant,
-    pub config: CwHoConfig,
+    /// r = router
+    pub r: Arc<LlmRouter>,
+    /// s = storage
+    pub s: Arc<CwHoStorage>,
+    /// nm = network manifold
+    pub nm: Arc<tokio::sync::Mutex<CwHoNetworkManifold>>,
+    /// t = time
+    pub t: Instant,
+    /// c = variable config
+    pub c: CwHoConfig,
+}
+
+impl ErgorsAppState {
+    fn new(
+        r: Arc<LlmRouter>,
+        s: Arc<CwHoStorage>,
+        nm: Arc<tokio::sync::Mutex<CwHoNetworkManifold>>,
+        t: Instant,
+        c: CwHoConfig,
+    ) -> Self {
+        Self { r, s, nm, t, c }
+    }
 }
 
 #[derive(Parser)]
-#[command(name = "ergors: cw-hoe", version = "0.1.0")]
-#[command(about = "HOE: Helper Orchestration Engine")]
+#[command(name = "ergors", version = "0.1.0")]
+#[command(about = "Ergors: Ergodic Recursive Systems")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

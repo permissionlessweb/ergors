@@ -3,9 +3,9 @@ use anyhow::{Context, Result};
 use camino::Utf8Path;
 use ho_std::config::api_keys::configure_api_keys_interactive;
 use ho_std::constants::{ENV_VARIABLES_FILE, LLM_API_KEYS_FILE};
-use ho_std::traits::DomainType;
+
+use ho_std::keys::{SeedPhrase, SpendKey};
 use ho_std::traits::HoConfigTrait;
-use ho_std_keys::keys::{SeedPhrase, SpendKey};
 use rand_core::OsRng;
 use std::{env, fs};
 use std::{

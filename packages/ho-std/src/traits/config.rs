@@ -1,11 +1,8 @@
-//! Configuration-related traits for CW-HO system
+//! Configuration-related traits for ERGORS system
+use crate::types::ergors::network::v1::*;
+use crate::HoResult;
 use camino::Utf8Path;
 use std::path::Path;
-
-use crate::commonware::error::CommonwareNetworkResult;
-
-use crate::error::HoResult;
-use crate::types::cw_ho::network::v1::*;
 
 /// Core trait for application configuration
 pub trait HoConfigTrait {
@@ -84,12 +81,12 @@ pub trait StorageConfigTrait {
     /// Validate storage configuration
     fn validate(&self) -> HoResult<()> {
         if self.data_dir().is_empty() {
-            return Err(crate::error::HoError::Config(
+            return Err(crate::error::HoError::Cfg(
                 "Data directory cannot be empty".to_string(),
             ));
         }
         if self.max_size_mb() == 0 {
-            return Err(crate::error::HoError::Config(
+            return Err(crate::error::HoError::Cfg(
                 "Max size must be greater than 0".to_string(),
             ));
         }
@@ -123,12 +120,12 @@ pub trait LLMRouterConfigTrait {
     /// Validate LLM configuration
     fn validate(&self) -> HoResult<()> {
         if self.default_provider().is_empty() {
-            return Err(crate::error::HoError::Config(
+            return Err(crate::error::HoError::Cfg(
                 "Default provider must be set".to_string(),
             ));
         }
         if self.timeout_seconds() == 0 {
-            return Err(crate::error::HoError::Config(
+            return Err(crate::error::HoError::Cfg(
                 "Timeout must be greater than 0".to_string(),
             ));
         }
@@ -168,17 +165,17 @@ pub trait LLMConfigTrait {
     /// Validate LLM configuration
     fn validate(&self) -> HoResult<()> {
         if !(0.0..=2.0).contains(&self.temperature()) {
-            return Err(crate::error::HoError::Config(
+            return Err(crate::error::HoError::Cfg(
                 "Temperature must be between 0.0 and 2.0".to_string(),
             ));
         }
         if self.max_tokens() == 0 {
-            return Err(crate::error::HoError::Config(
+            return Err(crate::error::HoError::Cfg(
                 "Max tokens must be greater than 0".to_string(),
             ));
         }
         if !(0.0..=1.0).contains(&self.top_p()) {
-            return Err(crate::error::HoError::Config(
+            return Err(crate::error::HoError::Cfg(
                 "Top-p must be between 0.0 and 1.0".to_string(),
             ));
         }
@@ -194,7 +191,7 @@ pub trait NetworkConfigTrait {
     fn from_toml(&self) -> toml::Table;
 
     /// validate a network configuration is valid
-    fn validate(&self) -> CommonwareNetworkResult<()>;
+    fn validate(&self) -> HoResult<()>;
 
     /// Get bootstrap peers
     fn bootstrap_peers(&self) -> &[String];
