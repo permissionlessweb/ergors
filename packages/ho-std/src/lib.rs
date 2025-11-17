@@ -13,20 +13,18 @@
 //! ERGORS Protocol Buffer Definitions
 //!
 //! This crate provides protocol buffer definitions for the ERGORS (CommonWare Host Orchestrator)
-//!
-//! 1. **Storage Layer** - LLM prompt/response storage, query operations, and health monitoring
-//! 2. **Node, Networking, Communication Layer** - Node coordination, cosmic task management, network topology
-//! 3. **Orchestration Layer** - Node coordination, cosmic task management, network topology
-//! 4. **Deployment Layer** - Node coordination, cosmic task management, network topology
-//! 5. **Authorization Client** - Node coordination, cosmic task management, network topology
+//! **Storage Layer** - LLM prompt/response storage, query operations, and health monitoring
+//! **Node Identity & Configuration Definition** - Node coordination, cosmic task management, network topology
+//! **Newtorking & Communication Layer** - Node coordination, cosmic task management, network topology
+//! **Agentic Orchestration Layer** - Node coordination, cosmic task management, network topology
+//! **Deployment Layer** - Node coordination, cosmic task management, network topology
+//! **Authorization Client & Proof Generating Middleware** - Node coordination, cosmic task management, network topology
 //!
 //! The proto definitions are organized following the sacred geometry principles embedded
 //! in the ERGORS architecture, with fractal recursion, golden ratio scaling, and tetrahedral
 //! network topologies.
-//!
 extern crate alloc;
 
-// pub mod action;
 pub mod config;
 pub mod constants;
 pub mod custody;
@@ -34,7 +32,6 @@ pub mod deploy;
 pub mod error;
 pub mod examples;
 pub mod keys;
-pub mod txhash;
 pub mod llm;
 pub mod network;
 pub mod orchestrate;
@@ -43,9 +40,13 @@ mod serde;
 pub mod storage;
 pub mod traits;
 pub mod transports;
+pub mod txhash;
 #[allow(deprecated, unused_imports, clippy::large_enum_variant)]
 pub mod types;
 pub mod utils;
+
+// pub mod action;
+// pub mod wallet;
 
 use crate::llm::HoError;
 // pub mod shared_impl;

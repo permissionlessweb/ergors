@@ -1,10 +1,24 @@
 # Networking Implementation Specification for ERGORS
 
+This specification defines a minimal networking implementation for ergors using commonware libraries, avoiding the fractal complexity that occurred in the previous implementation while maintaining the essential tetrahedral topology.
+
+- [NodeIdentity](packages/ho-proto-rs/src/types/ergors/network/v1.rs)
+- [network types](./packages/ho-proto-rs/src/types/ergors/network/v1.rs)
+
 ## Overview
 
 The ERGORS (Life Creativity Engine) project is a distributed multi-LLM agent orchestration platform designed to reduce creative friction through intelligent automation for public goods. Central to this vision is a robust networking layer that enables peer-to-peer (P2P) communication across a tetrahedral mesh of nodes, ensuring seamless coordination and state synchronization. The networking implementation, found in `packages/ho-core/src/network/`, comprises two primary systems: a legacy WebSocket-based P2P network for compatibility and a modern Commonware-based network leveraging authenticated discovery protocols from `commonware-cryptography`. This specification details the networking implementation as reflected in the current compiled binary, capturing the sacred geometry principles—tetrahedral connectivity, golden ratio resource allocation, Möbius strip sandloop feedback, and fractal task scaling—that underpin its design.
 
 **Intention**: Networking in ERGORS is the digital nervous system of a tetrahedral organism, connecting nodes as vertices in a fully-connected mesh. Inspired by nature's resilient structures, it balances fast-path messaging with state finality using the golden ratio, ensuring continuous feedback loops and recursive scalability for a harmonious, distributed creativity engine.
+
+## Architecture Decision
+
+After analyzing the commonware libraries and the existing implementation, we will use:
+
+1. **commonware-p2p**: For authenticated peer-to-peer communication with encryption
+2. **commonware-cryptography**: For Ed25519-based node identities
+3. **commonware-broadcast**: For efficient message dissemination across the network
+4. **commonware-collector**: For request-response patterns between nodes
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -37,7 +51,12 @@ The ERGORS (Life Creativity Engine) project is a distributed multi-LLM agent orc
 - **Fractal Task Scaling**: Represented as recursive task structures, where each sub-task inherits self-similar API contracts, scaled by the golden ratio (φ ≈ 1.618).
 - **Möbius Strip Feedback**: Visualized as sandloop execution where outputs seamlessly feed back as inputs, ensuring continuous refinement without visible breaks, akin to a single-sided loop.
 
-## Core Components
+## Core Design Principles
+
+1. **Simplicity First**: Remove fractal patterns, golden ratio calculations, and Möbius loops
+2. **Essential Features Only**: Focus on basic node discovery, messaging, and topology management
+3. **Leverage Commonware**: Use existing commonware patterns without overengineering
+4. **Clear Separation**: Keep networking concerns isolated from application logic
 
 ### NetworkManager (Legacy WebSocket P2P)
 
@@ -137,66 +156,6 @@ The networking implementation in ERGORS, spanning `packages/ho-core/src/network/
 
 **Final Intention**: Networking in ERGORS is the digital embodiment of a golden spiral, connecting nodes in a tetrahedral dance of communication and coordination. Each message, each connection, flows with the elegance of nature's patterns, building a resilient P2P fabric that empowers public goods creation through distributed agent orchestration.
 
-# ERGORS Minimal Networking Implementation Specification
-
-## Overview
-
-This specification defines a minimal networking implementation for ergors using commonware libraries, avoiding the fractal complexity that occurred in the previous implementation while maintaining the essential tetrahedral topology.
-
-## Architecture Decision
-
-After analyzing the commonware libraries and the existing implementation, we will use:
-
-1. **commonware-p2p**: For authenticated peer-to-peer communication with encryption
-2. **commonware-cryptography**: For Ed25519-based node identities
-3. **commonware-broadcast**: For efficient message dissemination across the network
-4. **commonware-collector**: For request-response patterns between nodes
-
-## Core Design Principles
-
-1. **Simplicity First**: Remove fractal patterns, golden ratio calculations, and Möbius loops
-2. **Essential Features Only**: Focus on basic node discovery, messaging, and topology management
-3. **Leverage Commonware**: Use existing commonware patterns without overengineering
-4. **Clear Separation**: Keep networking concerns isolated from application logic
-
-## Network Topology
-
-### Simplified Tetrahedral Model
-
-```
-     Coordinator
-      /   |   \
-     /    |    \
-Executor--+--Referee
-     \    |    /
-      \   |   /
-     Development
-```
-
-Each node type connects to all other types, forming a complete graph with 4 vertices and 6 edges.
-
-## Implementation Components
-
-### 1. Node Identity
-
-- [NodeIdentity](packages/ho-proto-rs/src/types/ergors/network/v1.rs)
-
-### 2. Network Manager (commonware-p2p)
-<!-- TODO: Newtork manager is our interface for creating a node in a network. We can plug & play each component with custom structures, so long as we implement the functions the  NetworkManagerTrait expects. -->
-<!-- Tod -->
-
-### 3. Message Types
-
-- [network types](./packages/ho-proto-rs/src/types/ergors/network/v1.rs)
-
-```rust
-// TODO: implement example of type imports
-```
-
-## Network Channels
-
-Using commonware-p2p channels for different message types:
-
 1. **Channel 0**: Discovery and topology management
 2. **Channel 1**: Task coordination
 3. **Channel 2**: State synchronization
@@ -231,72 +190,9 @@ Using commonware-p2p channels for different message types:
 
 ## Configuration
 
-```toml
-[network]
-node_type = "executor"
-listen_addr = "0.0.0.0:3000"
-bootstrap_peers = [
-    "12D3KooWExample1...:3001",
-    "12D3KooWExample2...:3002"
-]
-
-[network.limits]
-max_message_size = 10485760  # 1MB
-max_peers = 50
-connection_timeout = 30
-
-[network.channels]
-discovery_buffer = 100
-task_buffer = 1000
-state_buffer = 500
-health_buffer = 50
-```
-
 ## API Interface
 
-```rust
-impl ErgorsNetworkManifold {
-    /// Initialize and start the network
-    pub async fn new(config: NetworkConfig) -> HoResult<Self>;
-    
-    /// Send a message to specific node type(s)
-    pub async fn send_to_role(&self, role: NodeType, msg: NetworkMessage) -> HoResult<()>;
-    
-    /// Broadcast a message to all peers
-    pub async fn broadcast(&self, msg: NetworkMessage) -> HoResult<()>;
-    
-    /// Request data with timeout (using collector)
-    pub async fn request(&self, peer: PublicKey, req: NetworkMessage, timeout: Duration) -> HoResult<NetworkMessage>;
-    
-    /// Get current network topology
-    pub fn get_topology(&self) -> NetworkTopology;
-    
-    /// Subscribe to network events
-    pub fn subscribe(&self) -> Receiver<NetworkEvent>;
-}
-```
-
 ## Error Handling
-
-```rust
-#[derive(Error, Debug)]
-pub enum NetworkError {
-    #[error("P2P error: {0}")]
-    P2P(#[from] commonware_p2p::Error),
-    
-    #[error("Broadcast error: {0}")]
-    Broadcast(#[from] commonware_broadcast::Error),
-    
-    #[error("Collector timeout")]
-    CollectorTimeout,
-    
-    #[error("No peers with role: {0}")]
-    NoPeersForRole(String),
-    
-    #[error("Message serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
-}
-```
 
 ## Testing Strategy
 
@@ -310,70 +206,10 @@ pub enum NetworkError {
 1. All messages authenticated via Ed25519 signatures (built into commonware-p2p)
 2. Encrypted connections between peers (provided by commonware-p2p)
 3. Rate limiting per channel to prevent spam
-# ERGORS Minimal Networking Implementation Specification
-
-## Overview
-
-This specification defines a minimal networking implementation for ergors using commonware libraries, avoiding the fractal complexity that occurred in the previous implementation while maintaining the essential tetrahedral topology.
-
-## Architecture Decision
-
-After analyzing the commonware libraries and the existing implementation, we will use:
-
-1. **commonware-p2p**: For authenticated peer-to-peer communication with encryption
-2. **commonware-cryptography**: For Ed25519-based node identities
-3. **commonware-broadcast**: For efficient message dissemination across the network
-4. **commonware-collector**: For request-response patterns between nodes
-
-## Core Design Principles
-
-1. **Simplicity First**: Remove fractal patterns, golden ratio calculations, and Möbius loops
-2. **Essential Features Only**: Focus on basic node discovery, messaging, and topology management
-3. **Leverage Commonware**: Use existing commonware patterns without overengineering
-4. **Clear Separation**: Keep networking concerns isolated from application logic
-
-## Network Topology
-
-### Simplified Tetrahedral Model
-
-```
-     Coordinator
-      /   |   \
-     /    |    \
-Executor--+--Referee
-     \    |    /
-      \   |   /
-     Development
-```
-
-Each node type connects to all other types, forming a complete graph with 4 vertices and 6 edges.
-
-## Implementation Components
 
 ### 1. Node Identity (commonware-cryptography)
 
-```rust
-use commonware_cryptography::ed25519::{PrivateKey, PublicKey};
-
-pub struct NodeIdentity {
-    private_key: PrivateKey,
-    public_key: PublicKey,
-    node_type: NodeType,
-    node_id: String,
-}
-```
-
 ### 2. Network Manager (commonware-p2p)
-
-```rust
-pub struct ErgorsNetworkManifold {
-    identity: NodeIdentity,
-    p2p_network: Network<PublicKey>,
-    broadcast: Broadcast<PublicKey>,
-    collector: Collector<PublicKey>,
-    peers: HashMap<PublicKey, PeerInfo>,
-}
-```
 
 ### 3. Message Types
 
@@ -422,108 +258,6 @@ Using commonware-p2p channels for different message types:
 3. **Channel 2**: State synchronization
 4. **Channel 3**: Health checks
 
-## Bootstrap Process
-
-1. Load node identity from environment/config
-2. Initialize commonware-p2p with bootstrap peers
-3. Start discovery protocol on Channel 0
-4. Announce node capabilities
-5. Build peer topology map
-
-## Message Flow Patterns
-
-### 1. Broadcast Pattern (commonware-broadcast)
-
-- Node announcements
-- State updates
-- Network-wide notifications
-
-### 2. Request-Response Pattern (commonware-collector)
-
-- Task assignment/execution
-- State queries
-- Health checks
-
-### 3. Direct Messaging (commonware-p2p)
-
-- Point-to-point task coordination
-- Peer-specific state sync
-
-## Configuration
-
-```toml
-[network]
-node_type = "executor"
-listen_addr = "0.0.0.0:3000"
-bootstrap_peers = [
-    "12D3KooWExample1...:3001",
-    "12D3KooWExample2...:3002"
-]
-
-[network.limits]
-max_message_size = 1048576  # 1MB
-max_peers = 50
-connection_timeout = 30
-
-[network.channels]
-discovery_buffer = 100
-task_buffer = 1000
-state_buffer = 500
-health_buffer = 50
-```
-
-## API Interface
-
-```rust
-impl ErgorsNetworkManifold {
-    /// Initialize and start the network
-    pub async fn new(config: NetworkConfig) -> HoResult<Self>;
-    
-    /// Send a message to specific node type(s)
-    pub async fn send_to_role(&self, role: NodeType, msg: NetworkMessage) -> HoResult<()>;
-    
-    /// Broadcast a message to all peers
-    pub async fn broadcast(&self, msg: NetworkMessage) -> HoResult<()>;
-    
-    /// Request data with timeout (using collector)
-    pub async fn request(&self, peer: PublicKey, req: NetworkMessage, timeout: Duration) -> HoResult<NetworkMessage>;
-    
-    /// Get current network topology
-    pub fn get_topology(&self) -> NetworkTopology;
-    
-    /// Subscribe to network events
-    pub fn subscribe(&self) -> Receiver<NetworkEvent>;
-}
-```
-
-## Error Handling
-
-```rust
-#[derive(Error, Debug)]
-pub enum NetworkError {
-    #[error("P2P error: {0}")]
-    P2P(#[from] commonware_p2p::Error),
-    
-    #[error("Broadcast error: {0}")]
-    Broadcast(#[from] commonware_broadcast::Error),
-    
-    #[error("Collector timeout")]
-    CollectorTimeout,
-    
-    #[error("No peers with role: {0}")]
-    NoPeersForRole(String),
-    
-    #[error("Message serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
-}
-```
-
-## Testing Strategy
-
-1. **Unit Tests**: Test individual components in isolation
-2. **Integration Tests**: Use commonware's simulated network for testing
-3. **Local Cluster**: Run 4-node local cluster for tetrahedral testing
-
 ## Migration Path
 
 1. Create new `network` module alongside existing implementation
@@ -538,19 +272,3 @@ pub enum NetworkError {
 - Message latency: < 100ms (local network)
 - Throughput: 1000 messages/second per channel
 - Memory usage: < 100MB per node
-
-## Security Considerations
-
-1. All messages authenticated via Ed25519 signatures (built into commonware-p2p)
-2. Encrypted connections between peers (provided by commonware-p2p)
-3. Rate limiting per channel to prevent spam
-4. Peer reputation tracking for misbehavior detection
-
-## Next Steps
-
-1. Implement `NodeIdentity` wrapper around commonware-cryptography
-2. Create `ErgorsNetworkManifold` with basic p2p functionality
-3. Add broadcast layer for efficient message dissemination
-4. Integrate collector for request-response patterns
-5. Build integration tests with 4-node topology
-6. Benchmark and optimize based on performance targets

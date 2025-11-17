@@ -58,65 +58,6 @@ impl ActionPlan {
                     witness_data.anchor,
                 ))
             }
-            Output(output_plan) => {
-                let dummy_payload_key: PayloadKey = [0u8; 32].into();
-                Action::Output(output_plan.output(
-                    fvk.outgoing(),
-                    memo_key.as_ref().unwrap_or(&dummy_payload_key),
-                ))
-            }
-            Swap(swap_plan) => Action::Swap(swap_plan.swap(fvk)),
-            SwapClaim(swap_claim_plan) => {
-                let note_commitment = swap_claim_plan.swap_plaintext.swap_commitment();
-                let auth_path = witness_data
-                    .state_commitment_proofs
-                    .get(&note_commitment)
-                    .context(format!("could not get proof for {note_commitment:?}"))?;
-
-                Action::SwapClaim(swap_claim_plan.swap_claim(fvk, auth_path))
-            }
-            Delegate(plan) => Action::Delegate(plan.clone()),
-            Undelegate(plan) => Action::Undelegate(plan.clone()),
-            UndelegateClaim(plan) => Action::UndelegateClaim(plan.undelegate_claim()),
-            ValidatorDefinition(plan) => Action::ValidatorDefinition(plan.clone()),
-            // Fixme: action name
-            IbcAction(plan) => Action::IbcRelay(plan.clone()),
-            ProposalSubmit(plan) => Action::ProposalSubmit(plan.clone()),
-            ProposalWithdraw(plan) => Action::ProposalWithdraw(plan.clone()),
-            DelegatorVote(plan) => {
-                let note_commitment = plan.staked_note.commit();
-                let auth_path = witness_data
-                    .state_commitment_proofs
-                    .get(&note_commitment)
-                    .context(format!("could not get proof for {note_commitment:?}"))?;
-                Action::DelegatorVote(plan.delegator_vote(fvk, [0; 64].into(), auth_path.clone()))
-            }
-            ValidatorVote(plan) => Action::ValidatorVote(plan.clone()),
-            ProposalDepositClaim(plan) => Action::ProposalDepositClaim(plan.clone()),
-            PositionOpen(plan) => Action::PositionOpen(plan.position_open(fvk, None)),
-            PositionClose(plan) => Action::PositionClose(plan.clone()),
-            PositionWithdraw(plan) => Action::PositionWithdraw(plan.position_withdraw()),
-            CommunityPoolSpend(plan) => Action::CommunityPoolSpend(plan.clone()),
-            CommunityPoolOutput(plan) => Action::CommunityPoolOutput(plan.clone()),
-            CommunityPoolDeposit(plan) => Action::CommunityPoolDeposit(plan.clone()),
-            Ics20Withdrawal(plan) => Action::Ics20Withdrawal(plan.clone()),
-            ActionDutchAuctionSchedule(plan) => Action::ActionDutchAuctionSchedule(plan.clone()),
-            ActionDutchAuctionEnd(plan) => Action::ActionDutchAuctionEnd(plan.clone()),
-            ActionDutchAuctionWithdraw(plan) => {
-                Action::ActionDutchAuctionWithdraw(plan.to_action())
-            }
-            ActionLiquidityTournamentVote(plan) => {
-                let note_commitment = plan.staked_note.commit();
-                let auth_path = witness_data
-                    .state_commitment_proofs
-                    .get(&note_commitment)
-                    .context(format!("could not get proof for {note_commitment:?}"))?;
-                Action::ActionLiquidityTournamentVote(plan.to_action(
-                    fvk,
-                    [0; 64].into(),
-                    auth_path.clone(),
-                ))
-            }
         })
     }
 
@@ -124,30 +65,6 @@ impl ActionPlan {
     pub fn variant_index(&self) -> usize {
         match self {
             ActionPlan::Spend(_) => 1,
-            ActionPlan::Output(_) => 2,
-            ActionPlan::Swap(_) => 3,
-            ActionPlan::SwapClaim(_) => 4,
-            ActionPlan::ValidatorDefinition(_) => 16,
-            ActionPlan::IbcAction(_) => 17,
-            ActionPlan::ProposalSubmit(_) => 18,
-            ActionPlan::ProposalWithdraw(_) => 19,
-            ActionPlan::ValidatorVote(_) => 20,
-            ActionPlan::DelegatorVote(_) => 21,
-            ActionPlan::ProposalDepositClaim(_) => 22,
-            ActionPlan::PositionOpen(_) => 30,
-            ActionPlan::PositionClose(_) => 31,
-            ActionPlan::PositionWithdraw(_) => 32,
-            ActionPlan::Delegate(_) => 40,
-            ActionPlan::Undelegate(_) => 41,
-            ActionPlan::UndelegateClaim(_) => 42,
-            ActionPlan::CommunityPoolSpend(_) => 50,
-            ActionPlan::CommunityPoolOutput(_) => 51,
-            ActionPlan::CommunityPoolDeposit(_) => 52,
-            ActionPlan::Ics20Withdrawal(_) => 200,
-            ActionPlan::ActionDutchAuctionSchedule(_) => 53,
-            ActionPlan::ActionDutchAuctionEnd(_) => 54,
-            ActionPlan::ActionDutchAuctionWithdraw(_) => 55,
-            ActionPlan::ActionLiquidityTournamentVote(_) => 70,
         }
     }
 
@@ -156,30 +73,6 @@ impl ActionPlan {
 
         match self {
             Spend(spend) => spend.value_blinding,
-            Output(output) => output.value_blinding,
-            Delegate(_) => Fr::zero(),
-            Undelegate(_) => Fr::zero(),
-            UndelegateClaim(undelegate_claim) => undelegate_claim.balance_blinding,
-            ValidatorDefinition(_) => Fr::zero(),
-            Swap(swap) => swap.fee_blinding,
-            SwapClaim(_) => Fr::zero(),
-            IbcAction(_) => Fr::zero(),
-            ProposalSubmit(_) => Fr::zero(),
-            ProposalWithdraw(_) => Fr::zero(),
-            DelegatorVote(_) => Fr::zero(),
-            ValidatorVote(_) => Fr::zero(),
-            ProposalDepositClaim(_) => Fr::zero(),
-            PositionOpen(_) => Fr::zero(),
-            PositionClose(_) => Fr::zero(),
-            PositionWithdraw(_) => Fr::zero(),
-            CommunityPoolSpend(_) => Fr::zero(),
-            CommunityPoolOutput(_) => Fr::zero(),
-            CommunityPoolDeposit(_) => Fr::zero(),
-            Ics20Withdrawal(_) => Fr::zero(),
-            ActionDutchAuctionSchedule(_) => Fr::zero(),
-            ActionDutchAuctionEnd(_) => Fr::zero(),
-            ActionDutchAuctionWithdraw(_) => Fr::zero(),
-            ActionLiquidityTournamentVote(_) => Fr::zero(),
         }
     }
 
@@ -189,30 +82,6 @@ impl ActionPlan {
 
         match self {
             Spend(plan) => plan.spend_body(fvk).effect_hash(),
-            Output(plan) => plan.output_body(fvk.outgoing(), memo_key).effect_hash(),
-            Delegate(plan) => plan.effect_hash(),
-            Undelegate(plan) => plan.effect_hash(),
-            UndelegateClaim(plan) => plan.undelegate_claim_body().effect_hash(),
-            ValidatorDefinition(plan) => plan.effect_hash(),
-            Swap(plan) => plan.swap_body(fvk).effect_hash(),
-            SwapClaim(plan) => plan.swap_claim_body(fvk).effect_hash(),
-            IbcAction(plan) => plan.effect_hash(),
-            ProposalSubmit(plan) => plan.effect_hash(),
-            ProposalWithdraw(plan) => plan.effect_hash(),
-            DelegatorVote(plan) => plan.delegator_vote_body(fvk).effect_hash(),
-            ValidatorVote(plan) => plan.effect_hash(),
-            ProposalDepositClaim(plan) => plan.effect_hash(),
-            PositionOpen(plan) => plan.position_open(fvk, None).effect_hash(),
-            PositionClose(plan) => plan.effect_hash(),
-            PositionWithdraw(plan) => plan.position_withdraw().effect_hash(),
-            CommunityPoolSpend(plan) => plan.effect_hash(),
-            CommunityPoolOutput(plan) => plan.effect_hash(),
-            CommunityPoolDeposit(plan) => plan.effect_hash(),
-            Ics20Withdrawal(plan) => plan.effect_hash(),
-            ActionDutchAuctionSchedule(plan) => plan.effect_hash(),
-            ActionDutchAuctionEnd(plan) => plan.effect_hash(),
-            ActionDutchAuctionWithdraw(plan) => plan.to_action().effect_hash(),
-            ActionLiquidityTournamentVote(plan) => plan.to_body(fvk).effect_hash(),
         }
     }
 }

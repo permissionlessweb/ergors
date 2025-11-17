@@ -1,4 +1,3 @@
-
 // TODO: model-cost rate metric constants map. Store, update, & export versioned cost mappings in very optimized manner (bitwise mapping w vecotrized & encoded format)
 //
 pub const CONFIG_FILE_NAME: &str = "config.toml";
@@ -23,7 +22,6 @@ pub const QUEN: &str = "qwen";
 pub const VENICE: &str = "venice";
 
 pub const KIMI_RESEARCH_MODELS: &[&str] = &["kimi_research"];
-pub const GROK_MODELS: &[&str] = &["grok"];
 pub const OLLAMA_LOCAL_MODELS: &[&str] = &["ollama_local"];
 
 pub const ENV_KEYS: &[&(&str, &str)] = &[
@@ -104,6 +102,9 @@ pub const ANTHROPIC_MODELS: &[&str] = &[
     "claude-3-sonnet-20240229",
     "claude-2.1",
 ];
+
+pub const GROK_MODELS: &[&str] = &["grok-code-fast-1", "grok-3-mini", "grok-4-0709"];
+
 pub const QWEN_MODELS: &[&str] = &[
     "claude-3-5-sonnet-20240620",
     "claude-3-opus-20240229",

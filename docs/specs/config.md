@@ -7,19 +7,21 @@ The ERGORS configuration system supports both **single-node** and **fractal depl
 ## 🎯 Configuration Files
 
 ### 1. Single Node Configuration (`config-example.toml`)
+
 - **Purpose**: Testing, development, standalone demos
 - **Usage**: Single node that can operate independently
 - **Format**: Traditional TOML structure for one orchestrator instance
 
 ### 2. Fractal Deployment Configuration (`config-fractal.toml`)
+
 - **Purpose**: Full tetrahedral network deployment
 - **Usage**: Multi-node sacred geometric network
 - **Format**: Contains definitions for all four node types (Coordinator, Executor, Referee, Development)
- 
 
 ## 🔧 Configuration Structure
 
 ### Fractal Config Sections
+
 ```toml
 [deployment]          # Deployment metadata and active node selection
 [geometry]            # Golden ratio constants
@@ -33,6 +35,7 @@ The ERGORS configuration system supports both **single-node** and **fractal depl
 ```
 
 ### Node-Specific Sections
+
 ```toml
 [nodes.{type}.network]    # P2P and API ports, peer connections
 [nodes.{type}.storage]    # Storage backend, compression, snapshots
@@ -52,20 +55,26 @@ The ERGORS configuration system supports both **single-node** and **fractal depl
 ## ⚙️ Advanced Configuration
 
 ### Custom Ports
+
 Override default ports via command line:
+
 ```bash
 cargo run -- start --config config-fractal.toml --node-type coordinator --port 8100 --p2p-port 9100
 ```
 
 ### Custom Storage Paths
+
 Modify `data_dir` in configuration for persistent storage:
+
 ```toml
 [storage]
 data_dir = "/var/lib/ergors/coordinator"  # Persistent storage
 ```
 
 ### Sandloop Tuning
+
 Adjust golden ratio intervals for different performance characteristics:
+
 ```toml
 [sandloops.intervals]
 prompt_request = 30    # Faster iteration
@@ -87,21 +96,25 @@ The ERGORS API keys management system provides **secure, portable, and scalable*
 ## 🔧 Key Features
 
 ### ✅ **Relative Path Resolution**
+
 - API key files are referenced relative to the config file location
 - Enables portable deployments and version control
 - Allows fractal deployment scaling across different environments
 
 ### ✅ **Environment Variable Expansion**  
+
 - Supports `${VAR_NAME}` syntax for environment variables
 - Fallback to literal values if environment variables are not found
 - Secure handling with automatic key masking in logs
 
 ### ✅ **Provider Override System**
+
 - Config-level overrides take precedence over JSON files
 - Granular control over individual provider settings
 - Runtime configuration without file modifications
 
 ### ✅ **Golden Ratio Resource Allocation**
+
 - Primary chain: 61.8% allocation (Akash, Kimi, Grok)
 - Fallback chain: 38.2% allocation (Ollama, OpenAI, Anthropic)
 - Deployment profiles for different environments
@@ -109,6 +122,7 @@ The ERGORS API keys management system provides **secure, portable, and scalable*
 ## 🚀 Quick Start
 
 ### 1. Initialize Configuration
+
 ```bash
 # Create config files with API keys template
 cargo run -- init --output . --create-api-keys-template true
@@ -119,6 +133,7 @@ cargo run -- init --output . --create-api-keys-template true
 ```
 
 ### 2. Configure API Keys
+
 ```bash
 # Edit the API keys file
 vim api-keys.json
@@ -132,6 +147,7 @@ export AKASH_API_KEY="your-akash-key"
 ```
 
 ### 3. Start Node with API Key Support
+
 ```bash
 # Single node
 cargo run -- start --config config.toml --node-type development
@@ -154,6 +170,7 @@ ergors/
 ## 🔐 API Keys Configuration Format
 
 ### Basic Structure
+
 ```json
 {
   "_metadata": {
@@ -191,6 +208,7 @@ ergors/
 ```
 
 ### Environment Variable Expansion
+
 ```json
 {
   "providers": {
@@ -208,6 +226,7 @@ ergors/
 ## ⚙️ Configuration Integration
 
 ### Single Node Config (config.toml)
+
 ```toml
 [agents.llm]
 # Relative path to API keys file
@@ -227,6 +246,7 @@ model = "llama3.2:latest"
 ```
 
 ### Fractal Deployment Config (config-fractal.toml)
+
 ```toml
 # Each node can reference the same API keys file
 [nodes.coordinator.agents.llm]
@@ -249,6 +269,7 @@ deployment_profile = "development"
 ## 🌐 Deployment Profiles
 
 ### Development Profile
+
 ```json
 {
   "deployment_profiles": {
@@ -265,6 +286,7 @@ deployment_profile = "development"
 ```
 
 ### Production Profile
+
 ```json
 {
   "deployment_profiles": {
@@ -283,6 +305,7 @@ deployment_profile = "development"
 ## 🔄 Recursive Scaling & Transport
 
 ### Scenario 1: Environment Promotion
+
 ```bash
 # Development environment
 cp api-keys.json api-keys-dev.json
@@ -299,6 +322,7 @@ cp api-keys.json api-keys-prod.json
 ```
 
 ### Scenario 2: Multi-Region Deployment
+
 ```bash
 # US East region
 mkdir deployments/us-east
@@ -314,6 +338,7 @@ cp api-keys.json deployments/eu-west/
 ```
 
 ### Scenario 3: Team-Specific Configurations
+
 ```bash
 # Team A configuration
 mkdir teams/team-a
@@ -329,6 +354,7 @@ cp api-keys-template.json teams/team-b/api-keys.json
 ## 🛠️ API Usage Examples
 
 ### Loading API Keys Programmatically
+
 ```rust
 use crate::config::{OrchestratorConfig, FractalDeploymentConfig};
 
@@ -342,11 +368,13 @@ let api_keys = fractal_config.load_api_keys(Path::new("config-fractal.toml"))?;
 ```
 
 ### Environment Variable Priority
+
 1. **Provider Overrides** in config files (highest priority)
 2. **API Keys JSON file** with environment variable expansion
 3. **Environment variables** directly (fallback)
 
 ### Path Resolution Examples
+
 ```toml
 # Relative to config file directory
 api_keys_file = "api-keys.json"                    # ./api-keys.json
@@ -360,6 +388,7 @@ api_keys_file = "/etc/ergors/api-keys.json"         # Absolute path
 ## 🔐 Security Best Practices
 
 ### 1. Environment Variables (Recommended)
+
 ```bash
 # Set in shell environment
 export OPENAI_API_KEY="sk-..."
@@ -371,6 +400,7 @@ echo "api-keys.json" >> .gitignore
 ```
 
 ### 2. Git Security
+
 ```bash
 # Add to .gitignore
 echo "api-keys.json" >> .gitignore
@@ -382,6 +412,7 @@ git add config.toml config-fractal.toml
 ```
 
 ### 3. Production Deployment
+
 ```bash
 # Use secrets management
 kubectl create secret generic ergors-api-keys \
@@ -393,8 +424,8 @@ kubectl create secret generic ergors-api-keys \
 # - Azure Key Vault
 ```
 
-
 ### Custom Provider Configuration
+
 ```json
 {
   "providers": {
@@ -420,6 +451,7 @@ kubectl create secret generic ergors-api-keys \
 ```
 
 ### Dynamic Provider Discovery
+
 ```rust
 // Load and inspect available providers
 let api_keys = config.load_api_keys(config_path)?;
@@ -432,41 +464,51 @@ for (name, provider) in &api_keys.providers.primary_chain {
 
 This API keys management system provides the foundation for **scalable, secure, and maintainable** LLM provider configuration in ERGORS, enabling both development flexibility and production robustness through sacred geometric principles and recursive configuration patterns.
 
+### ORCHESTRATOR: REMOTE CONFIG
 
-### ORCHESTRATOR: REMOTE CONFIG 
-### Step 1: Workspace Zip Creation 
+### Step 1: Workspace Zip Creation
+
 ```bash
 cd /current/workspace && zip -r /tmp/cw-agent-workspace.zip . -x "logs/*" "target/*" "*.log" ".git/*" "node_modules/*" "priv/*" "!templates/*"
 ```
+
 - Excludes: logs, build artifacts, git history, node modules, private configs
 - Includes: source code, tools, template configs, documentation
 
-### Step 2: Base64 Encoding 
+### Step 2: Base64 Encoding
+
 - Encodes entire zip file as base64 for safe binary transfer over SSH
 - Logs zip size and encoded size for monitoring
 
-### Step 3: Remote Directory Creation 
+### Step 3: Remote Directory Creation
+
 - WSL: Creates `/mnt/c/cw-agent`
 - Linux: Creates `~/cw-agent`
 - Properly handles WSL vs native Linux paths
 
-### Step 4: Workspace Transfer 
+### Step 4: Workspace Transfer
+
 ```bash
 echo '[base64_encoded_zip]' | base64 -d > /path/to/workspace.zip
 ```
+
 - Transfers entire workspace as single base64-encoded command
 - Avoids complex file transfer protocols
 
-### Step 5: Remote Unpacking 
+### Step 5: Remote Unpacking
+
 ```bash
 cd /workspace && unzip -o workspace.zip && rm workspace.zip
 ```
+
 - Unpacks complete workspace on remote host
 - Cleans up zip file after extraction
 
-### Step 6: Setup Execution 
+### Step 6: Setup Execution
+
 ```bash
 chmod +x /workspace/tools/linux/configure.sh && cd /workspace && sh tools/linux/configure.sh
 ```
+
 - Executes setup script from transferred workspace
 - Maintains proper working directory context

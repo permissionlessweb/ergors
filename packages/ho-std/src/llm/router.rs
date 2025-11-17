@@ -41,6 +41,7 @@ impl LlmRouter {
             .register_all_providers(state, cfg.entities.clone())
             .await?;
         info!("LlmRouter running {} providers", router.providers.len());
+        info!("{:#?}", router.providers.keys());
 
         Ok(router)
     }

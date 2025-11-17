@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use penumbra_sdk_tct as tct;
 use serde::{Deserialize, Serialize};
 
+use crate::traits::DomainType;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(try_from = "pb::WitnessData", into = "pb::WitnessData")]
 pub struct WitnessData {

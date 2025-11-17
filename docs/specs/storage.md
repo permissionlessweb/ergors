@@ -12,7 +12,7 @@ Imagine the storage system as a **multidimensional crystal** where each process 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                    🌌 FRACTAL PROCESS STATE VISUALIZATION 🌌                  │
+│                    FRACTAL PROCESS STATE VISUALIZATION                    │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
 │           ◆ STATE(0) - ROOT PROCESS                                           │

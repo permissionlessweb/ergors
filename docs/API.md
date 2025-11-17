@@ -1,12 +1,32 @@
 # API Authentication Guide
 
-This guide explains how to make authenticated calls to ERGORS permissioned endpoints using Ed25519 cryptographic signatures.
+This guide explains how to make authenticated calls to ERGORS permissioned endpoints using Ed25519 cryptographic signatures. ERGORS provides a minimal HTTP API for capturing and retrieving LLM prompt/response interactions. There are two types of API's served by nodes, public & protected.
 
 ## Overview
 
 ERGORS uses Ed25519 signature-based authentication to protect sensitive endpoints. Public endpoints (like `/health`) are accessible without authentication, while protected endpoints require valid cryptographic signatures in request headers.
 
-## Authentication Requirements
+```sh
+curl -X POST http://localhost:8080/api/prompt \
+     -H "Content-Type: application/json" \
+     -d '{"messages":[{"role": "user", "content": "how many barbers does jroc have?"}],"model":"akash","context":null,"llm_config":null}'
+```
+
+## Authentication Requirements: [Authentication Middlware](./API-AUTHENTICATION.md)
+
+Authenticaton is required for granular control in how api are accessed. Each node has its own identity key pair, and is used to register to the network other keys that are able to access the protected apis.
+
+### Keys
+
+### 1. Node Keys
+
+### 2. Operator Keys
+
+## Using The Engine
+
+- blake3 hash of entire prompt
+- signature of hash
+- encode message in header metadata
 
 Protected endpoints require three headers:
 
@@ -27,57 +47,6 @@ Where:
 - `body` is the raw request body bytes (empty for GET requests)
 - `timestamp` is the Unix timestamp as a string
 - `||` represents concatenation
-
-**Example:**
-
-```
-body = '{"target_node":"user@192.168.1.100"}'
-timestamp = "1699564800"
-message = Blake3(body_bytes || timestamp_bytes)
-signature = Ed25519Sign(private_key, message)
-```
-
-## Public Endpoint (No Authentication)
-
-### cURL
-
-```bash
-curl -X GET http://localhost:8080/health
-```
-
-### Response
-
-```json
-{
-  "status": "ok",
-  "version": "0.1.0",
-  "uptime_seconds": 3600,
-  "storage_status": "healthy",
-  "network_status": "connected (3 peers)"
-}
-```
-
-## Protected Endpoint (With Authentication)
-
-### Step 1: Generate Signature
-
-The message to sign follows the format: `{METHOD}:{PATH}:{TIMESTAMP}`
-
-### cURL Example
-
-## Language-Specific Examples
-
-### Rust
-
-### JavaScript/TypeScript (Node.js)
-
-### Python
-
-## gRPC Example
-
-## JSON-RPC Example
-
-## Available Endpoints
 
 ### Public Endpoints (No Authentication)
 
@@ -104,26 +73,6 @@ This ensures type safety and enables versioning control across the API surface.
 ---
 
 For more information on the ERGORS architecture and API design, see the [main README](../README.md).
-
-## Overview
-
-ERGORS provides a minimal HTTP API for capturing and retrieving LLM prompt/response interactions. There are two types of API's served by nodes, public & protected.
-
-## [Authentication Middlware](./API-AUTHENTICATION.md)
-
-Authenticaton is required for granular control in how api are accessed. Each node has its own identity key pair, and is used to register to the network other keys that are able to access the protected apis.
-
-### Keys
-
-### 1. Node Keys
-
-### 2. Operator Keys
-
-## Using The Engine
-
-- blake3 hash of entire prompt
-- signature of hash
-- encode message in header metadata
 
 ---
 
@@ -417,12 +366,6 @@ All endpoints return error responses in this format:
   "timestamp": "2024-01-01T12:00:00.000Z"
 }
 ```
-
----
-
-## Model Support
-
----
 
 ## Rate Limits
 
