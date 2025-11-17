@@ -535,7 +535,7 @@ The storage layer provides three primary methods for operation tracking:
 
 ```rust
 // packages/ergors/src/storage.rs
-impl CwHoStorage { }
+impl ErgorsStorage { }
 ```
 
 **In-Memory Update Pattern**: Operations follow a three-phase lifecycle:
@@ -549,7 +549,7 @@ This pattern allows tracking of incomplete operations (requests that never recei
 #### Querying Operations
 
 ```rust
-impl CwHoStorage {}
+impl ErgorsStorage {}
 ```
 
 ### Automatic Recording via Middleware

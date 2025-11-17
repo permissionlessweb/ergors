@@ -107,13 +107,13 @@ Implement `StorageKeyAccessor` in `packages/ergors/src/llm/key_accessor.rs`:
 
 ```rust
 pub struct StorageKeyAccessor {
-    storage: Arc<CwHoStorage>,
+    storage: Arc<ErgorsStorage>,
     node_key: ed25519::SigningKey,
     cache: Arc<RwLock<HashMap<String, CachedKey>>>,
 }
 
 impl StorageKeyAccessor {
-    pub async fn new(storage: Arc<CwHoStorage>, node_key: ed25519::SigningKey) -> Result<Self>;
+    pub async fn new(storage: Arc<ErgorsStorage>, node_key: ed25519::SigningKey) -> Result<Self>;
 
     pub async fn migrate_from_json(&self, json_path: &Path) -> Result<()>;
 
@@ -128,7 +128,7 @@ impl StorageKeyAccessor {
 Add methods to `packages/ergors/src/storage.rs`:
 
 ```rust
-impl CwHoStorage {
+impl ErgorsStorage {
     pub async fn store_encrypted_api_key(
         &self,
         provider: &str,
@@ -151,7 +151,7 @@ Create migration utility in `packages/ergors/src/llm/migration.rs`:
 ```rust
 pub async fn migrate_api_keys(
     json_path: &Path,
-    storage: Arc<CwHoStorage>,
+    storage: Arc<ErgorsStorage>,
     node_key: &ed25519::SigningKey,
 ) -> Result<()> {
     // 1. Read api-keys.json
@@ -171,7 +171,7 @@ Modify `packages/ergors/src/llm/router.rs`:
 impl LlmRouter {
     pub async fn new(
         config: &LlmRouterConfig,
-        storage: Arc<CwHoStorage>,
+        storage: Arc<ErgorsStorage>,
         node_key: &ed25519::SigningKey,
     ) -> Result<Self> {
         // Create storage-backed key accessor

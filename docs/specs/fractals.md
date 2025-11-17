@@ -151,12 +151,10 @@ To create a modular, composable AI dev environment:
 
 ### 8. Example Full Workflow
 **Input Command**:
-```plaintext
-[CMD] generate:summary | text="Long article text", env=dev | model=local-mistral, max_tokens=50, format=json
-```
+ 
+**Processing: cw-jsonfilter**:
 
-**Processing**:
-1. Parser extracts `action=generate`, `task=summary`, `model=local-mistral`.
+
 2. Resource Manager confirms local Mistral LLM is available.
 3. Local LLM generates summary with `max_tokens=50`.
 4. Output Formatter returns:

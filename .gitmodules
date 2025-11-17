@@ -10,6 +10,6 @@
 [submodule "sub-modules/project_alice"]
 	path = sub-modules/project_alice
 	url = https://github.com/MarianoMolina/project_alice
-[submodule "sub-modules/wavers"]
-	path = sub-modules/wavers
-	url = https://github.com/jmg049/wavers
+[submodule "sub-modules/dao-contracts"]
+	path = sub-modules/dao-contracts
+	url = https://github.com/DA0-DA0/dao-contracts/

@@ -255,7 +255,7 @@ src/
 
 ```rust
 // Replace plaintext connections with encrypted transport
-impl CwHoNetworkManifold {
+impl ErgorsNetworkManifold {
     async fn connect_peer(&mut self, peer: PeerInfo) -> Result<EncryptedConnection> {
         let config = TransportConfig { /* ... */ };
         let conn = Connection::upgrade_dialer(

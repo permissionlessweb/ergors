@@ -1,4 +1,109 @@
-# ERGORS API Documentation
+# API Authentication Guide
+
+This guide explains how to make authenticated calls to ERGORS permissioned endpoints using Ed25519 cryptographic signatures.
+
+## Overview
+
+ERGORS uses Ed25519 signature-based authentication to protect sensitive endpoints. Public endpoints (like `/health`) are accessible without authentication, while protected endpoints require valid cryptographic signatures in request headers.
+
+## Authentication Requirements
+
+Protected endpoints require three headers:
+
+- `x-signature`: Ed25519 signature (hex-encoded)
+- `x-timestamp`: Unix timestamp in seconds
+- `x-public-key`: Ed25519 public key (hex-encoded)
+
+### Signature Generation
+
+The signature is computed over a Blake3 hash of the request body concatenated with the timestamp:
+
+```math
+signature = sign(Blake3(body || timestamp))
+```
+
+Where:
+
+- `body` is the raw request body bytes (empty for GET requests)
+- `timestamp` is the Unix timestamp as a string
+- `||` represents concatenation
+
+**Example:**
+
+```
+body = '{"target_node":"user@192.168.1.100"}'
+timestamp = "1699564800"
+message = Blake3(body_bytes || timestamp_bytes)
+signature = Ed25519Sign(private_key, message)
+```
+
+## Public Endpoint (No Authentication)
+
+### cURL
+
+```bash
+curl -X GET http://localhost:8080/health
+```
+
+### Response
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "uptime_seconds": 3600,
+  "storage_status": "healthy",
+  "network_status": "connected (3 peers)"
+}
+```
+
+## Protected Endpoint (With Authentication)
+
+### Step 1: Generate Signature
+
+The message to sign follows the format: `{METHOD}:{PATH}:{TIMESTAMP}`
+
+### cURL Example
+
+## Language-Specific Examples
+
+### Rust
+
+### JavaScript/TypeScript (Node.js)
+
+### Python
+
+## gRPC Example
+
+## JSON-RPC Example
+
+## Available Endpoints
+
+### Public Endpoints (No Authentication)
+
+- `GET /health` - Server health status
+
+### Protected Endpoints (Authentication Required)
+
+- `GET /api/prompts` - Query stored prompts
+- `POST /api/prompt` - Submit a prompt for processing
+- `POST /orchestrate/bootstrap` - Bootstrap a new node
+- `POST /orchestrate/fractal` - Create fractal HOE
+- `POST /orchestrate/prune` - Prune node state
+- `GET /network/topology` - Get network topology
+
+## Proto-based Type/Value Pattern
+
+ERGORS follows a proto-based type/value tuple pattern for all request/response messages. Each endpoint expects:
+
+- **Request**: Proto-generated message type (e.g., `BootstrapNodeRequest`)
+- **Response**: Proto-generated message type (e.g., `BootstrapNodeResponse`)
+
+This ensures type safety and enables versioning control across the API surface.
+
+---
+
+For more information on the ERGORS architecture and API design, see the [main README](../README.md).
 
 ## Overview
 
@@ -16,9 +121,9 @@ Authenticaton is required for granular control in how api are accessed. Each nod
 
 ## Using The Engine
 
-* blake3 hash of entire prompt
-* signature of hash
-* encode message in header metadata
+- blake3 hash of entire prompt
+- signature of hash
+- encode message in header metadata
 
 ---
 
@@ -92,10 +197,10 @@ message PromptContext {}
 
 #### Field Defaults
 
-* **model**: Defaults to `"gpt-4"` if not specified
-* **messages**: Simplified formats (`prompt`, `content`) are converted to `[{"role": "user", "content": "..."}]`
-* **context**: Optional, omitted if not provided
-* **llm_config**: Optional, omitted if not provided
+- **model**: Defaults to `"gpt-4"` if not specified
+- **messages**: Simplified formats (`prompt`, `content`) are converted to `[{"role": "user", "content": "..."}]`
+- **context**: Optional, omitted if not provided
+- **llm_config**: Optional, omitted if not provided
 
 #### cURL Examples
 
@@ -176,11 +281,11 @@ Retrieve historical prompt/response interactions with filtering options.
 
 #### Query Parameters
 
-* **session_id** (optional): Filter by session ID
-* **user_id** (optional): Filter by user ID  
-* **start_time** (optional): ISO 8601 timestamp for start of time range
-* **end_time** (optional): ISO 8601 timestamp for end of time range
-* **limit** (optional): Maximum results to return (default: 100, max: 1000)
+- **session_id** (optional): Filter by session ID
+- **user_id** (optional): Filter by user ID  
+- **start_time** (optional): ISO 8601 timestamp for start of time range
+- **end_time** (optional): ISO 8601 timestamp for end of time range
+- **limit** (optional): Maximum results to return (default: 100, max: 1000)
 
 #### Response
 
@@ -299,9 +404,9 @@ All endpoints return error responses in this format:
 
 ### Common HTTP Status Codes
 
-* **200**: Success
-* **400**: Bad Request (invalid parameters)
-* **500**: Internal Server Error (LLM provider or storage issues)
+- **200**: Success
+- **400**: Bad Request (invalid parameters)
+- **500**: Internal Server Error (LLM provider or storage issues)
 
 ### Example Error Response
 
@@ -317,26 +422,6 @@ All endpoints return error responses in this format:
 
 ## Model Support
 
-The service supports models from multiple providers based on configuration:
-
-### OpenAI Models
-
-* `gpt-3.5-turbo`
-* `gpt-4`
-* `gpt-4-turbo`
-
-### Anthropic Models
-
-* `claude-3-haiku-20240307`
-* `claude-3-sonnet-20240229`
-* `claude-3-opus-20240229`
-
-### Grok Models
-
-* `grok-beta`
-
-**Note**: Model availability depends on API keys configured in `api-keys.json`
-
 ---
 
 ## Rate Limits
@@ -349,9 +434,9 @@ Currently no rate limits enforced, but LLM providers may have their own limits.
 
 All prompt/response interactions are stored deterministically in Cnidarium with:
 
-* **Indexing**: By session ID, user ID, and timestamp
-* **Persistence**: Append-only storage for audit trails
-* **Snapshots**: Periodic state snapshots for recovery
+- **Indexing**: By session ID, user ID, and timestamp
+- **Persistence**: Append-only storage for audit trails
+- **Snapshots**: Periodic state snapshots for recovery
 
 ---
 
@@ -369,7 +454,7 @@ All prompt/response interactions are stored deterministically in Cnidarium with:
    ```bash
    curl -X POST http://localhost:8080/api/prompt \
      -H "Content-Type: application/json" \
-     -d '{"prompt": "Hello, world!"}'
+     -d '{"messages":[{"role": "user", "content": "hello are we connected"}],"model":"Qwen3-235B-A22B-Instruct-2507-FP8","context":null,"llm_config":null}'
    ```
 
 3. **Check stored prompts**:
