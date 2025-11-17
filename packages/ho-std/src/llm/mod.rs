@@ -4,6 +4,7 @@ mod prompt;
 mod providers;
 mod router;
 mod joints;
+pub mod state_ext;
 use anyhow::Result;
 
 // pub use macros::{find_entity, registered_entities, LlmEntityDescriptor};
@@ -12,6 +13,7 @@ pub use providers::*;
 pub use prompt::*;
 pub use joints::*;
 pub use router::*;
+pub use state_ext::{StateReadExt, StateWriteExt};
 
 use {
     crate::{constants::*, orchestrate::*, traits::LlmModelTrait},
@@ -53,7 +55,7 @@ impl LlmModelTrait for LlmModel {
     /// (default_model, all_available_models)
     fn models(&self) -> (String, Vec<String>) {
         let all: Vec<String> = match self {
-            LlmModel::AkashChat => AKASH_CHAT_MODELS,
+            LlmModel::AkashChat => AKASHML_MODELS,
             LlmModel::KimiResearch => KIMI_RESEARCH_MODELS,
             LlmModel::Grok => GROK_MODELS,
             LlmModel::OllamaLocal => OLLAMA_LOCAL_MODELS,

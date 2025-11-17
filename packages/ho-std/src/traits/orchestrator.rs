@@ -94,49 +94,6 @@ pub trait CosmicContextTrait {
     fn next_fractal_level(&mut self);
 }
 
-/// Core trait for fractal requirements
-pub trait FractalRequirementsTrait {
-    type CosmicContext;
-
-    /// Create default fractal requirements
-    fn new_default() -> Self
-    where
-        Self: Sized;
-
-    /// Get context
-    fn context(&self) -> Option<&Self::CosmicContext>;
-
-    /// Get recursion depth
-    fn recursion_depth(&self) -> u32;
-
-    /// Get self-similarity threshold
-    fn self_similarity_threshold(&self) -> f64;
-
-    /// Check golden ratio compliance
-    fn golden_ratio_compliance(&self) -> bool;
-
-    /// Get fractal dimension target
-    fn fractal_dimension_target(&self) -> f64;
-
-    /// Check mobius continuity
-    fn mobius_continuity(&self) -> bool;
-
-    /// Get fractal coherence
-    fn fractal_coherence(&self) -> f64;
-
-    /// Get expansion criteria
-    fn expansion_criteria(&self) -> &[String];
-
-    /// Set recursion depth
-    fn set_recursion_depth(&mut self, depth: u32);
-
-    /// Set threshold
-    fn set_threshold(&mut self, threshold: f64);
-
-    /// Add expansion criterion
-    fn add_expansion_criterion(&mut self, criterion: String);
-}
-
 /// Core trait for orchestrator execution
 #[async_trait]
 pub trait OrchestratorTrait {
@@ -161,13 +118,12 @@ pub trait OrchestratorTrait {
     /// Create fractal context
     fn create_fractal_context(&self, task_id: String, prompt: &str, depth: u32) -> Self::Context;
 
-    /// Validate fractal requirements
-    fn validate_fractal_requirements<F>(&self, requirements: &F) -> bool
-    where
-        F: FractalRequirementsTrait<CosmicContext = Self::Context>;
-
     /// Apply golden ratio scaling
     fn apply_golden_ratio_scaling(&self, value: f64) -> f64 {
         value * 1.618033988749894
     }
 }
+
+
+// / CosmicTaskTrait: Single Agentic Task Classification
+// / CosmicContextTrait: Multiple Contexts Objects per task

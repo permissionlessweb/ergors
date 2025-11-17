@@ -29,6 +29,8 @@
 - DOCKER DEPLOYMENT STRATEGY:
   - AKASH workflow (terraform/custom bash scripts)
 - benchmarking via criterion
+- cw-jsonfilter chips: resulable chips for filtering out data during agentic instruct prompts for simpler tasks 
+
 
 ## NETWORK
 

@@ -6,6 +6,7 @@ use axum::{
     extract::{Query, State},
     middleware, Json, Router,
 };
+use commonware_cryptography::{blake3, Hasher};
 use commonware_runtime::tokio::Context;
 use ho_std::llm::HoError;
 use ho_std::{error::error_json, network::AuthLayer};
@@ -29,14 +30,17 @@ impl Server {
         config.validate()?;
 
         let mut nm = ErgorsNetworkManifold::new(config.identity(), context).await;
+        let s: ErgorsStorage = ErgorsStorage::new(&config.storage().data_dir).await?;
         nm.start_network(config.network()).await?;
 
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
-                Arc::new(LlmRouter::new(config.llm().deref()).await?),
+                Arc::new(
+                    LlmRouter::new(&s.cnidarium.latest_snapshot(), config.llm().deref()).await?,
+                ),
                 // s == storage layer
-                Arc::new(ErgorsStorage::new(&config.storage().data_dir).await?),
+                Arc::new(s),
                 // nm == network manifold
                 Arc::new(tokio::sync::Mutex::new(nm)),
                 // t == time
@@ -230,7 +234,7 @@ async fn handle_prompt(
         Ok(llm_response) => {
             let response = PromptResponse {
                 id: Uuid::new_v4().into(),
-                prompt,
+                prompt: blake3::Blake3::hash(prompt.as_bytes()).to_string(),
                 response: llm_response.response,
                 model: model.to_string(),
                 timestamp: None, // TODO: Fix timestamp conversion
@@ -244,7 +248,7 @@ async fn handle_prompt(
             // Store to Cnidarium with original request context
             if let Err(e) = state
                 .s
-                .store_prompt_with_context(&response, Some(&request))
+                .put_prompt_w_ctx(&response, Some(&request))
                 .await
             {
                 error!("Failed to store prompt to storage: {}", e);
@@ -273,7 +277,7 @@ async fn handle_query(
     State(state): State<ErgorsAppState>,
     Query(query): Query<QueryRequest>,
 ) -> Json<serde_json::Value> {
-    match state.s.query_prompts(&query).await {
+    match state.s.get_prompts(&query).await {
         Ok(prompts) => {
             Json(serde_json::to_value(prompts).unwrap_or_else(|_| serde_json::json!([])))
         }

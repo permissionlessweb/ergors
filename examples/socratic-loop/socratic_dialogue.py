@@ -56,7 +56,7 @@ HO_CORE_TIMEOUT = 60
 
 class LLMProvider(Enum):
     """LLM Providers matching ho-core's LLMProvider enum"""
-    AKASH_CHAT = "akash_chat"
+    AKASH_CHAT = "akashml"
     KIMI_RESEARCH = "kimi_research"
     GROK = "grok"
     OLLAMA_LOCAL = "ollama_local"

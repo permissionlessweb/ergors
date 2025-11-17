@@ -58,7 +58,7 @@ llm_entity! {
 // Akash Chat Provider
 llm_entity! {
     AkashProvider {
-        name: "akash_chat",
+        name: "akashml",
         env_key: "AKASH_API_KEY",
         base_url: "https://api.akash.network/chat/v1",
         models: [

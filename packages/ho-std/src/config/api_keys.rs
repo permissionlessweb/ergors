@@ -115,7 +115,7 @@ fn get_env_var_name(provider: LlmModel) -> &'static str {
 /// Get provider key name (lowercase identifier)
 fn get_provider_key(provider: LlmModel) -> &'static str {
     match provider {
-        LlmModel::AkashChat => "akash_chat",
+        LlmModel::AkashChat => "akashml",
         LlmModel::OllamaLocal => "ollama_local",
         LlmModel::KimiResearch => "kimi",
         LlmModel::Grok => "grok",

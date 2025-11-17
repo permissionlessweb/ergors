@@ -56,27 +56,8 @@ pub trait HoConfigTrait {
 /// Core trait for storage configuration
 // #[async_trait]
 pub trait StorageConfigTrait {
-    // async fn new<P>(data_dir: P) -> HoResult<Self>
-    // where
-    //     Self: Sized;
-
     /// Get data directory
     fn data_dir(&self) -> &str;
-
-    /// Get maximum size in MB
-    fn max_size_mb(&self) -> u32;
-
-    /// Check if compression is enabled
-    fn is_compression_enabled(&self) -> bool;
-
-    /// Set data directory
-    fn set_data_dir(&mut self, dir: String);
-
-    /// Set maximum size
-    fn set_max_size_mb(&mut self, size: u32);
-
-    /// Enable/disable compression
-    fn set_compression(&mut self, enabled: bool);
 
     /// Validate storage configuration
     fn validate(&self) -> HoResult<()> {
@@ -85,11 +66,7 @@ pub trait StorageConfigTrait {
                 "Data directory cannot be empty".to_string(),
             ));
         }
-        if self.max_size_mb() == 0 {
-            return Err(crate::error::HoError::Cfg(
-                "Max size must be greater than 0".to_string(),
-            ));
-        }
+
         Ok(())
     }
 }

@@ -188,18 +188,18 @@ pub mod custom_storage {
             })
         }
 
-        async fn store_prompt(&self, prompt: &Self::PromptResponse) -> HoResult<()> {
+        async fn put_prompt(&self, prompt: &Self::PromptResponse) -> HoResult<()> {
             // In a real implementation, this would be thread-safe
 
             Ok(())
         }
 
-        async fn store_prompt_with_context(
+        async fn put_prompt_w_ctx(
             &self,
             prompt: &Self::PromptResponse,
             _request: Option<&Self::PromptRequest>,
         ) -> HoResult<()> {
-            self.store_prompt(prompt).await
+            self.put_prompt(prompt).await
         }
 
         async fn get_prompt(&self, id: &Uuid) -> HoResult<Option<Self::PromptResponse>> {
@@ -207,7 +207,7 @@ pub mod custom_storage {
             Ok(None) // Simplified for example
         }
 
-        async fn query_prompts(&self, query: &Self::Query) -> HoResult<Vec<Self::PromptResponse>> {
+        async fn get_prompts(&self, query: &Self::Query) -> HoResult<Vec<Self::PromptResponse>> {
             println!("Querying prompts with limit: {:?}", query.limit);
             Ok(vec![]) // Simplified for example
         }

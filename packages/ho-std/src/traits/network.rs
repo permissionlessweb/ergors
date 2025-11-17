@@ -76,12 +76,6 @@ pub trait NetworkTopologyTrait {
     /// Remove a connection
     fn remove_connection(&mut self, from_node: &str, to_node: &str);
     fn count_nodes_by_type(&self) -> Vec<(String, usize)> {
-        // TODO: implement from access in storage root
-        // let mut counts = HashMap::new();
-        // for node in self.nodes.values() {
-        //     *counts.entry(node.node_type.clone()).or_insert(0) += 1;
-        // }
-        // counts
         vec![]
     }
 
@@ -196,9 +190,6 @@ pub trait NetworkManagerTrait {
 
     /// Handle incoming message
     async fn handle_message(&mut self, from_peer: &str, message: Self::Message) -> HoResult<()>;
-
-    /// Get peer count
-    fn peer_count(&self) -> usize;
 
     /// Check if connected to a specific peer
     fn is_connected_to_peer(&self, peer_id: &str) -> bool;

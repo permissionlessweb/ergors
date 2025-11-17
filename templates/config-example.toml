@@ -149,7 +149,7 @@ providers = [
         enabled = true
     },
     {
-        name = "akash_chat",
+        name = "akashml",
         provider_type = "AkashChat", 
         endpoint = "https://api.akash.network/chat/v1",
         models = ["akash-7b-chat", "akash-13b-chat"],

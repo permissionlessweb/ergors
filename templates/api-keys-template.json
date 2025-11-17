@@ -15,7 +15,7 @@
   "providers": {
     "primary_chain": {
       "_description": "Primary LLM providers following sacred geometric principles (61.8% allocation)",
-      "akash_chat": {
+      "akashml": {
         "api_key": "${AKASH_API_KEY}",
         "enabled": true,
         "priority": 1,
@@ -289,7 +289,7 @@
   },
   "environment_variables": {
     "_description": "Environment variable names for API keys (use ${VAR_NAME} syntax in keys above)",
-    "akash_chat": "AKASH_API_KEY",
+    "akashml": "AKASH_API_KEY",
     "kimi_research": "KIMI_API_KEY", 
     "grok": "GROK_API_KEY",
     "openai": "OPENAI_API_KEY",
@@ -309,7 +309,7 @@
       }
     },
     "staging": {
-      "enabled_providers": ["akash_chat", "kimi_research", "ollama_local", "openai", "anthropic"],
+      "enabled_providers": ["akashml", "kimi_research", "ollama_local", "openai", "anthropic"],
       "fallback_enabled": true,
       "cost_limits": {
         "daily_max_usd": 50.0,
@@ -317,7 +317,7 @@
       }
     },
     "production": {
-      "enabled_providers": ["akash_chat", "kimi_research", "grok", "ollama_local", "openai", "anthropic"],
+      "enabled_providers": ["akashml", "kimi_research", "grok", "ollama_local", "openai", "anthropic"],
       "fallback_enabled": true,
       "cost_limits": {
         "daily_max_usd": 200.0,

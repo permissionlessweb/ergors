@@ -1,6 +1,8 @@
-use crate::llm::{HoError, HoResult};
-use crate::traits::{ApiKeyMethod, LlmProviderTrait};
+use crate::llm::{HoError, HoResult, StateReadExt};
+use crate::traits::LlmProviderTrait;
 use crate::types::ergors::orch::v1::*;
+use async_trait::async_trait;
+use cnidarium::StateRead;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,48 +11,38 @@ use tracing::{debug, info};
 
 /// Refactored LLM Router with dynamic provider management
 /// Uses trait-based providers defined via llm_entity! macro
+/// Providers are stored and retrieved from cnidarium verifiable storage
 pub struct LlmRouter {
     /// HTTP client for API requests
     client: Client,
-    /// Registry of available providers
-    providers: HashMap<String, Box<dyn LlmProviderTrait>>,
+    /// Registered providers mapped by name
+    providers: HashMap<String, Arc<dyn LlmProviderTrait>>,
 }
 
 impl LlmRouter {
-    /// Create new LLM router with automatic provider registration
-    pub async fn new(config: &LlmRouterConfig) -> HoResult<Self> {
+    /// Create new LLM router with automatic provider registration from storage
+    ///
+    /// # Arguments
+    /// * `state` - StateRead implementation to read provider configs from storage
+    /// * `cfg` - LLM router configuration
+    pub async fn new<S: StateRead>(state: &S, cfg: &LlmRouterConfig) -> HoResult<Self> {
         let client = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_seconds))
+            .timeout(Duration::from_secs(cfg.timeout_seconds))
             .build()
             .map_err(|e| HoError::Cfg(format!("Failed to create HTTP client: {}", e)))?;
-
-        // Determine home path from config
-        let home_path = std::path::PathBuf::from(&config.api_keys_file)
-            .parent()
-            .ok_or_else(|| HoError::Cfg("Invalid API keys file path".to_string()))?
-            .to_path_buf();
 
         // Initialize router with empty providers
         let mut router = Self {
             client,
-
             providers: HashMap::new(),
         };
 
-        // // Register all providers from macro-generated descriptors
-        // router.register_all_providers(key_accessor).await?;
-
-        info!(
-            "LLM Router initialized with {} providers",
-            router.providers.len()
-        );
+        router
+            .register_all_providers(state, cfg.entities.clone())
+            .await?;
+        info!("LlmRouter running {} providers", router.providers.len());
 
         Ok(router)
-    }
-
-    /// Register all providers discovered via llm_entity! macro
-    async fn register_all_providers(&mut self) -> HoResult<()> {
-        Ok(())
     }
 
     /// Process a prompt request using the appropriate provider
@@ -62,10 +54,11 @@ impl LlmRouter {
     ) -> HoResult<PromptResponse> {
         // Find provider that supports this model
         let provider = self.find_provider_for_model(model).ok_or_else(|| {
+            let available_providers: Vec<String> =
+                self.providers.keys().map(|k| k.clone()).collect();
             HoError::Llm(format!(
-                "No provider found for model: {}, available models: {:#?}",
-                model,
-                self.get_providers()
+                "No provider found for model: {}, available providers: {:?}",
+                model, available_providers
             ))
         })?;
 
@@ -79,70 +72,212 @@ impl LlmRouter {
         provider.call(&self.client, request).await
     }
 
-    /// Find a provider that supports the given model
-    fn find_provider_for_model(&self, model: &str) -> Option<&Box<dyn LlmProviderTrait>> {
-        for (name, provider) in &self.providers {
-            if provider.supports_model(model) {
-                return Some(provider);
+    /// Register all providers configured in storage
+    ///
+    /// Reads LlmEntity configurations from storage and instantiates the corresponding
+    /// provider implementations (OpenAI, Anthropic, Grok, etc.)
+    async fn register_all_providers<S: StateRead>(
+        &mut self,
+        state: &S,
+        entities: Vec<LlmEntity>,
+    ) -> HoResult<()> {
+        // Get all configured providers from storage
+        let ents = state.get_llm_providers().await?;
+        info!("Found {} LLM entities in storage", ents.len());
+
+        for entity in entities {
+            self.register_provider_from_entity(&entity)?;
+        }
+
+        Ok(())
+    }
+
+    /// Register a single provider from an LlmEntity configuration
+    ///
+    /// This method maps the entity name to the corresponding provider implementation
+    /// defined via the llm_entity! macro
+    fn register_provider_from_entity(&mut self, entity: &LlmEntity) -> HoResult<()> {
+        use crate::llm::*;
+
+        let provider: Arc<dyn LlmProviderTrait> = match entity.name.to_lowercase().as_str() {
+            "openai" => {
+                let mut p = OpenAiProvider::new(None);
+                for model in &entity.models {
+                    if !OpenAiProvider::MODELS.contains(&model.as_str()) {
+                        p.add_supported_model(model.clone());
+                    }
+                }
+                Arc::new(p)
             }
-        }
-        None
+            "anthropic" => {
+                let mut p = AnthropicProvider::new(None);
+                for model in &entity.models {
+                    if !AnthropicProvider::MODELS.contains(&model.as_str()) {
+                        p.add_supported_model(model.clone());
+                    }
+                }
+                Arc::new(p)
+            }
+            "grok" => {
+                let mut p = GrokProvider::new(None);
+                for model in &entity.models {
+                    if !GrokProvider::MODELS.contains(&model.as_str()) {
+                        p.add_supported_model(model.clone());
+                    }
+                }
+                Arc::new(p)
+            }
+            "akashml" | "akash" => {
+                let mut p = AkashProvider::new(None);
+                for model in &entity.models {
+                    if !AkashProvider::MODELS.contains(&model.as_str()) {
+                        p.add_supported_model(model.clone());
+                    }
+                }
+                Arc::new(p)
+            }
+            "kimi" | "kimi_research" => {
+                let mut p = KimiProvider::new(None);
+                for model in &entity.models {
+                    if !KimiProvider::MODELS.contains(&model.as_str()) {
+                        p.add_supported_model(model.clone());
+                    }
+                }
+                Arc::new(p)
+            }
+            "qwen" => {
+                let mut p = QwenProvider::new(None);
+                for model in &entity.models {
+                    if !QwenProvider::MODELS.contains(&model.as_str()) {
+                        p.add_supported_model(model.clone());
+                    }
+                }
+                Arc::new(p)
+            }
+            "venice" => {
+                let mut p = VeniceProvider::new(None);
+                for model in &entity.models {
+                    if !VeniceProvider::MODELS.contains(&model.as_str()) {
+                        p.add_supported_model(model.clone());
+                    }
+                }
+                Arc::new(p)
+            }
+            unknown => {
+                return Err(HoError::Cfg(format!(
+                    "Unknown provider type: {}. Available providers: openai, anthropic, grok, akashml, kimi, qwen, venice",
+                    unknown
+                )));
+            }
+        };
+
+        debug!("Registered LLM provider: {}", entity.name);
+        self.providers.insert(entity.name.clone(), provider);
+
+        Ok(())
     }
 
-    /// Route request to specific provider by name
-    pub async fn route_to_provider(
-        &self,
-        provider_name: &str,
-        request: &PromptRequest,
-    ) -> HoResult<PromptResponse> {
-        let provider = self
-            .providers
-            .get(provider_name)
-            .ok_or_else(|| HoError::Llm(format!("Provider not found: {}", provider_name)))?;
-
-        provider.call(&self.client, request).await
+    /// Get all registered providers
+    pub fn get_providers(&self) -> Vec<&Arc<dyn LlmProviderTrait>> {
+        self.providers.values().collect()
     }
 
-    /// Get all available models across all configured providers
-    pub fn get_available_models(&self) -> Vec<String> {
-        let mut models = Vec::new();
-
-        for provider in self.providers.values() {
-            models.extend(provider.supported_models().iter().map(|m| m.to_string()));
-        }
-
-        models
+    /// Find provider that supports the given model
+    fn find_provider_for_model(&self, model: &str) -> Option<&Arc<dyn LlmProviderTrait>> {
+        self.providers
+            .values()
+            .find(|provider| provider.supports_model(model))
     }
 
-    /// Get all configured providers
-    pub fn get_providers(&self) -> Vec<&str> {
-        self.providers.keys().map(|s| s.as_str()).collect()
-    }
-
-    /// Get provider by name
-    pub fn get_provider(&self, name: &str) -> Option<&Box<dyn LlmProviderTrait>> {
+    /// Get a specific provider by name
+    pub fn get_provider(&self, name: &str) -> Option<&Arc<dyn LlmProviderTrait>> {
         self.providers.get(name)
     }
 
-    /// Check if a specific provider is available
-    pub fn has_provider(&self, name: &str) -> bool {
-        self.providers.contains_key(name)
-    }
-
-    /// Get models for a specific provider
-    pub fn get_provider_models(&self, provider_name: &str) -> Option<Vec<String>> {
-        self.providers
-            .get(provider_name)
-            .map(|p| p.supported_models().iter().map(|m| m.to_string()).collect())
+    /// Get the number of registered providers
+    pub fn provider_count(&self) -> usize {
+        self.providers.len()
     }
 }
 
-// Implement Clone manually since Box<dyn LlmProvider> doesn't implement Clone
-impl Clone for LlmRouter {
-    fn clone(&self) -> Self {
-        // Note: This is a simplified clone that creates a new router with same config
-        // The providers will be re-registered on creation
-        // For true deep clone, we'd need to make providers cloneable
-        panic!("LlmRouter::clone() should use LlmRouter::new() instead");
+/// Storage integration methods for LLM router configuration
+impl LlmRouter {
+    /// Initialize storage with default router configuration
+    ///
+    /// This writes the default router config to storage if none exists
+    pub async fn init_storage<S: StateRead + crate::traits::StateWrite>(
+        state: &mut S,
+        config: &LlmRouterConfig,
+    ) -> HoResult<()> {
+        use crate::llm::StateWriteExt;
+
+        // Check if config already exists
+        if state.get_cfg().await?.is_some() {
+            info!("LLM router config already exists in storage");
+            return Ok(());
+        }
+
+        // Store the router configuration
+        state.put_llm_router_config(config);
+
+        // Store all provider entities
+        state.put_llm_providers(&config.entities);
+
+        info!(
+            "Initialized LLM router storage with {} providers",
+            config.entities.len()
+        );
+
+        Ok(())
+    }
+
+    /// Update router configuration in storage
+    pub async fn update_storage_config<S: StateRead + crate::traits::StateWrite>(
+        state: &mut S,
+        config: &LlmRouterConfig,
+    ) -> HoResult<()> {
+        use crate::llm::StateWriteExt;
+
+        state.put_llm_router_config(config);
+        state.put_llm_providers(&config.entities);
+
+        info!("Updated LLM router configuration in storage");
+
+        Ok(())
+    }
+
+    /// Add a provider to storage
+    pub async fn add_provider_to_storage<S: StateRead + crate::traits::StateWrite>(
+        state: &mut S,
+        provider: &LlmEntity,
+    ) -> HoResult<()> {
+        use crate::llm::StateWriteExt;
+
+        state.put_llm_provider(provider);
+
+        info!("Added provider {} to storage", provider.name);
+
+        Ok(())
+    }
+
+    /// Remove a provider from storage
+    pub async fn remove_provider_from_storage<S: crate::traits::StateWrite>(
+        state: &mut S,
+        provider_name: &str,
+    ) -> HoResult<()> {
+        use crate::llm::StateWriteExt;
+
+        state.delete_llm_provider(provider_name);
+
+        info!("Removed provider {} from storage", provider_name);
+
+        Ok(())
+    }
+
+    /// Load router configuration from storage
+    pub async fn load_config_from_storage<S: StateRead>(
+        state: &S,
+    ) -> HoResult<Option<LlmRouterConfig>> {
+        state.get_cfg().await
     }
 }

@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // TODO: model-cost rate metric constants map. Store, update, & export versioned cost mappings in very optimized manner (bitwise mapping w vecotrized & encoded format)
 //
@@ -7,6 +5,7 @@ pub const CONFIG_FILE_NAME: &str = "config.toml";
 pub const LLM_API_KEYS_FILE: &str = "api-keys.json";
 pub const ENV_VARIABLES_FILE: &str = ".env";
 pub const DATA_FOLDER_NAME: &str = "memories";
+
 pub const OPENAI_API_KEY: &str = "OPENAI_API_KEY";
 pub const ANTHROPIC_API_KEY: &str = "ANTHROPIC_API_KEY";
 pub const GROK_API_KEY: &str = "GROK_API_KEY";
@@ -77,8 +76,8 @@ pub const CMD_BASH: &str = "bash";
 pub const CMD_PYTHON3: &str = "python3";
 pub const CMD_WSL: &str = "wsl bash -c";
 
-pub const DEFAULT_PROVIDERS_NODE_ACCESS: &[&str] = &["akash_chat", "anthropic", "grok"];
-pub const AKASH_CHAT_MODELS: &[&str] = &[
+pub const DEFAULT_PROVIDERS_NODE_ACCESS: &[&str] = &["akashml", "anthropic", "grok"];
+pub const AKASHML_MODELS: &[&str] = &[
     "DeepSeek-R1-0528",
     "DeepSeek-R1-Distill-Llama-70B",
     "DeepSeek-R1-Distill-Qwen-14B",

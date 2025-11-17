@@ -162,7 +162,7 @@ ergors/
   },
   "providers": {
     "primary_chain": {
-      "akash_chat": {
+      "akashml": {
         "api_key": "${AKASH_API_KEY}",
         "enabled": true,
         "priority": 1,
@@ -269,7 +269,7 @@ deployment_profile = "development"
 {
   "deployment_profiles": {
     "production": {
-      "enabled_providers": ["akash_chat", "kimi_research", "grok", "ollama_local", "openai", "anthropic"],
+      "enabled_providers": ["akashml", "kimi_research", "grok", "ollama_local", "openai", "anthropic"],
       "fallback_enabled": true,
       "cost_limits": {
         "daily_max_usd": 200.0,

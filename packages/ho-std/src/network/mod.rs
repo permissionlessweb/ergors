@@ -8,6 +8,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod state_ext;
 
 pub use auth::AuthLayer;
 pub use config::{RouteDefinition, RouteRegistry};

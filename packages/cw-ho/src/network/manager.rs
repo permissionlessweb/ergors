@@ -7,6 +7,8 @@ use commonware_cryptography::{ed25519, Signer};
 use commonware_runtime::{tokio::Context, Metrics, Spawner};
 
 use chrono;
+use commonware_p2p::Sender;
+use commonware_p2p::{authenticated, Manager, Recipients};
 use ho_std::keys::commonware::NodePubkey;
 use ho_std::traits::{NetworkMessageTrait, NetworkTopologyTrait, NodeIdentityTrait};
 use std::borrow::Borrow;
@@ -16,8 +18,6 @@ use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time;
 use tracing::info;
-
-use commonware_p2p::{authenticated, Manager, Recipients};
 
 use governor::Quota;
 use std::num::NonZeroU32;
@@ -40,17 +40,10 @@ impl ErgorsNetworkManifold {
         identity: &NodeIdentity,
         context: Context,
     ) -> Self {
-        // Validate config
-        // config.validate().map_err(|e| HoError::P2P(e))?;
-        if identity.private_key.is_none() {
-            panic!("{}", HoError::NodePrivKeyNotFound)
-        }
-
         // Create event channel
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
         // We'll initialize the network components inside a spawned task
-        // For now, create empty containers that will be filled later
         let channel_senders = HashMap::new();
         let channel_receivers = HashMap::new();
 
@@ -107,7 +100,7 @@ impl ErgorsNetworkManifold {
             ed25519_private_key,
             namespace,
             listen_addr,
-            listen_addr, // dialable address same as listen for now
+            listen_addr,
             10485760,
         );
 
@@ -188,7 +181,6 @@ impl ErgorsNetworkManifold {
             .get_mut(&channel)
             .ok_or_else(|| HoError::ChannelError(format!("Channel {} not found", channel)))?;
 
-        use commonware_p2p::Sender;
         sender
             .send(Recipients::Some(targets), bytes, false)
             .await
@@ -202,18 +194,11 @@ impl ErgorsNetworkManifold {
         let channel = msg.channel()?;
         let bytes = self.serialize_message(&msg)?;
 
-        // TODO: Use commonware-broadcast for efficient dissemination
-        // if msg.is_broadcast() {
-        //     let mut broadcast = self.broadcast.write().await;
-        //     // TODO: Implement broadcast integration
-        // }
-
         let sender = self
             .channel_senders
             .get_mut(&channel)
             .ok_or_else(|| HoError::ChannelError(format!("Channel {} not found", channel)))?;
 
-        use commonware_p2p::Sender;
         sender
             .send(Recipients::All, bytes, false)
             .await

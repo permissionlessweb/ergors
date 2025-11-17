@@ -18,24 +18,8 @@ const OPERATION_PREFIX: &str = "operations/";
 
 impl StorageConfigTrait for ErgorsStorage {
     fn data_dir(&self) -> &str {
-        // TODO: default data dir should be in the node_data folder along with config
         todo!()
     }
-    fn max_size_mb(&self) -> u32 {
-        1000000000
-    }
-
-    fn is_compression_enabled(&self) -> bool {
-        true
-    }
-
-    fn set_data_dir(&mut self, dir: String) {
-        todo!()
-    }
-
-    fn set_max_size_mb(&mut self, size: u32) {}
-
-    fn set_compression(&mut self, enabled: bool) {}
 }
 
 impl ErgorsStorage {
@@ -51,12 +35,12 @@ impl ErgorsStorage {
             "models_tools".to_string(),
         ];
 
-        let cnidarium = CnidariumStorage::load(path.to_path_buf(), prefixes).await?;
-
-        Ok(Self { cnidarium })
+        Ok(Self {
+            cnidarium: CnidariumStorage::load(path.to_path_buf(), prefixes).await?,
+        })
     }
 
-    pub async fn store_prompt_with_context(
+    pub async fn put_prompt_w_ctx(
         &self,
         prompt: &PromptResponse,
         original_request: Option<&PromptRequest>,
@@ -124,9 +108,9 @@ impl ErgorsStorage {
         Ok(())
     }
 
-    // Backward compatibility method
-    pub async fn store_prompt(&self, prompt: &PromptResponse) -> HoResult<()> {
-        self.store_prompt_with_context(prompt, None).await
+    /// Store Prompt to node storage.
+    pub async fn put_prompt(&self, prompt: &PromptResponse) -> HoResult<()> {
+        self.put_prompt_w_ctx(prompt, None).await
     }
 
     pub async fn get_prompt(&self, id: &Uuid) -> HoResult<Option<PromptResponse>> {
@@ -146,7 +130,8 @@ impl ErgorsStorage {
         }
     }
 
-    pub async fn query_prompts(&self, query: &QueryRequest) -> HoResult<Vec<PromptResponse>> {
+    /// Query Prompt to node storage
+    pub async fn get_prompts(&self, query: &QueryRequest) -> HoResult<Vec<PromptResponse>> {
         let snapshot = self.cnidarium.latest_snapshot();
         let mut results = Vec::new();
         let limit = query.limit.unwrap_or(100).min(1000); // Cap at 1000
@@ -211,8 +196,8 @@ impl ErgorsStorage {
 
         // Sort by timestamp (most recent first)
         results.sort_by(|a, b| {
-            let b_ts = b.timestamp.expect("always have one");
-            let a_ts = a.timestamp.expect("always have one");
+            let b_ts = b.timestamp.expect("always have one b_ts");
+            let a_ts = a.timestamp.expect("always have one a_ts");
 
             // Compare seconds first, then nanoseconds
             b_ts.seconds
