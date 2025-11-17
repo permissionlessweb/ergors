@@ -1,4 +1,4 @@
-  1. Network Broadcasting: The CwHoNetworkManifold has a broadcast() method in src/network/manager.rs:252 that can send messages to all peers.
+  1. Network Broadcasting: The ErgorsNetworkManifold has a broadcast() method in src/network/manager.rs:252 that can send messages to all peers.
   2. Task Coordination: The NetworkMessage::TaskCoordination enum variant in src/network/messages.rs:18 is designed for coordinating tasks between nodes with a payload field.
   3. State Storage: The system uses Cnidarium for state storage (src/storage.rs) which could persist script execution results.
 

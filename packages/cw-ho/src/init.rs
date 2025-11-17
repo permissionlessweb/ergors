@@ -1,8 +1,8 @@
-use crate::CwHoConfig;
+use crate::ErgorsConfig;
 use anyhow::{Context, Result};
-use camino::Utf8Path;
+
 use ho_std::config::api_keys::configure_api_keys_interactive;
-use ho_std::constants::{ENV_VARIABLES_FILE, LLM_API_KEYS_FILE};
+use ho_std::constants::LLM_API_KEYS_FILE;
 
 use ho_std::keys::{SeedPhrase, SpendKey};
 use ho_std::traits::HoConfigTrait;
@@ -91,7 +91,7 @@ impl InitCmd {
         let config_path = home_dir.as_ref().join(ho_std::constants::CONFIG_FILE_NAME);
         let config = match self.subcmd.clone() {
             InitTopSubCmd::New {} => {
-                let config = CwHoConfig::new(home_dir.as_ref());
+                let config = ErgorsConfig::new(home_dir.as_ref());
                 let current = env::current_dir().unwrap();
                 let template_path = camino::Utf8Path::new(current.to_str().unwrap());
                 let output_path = home_dir.as_ref().join(".env");
@@ -109,7 +109,7 @@ impl InitCmd {
                 println!("\n✅ API keys configured successfully!");
                 println!("   File: {}", api_keys_path);
                 println!("   Remember to add this file to .gitignore!");
-                CwHoConfig::load(&config_path)?
+                ErgorsConfig::load(&config_path)?
             }
             InitTopSubCmd::UnsafeWipe {} => {
                 let new_config = self.fresh(home_dir.as_ref());
@@ -119,7 +119,7 @@ impl InitCmd {
             }
             InitTopSubCmd::Migrate {} => {
                 // TODO: implement interface for modular migrations
-                CwHoConfig::load(&config_path)?
+                ErgorsConfig::load(&config_path)?
             }
         };
 
@@ -129,8 +129,8 @@ impl InitCmd {
         Ok(())
     }
 
-    fn fresh(&self, home_dir: impl AsRef<camino::Utf8Path>) -> CwHoConfig {
-        let config = CwHoConfig::new(home_dir.as_ref());
+    fn fresh(&self, home_dir: impl AsRef<camino::Utf8Path>) -> ErgorsConfig {
+        let config = ErgorsConfig::new(home_dir.as_ref());
         // generate default env file in home dir as well
 
         config

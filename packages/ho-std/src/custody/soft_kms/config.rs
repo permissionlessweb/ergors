@@ -1,4 +1,4 @@
-use crate::policy::AuthPolicy;
+use crate::custody::policy::AuthPolicy;
 use crate::keys::SpendKey;
 use serde::{Deserialize, Serialize};
 

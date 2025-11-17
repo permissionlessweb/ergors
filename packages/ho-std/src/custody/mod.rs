@@ -3,6 +3,8 @@
 //! This crate currently focuses on the [`soft_kms`] implementation, a basic
 //! software key management system that can perform basic policy-based
 //! authorization or blind signing.
+//!
+//! We also make use of this kms for storage,retrieval, and decryption of inference provider apis
 
 #![deny(clippy::unwrap_used)]
 // // Requires nightly.
@@ -13,14 +15,13 @@
 mod client;
 mod pre_auth;
 mod request;
-// mod terminal;
 
 pub mod encrypted;
 pub mod null_kms;
 pub mod policy;
 pub mod soft_kms;
 // pub mod threshold;
-
+// mod terminal;
 pub use client::CustodyClient;
 pub use pre_auth::PreAuthorization;
 pub use request::{

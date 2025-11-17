@@ -8,11 +8,11 @@ pub mod network;
 pub mod server;
 pub mod storage;
 pub mod traits;
-
 // Re-export the macro for external use
 use crate::{
     auth::AuthCmd, call::CallCmd, init::InitCmd, network::manager::PeerInfo, server::Server,
 };
+
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use cnidarium::Storage as CnidariumStorage;
@@ -39,20 +39,20 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info};
 
 // Define all wrapper types using the macro
-define_wrapper!(CwHoConfig, HoConfig);
+define_wrapper!(ErgorsConfig, HoConfig);
 define_wrapper!(CwHoLlmRouterConfig, LlmRouterConfig);
 
 /// Defines the storage used for this CwHo.
 /// implemenations in ./storage.rs
-pub struct CwHoStorage {
+pub struct ErgorsStorage {
     cnidarium: CnidariumStorage,
 }
 
 /// Minimal network manager for ergors/ implementations in ./manager.rs
-pub struct CwHoNetworkManifold {
+pub struct ErgorsNetworkManifold {
     context: Context,
     /// Network running flag
-    network_running: Arc<RwLock<bool>>,
+    up: Arc<RwLock<bool>>,
     /// Channel senders for different message types
     channel_senders: HashMap<u8, authenticated::lookup::Sender<ed25519::PublicKey>>,
     /// Channel receivers for different message types
@@ -70,28 +70,32 @@ pub struct CwHoNetworkManifold {
     /// Our node identity
     identity: NodeIdentity,
 }
-
+/// r = router
+/// s = storage
+/// nm = network manifold
+/// t = time
+/// c = variable config
 #[derive(Clone)]
 pub struct ErgorsAppState {
     /// r = router
     pub r: Arc<LlmRouter>,
     /// s = storage
-    pub s: Arc<CwHoStorage>,
+    pub s: Arc<ErgorsStorage>,
     /// nm = network manifold
-    pub nm: Arc<tokio::sync::Mutex<CwHoNetworkManifold>>,
+    pub nm: Arc<tokio::sync::Mutex<ErgorsNetworkManifold>>,
     /// t = time
     pub t: Instant,
     /// c = variable config
-    pub c: CwHoConfig,
+    pub c: ErgorsConfig,
 }
 
 impl ErgorsAppState {
     fn new(
         r: Arc<LlmRouter>,
-        s: Arc<CwHoStorage>,
-        nm: Arc<tokio::sync::Mutex<CwHoNetworkManifold>>,
+        s: Arc<ErgorsStorage>,
+        nm: Arc<tokio::sync::Mutex<ErgorsNetworkManifold>>,
         t: Instant,
-        c: CwHoConfig,
+        c: ErgorsConfig,
     ) -> Self {
         Self { r, s, nm, t, c }
     }
@@ -127,24 +131,22 @@ pub enum Commands {
 
 pub fn start(cli: Cli) -> HoResult<()> {
     let path: Utf8PathBuf = cli.home.as_path().join(CONFIG_FILE_NAME);
-    let config = CwHoConfig::load(&path)?;
+    let config = ErgorsConfig::load(&path)?;
     init_env(cli.home.as_path())?;
-    // Create commonware runtime configuration
-    let runtime_config = RuntimeConfig::default();
-    let runner = Runner::new(runtime_config);
-    // info!("  {}\n n", config.t);
 
-    info!("");
-    runner.start(|context| async move {
+    // Create commonware runtime configuration
+    Runner::new(RuntimeConfig::default()).start(|context| async move {
         let server = match Server::new(config.clone(), context).await {
             Ok(s) => s,
             Err(e) => {
-                error!("❌ Failed to initialize server: {}", e);
+                error!("Failed to start server: {}", e);
                 return;
             }
         };
         if let Err(e) = server.run().await {
-            error!("❌ Server runtime error: {}", e);
+            println!("{:#?}", config.clone());
+            error!("Ergors Error: {}", e);
+            error!("Ergors Error: {:#?}", e.backtrace());
         }
     });
     Ok(())

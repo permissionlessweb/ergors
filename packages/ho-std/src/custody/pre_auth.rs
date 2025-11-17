@@ -1,5 +1,5 @@
-use ho_std::traits::DomainType;
-use ho_std::types::ergors::custody::v1 as pb;
+use crate::traits::DomainType;
+use crate::types::custody::v1 as pb;
 use serde::{Deserialize, Serialize};
 
 /// A pre-authorization packet.  This allows a custodian to delegate (partial)

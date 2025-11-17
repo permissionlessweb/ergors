@@ -1,12 +1,12 @@
+use crate::types::custody::v1::custody_service_client::CustodyServiceClient;
+use crate::types::custody::v1::AuthorizeResponse;
 use anyhow::Result;
 use futures::FutureExt;
-use ho_std::types::ergors::custody::v1::custody_service_client::CustodyServiceClient;
-use ho_std::types::ergors::custody::v1::AuthorizeResponse;
 use std::{future::Future, pin::Pin};
 
 use tonic::codegen::Bytes;
 
-use crate::AuthorizeRequest;
+use crate::custody::AuthorizeRequest;
 
 /// A well-typed wrapper around the GRPC custody protocol that uses Rust domain types rather than proto types.
 ///

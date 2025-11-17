@@ -154,38 +154,6 @@ impl HoError {
         chain
     }
 
-    /// Get error type/category
-    pub fn error_type(&self) -> &'static str {
-        match self {
-            HoError::Auth(auth_error) => todo!(),
-            HoError::Llm(_) => todo!(),
-            HoError::Orchestration(_) => todo!(),
-            HoError::Storage(_) => todo!(),
-            HoError::Serialization(_) => todo!(),
-            HoError::DeSerialization(_) => todo!(),
-            HoError::Io(error) => todo!(),
-            HoError::TomlDeErr(error) => todo!(),
-            HoError::TomlSerErr(error) => todo!(),
-            HoError::Http(error) => todo!(),
-            HoError::Other(_) => todo!(),
-            HoError::InvalidRequest(_) => todo!(),
-            HoError::P2P(_) => todo!(),
-            HoError::Broadcast(_) => todo!(),
-            HoError::CollectorTimeout => todo!(),
-            HoError::Cfg(_) => todo!(),
-            HoError::NoPeersForRole(_) => todo!(),
-            HoError::CommonwareLookupError(error) => todo!(),
-            HoError::Serde(error) => todo!(),
-            HoError::InvalidNodeType(_) => todo!(),
-            HoError::NotInitialized => todo!(),
-            HoError::NodePrivKeyNotFound => todo!(),
-            HoError::PeerNotFound(_) => todo!(),
-            HoError::ChannelError(_) => todo!(),
-            HoError::Anyhow(error) => todo!(),
-            HoError::EncodeError(encode_error) => todo!(),
-        }
-    }
-
     /// Get a backtrace if available
     pub fn backtrace(&self) -> Option<String> {
         match self {
@@ -212,7 +180,6 @@ pub fn error_json_detailed(error: &HoError) -> serde_json::Value {
 
     let mut json = serde_json::json!({
         "error": error.to_string(),
-        "code": error.error_type(),
         "timestamp": chrono::Utc::now(),
     });
 

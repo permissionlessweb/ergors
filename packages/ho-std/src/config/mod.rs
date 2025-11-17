@@ -4,7 +4,6 @@ use crate::types::ergors::network::v1::*;
 use crate::{HoError, HoResult};
 
 impl crate::traits::NetworkConfigTrait for NetworkConfig {
-    /// Validate the network config.
     fn validate(&self) -> HoResult<()> {
         if self.channels.is_none() {};
         if self.connection_timeout_ms < 100 {}
@@ -14,13 +13,6 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
         }
         if self.listen_address == "" {};
 
-        if let Some(l) = self.limits {
-            if l.connection_timeout < 100 || l.max_message_size > 100000000 || l.max_peers > 10 {
-                return Err(HoError::Cfg(
-                    "Issue with nodes ports, please update".to_string(),
-                ));
-            }
-        }
         Ok(())
     }
 
@@ -81,7 +73,7 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
             node_type: NodeType::Executor.into(),
             bootstrap_peers: Default::default(),
             known_peers: Default::default(),
-            listen_port: 69699,
+            listen_port: 26969,
             listen_address: "127.0.0.1".to_owned(),
             connection_timeout_ms: 1313131313,
             enable_discovery: true,

@@ -2,14 +2,9 @@
 
 use std::collections::HashSet;
 
-use ho_std::types::ergors::keys::v1::Address;
+use crate::custody::{AuthorizeRequest, PreAuthorization};
+use crate::types::ergors::keys::v1::Address;
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    AuthorizeRequest, 
-    // AuthorizeValidatorDefinitionRequest, AuthorizeValidatorVoteRequest,
-    PreAuthorization,
-};
 
 /// A trait for checking whether a transaction plan is allowed by a policy.
 pub trait Policy {

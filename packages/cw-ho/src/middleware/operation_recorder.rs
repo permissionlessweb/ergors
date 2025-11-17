@@ -23,11 +23,9 @@ pub async fn record_operation(
     let operation_id = Uuid::new_v4().to_string();
     let endpoint = req.uri().path().to_string();
     let method = req.method().to_string();
-    let operation_type = classify_operation(&endpoint);
 
     // Set span fields for tracing context
     tracing::Span::current().record("operation_id", &operation_id.as_str());
-    tracing::Span::current().record("operation_type", &operation_type.as_str());
     tracing::Span::current().record("endpoint", &endpoint.as_str());
 
     // Extract session_id if present (could come from headers or body)
@@ -37,7 +35,6 @@ pub async fn record_operation(
         operation_id = %operation_id,
         method = %method,
         endpoint = %endpoint,
-        operation_type = %operation_type,
         "🚀 Request received"
     );
 
@@ -56,7 +53,7 @@ pub async fn record_operation(
         .s
         .op_req(
             &operation_id,
-            &operation_type,
+            &method,
             &endpoint,
             request_bytes.to_vec(),
             session_id,
@@ -68,12 +65,10 @@ pub async fn record_operation(
 
     // Reconstruct request with captured body
     let req = Request::from_parts(parts, Body::from(request_bytes));
-
-    // Process the request
-    let response = next.run(req).await;
+    let res = next.run(req).await;
 
     // Capture response
-    let (parts, body) = response.into_parts();
+    let (parts, body) = res.into_parts();
     let response_bytes = match capture_body(body).await {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -159,20 +154,6 @@ async fn capture_body(body: Body) -> Result<Bytes, HoError> {
         .await
         .map(|collected| collected.to_bytes())
         .map_err(|e| HoError::Cfg(format!("Failed to read body: {}", e)))
-}
-
-/// Classify operation type based on endpoint path
-fn classify_operation(endpoint: &str) -> String {
-    match endpoint {
-        p if p.contains("/api/prompt") => "prompt".to_string(),
-        p if p.contains("/orchestrate/bootstrap") => "bootstrap".to_string(),
-        p if p.contains("/orchestrate/fractal") => "fractal".to_string(),
-        p if p.contains("/orchestrate/prune") => "prune".to_string(),
-        p if p.contains("/network/topology") => "topology".to_string(),
-        p if p.contains("/health") => "health".to_string(),
-        p if p.contains("/api/prompts") => "query".to_string(),
-        _ => "unknown".to_string(),
-    }
 }
 
 /// Extract session ID from request (from headers or body)

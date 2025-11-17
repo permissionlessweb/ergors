@@ -22,7 +22,7 @@ use commonware_p2p::{authenticated, Manager, Recipients};
 use governor::Quota;
 use std::num::NonZeroU32;
 
-use crate::CwHoNetworkManifold;
+use crate::ErgorsNetworkManifold;
 use ho_std::types::ergors::network::v1::{network_event::*, network_message::*, *};
 
 /// Peer information
@@ -33,7 +33,7 @@ pub struct PeerInfo {
     pub last_seen: std::time::Instant,
 }
 
-impl CwHoNetworkManifold {
+impl ErgorsNetworkManifold {
     /// Initialize and start the network
     pub async fn new(
         // config: NetworkConfig,
@@ -71,7 +71,7 @@ impl CwHoNetworkManifold {
         Self {
             identity: identity.clone(),
             context,
-            network_running: Arc::new(RwLock::new(false)),
+            up: Arc::new(RwLock::new(false)),
             channel_senders,
             channel_receivers,
             peers: Arc::new(RwLock::new(HashMap::new())),
@@ -144,14 +144,14 @@ impl CwHoNetworkManifold {
         let network_handle = network.start();
 
         // Store network handle for future shutdown
-        *self.network_running.write().await = true;
+        *self.up.write().await = true;
 
         // TODO: Store senders/receivers for use by the manager
         // TODO: Start background message processing tasks
 
         // Spawn background task to monitor network
         let shutdown = self.shutdown.clone();
-        let network_running = self.network_running.clone();
+        let up = self.up.clone();
         self.context.clone().spawn(move |_| async move {
             // Wait for shutdown signal
             while !*shutdown.read().await {
@@ -160,7 +160,7 @@ impl CwHoNetworkManifold {
 
             // Shutdown network
             network_handle.abort();
-            *network_running.write().await = false;
+            *up.write().await = false;
         });
 
         info!("🌐 Network started in background");
@@ -403,7 +403,7 @@ impl CwHoNetworkManifold {
         *self.shutdown.write().await = true;
 
         // Mark network as not running
-        *self.network_running.write().await = false;
+        *self.up.write().await = false;
 
         // The commonware network will see the shutdown flag and gracefully stop
         // All spawned tasks (channel handlers, periodic tasks) will also see the flag and exit

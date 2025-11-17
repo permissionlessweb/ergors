@@ -1,7 +1,7 @@
-use ho_std::traits::DomainType;
-use ho_std::types::ergors::custody::v1::{self as pb, TransactionPlan};
+use crate::traits::DomainType;
+use crate::types::custody::v1::{self as pb, TransactionPlan};
+use crate::custody::PreAuthorization;
 
-use crate::PreAuthorization;
 
 /// A transaction authorization request submitted to a custody service for approval.
 #[derive(Debug, Clone)]

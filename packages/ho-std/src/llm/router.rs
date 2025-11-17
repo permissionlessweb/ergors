@@ -61,9 +61,13 @@ impl LlmRouter {
         model: &str,
     ) -> HoResult<PromptResponse> {
         // Find provider that supports this model
-        let provider = self
-            .find_provider_for_model(model)
-            .ok_or_else(|| HoError::Llm(format!("No provider found for model: {}", model)))?;
+        let provider = self.find_provider_for_model(model).ok_or_else(|| {
+            HoError::Llm(format!(
+                "No provider found for model: {}, available models: {:#?}",
+                model,
+                self.get_providers()
+            ))
+        })?;
 
         debug!(
             "Routing request for model {} to provider {}",
@@ -77,20 +81,11 @@ impl LlmRouter {
 
     /// Find a provider that supports the given model
     fn find_provider_for_model(&self, model: &str) -> Option<&Box<dyn LlmProviderTrait>> {
-        // Try exact provider name match first (e.g., request.provider field)
         for (name, provider) in &self.providers {
             if provider.supports_model(model) {
                 return Some(provider);
             }
         }
-
-        // Try model name heuristics
-        for provider in self.providers.values() {
-            if provider.supports_model(model) {
-                return Some(provider);
-            }
-        }
-
         None
     }
 

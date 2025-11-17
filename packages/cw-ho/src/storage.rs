@@ -1,4 +1,4 @@
-use crate::CwHoStorage;
+use crate::ErgorsStorage;
 
 use cnidarium::{StateRead, StateWrite, Storage as CnidariumStorage};
 use futures::StreamExt;
@@ -16,7 +16,7 @@ const USER_INDEX_PREFIX: &str = "users/";
 const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
 const OPERATION_PREFIX: &str = "operations/";
 
-impl StorageConfigTrait for CwHoStorage {
+impl StorageConfigTrait for ErgorsStorage {
     fn data_dir(&self) -> &str {
         // TODO: default data dir should be in the node_data folder along with config
         todo!()
@@ -38,7 +38,7 @@ impl StorageConfigTrait for CwHoStorage {
     fn set_compression(&mut self, enabled: bool) {}
 }
 
-impl CwHoStorage {
+impl ErgorsStorage {
     pub async fn new<P: AsRef<Path>>(data_dir: P) -> HoResult<Self> {
         let path = data_dir.as_ref();
         std::fs::create_dir_all(path)?;
@@ -358,11 +358,11 @@ impl CwHoStorage {
     /// Update operation record with response
     pub async fn op_res(&self, id: &str, response_data: Vec<u8>) -> HoResult<()> {
         let snapshot = self.cnidarium.latest_snapshot();
-        let operation_key = format!("{}{}", OPERATION_PREFIX, id);
+        let key = format!("{}{}", OPERATION_PREFIX, id);
 
         // Get existing operation
         let existing_data = snapshot
-            .get_raw(&operation_key)
+            .get_raw(&key)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Operation not found: {}", id))?;
 
@@ -377,7 +377,7 @@ impl CwHoStorage {
 
         let mut delta = cnidarium::StateDelta::new(snapshot);
         let operation_data = serde_json::to_vec(&operation)?;
-        delta.put_raw(operation_key, operation_data);
+        delta.put_raw(key, operation_data);
 
         self.cnidarium.commit(delta).await?;
 
@@ -429,18 +429,17 @@ impl CwHoStorage {
         Ok(())
     }
 
-    /// Query operation records
+    /// q_ops: Query operations
     pub async fn q_ops(
         &self,
         operation_type: Option<&str>,
         limit: Option<u32>,
     ) -> HoResult<Vec<OperationRecord>> {
-        let snapshot = self.cnidarium.latest_snapshot();
         let mut results = Vec::new();
-        let limit = limit.unwrap_or(100).min(1000);
-
-        let mut operation_stream = snapshot.prefix_raw(OPERATION_PREFIX);
         let mut count = 0;
+        let limit = limit.unwrap_or(100).min(1000);
+        let snapshot = self.cnidarium.latest_snapshot();
+        let mut operation_stream = snapshot.prefix_raw(OPERATION_PREFIX);
 
         while let Some(entry_result) = operation_stream.next().await {
             if count >= limit {

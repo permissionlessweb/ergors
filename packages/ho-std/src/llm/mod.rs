@@ -74,7 +74,6 @@ impl LlmModelTrait for LlmModel {
             LlmModel::Grok => GROK_BASE_URL.to_string(),
             LlmModel::OpenAi => OPENAI_BASE_URL.to_string(),
             LlmModel::Anthropic => ANTHROPIC_BASE_URL.to_string(),
-            // Any other variant (e.g., `Custom`) gets an empty string.
             _ => String::new(),
         }
     }

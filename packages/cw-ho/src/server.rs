@@ -1,6 +1,6 @@
 use crate::{
-    middleware::record_operation, CwHoConfig, CwHoNetworkManifold, CwHoStorage, ErgorsAppState,
-    LlmRouter,
+    middleware::record_operation, ErgorsAppState, ErgorsConfig, ErgorsNetworkManifold,
+    ErgorsStorage, LlmRouter,
 };
 use axum::{
     extract::{Query, State},
@@ -25,23 +25,23 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new(config: CwHoConfig, context: Context) -> HoResult<Self> {
+    pub async fn new(config: ErgorsConfig, context: Context) -> HoResult<Self> {
         config.validate()?;
 
-        let mut nm = CwHoNetworkManifold::new(config.identity(), context).await;
-
-        // Start the network
+        let mut nm = ErgorsNetworkManifold::new(config.identity(), context).await;
         nm.start_network(config.network()).await?;
-        info!("🌐 Network manager initialized and started");
 
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
                 Arc::new(LlmRouter::new(config.llm().deref()).await?),
                 // s == storage layer
-                Arc::new(CwHoStorage::new(&config.storage().data_dir).await?),
+                Arc::new(ErgorsStorage::new(&config.storage().data_dir).await?),
+                // nm == network manifold
                 Arc::new(tokio::sync::Mutex::new(nm)),
+                // t == time
                 Instant::now(),
+                // c == config
                 config.clone(),
             ),
         })
@@ -53,20 +53,21 @@ impl Server {
             public_routes: [
                 { path: "/health", method: get, handler: handle_health },
                 { path: "/api/prompt", method: post, handler: handle_prompt },
+                { path: "/network/topology", method: get, handler: handle_network_topology },
+                { path: "/api/operations", method: get, handler: handle_query_operations },
             ],
             protected_routes: [
                 { path: "/api/prompts", method: get, handler: handle_query },
-                { path: "/api/operations", method: get, handler: handle_query_operations },
                 { path: "/orchestrate/bootstrap", method: post, handler: handle_bootstrap },
                 { path: "/orchestrate/fractal", method: post, handler: handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: handle_prune },
-                { path: "/network/topology", method: get, handler: handle_network_topology },
+
                 ]
         };
-        let addr = format!(
+        let server_addr = format!(
             "{}:{}",
             self.state.c.network().listen_address,
-            self.state.c.network().listen_port
+            self.state.c.identity().api_port,
         );
 
         // Build router with operation recording middleware
@@ -81,7 +82,7 @@ impl Server {
             ))
             .with_state(self.state);
 
-        axum::serve(TcpListener::bind(&addr).await?, app)
+        axum::serve(TcpListener::bind(&server_addr).await?, app)
             .await
             .map_err(|e| HoError::Cfg(format!("Dayum yo: {}", e)))?;
         Ok(())
@@ -95,6 +96,7 @@ fn parse_prompt_request(value: serde_json::Value) -> HoResult<PromptRequest> {
         "deafult prompt_request: {:#?}",
         serde_json::to_string(&testing)
     );
+    debug!("your provision: {:#?}", serde_json::to_string(&value));
     // Try to deserialize as canonical PromptRequest first
     if let Ok(request) = serde_json::from_value::<PromptRequest>(value.clone()) {
         return Ok(request);
@@ -172,21 +174,22 @@ async fn handle_bootstrap(
     unimplemented!()
 }
 
-async fn handle_prune(// State(state): State<ErgorsAppState>,
-    // Json(_request): Json<PromptRequest>,
+async fn handle_prune(
+    State(state): State<ErgorsAppState>,
+    Json(_request): Json<PromptRequest>,
 ) -> Json<serde_json::Value> {
     //TODO: prune all non-coordinator nodes storage state by bradcasting its cnardium state to up to the coordinator node.
     info!("🔌 Step 1: snapshot, prepend metadata & broadcast to coordinator node");
     info!("🔌 Step 2: Dump snapshot of state and broadcast to coordinator node");
     // match state.storage.create_snapshot().await {
     //     Ok(_) => {}
-    //     Err(_e) => return Json(error_json("CwHoStorage snapshot failed", "STORAGE_ERROR")),
+    //     Err(_e) => return Json(error_json("ErgorsStorage snapshot failed", "STORAGE_ERROR")),
     // };
 
     // info!("🔌 Step 3: Prune node state");
     // match state.storage.prune_storage().await {
     //     Ok(_) => {}
-    //     Err(_e) => return Json(error_json("CwHoStorage prune failed", "STORAGE_ERROR")),
+    //     Err(_e) => return Json(error_json("ErgorsStorage prune failed", "STORAGE_ERROR")),
     // };
     Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
 }
@@ -254,7 +257,7 @@ async fn handle_prompt(
             // Log error with full chain if detail enabled
             let error_chain = e.error_chain();
             error!(
-                error_type = e.error_type(),
+                error_type = e.to_string(),
                 error = %e,
                 error_chain = ?error_chain,
                 root_cause = ?error_chain.last(),
@@ -277,16 +280,16 @@ async fn handle_query(
         Err(e) => {
             let error_chain = e.error_chain();
             error!(
-                error_type = e.error_type(),
                 error = %e,
                 error_chain = ?error_chain,
                 root_cause = ?error_chain.last(),
-                "❌ Query failed"
+                "  Query failed"
             );
             Json(error_json_detailed(&e))
         }
     }
 }
+
 async fn handle_auth(State(state): State<ErgorsAppState>) -> Json<()> {
     Json(())
 }
@@ -353,7 +356,6 @@ async fn handle_query_operations(
         Err(e) => {
             let error_chain = e.error_chain();
             error!(
-                error_type = e.error_type(),
                 error = %e,
                 error_chain = ?error_chain,
                 root_cause = ?error_chain.last(),

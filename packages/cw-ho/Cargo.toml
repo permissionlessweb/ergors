@@ -11,6 +11,8 @@ name = "ergors"
 path = "src/main.rs"
 
 [dependencies]
+ho-std  = { workspace = true, features = ["rpc"] }
+
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
@@ -27,7 +29,6 @@ dotenv = { workspace = true }
 futures = { workspace = true }
 governor = { workspace = true }
 hex = { workspace = true }
-ho-std  = { workspace = true }
 http-body = { workspace = true, optional = true }
 http-body-util = { workspace = true }
 pbjson-types = { workspace = true }

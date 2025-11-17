@@ -23,12 +23,8 @@ impl AuthCmd {
     pub fn exec(&self, home_dir: &Utf8Path) -> Result<()> {
         //
         match self.subcmd.clone() {
-            AuthTopSubCmd::Register {} => {
-                // check fo existing register,
-            }
-            AuthTopSubCmd::Revoke {} => {
-                // check if exists, remove if so
-            }
+            AuthTopSubCmd::Register {} => {}
+            AuthTopSubCmd::Revoke {} => {}
         };
         Ok(())
     }

@@ -1,5 +1,5 @@
 use crate::traits::Wrap;
-use crate::{CwHoConfig, CwHoLlmRouterConfig};
+use crate::{ErgorsConfig, CwHoLlmRouterConfig};
 
 use camino::Utf8Path;
 use ho_std::llm::{HoError, HoResult};
@@ -10,7 +10,7 @@ use ho_std::traits::{HoConfigTrait, LLMRouterConfigTrait, NetworkConfigTrait, No
 use ho_std::utils::DefaultFileOps;
 
 // Network trait implementations for proto types
-impl HoConfigTrait for CwHoConfig {
+impl HoConfigTrait for ErgorsConfig {
     type Identity = NodeIdentity;
     type StorageConfig = StorageConfig;
     type LLMConfig = CwHoLlmRouterConfig;

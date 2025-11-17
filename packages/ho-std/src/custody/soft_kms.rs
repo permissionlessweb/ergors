@@ -2,14 +2,13 @@
 //! presents as an asynchronous signer.
 
 // use decaf377_rdsa::{Signature, SpendAuth};
-use ho_std::types::ergors::custody::v1::{self as pb, *};
+use crate::types::ergors::custody::v1::{self as pb, *};
 // use penumbra_sdk_transaction::AuthorizationData;
 use rand_core::OsRng;
 use tonic::{async_trait, Request, Response, Status};
 
 use crate::{
-    policy::Policy,
-    AuthorizeRequest,
+    custody::{policy::Policy, AuthorizeRequest},
     //  AuthorizeValidatorDefinitionRequest,
     // AuthorizeValidatorVoteRequest,
 };
