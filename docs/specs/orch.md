@@ -11,7 +11,7 @@ The ERGORS (Life Creativity Engine) project implements a sophisticated orchestra
 
 The `CosmicOrchestrator` is the central entity responsible for managing agentic workflows in ERGORS. It encapsulates the following key components:
 
-- **LLM Router**: An `LLMRouter` instance for routing tasks to various large language model (LLM) providers such as AkashChat, KimiResearch, Grok, and OllamaLocal. This ensures tasks are executed by the most suitable provider based on task type and network conditions.
+- **LLM Router**: An `LLMRouter` instance for routing tasks to various large language model (LLM) providers such as AkashMl, KimiResearch, Grok, and OllamaLocal. This ensures tasks are executed by the most suitable provider based on task type and network conditions.
 - **Python Executor**: A `PythonExecutor` for legacy support during migration from Python-based orchestration scripts. This allows integration with existing Python meta-prompt generation and orchestration logic.
 - **Active Tasks**: A thread-safe `HashMap` wrapped in `RwLock` to store and manage active tasks, ensuring concurrent access and updates across distributed nodes.
 - **Golden Ratio**: A constant value (approximately 1.618) used for resource allocation and timing, reflecting the sacred geometry principle of balanced distribution.

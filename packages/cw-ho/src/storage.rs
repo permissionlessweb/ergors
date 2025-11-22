@@ -1,10 +1,8 @@
-use crate::ErgorsStorage;
-
 use cnidarium::{StateRead, StateWrite, Storage as CnidariumStorage};
 use futures::StreamExt;
 
 use ho_std::llm::{HoError, HoResult};
-use ho_std::traits::{MessageExt, StorageConfigTrait};
+use ho_std::traits::MessageExt;
 use ho_std::types::ergors::{orch::v1::*, storage::v1::*};
 use std::path::Path;
 use tracing::{debug, info, warn};
@@ -14,12 +12,12 @@ const PROMPT_PREFIX: &str = "prompts/";
 const SESSION_INDEX_PREFIX: &str = "sessions/";
 const USER_INDEX_PREFIX: &str = "users/";
 const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
-const OPERATION_PREFIX: &str = "operations/";
+const OP_PREFIX: &str = "operations/";
+const API_KEY_PREFIX: &str = "custody/api_keys/";
 
-impl StorageConfigTrait for ErgorsStorage {
-    fn data_dir(&self) -> &str {
-        todo!()
-    }
+/// Defines the storage used for this CwHo. implemenations in ./storage.rs
+pub struct ErgorsStorage {
+    pub cs: CnidariumStorage,
 }
 
 impl ErgorsStorage {
@@ -36,7 +34,7 @@ impl ErgorsStorage {
         ];
 
         Ok(Self {
-            cnidarium: CnidariumStorage::load(path.to_path_buf(), prefixes).await?,
+            cs: CnidariumStorage::load(path.to_path_buf(), prefixes).await?,
         })
     }
 
@@ -45,7 +43,7 @@ impl ErgorsStorage {
         prompt: &PromptResponse,
         original_request: Option<&PromptRequest>,
     ) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cnidarium.latest_snapshot());
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let id = hex::encode(prompt.id.clone());
         // Serialize the prompt response
         let prompt_data = serde_json::to_vec(prompt)?;
@@ -88,7 +86,7 @@ impl ErgorsStorage {
         debug!("Storing prompt {} with timestamp index", id);
 
         // Commit the changes
-        self.cnidarium.commit(delta).await?;
+        self.cs.commit(delta).await?;
 
         info!(
             "💾 Successfully stored prompt: {} with key: {}",
@@ -114,7 +112,7 @@ impl ErgorsStorage {
     }
 
     pub async fn get_prompt(&self, id: &Uuid) -> HoResult<Option<PromptResponse>> {
-        let snapshot = self.cnidarium.latest_snapshot();
+        let snapshot = self.cs.latest_snapshot();
         let prompt_key = format!("{}{}", PROMPT_PREFIX, id);
 
         match snapshot.get_raw(&prompt_key).await {
@@ -132,7 +130,7 @@ impl ErgorsStorage {
 
     /// Query Prompt to node storage
     pub async fn get_prompts(&self, query: &QueryRequest) -> HoResult<Vec<PromptResponse>> {
-        let snapshot = self.cnidarium.latest_snapshot();
+        let snapshot = self.cs.latest_snapshot();
         let mut results = Vec::new();
         let limit = query.limit.unwrap_or(100).min(1000); // Cap at 1000
 
@@ -265,11 +263,11 @@ impl ErgorsStorage {
 
     pub async fn health_check(&self) -> HoResult<()> {
         // Try to get the latest snapshot to verify storage is accessible
-        let _snapshot = self.cnidarium.latest_snapshot();
+        let _snapshot = self.cs.latest_snapshot();
 
         // Try a simple read operation
         let test_key = "health_check";
-        let snapshot = self.cnidarium.latest_snapshot();
+        let snapshot = self.cs.latest_snapshot();
 
         match snapshot.get_raw(test_key).await {
             Ok(_) => Ok(()), // Whether it exists or not, storage is accessible
@@ -288,7 +286,7 @@ impl ErgorsStorage {
         let snapshot_name = format!("snapshot_{}", chrono::Utc::now().timestamp());
 
         // TODO: ensure we are accurately taking the snapshots (needs tests)
-        let _snapshot = self.cnidarium.latest_snapshot();
+        let _snapshot = self.cs.latest_snapshot();
         info!("📸 Created logical snapshot: {}", snapshot_name);
 
         Ok(())
@@ -303,10 +301,10 @@ impl ErgorsStorage {
         request_data: Vec<u8>,
         session_id: Option<String>,
     ) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cnidarium.latest_snapshot());
-        let operation_key = format!("{}{}", OPERATION_PREFIX, id);
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let op_key = format!("{}{}", OP_PREFIX, id);
         let operation = OperationRecord {
-            id: operation_key.to_string(),
+            id: op_key.to_string(),
             operation_type: operation_type.to_string(),
             endpoint: endpoint.to_string(),
             request: request_data,
@@ -321,7 +319,7 @@ impl ErgorsStorage {
         };
 
         delta.put_raw(
-            operation_key.clone(),
+            op_key.clone(),
             operation.to_bytes().map_err(HoError::EncodeError)?,
         );
 
@@ -334,7 +332,7 @@ impl ErgorsStorage {
         );
         delta.put_raw(timestamp_key, id.as_bytes().to_vec());
 
-        self.cnidarium.commit(delta).await?;
+        self.cs.commit(delta).await?;
 
         debug!("📝 Stored operation request: {} ({})", id, operation_type);
         Ok(())
@@ -342,8 +340,8 @@ impl ErgorsStorage {
 
     /// Update operation record with response
     pub async fn op_res(&self, id: &str, response_data: Vec<u8>) -> HoResult<()> {
-        let snapshot = self.cnidarium.latest_snapshot();
-        let key = format!("{}{}", OPERATION_PREFIX, id);
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}{}", OP_PREFIX, id);
 
         // Get existing operation
         let existing_data = snapshot
@@ -364,7 +362,7 @@ impl ErgorsStorage {
         let operation_data = serde_json::to_vec(&operation)?;
         delta.put_raw(key, operation_data);
 
-        self.cnidarium.commit(delta).await?;
+        self.cs.commit(delta).await?;
 
         debug!("✅ Updated operation with response: {}", id);
         Ok(())
@@ -378,12 +376,12 @@ impl ErgorsStorage {
         error_code: &str,
         stack_trace: Option<String>,
     ) -> HoResult<()> {
-        let snapshot = self.cnidarium.latest_snapshot();
-        let operation_key = format!("{}{}", OPERATION_PREFIX, id);
+        let snapshot = self.cs.latest_snapshot();
+        let op_key = format!("{}{}", OP_PREFIX, id);
 
         // Get existing operation
         let existing_data = snapshot
-            .get_raw(&operation_key)
+            .get_raw(&op_key)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Operation not found: {}", id))?;
 
@@ -406,9 +404,9 @@ impl ErgorsStorage {
 
         let mut delta = cnidarium::StateDelta::new(snapshot);
         let operation_data = serde_json::to_vec(&operation)?;
-        delta.put_raw(operation_key, operation_data);
+        delta.put_raw(op_key, operation_data);
 
-        self.cnidarium.commit(delta).await?;
+        self.cs.commit(delta).await?;
 
         warn!("❌ Recorded operation error: {} - {}", id, error_msg);
         Ok(())
@@ -423,8 +421,8 @@ impl ErgorsStorage {
         let mut results = Vec::new();
         let mut count = 0;
         let limit = limit.unwrap_or(100).min(1000);
-        let snapshot = self.cnidarium.latest_snapshot();
-        let mut operation_stream = snapshot.prefix_raw(OPERATION_PREFIX);
+        let snapshot = self.cs.latest_snapshot();
+        let mut operation_stream = snapshot.prefix_raw(OP_PREFIX);
 
         while let Some(entry_result) = operation_stream.next().await {
             if count >= limit {
@@ -468,11 +466,11 @@ impl ErgorsStorage {
     }
 
     /// Get a specific operation by ID
-    pub async fn get_operation(&self, id: &str) -> HoResult<Option<OperationRecord>> {
-        let snapshot = self.cnidarium.latest_snapshot();
-        let operation_key = format!("{}{}", OPERATION_PREFIX, id);
+    pub async fn q_op(&self, id: &str) -> HoResult<Option<OperationRecord>> {
+        let snapshot = self.cs.latest_snapshot();
+        let op_key = format!("{}{}", OP_PREFIX, id);
 
-        match snapshot.get_raw(&operation_key).await {
+        match snapshot.get_raw(&op_key).await {
             Ok(Some(data)) => {
                 let operation: OperationRecord = serde_json::from_slice(&data)?;
                 Ok(Some(operation))
@@ -483,5 +481,88 @@ impl ErgorsStorage {
                 Err(ho_std::error::HoError::Anyhow(e))
             }
         }
+    }
+
+    /// Store encrypted API key
+    pub async fn put_encrypted_api_key(
+        &self,
+        provider_name: &str,
+        encrypted_key: &ho_std::types::ergors::storage::v1::EncryptedApiKey,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = format!("{}{}", API_KEY_PREFIX, provider_name);
+
+        let data = serde_json::to_vec(encrypted_key)?;
+        delta.put_raw(key.clone(), data);
+
+        self.cs.commit(delta).await?;
+        info!(
+            "🔐 Stored encrypted API key for provider: {}",
+            provider_name
+        );
+        Ok(())
+    }
+
+    /// Get encrypted API key
+    pub async fn get_encrypted_api_key(
+        &self,
+        provider_name: &str,
+    ) -> HoResult<Option<ho_std::types::ergors::storage::v1::EncryptedApiKey>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}{}", API_KEY_PREFIX, provider_name);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let encrypted_key: ho_std::types::ergors::storage::v1::EncryptedApiKey =
+                    serde_json::from_slice(&data)?;
+                Ok(Some(encrypted_key))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!(
+                    "Failed to get encrypted API key for {}: {}",
+                    provider_name, e
+                );
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Delete encrypted API key
+    pub async fn delete_encrypted_api_key(&self, provider_name: &str) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = format!("{}{}", API_KEY_PREFIX, provider_name);
+
+        delta.delete(key);
+        self.cs.commit(delta).await?;
+        info!(
+            "🗑️  Deleted encrypted API key for provider: {}",
+            provider_name
+        );
+        Ok(())
+    }
+
+    /// List all providers with stored encrypted API keys
+    pub async fn list_api_key_providers(&self) -> HoResult<Vec<String>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut providers = Vec::new();
+        let mut stream = snapshot.prefix_raw(API_KEY_PREFIX);
+
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((key, _)) => {
+                    let key_str = String::from_utf8_lossy(&key.as_bytes());
+                    if let Some(provider) = key_str.strip_prefix(API_KEY_PREFIX) {
+                        providers.push(provider.to_string());
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading API key provider stream: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        Ok(providers)
     }
 }

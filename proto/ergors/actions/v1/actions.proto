@@ -152,7 +152,7 @@ message TransactionBodyView {
 // A view of a specific state change action performed by a transaction.
 message ActionView {
   oneof action_view {
-  orch.v1.PromptRequest prompt = 1;
+  ergors.orch.v1.PromptRequest prompt = 1;
   }
 }
 

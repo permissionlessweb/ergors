@@ -11,6 +11,8 @@ pub struct HoConfig {
     pub storage: ::core::option::Option<super::super::storage::v1::StorageConfig>,
     #[prost(message, optional, tag = "4")]
     pub llm: ::core::option::Option<LlmRouterConfig>,
+    #[prost(string, tag = "5")]
+    pub home: ::prost::alloc::string::String,
 }
 impl ::prost::Name for HoConfig {
     const NAME: &'static str = "HoConfig";
@@ -1149,7 +1151,7 @@ impl CosmicTaskStatus {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum LlmModel {
-    AkashChat = 0,
+    AkashMl = 0,
     OllamaLocal = 1,
     KimiResearch = 2,
     Grok = 3,
@@ -1164,7 +1166,7 @@ impl LlmModel {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::AkashChat => "AkashChat",
+            Self::AkashMl => "AkashMl",
             Self::OllamaLocal => "OllamaLocal",
             Self::KimiResearch => "KimiResearch",
             Self::Grok => "Grok",
@@ -1176,7 +1178,7 @@ impl LlmModel {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "AkashChat" => Some(Self::AkashChat),
+            "AkashMl" => Some(Self::AkashMl),
             "OllamaLocal" => Some(Self::OllamaLocal),
             "KimiResearch" => Some(Self::KimiResearch),
             "Grok" => Some(Self::Grok),

@@ -37,9 +37,7 @@ impl crate::traits::NetworkConfigTrait for NetworkConfig {
     }
 
     fn from_toml(&self) -> toml::Table {
-        // Basic TOML representation
         let mut table = toml::Table::new();
-
         table.insert(
             "node_type".to_string(),
             toml::Value::String(

@@ -45,7 +45,7 @@ impl ::prost::Name for FungibleTokenPacketData {
         "/ergors.ibc.v1.FungibleTokenPacketData".into()
     }
 }
-
+/// A Penumbra transaction action requesting an ICS20 transfer.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Ics20Withdrawal {
     #[prost(message, optional, tag = "1")]

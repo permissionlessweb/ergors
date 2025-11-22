@@ -114,3 +114,25 @@ cargo run  --bin ergors start
 ## Environment Variables
 
 [for a dedicated list of environment variables and their defaults check here.](./packages/ho-std/src/config/README.md)
+
+## Testing Library
+
+Tests using orchestration servers are essentially scripts that can be used to verify integrity of logic, including its deployments, upgrades and migrations. we have a dedicated library and tooling specifically for this purpose.
+
+### Mock Server
+
+### Mock Inference Provider
+
+* static responses from prompt requests
+  * completions
+  * prompts
+  * toolcalling
+  * api calls
+  * mpc servers
+  * embeddings
+
+### Authentication Testing
+
+* key gen siging libary
+* custody middleware integration tests (reference penumbra testing library)
+* integration test library

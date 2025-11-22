@@ -62,6 +62,7 @@ fn main() -> anyhow::Result<()> {
                 "./ergors/decaf377_fmd/v1/decaf377_fmd.proto",
                 "./ergors/keys/v1/keys.proto",
                 "./ergors/network/v1/network.proto",
+                "./ergors/view/v1/view.proto",
                 "./ergors/orch/v1/orch.proto",
                 "./ergors/storage/v1/storage.proto",
                 "./ergors/sct/v1/sct.proto",

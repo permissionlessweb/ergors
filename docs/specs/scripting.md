@@ -11,6 +11,10 @@ The Scripting Framework provides a **geometric-aware meta-programming system** t
 
 **Purpose**: Generate code artifacts that embody geometric principles through template-based meta-programming.
 
+- bash runtime: call any language redundant process action (just files)
+- python runtime:
+- cw-orhcestrator macros: for suite integration
+
 **Sacred Geometry Integration**:
 
 - **Fractal Template Hierarchy**: Script templates inherit self-similar structure at every level

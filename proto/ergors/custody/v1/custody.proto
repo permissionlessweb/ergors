@@ -3,6 +3,7 @@ syntax = "proto3";
 package ergors.custody.v1;
 
 import "keys/v1/keys.proto";
+import "actions/v1/actions.proto";
 
 service CustodyService {
     // Requests authorization of the transaction with the given description.
@@ -12,12 +13,14 @@ service CustodyService {
   // Custody backends should decide whether to honor this request, and how to
   // control access to it.
   rpc ExportFullViewingKey(ExportFullViewingKeyRequest) returns (ExportFullViewingKeyResponse);
+
+  // Decrypt an API key for use in LLM provider requests
+  rpc DecryptApiKey(DecryptApiKeyRequest) returns (DecryptApiKeyResponse);
 }
 
-message TransactionPlan {}
 message AuthorizeRequest {
   // The transaction plan to authorize.
-  TransactionPlan plan = 1;
+  actions.v1.TransactionPlan plan = 1;
   // Optionally, pre-authorization data, if required by the custodian.
   //
   // Pre-authorization data is backend-specific, and backends are free to ignore it.
@@ -27,7 +30,9 @@ message AuthorizeRequest {
   repeated PreAuthorization pre_authorizations = 3;
 }
 
-message AuthorizeResponse {}
+message AuthorizeResponse {
+    actions.v1.AuthorizationData data = 1;
+}
 
 // A pre-authorization packet.  This allows a custodian to delegate (partial)
 // signing authority to other authorization mechanisms.  Details of how a
@@ -52,5 +57,15 @@ message ExportFullViewingKeyRequest {}
 message ExportFullViewingKeyResponse {
     // The full viewing key.
   keys.v1.FullViewingKey full_viewing_key = 1;
+}
+
+message DecryptApiKeyRequest {
+  // The provider name (e.g., "openai", "anthropic")
+  string provider_name = 1;
+}
+
+message DecryptApiKeyResponse {
+  // The decrypted API key
+  string api_key = 1;
 }
 

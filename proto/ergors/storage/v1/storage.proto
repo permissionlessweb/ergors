@@ -1,8 +1,26 @@
+// proto/ergors/storage/v1/storage.proto
+
 syntax = "proto3";
 
 package ergors.storage.v1;
+ 
 
 import "google/protobuf/timestamp.proto";
+
+message EncryptedApiKey {
+  string provider_name = 1;
+  bytes encrypted_key = 2;  // Encrypted with node identity key
+  google.protobuf.Timestamp encrypted_at = 3;
+  string encryption_method = 4;  // e.g., "ed25519-xchacha20poly1305"
+}
+
+message ProviderMetadata {
+  string name = 1;
+  string base_url = 2;
+  repeated string models = 3;
+  int32 priority = 4;
+  bool enabled = 5;
+}
 
 // Storage-specific types
 message StorageQuery {

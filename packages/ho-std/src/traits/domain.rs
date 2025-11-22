@@ -34,4 +34,4 @@ where
 // Implementations on foreign types.
 //
 // This should only be done here in cases where the domain type lives in a crate
-// that shouldn't depend on the Penumbra proto framework.
+// that shouldn't depend on the ergors proto framework.

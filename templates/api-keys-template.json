@@ -16,7 +16,7 @@
     "primary_chain": {
       "_description": "Primary LLM providers following sacred geometric principles (61.8% allocation)",
       "akashml": {
-        "api_key": "${AKASH_API_KEY}",
+        "api_key": "${AKASHML_KEY}",
         "enabled": true,
         "priority": 1,
         "fallback_enabled": true,
@@ -289,7 +289,7 @@
   },
   "environment_variables": {
     "_description": "Environment variable names for API keys (use ${VAR_NAME} syntax in keys above)",
-    "akashml": "AKASH_API_KEY",
+    "akashml": "AKASHML_KEY",
     "kimi_research": "KIMI_API_KEY", 
     "grok": "GROK_API_KEY",
     "openai": "OPENAI_API_KEY",

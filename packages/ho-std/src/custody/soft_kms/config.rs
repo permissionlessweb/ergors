@@ -1,17 +1,26 @@
 use crate::custody::policy::AuthPolicy;
-use crate::keys::SpendKey;
+use crate::types::keys::v1::SpendKey;
+use ed25519_consensus::SigningKey;
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Configuration data for the [`SoftKms`](super::SoftKms).
 ///
-/// Only the `spend_key` field is required; leaving the other fields
-/// empty/default provides blind signing.
+/// Contains both transaction signing keys (spend_key) and API keys for LLM providers.
+/// All keys are stored in memory and accessed via gRPC custody service.
 
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Config {
     pub spend_key: SpendKey,
     #[serde(default, skip_serializing_if = "is_default")]
     pub auth_policy: Vec<AuthPolicy>,
+    /// Node's identity signing key (for API key encryption)
+    #[serde(skip)]
+    pub node_key: Option<SigningKey>,
+    /// Decrypted API keys stored in memory (provider_name -> api_key)
+    #[serde(skip)]
+    pub api_keys: HashMap<String, String>,
 }
 
 impl From<SpendKey> for Config {
@@ -19,6 +28,8 @@ impl From<SpendKey> for Config {
         Self {
             spend_key,
             auth_policy: Default::default(),
+            node_key: None,
+            api_keys: HashMap::new(),
         }
     }
 }

@@ -6,6 +6,7 @@ This specification defines the cryptographic security architecture for ERGORS (C
 
 1. **API Authentication Layer**: Public key-based authentication for API endpoint access
 2. **Transport Encryption Layer**: ChaCha20-Poly1305 encrypted communication between nodes
+3. **Zk-Powered Layer**: applications supported that make use of device-side circuits for proof generation
 
 The implementation leverages the battle-tested cryptographic primitives from the commonware stream library, specifically their X25519 + ChaCha20-Poly1305 implementation.
 

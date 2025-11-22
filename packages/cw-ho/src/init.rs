@@ -3,10 +3,10 @@ use anyhow::{Context, Result};
 
 use ho_std::config::api_keys::configure_api_keys_interactive;
 use ho_std::constants::LLM_API_KEYS_FILE;
-
-use ho_std::keys::{SeedPhrase, SpendKey};
 use ho_std::traits::HoConfigTrait;
-use rand_core::OsRng;
+
+use ho_std::types::keys::v1::SpendKey;
+ 
 use std::{env, fs};
 use std::{
     io::{stdin, IsTerminal as _, Read, Write},
@@ -139,32 +139,33 @@ impl InitCmd {
 
 impl SoftKmsInitCmd {
     fn spend_key(&self, init_type: InitType) -> Result<SpendKey> {
-        Ok(match self {
-            SoftKmsInitCmd::Generate { stdout } => {
-                let seed_phrase = SeedPhrase::generate(OsRng);
-                let seed_msg = format!(
-                    "YOUR PRIVATE SEED PHRASE ({init_type:?}):\n\n\
-                   {seed_phrase}\n\n\
-                   Save this in a safe place!\n\
-                   DO NOT SHARE WITH ANYONE!\n"
-                );
+        // Ok(match self {
+        //     SoftKmsInitCmd::Generate { stdout } => {
+        //         let seed_phrase = SeedPhrase::generate(OsRng);
+        //         let seed_msg = format!(
+        //             "YOUR PRIVATE SEED PHRASE ({init_type:?}):\n\n\
+        //            {seed_phrase}\n\n\
+        //            Save this in a safe place!\n\
+        //            DO NOT SHARE WITH ANYONE!\n"
+        //         );
 
-                let mut output = std::io::stdout();
-                let mut screen = output.into_alternate_screen()?;
-                writeln!(screen, "{seed_msg}")?;
-                screen.flush()?;
-                println!("Press enter to proceed.");
-                let _ = stdin().bytes().next();
+        //         let mut output = std::io::stdout();
+        //         let mut screen = output.into_alternate_screen()?;
+        //         writeln!(screen, "{seed_msg}")?;
+        //         screen.flush()?;
+        //         println!("Press enter to proceed.");
+        //         let _ = stdin().bytes().next();
 
-                SpendKey::from_seed_phrase_bip39(seed_phrase, 0)
-            }
-            SoftKmsInitCmd::ImportPhrase {} => {
-                let seed_phrase = prompt_for_password("Enter seed phrase: ")?;
-                let seed_phrase = SeedPhrase::from_str(&seed_phrase)
-                    .context("failed to parse input as seed phrase")?;
+        //         SpendKey::from_seed_phrase_bip39(seed_phrase, 0)
+        //     }
+        //     SoftKmsInitCmd::ImportPhrase {} => {
+        //         let seed_phrase = prompt_for_password("Enter seed phrase: ")?;
+        //         let seed_phrase = SeedPhrase::from_str(&seed_phrase)
+        //             .context("failed to parse input as seed phrase")?;
 
-                SpendKey::from_seed_phrase_bip39(seed_phrase, 0)
-            }
-        })
+        //         SpendKey::from_seed_phrase_bip39(seed_phrase, 0)
+        //     }
+        // })
+        unimplemented!()
     }
 }

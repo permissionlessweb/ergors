@@ -7,7 +7,7 @@
 //!
 //! ```ascii
 //! ┌───────┐          ┌──────────────┐               ┌──────────────┐
-//! │encoded│ protobuf │ ho-std TryFrom/Into  │ domain types │
+//! │encoded│ protobuf │ ergors TryFrom/Into  │ domain types │
 //! │ bytes │<──wire ─>│    types     │<─validation ─>│(other crates)│
 //! └───────┘  format  └──────────────┘   boundary    └──────────────┘
 //! ```
@@ -63,6 +63,11 @@ pub mod decaf377_frost {
 pub mod network {
     pub mod v1 {
         include!("gen/ergors.network.v1.rs");
+    }
+}
+pub mod view {
+    pub mod v1 {
+        include!("gen/ergors.view.v1.rs");
     }
 }
 

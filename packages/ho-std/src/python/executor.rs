@@ -4,17 +4,16 @@
 //! as the infinite fractal engine for generating AI agents and orchestrating
 //! cosmic-level tasks.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
-use std::{collections::HashMap, path::Path, process::Stdio};
+use std::{collections::HashMap, path::Path};
 use tokio::process::Command;
-use tracing::{error, info, warn};
+use tracing::info;
 
 // use crate::types::{
 //     python::{AgentSpec, CosmicParameters, MetaPromptRequest, MetaPromptResponse},
 //     state::AgentTask,
 // };
-use crate::constants::*;
 
 /// Python script executor for meta prompt generation
 pub struct PythonExecutor {

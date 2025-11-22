@@ -1,4 +1,3 @@
-use crate::ErgorsAppState;
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -7,11 +6,14 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
-use ho_std::llm::HoError;
+
 use http_body_util::BodyExt;
 
 use tracing::{error, info, warn};
 use uuid::Uuid;
+
+use crate::ErgorsAppState;
+use ho_std::llm::HoError;
 
 /// Middleware that automatically records all request/response pairs to storage
 #[tracing::instrument(skip(state, req, next), fields(operation_id, operation_type, endpoint))]
@@ -102,7 +104,7 @@ pub async fn record_operation(
             error!(
                 operation_id = %operation_id,
                 error = %e,
-                "Failed to store operation response"
+               "Failed to store operation response"
             );
         }
     } else {

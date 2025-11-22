@@ -105,7 +105,7 @@ fn get_env_var_name(provider: LlmModel) -> &'static str {
         LlmModel::OpenAi => OPENAI_API_KEY,
         LlmModel::Anthropic => ANTHROPIC_API_KEY,
         LlmModel::Grok => GROK_API_KEY,
-        LlmModel::AkashChat => AKASH_API_KEY,
+        LlmModel::AkashMl => AKASHML_KEY,
         LlmModel::KimiResearch => KIMI_API_KEY,
         LlmModel::OllamaLocal => "OLLAMA_HOST",
         LlmModel::Custom => "CUSTOM_API_KEY",
@@ -115,7 +115,7 @@ fn get_env_var_name(provider: LlmModel) -> &'static str {
 /// Get provider key name (lowercase identifier)
 fn get_provider_key(provider: LlmModel) -> &'static str {
     match provider {
-        LlmModel::AkashChat => "akashml",
+        LlmModel::AkashMl => "akashml",
         LlmModel::OllamaLocal => "ollama_local",
         LlmModel::KimiResearch => "kimi",
         LlmModel::Grok => "grok",
@@ -177,7 +177,7 @@ pub fn configure_api_keys_interactive(api_keys_path: &Utf8PathBuf) -> Result<()>
 
     // All available providers
     let mut all_providers = vec![
-        ProviderMenuItem::new(LlmModel::AkashChat, "Decentralized AI Network"),
+        ProviderMenuItem::new(LlmModel::AkashMl, "Decentralized AI Network"),
         ProviderMenuItem::new(LlmModel::OllamaLocal, "Local Ollama (No API key needed)"),
         ProviderMenuItem::new(LlmModel::KimiResearch, "Kimi Research AI"),
         ProviderMenuItem::new(LlmModel::Grok, "X.AI Grok"),

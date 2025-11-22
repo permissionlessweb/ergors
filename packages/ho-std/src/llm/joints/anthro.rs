@@ -46,17 +46,19 @@ impl ApiJoint for AnthropticJoint {
             }
         }
 
-        let llm_config = req
-            .llm_config
-            .as_ref()
-            .ok_or_else(|| HoError::Llm("LLM config required for Anthropic".to_string()))?;
+        // let llm_config = req
+        //     .llm_config
+        //     .as_ref()
+        //     .ok_or_else(|| HoError::Llm("LLM config required for Anthropic".to_string()))?;
 
         let mut request_body = serde_json::json!({
             "model": req.model,
-            "max_tokens": llm_config.max_tokens,
+            "max_tokens": 64000,
             "messages": messages,
-            "temperature": llm_config.temperature,
+            "temperature": 0.5,
         });
+        tracing::debug!(?request_body);
+        tracing::debug!(?api_key);
 
         if let Some(system) = system_opt {
             request_body["system"] = serde_json::json!(system);

@@ -3,7 +3,10 @@
 use std::collections::HashSet;
 
 use crate::custody::{AuthorizeRequest, PreAuthorization};
-use crate::types::ergors::keys::v1::Address;
+use crate::types::actions::v1::{ActionPlan, TransactionPlan};
+use crate::types::keys::v1::Address;
+
+use prost::Message;
 use serde::{Deserialize, Serialize};
 
 /// A trait for checking whether a transaction plan is allowed by a policy.
@@ -34,10 +37,10 @@ pub trait Policy {
 pub enum AuthPolicy {
     /// Only allow transactions whose outputs are controlled by one of the
     /// allowed destination addresses.
-    DestinationAllowList {
-        // #[serde(with = "address_as_string")]
-        // allowed_destination_addresses: Vec<Address>,
-    },
+    // DestinationAllowList {
+    //     #[serde(with = "address_as_string")]
+    //     allowed_destination_addresses: Vec<Address>,
+    // },
     /// Intended for relayers, only allows `Spend`, `Output`, and `IbcAction`
     /// actions in transactions.
     ///
@@ -117,6 +120,8 @@ impl PreAuthorizationPolicy {
 // mod address_as_string {
 //     use std::str::FromStr;
 
+//     use crate::keys::address::Address;
+
 //     pub fn serialize<S: serde::Serializer>(
 //         addresses: &[Address],
 //         serializer: S,
@@ -183,76 +188,76 @@ mod ed25519_vec_base64 {
     }
 }
 
-// impl Policy for AuthPolicy {
-//     fn check_transaction(&self, request: &AuthorizeRequest) -> anyhow::Result<()> {
-//         let plan = &request.plan;
-//         match self {
-//             AuthPolicy::DestinationAllowList {
-//                 allowed_destination_addresses,
-//             } => {
-//                 for output in plan.output_plans() {
-//                     if !allowed_destination_addresses.contains(&output.dest_address) {
-//                         anyhow::bail!("output {:?} has dest_address not in allow list", output);
-//                     }
-//                 }
-//                 for swap in plan.swap_plans() {
-//                     if !allowed_destination_addresses.contains(&swap.swap_plaintext.claim_address) {
-//                         anyhow::bail!("swap {:?} has claim_address not in allow list", swap);
-//                     }
-//                 }
-//                 Ok(())
-//             }
-//             AuthPolicy::OnlyIbcRelay => {
-//                 for action in &plan.actions {
-//                     match action {
-//                         ActionPlan::Spend { .. }
-//                         | ActionPlan::Output { .. }
-//                         | ActionPlan::IbcAction { .. } => {}
-//                         _ => {
-//                             anyhow::bail!("action {:?} not allowed by OnlyRelay policy", action);
-//                         }
-//                     }
-//                 }
-//                 Ok(())
-//             }
-//             AuthPolicy::PreAuthorization(policy) => policy.check_transaction(request),
-//         }
-//     }
+impl Policy for AuthPolicy {
+    fn check_transaction(&self, request: &AuthorizeRequest) -> anyhow::Result<()> {
+        let plan = &request.plan;
+        match self {
+            // AuthPolicy::DestinationAllowList {
+            //     allowed_destination_addresses,
+            // } => {
+            //     for output in plan.output_plans() {
+            //         if !allowed_destination_addresses.contains(&output.dest_address) {
+            //             anyhow::bail!("output {:?} has dest_address not in allow list", output);
+            //         }
+            //     }
+            //     for swap in plan.swap_plans() {
+            //         if !allowed_destination_addresses.contains(&swap.swap_plaintext.claim_address) {
+            //             anyhow::bail!("swap {:?} has claim_address not in allow list", swap);
+            //         }
+            //     }
+            //     Ok(())
+            // }
+            AuthPolicy::OnlyIbcRelay => {
+                // for action in &plan.actions {
+                //     match action {
+                //         ActionPlan::Spend { .. }
+                //         | ActionPlan::Output { .. }
+                //         | ActionPlan::IbcAction { .. } => {}
+                //         _ => {
+                //             anyhow::bail!("action {:?} not allowed by OnlyRelay policy", action);
+                //         }
+                //     }
+                // }
+                Ok(())
+            }
+            AuthPolicy::PreAuthorization(policy) => policy.check_transaction(request),
+        }
+    }
 
-//     fn check_validator_definition(
-//         &self,
-//         _request: &AuthorizeValidatorDefinitionRequest,
-//     ) -> anyhow::Result<()> {
-//         anyhow::bail!("validator definitions are not allowed by this policy")
-//     }
+    // fn check_validator_definition(
+    //     &self,
+    //     _request: &AuthorizeValidatorDefinitionRequest,
+    // ) -> anyhow::Result<()> {
+    //     anyhow::bail!("validator definitions are not allowed by this policy")
+    // }
 
-//     fn check_validator_vote(&self, _request: &AuthorizeValidatorVoteRequest) -> anyhow::Result<()> {
-//         anyhow::bail!("validator votes are not allowed by this policy")
-//     }
-// }
+    // fn check_validator_vote(&self, _request: &AuthorizeValidatorVoteRequest) -> anyhow::Result<()> {
+    //     anyhow::bail!("validator votes are not allowed by this policy")
+    // }
+}
 
-// impl Policy for PreAuthorizationPolicy {
-//     fn check_transaction(&self, request: &AuthorizeRequest) -> anyhow::Result<()> {
-//         self.check_pre_authorizations(
-//             &request.pre_authorizations,
-//             ProtoTransactionPlan::from(request.plan.clone()).encode_to_vec(),
-//         )
-//     }
+impl Policy for PreAuthorizationPolicy {
+    fn check_transaction(&self, request: &AuthorizeRequest) -> anyhow::Result<()> {
+        self.check_pre_authorizations(
+            &request.pre_authorizations,
+            TransactionPlan::from(request.plan.clone()).encode_to_vec(),
+        )
+    }
 
-//     fn check_validator_definition(
-//         &self,
-//         request: &AuthorizeValidatorDefinitionRequest,
-//     ) -> anyhow::Result<()> {
-//         self.check_pre_authorizations(
-//             &request.pre_authorizations,
-//             ProtoValidator::from(request.validator_definition.clone()).encode_to_vec(),
-//         )
-//     }
+    // fn check_validator_definition(
+    //     &self,
+    //     request: &AuthorizeValidatorDefinitionRequest,
+    // ) -> anyhow::Result<()> {
+    //     self.check_pre_authorizations(
+    //         &request.pre_authorizations,
+    //         ProtoValidator::from(request.validator_definition.clone()).encode_to_vec(),
+    //     )
+    // }
 
-//     fn check_validator_vote(&self, request: &AuthorizeValidatorVoteRequest) -> anyhow::Result<()> {
-//         self.check_pre_authorizations(
-//             &request.pre_authorizations,
-//             ProtoValidatorVoteBody::from(request.validator_vote.clone()).encode_to_vec(),
-//         )
-//     }
-// }
+    // fn check_validator_vote(&self, request: &AuthorizeValidatorVoteRequest) -> anyhow::Result<()> {
+    //     self.check_pre_authorizations(
+    //         &request.pre_authorizations,
+    //         ProtoValidatorVoteBody::from(request.validator_vote.clone()).encode_to_vec(),
+    //     )
+    // }
+}

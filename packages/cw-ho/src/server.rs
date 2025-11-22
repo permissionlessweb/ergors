@@ -1,6 +1,6 @@
 use crate::{
-    middleware::record_operation, ErgorsAppState, ErgorsConfig, ErgorsNetworkManifold,
-    ErgorsStorage, LlmRouter,
+    middleware::record_operation, storage::ErgorsStorage, ErgorsAppState, ErgorsConfig,
+    ErgorsNetworkManifold, LlmRouter,
 };
 use axum::{
     extract::{Query, State},
@@ -18,7 +18,7 @@ use ho_std::{
 use std::{ops::Deref, sync::Arc, time::Instant};
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use uuid::Uuid;
 
 pub struct Server {
@@ -26,19 +26,21 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new(config: ErgorsConfig, context: Context) -> HoResult<Self> {
-        config.validate()?;
+    pub async fn new(c: ErgorsConfig, ctx: Context) -> HoResult<Self> {
+        Self::validate_llm_api_keys(&c)?;
+        c.validate()?;
 
-        let mut nm = ErgorsNetworkManifold::new(config.identity(), context).await;
-        let s: ErgorsStorage = ErgorsStorage::new(&config.storage().data_dir).await?;
-        nm.start_network(config.network()).await?;
+        let mut nm = ErgorsNetworkManifold::new(c.identity(), ctx).await;
+        let s = ErgorsStorage::new(&c.storage().data_dir).await?;
+        nm.start_network(c.network()).await?;
+
+        // Encrypt and store API keys on server startup
+        // Self::encrypt_and_store_api_keys(&c, &s).await?;
 
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
-                Arc::new(
-                    LlmRouter::new(&s.cnidarium.latest_snapshot(), config.llm().deref()).await?,
-                ),
+                Arc::new(LlmRouter::new(&s.cs.latest_snapshot(), c.llm().deref()).await?),
                 // s == storage layer
                 Arc::new(s),
                 // nm == network manifold
@@ -46,10 +48,196 @@ impl Server {
                 // t == time
                 Instant::now(),
                 // c == config
-                config.clone(),
+                c.clone(),
             ),
         })
     }
+
+    /// Validate that all enabled LLM providers have API keys configured
+    ///
+    /// This prevents the server from starting if required API keys are missing.
+    fn validate_llm_api_keys(c: &ErgorsConfig) -> HoResult<()> {
+        use std::env;
+        let api_keys_path = &c.llm().api_keys_file;
+
+        // Load api-keys.json
+        let config = ApiKeysJson::load(&api_keys_path.into())
+            .map_err(|e| HoError::Cfg(format!("Failed to load API keys config: {}", e)))?;
+
+        let mut missing_keys = Vec::new();
+        let mut found_keys = Vec::new();
+
+        // Check each enabled provider
+        for (provider_name, provider_config) in &config.providers {
+            // Skip disabled providers
+            if let Some(entity) = &provider_config.entity {
+                if !entity.enabled {
+                    continue;
+                }
+            }
+
+            // Check if API key is configured in environment
+            if let Some(key_ref) = &provider_config.api_key {
+                if key_ref.starts_with("${") && key_ref.ends_with("}") {
+                    let env_var_name = &key_ref[2..key_ref.len() - 1];
+
+                    match env::var(env_var_name) {
+                        Ok(value) if !value.is_empty() => {
+                            found_keys.push(provider_name.clone());
+                        }
+                        _ => {
+                            missing_keys.push(format!("{} ({})", provider_name, env_var_name));
+                        }
+                    }
+                } else if !key_ref.is_empty() {
+                    // Direct API key configured
+                    found_keys.push(provider_name.clone());
+                }
+            } else {
+                // No API key needed (e.g., ollama_local)
+                tracing::debug!("Provider {} doesn't require API key", provider_name);
+            }
+        }
+
+        if !missing_keys.is_empty() {
+            return Err(HoError::Cfg(format!(
+                "❌ Missing API keys for enabled providers: {}\n\
+                 Please set these environment variables in {}/.env\n\
+                 Or run 'ergors init llm-api-keys' to reconfigure",
+                missing_keys.join(", "),
+                api_keys_path
+            )));
+        }
+
+        if !found_keys.is_empty() {
+            tracing::info!(
+                "✅ Validated API keys for {} provider(s): {}",
+                found_keys.len(),
+                found_keys.join(", ")
+            );
+        }
+
+        Ok(())
+    }
+
+    // /// Encrypt and store API keys from environment into the database
+    // ///
+    // /// This function runs on server startup and:
+    // /// 1. Reads api-keys.json config (env vars already loaded by Server::new)
+    // /// 2. Encrypts each API key with the node's private key
+    // /// 3. Stores encrypted keys in the database
+    // async fn encrypt_and_store_api_keys(c: &ErgorsConfig, s: &ErgorsStorage) -> HoResult<()> {
+    //     use ho_std::constants::LLM_API_KEYS_FILE;
+    //     use ho_std::custody::encrypted::encrypt_with_node_key;
+    //     use ho_std::llm::state_ext::StateWriteExt;
+    //     use rand_core::OsRng;
+    //     use std::env;
+
+    //     // Get home directory from storage config
+    //     let home_dir = camino::Utf8PathBuf::from_str(&c.storage().data_dir).unwrap();
+    //     let api_keys_path = home_dir.join(LLM_API_KEYS_FILE);
+
+    //     // Skip if api-keys.json doesn't exist yet
+    //     if !api_keys_path.exists() {
+    //         tracing::debug!("No api-keys.json found, skipping API key encryption");
+    //         return Ok(());
+    //     }
+
+    //     // Load api-keys.json (env vars already loaded in Server::new)
+    //     let config = ApiKeysJson::load(&api_keys_path)
+    //         .map_err(|e| HoError::Cfg(format!("Failed to load API keys config: {}", e)))?;
+
+    //     // Get node's private key bytes for encryption
+    //     let node_private_key = c
+    //         .identity()
+    //         .private_key
+    //         .as_ref()
+    //         .ok_or_else(|| HoError::Cfg("Node private key not configured".to_string()))?;
+
+    //     if node_private_key.len() != 32 {
+    //         return Err(HoError::Cfg(format!(
+    //             "Invalid node private key length: expected 32 bytes, got {}",
+    //             node_private_key.len()
+    //         )));
+    //     }
+
+    //     let key_bytes: [u8; 32] = node_private_key[..32]
+    //         .try_into()
+    //         .map_err(|_| HoError::Cfg("Failed to convert node key to array".to_string()))?;
+
+    //     let mut encrypted_count = 0;
+    //     let mut skipped_count = 0;
+
+    //     // Get a mutable state delta for writing
+    //     let mut delta = s.cs.latest_snapshot();
+
+    //     // Iterate through all configured providers
+    //     for (provider_name, provider_config) in &config.providers {
+    //         // Skip if provider is not enabled
+    //         if let Some(entity) = &provider_config.entity {
+    //             if !entity.enabled {
+    //                 tracing::debug!("Skipping disabled provider: {}", provider_name);
+    //                 skipped_count += 1;
+    //                 continue;
+    //             }
+    //         }
+
+    //         // Get the API key from environment or skip if none configured
+    //         let api_key_value = match &provider_config.api_key {
+    //             Some(key_ref) if key_ref.starts_with("${") && key_ref.ends_with("}") => {
+    //                 // Extract environment variable name
+    //                 let env_var_name = &key_ref[2..key_ref.len() - 1];
+
+    //                 match env::var(env_var_name) {
+    //                     Ok(value) if !value.is_empty() => value,
+    //                     _ => {
+    //                         tracing::debug!(
+    //                             "No env var {} for provider {}",
+    //                             env_var_name,
+    //                             provider_name
+    //                         );
+    //                         skipped_count += 1;
+    //                         continue;
+    //                     }
+    //                 }
+    //             }
+    //             Some(direct_key) if !direct_key.is_empty() => direct_key.clone(),
+    //             _ => {
+    //                 tracing::debug!("No API key configured for provider: {}", provider_name);
+    //                 skipped_count += 1;
+    //                 continue;
+    //             }
+    //         };
+
+    //         // Encrypt the API key
+    //         let encrypted_data =
+    //             encrypt_with_node_key(&mut OsRng, &key_bytes, api_key_value.as_bytes());
+
+    //         // Store in database
+    //         delta.put_encrypted_api_key(provider_name, encrypted_data);
+    //         encrypted_count += 1;
+
+    //         tracing::info!(
+    //             "🔐 Encrypted and stored API key for provider: {}",
+    //             provider_name
+    //         );
+    //     }
+
+    //     // Commit the transaction
+    //     s.cs.commit(delta)
+    //         .await
+    //         .map_err(|e| HoError::Storage(format!("Failed to commit encrypted keys: {}", e)))?;
+
+    //     if encrypted_count > 0 {
+    //         tracing::info!(
+    //             "✅ API Key Encryption: {} encrypted, {} skipped",
+    //             encrypted_count,
+    //             skipped_count
+    //         );
+    //     }
+
+    //     Ok(())
+    // }
 
     pub async fn run(self) -> HoResult<()> {
         // Use the new generic route structure from ho-std
@@ -62,9 +250,9 @@ impl Server {
             ],
             protected_routes: [
                 { path: "/api/prompts", method: get, handler: handle_query },
-                { path: "/orchestrate/bootstrap", method: post, handler: handle_bootstrap },
                 { path: "/orchestrate/fractal", method: post, handler: handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: handle_prune },
+                // { path: "/orchestrate/bootstrap", method: post, handler: handle_bootstrap },
 
                 ]
         };
@@ -93,25 +281,6 @@ impl Server {
     }
 }
 
-fn parse_prompt_request(value: serde_json::Value) -> HoResult<PromptRequest> {
-    let testing = PromptRequest::default();
-    debug!("deafult prompt_request: {:#?}", testing);
-    debug!(
-        "deafult prompt_request: {:#?}",
-        serde_json::to_string(&testing)
-    );
-    debug!("your provision: {:#?}", serde_json::to_string(&value));
-    // Try to deserialize as canonical PromptRequest first
-    if let Ok(request) = serde_json::from_value::<PromptRequest>(value.clone()) {
-        return Ok(request);
-    }
-
-    // If we get here, format is not recognized
-    Err(HoError::InvalidRequest(
-        "Request must be in the format serializable for `PromptRequest`".to_string(),
-    ))
-}
-
 async fn handle_fractal_hoe_creation(// State(_state): State<ErgorsAppState>,
     // Json(request): Json<PromptRequest>,
 ) -> Json<serde_json::Value> {
@@ -129,55 +298,6 @@ async fn handle_fractal_hoe_creation(// State(_state): State<ErgorsAppState>,
     Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
 }
 
-async fn handle_bootstrap(
-    State(..): State<ErgorsAppState>,
-    Json(..): Json<BootstrapRequest>,
-) -> Json<serde_json::Value> {
-    let start_time = Instant::now();
-    let id = uuid::Uuid::new_v4();
-
-    // TODO: handle bootstrap via method:
-    // /ergors.network.v1.bootstrap.types: (transport connections for nodes,bootstrapping types used in functions for traits )
-    // Create persistent SSH connection manager
-    // info!("🚀 Starting bootstrap process for node: {}", target_node);
-    // let mut ssh_manager = SSHConnectionManager::new(target_node.clone());
-
-    // match ssh_manager.bootstrap_node().await {
-    //     Ok(bootstrap_summary) => {
-    //         info!(
-    //             "✅ Bootstrap completed successfully for node: {}",
-    //             target_node
-    //         );
-
-    //         // Close SSH connection before returning
-    //         let _ = ssh_manager.close().await;
-
-    //         let response = BootstrapResponse {
-    //             id: id.to_string(),
-    //             target_node: target_node.clone(),
-    //             status: "success".to_string(),
-    //             summary: bootstrap_summary,
-    //             timestamp: Some(chrono::Utc::now().into()),
-    //             duration_ms: start_time.elapsed().as_millis() as u64,
-    //         };
-
-    //         Json(serde_json::to_value(response).unwrap())
-    //     }
-    //     Err(e) => {
-    //         error!("Bootstrap failed for node {}: {}", target_node, e);
-
-    //         // Close SSH connection before returning error
-    //         let _ = ssh_manager.close().await;
-
-    //         Json(error_json(
-    //             &format!("Bootstrap failed: {}", e),
-    //             "BOOTSTRAP_ERROR",
-    //         ))
-    //     }
-    // }
-    unimplemented!()
-}
-
 async fn handle_prune(
     State(state): State<ErgorsAppState>,
     Json(_request): Json<PromptRequest>,
@@ -185,59 +305,56 @@ async fn handle_prune(
     //TODO: prune all non-coordinator nodes storage state by bradcasting its cnardium state to up to the coordinator node.
     info!("🔌 Step 1: snapshot, prepend metadata & broadcast to coordinator node");
     info!("🔌 Step 2: Dump snapshot of state and broadcast to coordinator node");
-    // match state.storage.create_snapshot().await {
-    //     Ok(_) => {}
-    //     Err(_e) => return Json(error_json("ErgorsStorage snapshot failed", "STORAGE_ERROR")),
-    // };
+    match state.s.create_snapshot().await {
+        Ok(_) => {}
+        Err(_e) => return Json(error_json("ErgorsStorage snapshot failed", "STORAGE_ERROR")),
+    };
 
-    // info!("🔌 Step 3: Prune node state");
-    // match state.storage.prune_storage().await {
-    //     Ok(_) => {}
-    //     Err(_e) => return Json(error_json("ErgorsStorage prune failed", "STORAGE_ERROR")),
-    // };
+    info!("🔌 Step 3: Prune node state");
+    match state.s.prune_storage().await {
+        Ok(_) => {}
+        Err(_e) => return Json(error_json("ErgorsStorage prune failed", "STORAGE_ERROR")),
+    };
     Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
 }
 
 async fn handle_prompt(
     State(state): State<ErgorsAppState>,
-    Json(raw_request): Json<serde_json::Value>,
+    Json(r): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
-    // Try to deserialize into canonical PromptRequest, accepting flexible formats
-    let request = match parse_prompt_request(raw_request) {
-        Ok(req) => req,
+    let pr = match serde_json::from_value::<PromptRequest>(r.clone()) {
+        Ok(r) => r,
         Err(e) => {
-            error!(
-                error = %e,
-                "❌ Failed to parse prompt request"
-            );
             return Json(error_json(
-                &format!("Invalid request format: {}. Expected format: {{\"messages\": [{{\"role\": \"user\", \"content\": \"...\"}}, ...], \"model\": \"gpt-4\"}}", e),
+                &format!(
+                    "Invalid request format: {}. Expected format: {:#?}",
+                    e,
+                    PromptRequest::default()
+                ),
                 "INVALID_REQUEST",
             ));
         }
     };
 
-    let prompt = serde_json::to_string(&request.messages).unwrap();
-
-    // Validate request
-    if request.messages.is_empty() {
+    if pr.messages.is_empty() {
         return Json(error_json(
             "Prompt messages cannot be empty",
             "INVALID_PROMPT",
         ));
     }
 
-    // Route to LLM
-    let model = &request.model;
-
-    match state.r.handle_request(&request, model).await {
+    match state.r.handle_request(&pr, &pr.model).await {
         Ok(llm_response) => {
             let response = PromptResponse {
                 id: Uuid::new_v4().into(),
-                prompt: blake3::Blake3::hash(prompt.as_bytes()).to_string(),
+                prompt: blake3::Blake3::hash(serde_json::to_string(&pr).unwrap().as_bytes())
+                    .to_string(),
                 response: llm_response.response,
-                model: model.to_string(),
-                timestamp: None, // TODO: Fix timestamp conversion
+                model: pr.model.to_string(),
+                timestamp: Some(pbjson_types::Timestamp {
+                    seconds: chrono::Utc::now().timestamp(),
+                    nanos: 0,
+                }),
                 tokens_used: llm_response.tokens_used,
                 provider: "default".to_string(), // TODO: get deterministic provider from storage
                 cost: Some(0.0),
@@ -246,13 +363,8 @@ async fn handle_prompt(
             };
 
             // Store to Cnidarium with original request context
-            if let Err(e) = state
-                .s
-                .put_prompt_w_ctx(&response, Some(&request))
-                .await
-            {
+            if let Err(e) = state.s.put_prompt_w_ctx(&response, Some(&pr)).await {
                 error!("Failed to store prompt to storage: {}", e);
-                // Continue anyway - we don't want to fail the request due to storage issues
             }
 
             Json(serde_json::to_value(response).unwrap())
@@ -355,7 +467,6 @@ async fn handle_query_operations(
     match state.s.q_ops(operation_type.as_deref(), limit).await {
         Ok(operations) => Json(serde_json::json!({
             "operations": operations,
-            "count": operations.len()
         })),
         Err(e) => {
             let error_chain = e.error_chain();

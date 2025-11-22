@@ -10,8 +10,7 @@ import "google/protobuf/any.proto";
 // responsible for synchronizing and scanning the public chain state with one or
 // more full viewing keys.
 service ViewService {
-  // Get current status of chain sync
-  rpc Status(StatusRequest) returns (StatusResponse);
+ 
  
 }
- 
+  

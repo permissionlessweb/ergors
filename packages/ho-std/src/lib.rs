@@ -23,32 +23,40 @@
 //! The proto definitions are organized following the sacred geometry principles embedded
 //! in the ERGORS architecture, with fractal recursion, golden ratio scaling, and tetrahedral
 //! network topologies.
-extern crate alloc;
+//! 
+
+mod serde;
 
 pub mod config;
 pub mod constants;
-pub mod custody;
 pub mod deploy;
 pub mod error;
-pub mod examples;
-pub mod keys;
 pub mod llm;
 pub mod network;
 pub mod orchestrate;
 pub mod python;
-mod serde;
+pub mod server;
 pub mod storage;
 pub mod traits;
 pub mod transports;
-pub mod txhash;
+pub mod utils;
+// pub mod examples;
+
 #[allow(deprecated, unused_imports, clippy::large_enum_variant)]
 pub mod types;
-pub mod utils;
 
 // pub mod action;
+// pub mod view;
+pub mod custody;
+pub mod keys;
 // pub mod wallet;
+// pub mod txhash;
 
 use crate::llm::HoError;
 // pub mod shared_impl;
 
 pub type HoResult<T> = std::result::Result<T, HoError>;
+
+
+
+extern crate alloc;

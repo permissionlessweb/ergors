@@ -29,8 +29,7 @@
 - DOCKER DEPLOYMENT STRATEGY:
   - AKASH workflow (terraform/custom bash scripts)
 - benchmarking via criterion
-- cw-jsonfilter chips: resulable chips for filtering out data during agentic instruct prompts for simpler tasks 
-
+- cw-jsonfilter chips: resulable chips for filtering out data during agentic instruct prompts for simpler tasks
 
 ## NETWORK
 
@@ -66,6 +65,7 @@
 ### STORAGE LAYER ARCHITECTURE
 
 - save non sensitive config values into storage layer
+- embedding layer: local agest task embedding, project specific embeddings shared throughout network for access a nd proof verification
 
 #### TODOS
 
@@ -100,6 +100,7 @@
 
 ## AGENT WORKSPACES
 
+- <https://arxiv.org/html/2403.08299v1>
 - PROJECT ALICE
 - PHIDATA: <https://docs.phidata.com/>
 - <https://www.gradio.app/>
@@ -109,6 +110,10 @@
 ### OPENAI TOOLS
 
 ### CLAUDE TOOLS
+
+### KIMI TOOLS
+
+<https://github.com/MoonshotAI/kosong>
 
 > API CALL GRANULARITY:
 >

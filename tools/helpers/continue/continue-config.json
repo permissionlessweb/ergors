@@ -4,7 +4,7 @@
       "title": "Akash Chat",
       "provider": "openai",
       "model": "Meta-Llama-4-Maverick-17B-128E-Instruct-FP8",
-      "apiKey": "${AKASH_API_KEY}",
+      "apiKey": "${AKASHML_KEY}",
       "apiBase": "https://chatapi.akash.network/api/v1"
     },
     {

@@ -1,7 +1,7 @@
-use crate::traits::DomainType;
-use crate::types::custody::v1::{self as pb, TransactionPlan};
 use crate::custody::PreAuthorization;
-
+use crate::traits::DomainType;
+use crate::types::actions::v1::TransactionPlan;
+use crate::types::custody::v1::{self as pb};
 
 /// A transaction authorization request submitted to a custody service for approval.
 #[derive(Debug, Clone)]

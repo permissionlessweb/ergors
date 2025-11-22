@@ -13,15 +13,14 @@
 // extern crate serde_with;
 
 mod client;
-mod pre_auth;
-mod request;
-
 pub mod encrypted;
 pub mod null_kms;
 pub mod policy;
+mod pre_auth;
+mod request;
 pub mod soft_kms;
 // pub mod threshold;
-// mod terminal;
+mod terminal;
 pub use client::CustodyClient;
 pub use pre_auth::PreAuthorization;
 pub use request::{

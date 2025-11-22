@@ -8,13 +8,16 @@ import "types/v1/common.proto";
 import "network/v1/network.proto";
 import "storage/v1/storage.proto";
 
+
 // Configuration Types  
 message HoConfig {
   network.v1.NetworkConfig network = 1;
   network.v1.NodeIdentity identity = 2;
-  ergors.storage.v1.StorageConfig storage = 3;
+  storage.v1.StorageConfig storage = 3;
   LlmRouterConfig llm = 4;
+  string home = 5;
 }
+
 
 
 
@@ -132,7 +135,7 @@ message LLMProvider {
 }
 
 enum LlmModel {
-  AkashChat = 0;
+  AkashMl = 0;
   OllamaLocal = 1;
   KimiResearch = 2;
   Grok = 3;

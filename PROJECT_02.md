@@ -1,5 +1,22 @@
 # PROJECT 02: Encrypted API Key Storage with Node Identity
 
+tell me about - finish implmenting llm provider trait in library with clear definition for the macros in comments of library due to complexity of debugging macros
+    - refactor the custody soft-kms for use of environment variables, refactor by adding to the config an env_policy that is dedicated for the env variables that are registered as a policy to the nodes for storing api keys to use in storage.
+     , it makes sense access to storage for retrieval of env key via substore constant reserved for provider occurs after the authentication middleware storage prompt, and occur a single storage request for key in batch as node may have multiple request to api with key use so we shuld document prpraration for local epoch use between actions in tree roots
+    - Provider prompt: merge prompts with format penumbra uses for TxPlan. finish merging the prompt trait to be able to define
+
+> wire in signature middleware for cli call in run sub cmd with ,
+
+─────────────────────────────────────────────────────────
+> lets implement the custody client within our auth
+  middleware such that we run checks for keys able to
+  access endpoints reigstered in the cnardium storage,
+  we want to use the existing storage client and dedicated
+  
+## Multi-goal acomplishing action
+
+we already have prepped a custody client server model for use when authorizaing actions to be compatible with various offline/external signing methods. We can make a custom dedicated API Key storage that interafaces with a dedicated layer of the jmt we use for storage (cnardium) by storaging the encrypted keys to its storage and then when prompts come in we can have this server implement this. Since we are going to have. By defining the use of the prompt note we are generating, we can wire in the wallet and plan instructions for creating the objects and strucutre to pass. THis requires access to the custody defintioints , which we still need to interface in with a  client so we can power this, so lets use this goal by the solution allowing the soft-kms to access teh jmt app state for read and writing encrypted api keys to a dedicated layer so we can access them for various actions
+
 ## Context
 
 The ERGORS system currently loads API keys from a JSON file located in the home directory (`~/api-keys.json`) and environment variables. We need to migrate to an encrypted storage solution using the node's identity keys for encryption/decryption.

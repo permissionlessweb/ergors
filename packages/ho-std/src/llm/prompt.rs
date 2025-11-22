@@ -5,7 +5,7 @@ pub use crate::error::{HoError, HoResult};
 // Re-export shared implementations
 // pub use crate::shared_impl::*;
 // Extension trait implementations for proto types
-use crate::traits::llm::*;
+use crate::traits::*;
 use crate::types::ergors::orch::v1::*;
 
 impl PromptRequestTrait for PromptRequest {

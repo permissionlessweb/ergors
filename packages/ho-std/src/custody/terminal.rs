@@ -1,16 +1,12 @@
+use crate::traits::DomainType;
+use crate::types::ergors::actions::v1::ActionPlan;
 use anyhow::Result;
-use penumbra_sdk_governance::ValidatorVoteBody;
-use penumbra_sdk_proto::DomainType;
-use penumbra_sdk_stake::validator::Validator;
-use penumbra_sdk_transaction::TransactionPlan;
 use serde::de::DeserializeOwned;
 use tonic::async_trait;
 
 #[derive(Debug, Clone)]
 pub enum SigningRequest {
-    TransactionPlan(TransactionPlan),
-    ValidatorDefinition(Validator),
-    ValidatorVote(ValidatorVoteBody),
+    TransactionPlan(crate::types::actions::v1::TransactionPlan),
 }
 /// A trait abstracting over the kind of terminal interface we expect.
 ///

@@ -56,17 +56,11 @@ pub trait StateReadExt: StateRead {
     async fn get_cfg(&self) -> HoResult<Option<LlmRouterConfig>> {
         let key = state_key::router_config();
         match self.get_raw(key).await {
-            Ok(Some(data)) => {
-                let config: LlmRouterConfig = serde_json::from_slice(&data).map_err(|e| {
-                    HoError::DeSerialization(format!("Failed to deserialize router config: {}", e))
-                })?;
-                Ok(Some(config))
-            }
+            Ok(Some(data)) => Ok(Some(serde_json::from_slice(&data).map_err(|e| {
+                HoError::DeSerialization(format!("Failed to deserialize router config: {}", e))
+            })?)),
             Ok(None) => Ok(None),
-            Err(e) => Err(HoError::Storage(format!(
-                "Failed to read router config: {}",
-                e
-            ))),
+            Err(e) => Err(HoError::Storage(format!("router config err: {}", e))),
         }
     }
 
@@ -147,6 +141,63 @@ pub trait StateReadExt: StateRead {
             ))),
         }
     }
+
+    /// Get encrypted API key for a provider
+    async fn get_encrypted_api_key(&self, provider: &str) -> HoResult<Option<Vec<u8>>> {
+        let key = format!("custody/api_keys/{}", provider);
+        match self.get_raw(&key).await {
+            Ok(data) => Ok(data),
+            Err(e) => Err(HoError::Storage(format!(
+                "Failed to read encrypted API key for {}: {}",
+                provider, e
+            ))),
+        }
+    }
+
+    /// Load all encrypted API keys from storage and decrypt them
+    ///
+    /// This is the single function used to populate custody config with API keys.
+    /// Returns a HashMap of provider_name -> decrypted_api_key
+    async fn load_and_decrypt_api_keys(
+        &self,
+        node_key_bytes: &[u8; 32],
+    ) -> HoResult<std::collections::HashMap<String, String>> {
+        use crate::custody::encrypted::decrypt_with_node_key;
+        use futures::{pin_mut, StreamExt};
+        use std::collections::HashMap;
+
+        let mut api_keys = HashMap::new();
+        let stream = self.prefix_raw("custody/api_keys/");
+
+        // Pin the stream for async iteration
+        pin_mut!(stream);
+
+        while let Some(result) = stream.next().await {
+            if let Ok((key, encrypted_data)) = result {
+                // Extract provider name from key "custody/api_keys/{provider}"
+                if let Some(provider_name) =
+                    String::from_utf8_lossy(&key.as_bytes()).strip_prefix("custody/api_keys/")
+                {
+                    // Decrypt the API key
+                    match decrypt_with_node_key(node_key_bytes, &encrypted_data) {
+                        Ok(decrypted) => match String::from_utf8(decrypted) {
+                            Ok(api_key) => {
+                                api_keys.insert(provider_name.to_string(), api_key);
+                            }
+                            Err(_) => {
+                                tracing::warn!("Invalid UTF-8 for provider: {}", provider_name);
+                            }
+                        },
+                        Err(e) => {
+                            tracing::warn!("Failed to decrypt key for {}: {}", provider_name, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(api_keys)
+    }
 }
 
 impl<T: StateRead + ?Sized> StateReadExt for T {}
@@ -191,6 +242,12 @@ pub trait StateWriteExt: StateWrite {
     fn delete_llm_router_config(&mut self) {
         let key = state_key::router_config().to_string();
         self.delete(key);
+    }
+
+    /// Store encrypted API key for a provider
+    fn put_encrypted_api_key(&mut self, provider: &str, encrypted_data: Vec<u8>) {
+        let key = format!("custody/api_keys/{}", provider);
+        self.put_raw(key, encrypted_data);
     }
 }
 

@@ -24,9 +24,15 @@ impl LlmRouterConfig {
     pub fn new(data_dir: &Utf8Path) -> Self {
         let mut neurons = Self::default();
         neurons.api_keys_file = data_dir.join(LLM_API_KEYS_FILE).to_string();
-        neurons.default_entity = LlmModel::AkashChat as u32;
+        neurons.default_entity = LlmModel::AkashMl as u32;
         neurons.default_strategy = ModelSelectionStrategy::Unspecified.into();
-        neurons.entities = vec![LlmModel::AkashChat.default_entity()];
+        neurons.timeout_seconds = 60;
+        neurons.entities = vec![
+            LlmModel::AkashMl.default_entity(),
+            LlmModel::Grok.default_entity(),
+            LlmModel::Anthropic.default_entity(),
+            LlmModel::OpenAi.default_entity(),
+        ];
         neurons
     }
     pub fn update_default_entity(&mut self, model: LlmModel) {
@@ -55,7 +61,7 @@ impl LlmModelTrait for LlmModel {
     /// (default_model, all_available_models)
     fn models(&self) -> (String, Vec<String>) {
         let all: Vec<String> = match self {
-            LlmModel::AkashChat => AKASHML_MODELS,
+            LlmModel::AkashMl => AKASHML_MODELS,
             LlmModel::KimiResearch => KIMI_RESEARCH_MODELS,
             LlmModel::Grok => GROK_MODELS,
             LlmModel::OllamaLocal => OLLAMA_LOCAL_MODELS,
@@ -71,7 +77,7 @@ impl LlmModelTrait for LlmModel {
     }
     fn default_base_url(&self) -> String {
         match self {
-            LlmModel::AkashChat => AKASH_CHAT_BASE_URL.to_string(),
+            LlmModel::AkashMl => AKASH_CHAT_BASE_URL.to_string(),
             LlmModel::KimiResearch => KIMI_RESEARCH_BASE_URL.to_string(),
             LlmModel::Grok => GROK_BASE_URL.to_string(),
             LlmModel::OpenAi => OPENAI_BASE_URL.to_string(),

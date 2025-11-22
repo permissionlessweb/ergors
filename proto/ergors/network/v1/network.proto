@@ -3,7 +3,6 @@ syntax = "proto3";
 package ergors.network.v1;
 
 import "google/protobuf/struct.proto";
-import "types/v1/common.proto";
 
 message Request {
   string request_id = 1;

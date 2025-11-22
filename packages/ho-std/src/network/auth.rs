@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 use tower::{Layer, Service};
 use tracing::{debug, warn};
 
-/// Custom Tower layer for authentication: used to route verification checks for this server. 
+/// Custom Tower layer for authentication: used to route verification checks for this server.
 /// TODO: We need to make this have access to storage client for retrieval of encrypted api keys
 #[derive(Clone)]
 pub struct AuthLayer;
@@ -183,7 +183,10 @@ fn validate_timestamp(timestamp_str: &str) -> Result<(), Auth> {
 use anyhow::Result;
 use rand::{CryptoRng, RngCore};
 
-use crate::types::ergors::keys::v1::*;
+use crate::types::{
+    actions::v1::{AuthorizationData, TransactionPlan},
+    ergors::keys::v1::*,
+};
 use crate::{error::Auth, types::ergors::custody::v1::*};
 
 impl TransactionPlan {

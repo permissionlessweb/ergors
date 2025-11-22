@@ -26,7 +26,7 @@ pub const CONFIG_ENV_VARS: &[&str] = &[
 ];
 
 pub const LLM_ENV_VARS: &[&str] = &[
-    "AKASH_API_KEY",
+    "AKASHML_KEY",
     "KIMI_API_KEY",
     "GROK_API_KEY",
     "OPENAI_API_KEY",
@@ -80,12 +80,7 @@ pub fn default_config_path() -> PathBuf {
         paths.push(dir);
     }
 
-    // Current dir fallback
-    paths.push(
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join("config.toml"),
-    );
+    paths.push(env::current_dir().unwrap_or_default().join("config.toml"));
 
     // Return first existing path, or default to XDG or local
     paths.into_iter().find(|p| p.exists()).unwrap_or_else(|| {
@@ -100,9 +95,17 @@ pub fn default_config_path() -> PathBuf {
     })
 }
 
-pub fn init_env(config_path: &Utf8Path) -> anyhow::Result<()> {
-    let debug_flag = std::env::var("DEBUG_ENV").unwrap_or("0".into());
-    match debug_flag.as_str() {
+pub fn init_env(home_dir: &Utf8Path) -> anyhow::Result<()> {
+    let env_file = home_dir.join(".env");
+    if env_file.exists() {
+        dotenvy::from_path(&env_file).ok();
+        eprintln!("📁 Loaded environment variables from: {}", env_file);
+    } else {
+        eprintln!("⚠️  No .env file found at: {}", env_file);
+        eprintln!("   API keys must be set via environment variables");
+    }
+
+    match std::env::var("DEBUG_ENV").unwrap_or("0".into()).as_str() {
         "0" => {}
         "1" => {
             eprintln!("🔍 [DEBUG_ENV=1] All environment variables:");
@@ -111,10 +114,6 @@ pub fn init_env(config_path: &Utf8Path) -> anyhow::Result<()> {
             }
         }
         _ => {
-            eprintln!(
-                "🔍 [DEBUG_ENV={}] Whitelisted environment variables:",
-                debug_flag
-            );
             for &var_list in ALL_ENV_VARS.iter() {
                 for &key in var_list {
                     if let Ok(value) = env::var(key) {

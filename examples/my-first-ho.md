@@ -28,7 +28,7 @@ First, we generate a default template with the following command:
 # build node binary
 cargo build
 # initalize node config
-RUST_BACKTRACE=1 cargo run -- init # TODO: use CONFIG_UI=1 for ui to manage config
+RUST_BACKTRACE=1 cargo run -- init 
 ```
 
 ```

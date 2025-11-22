@@ -2,7 +2,10 @@
 //! presents as an asynchronous signer.
 
 // use decaf377_rdsa::{Signature, SpendAuth};
-use crate::types::ergors::custody::v1::{self as pb, *};
+use crate::types::{
+    actions::v1::AuthorizationData,
+    ergors::custody::v1::{self as pb, *},
+};
 // use penumbra_sdk_transaction::AuthorizationData;
 use rand_core::OsRng;
 use tonic::{async_trait, Request, Response, Status};
@@ -31,16 +34,14 @@ impl SoftKms {
 
     /// Attempt to authorize the requested [`TransactionPlan`](penumbra_sdk_transaction::TransactionPlan).
     #[tracing::instrument(skip(self, request), name = "softhsm_sign")]
-    pub fn sign(&self, request: &AuthorizeRequest) -> anyhow::Result<()> {
-        // pub fn sign(&self, request: &AuthorizeRequest) -> anyhow::Result<AuthorizationData> {
+    pub fn sign(&self, request: &AuthorizeRequest) -> anyhow::Result<AuthorizationData> {
         tracing::debug!(?request.plan);
 
-        // for policy in &self.config.auth_policy {
-        //     policy.check_transaction(request)?;
-        // }
-
+        for policy in &self.config.auth_policy {
+            policy.check_transaction(request)?;
+        }
+        unimplemented!()
         // Ok(request.plan.authorize(OsRng, &self.config.spend_key)?)
-        Ok(())
     }
 
     // /// Attempt to authorize the requested validator definition.
@@ -104,7 +105,7 @@ impl pb::custody_service_server::CustodyService for SoftKms {
             .map_err(|e| Status::unauthenticated(format!("{e:#}")))?;
 
         let authorization_response = AuthorizeResponse {
-            // data: Some(authorization_data.into()),
+            data: Some(authorization_data.into()),
         };
 
         Ok(Response::new(authorization_response))
@@ -158,6 +159,25 @@ impl pb::custody_service_server::CustodyService for SoftKms {
             full_viewing_key: None,
             // full_viewing_key: Some(self.config.spend_key.full_viewing_key().clone().into()),
         }))
+    }
+
+    async fn decrypt_api_key(
+        &self,
+        request: Request<pb::DecryptApiKeyRequest>,
+    ) -> Result<Response<pb::DecryptApiKeyResponse>, Status> {
+        let provider_name = &request.into_inner().provider_name;
+
+        // Get API key from in-memory config (just like spend_key)
+        let api_key = self
+            .config
+            .api_keys
+            .get(provider_name)
+            .ok_or_else(|| {
+                Status::not_found(format!("No API key configured for provider: {}", provider_name))
+            })?
+            .clone();
+
+        Ok(Response::new(pb::DecryptApiKeyResponse { api_key }))
     }
 
     // async fn confirm_address(

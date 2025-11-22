@@ -674,7 +674,7 @@ impl CosmicOrchestrator {
 
             // Determine primary LLM provider based on vertex position
             let primary_provider = match index % 3 {
-                0 => LlmModel::AkashChat,
+                0 => LlmModel::AkashMl,
                 1 => LlmModel::KimiResearch,
                 2 => LlmModel::Grok,
                 _ => LlmModel::OllamaLocal,

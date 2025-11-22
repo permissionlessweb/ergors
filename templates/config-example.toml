@@ -9,6 +9,7 @@
 # │                   Unique Identity in Tetrahedral Mesh                          │
 # └─────────────────────────────────────────────────────────────────────────────────┘
 
+home = ""
 [identity]
 # Unique cryptographic node identifier (ed25519 public key in hex)
 node_id = "3cfd87c557d28ad4090ccd00716acd44e03e190bf41b9b65540e9b87e6dcd3f1"
@@ -150,7 +151,7 @@ providers = [
     },
     {
         name = "akashml",
-        provider_type = "AkashChat", 
+        provider_type = "AkashMl", 
         endpoint = "https://api.akash.network/chat/v1",
         models = ["akash-7b-chat", "akash-13b-chat"],
         default_model = "akash-7b-chat",

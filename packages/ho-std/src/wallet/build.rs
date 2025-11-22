@@ -1,8 +1,9 @@
-use anyhow::Result;
-
-use crate::action::{AuthorizationData, Transaction, TransactionPlan};
 use crate::custody::{AuthorizeRequest, CustodyClient};
+use crate::types::actions::v1::TransactionPlan;
+use crate::types::actions::v1::{AuthorizationData, Transaction};
 use crate::types::keys::v1::FullViewingKey;
+use crate::view::ViewClient;
+use anyhow::Result;
 // use crate::v::ViewClient;
 
 pub async fn build_transaction<V, C>(

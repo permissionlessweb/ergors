@@ -8,7 +8,7 @@ pub const DATA_FOLDER_NAME: &str = "memories";
 pub const OPENAI_API_KEY: &str = "OPENAI_API_KEY";
 pub const ANTHROPIC_API_KEY: &str = "ANTHROPIC_API_KEY";
 pub const GROK_API_KEY: &str = "GROK_API_KEY";
-pub const AKASH_API_KEY: &str = "AKASH_API_KEY";
+pub const AKASHML_KEY: &str = "AKASHML_KEY";
 pub const KIMI_API_KEY: &str = "KIMI_API_KEY";
 pub const QWEN_API_KEY: &str = "QWEN_API_KEY";
 pub const VENICE_API_KEY: &str = "VENICE_API_KEY";
@@ -16,7 +16,7 @@ pub const VENICE_API_KEY: &str = "VENICE_API_KEY";
 pub const OPEN_AI: &str = "openai";
 pub const ANTHROPIC: &str = "anthropic";
 pub const GROK: &str = "grok";
-pub const AKASH_CHAT: &str = "akashchat";
+pub const AKASH_CHAT: &str = "akashml";
 pub const KIMI: &str = "kimi";
 pub const QUEN: &str = "qwen";
 pub const VENICE: &str = "venice";
@@ -37,6 +37,7 @@ pub const ENV_KEYS: &[&(&str, &str)] = &[
 pub const AKASH_CHAT_BASE_URL: &str = "https://api.akash.network/chat/v1";
 pub const KIMI_RESEARCH_BASE_URL: &str = "https://api.moonshot.cn/v1";
 pub const GROK_BASE_URL: &str = "https://api.x.ai/v1";
+pub const QUEN_BASE_URL: &str = "https://dashscope.aliyuncs.com/compatible-mode/";
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 pub const ANTHROPIC_MESSAGE_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -96,27 +97,11 @@ pub const OPENAI_MODELS: &[&str] = &[
     "gpt-4",
     "gpt-3.5-turbo",
 ];
-pub const ANTHROPIC_MODELS: &[&str] = &[
-    "claude-3-5-sonnet-20240620",
-    "claude-3-opus-20240229",
-    "claude-3-sonnet-20240229",
-    "claude-2.1",
-];
-
+pub const ANTHROPIC_MODELS: &[&str] = &["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-1"];
 pub const GROK_MODELS: &[&str] = &["grok-code-fast-1", "grok-3-mini", "grok-4-0709"];
 
-pub const QWEN_MODELS: &[&str] = &[
-    "claude-3-5-sonnet-20240620",
-    "claude-3-opus-20240229",
-    "claude-3-sonnet-20240229",
-    "claude-2.1",
-];
-pub const VENICE_MODELS: &[&str] = &[
-    "claude-3-5-sonnet-20240620",
-    "claude-3-opus-20240229",
-    "claude-3-sonnet-20240229",
-    "claude-2.1",
-];
+pub const QWEN_MODELS: &[&str] = &[];
+pub const VENICE_MODELS: &[&str] = &[];
 pub const EXTERNAL_MODELS: &[&str] = &["external"]; // placeholder
 
 // CAPABILITIES: TODO: COMPLETE CAPABILITY DEFINITIONS FOR AGENTIC WORKFLOW

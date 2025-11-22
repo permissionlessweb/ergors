@@ -18,6 +18,7 @@
 /// ```
 #[macro_export]
 macro_rules! llm_entity {
+    // Case 1: Inline model list: models: ["m1", "m2"]
     (
         $name:ident {
             name: $provider_name:expr,
@@ -57,23 +58,65 @@ macro_rules! llm_entity {
             pub const MODELS: &'static [&'static str] = &[$($model),*];
         }
 
-        // Implement ApiKeyProvider for this type
+        $crate::llm_entity!(@impl_traits $name, $provider_name, $api_type);
+    };
+
+    // Case 2: Constant model list: models: MY_MODELS_CONST
+    (
+        $name:ident {
+            name: $provider_name:expr,
+            env_key: $env_key:expr,
+            base_url: $base_url:expr,
+            models: $models_const:path,
+            api_type: $api_type:ident,
+            $($extra:tt)*
+        }
+    ) => {
+        pub struct $name {
+            api_key: Option<String>,
+            key_accessor: Option<std::sync::Arc<dyn $crate::traits::ApiKeyMethod>>,
+            extra_models: Vec<String>,
+        }
+
+        impl $name {
+            pub fn new(api_key: Option<String>) -> Self {
+                Self {
+                    api_key,
+                    key_accessor: None,
+                    extra_models: Vec::new(),
+                }
+            }
+
+            pub fn with_accessor(key_accessor: std::sync::Arc<dyn $crate::traits::ApiKeyMethod>) -> Self {
+                Self {
+                    api_key: None,
+                    key_accessor: Some(key_accessor),
+                    extra_models: Vec::new(),
+                }
+            }
+
+            pub const ENV_KEY: &'static str = $env_key;
+            pub const PROVIDER_NAME: &'static str = $provider_name;
+            pub const BASE_URL: &'static str = $base_url;
+            pub const MODELS: &'static [&'static str] = $models_const;
+        }
+
+        $crate::llm_entity!(@impl_traits $name, $provider_name, $api_type);
+    };
+
+    // Shared trait impls to reduce duplication
+    (@impl_traits $name:ident, $provider_name:expr, $api_type:ident) => {
         #[async_trait::async_trait]
         impl $crate::traits::ApiKeyProvider for $name {
             async fn get_api_key(&self) -> $crate::llm::HoResult<String> {
-                // Try key accessor first
                 if let Some(accessor) = &self.key_accessor {
                     if let Ok(Some(key)) = accessor.get_key($provider_name).await {
                         return Ok(key);
                     }
                 }
-
-                // Fall back to direct API key
                 if let Some(key) = &self.api_key {
                     return Ok(key.clone());
                 }
-
-                // Try environment variable
                 std::env::var(Self::ENV_KEY)
                     .map_err(|_| $crate::error::HoError::Llm(
                         format!("{} API key not configured", $provider_name)
@@ -83,12 +126,6 @@ macro_rules! llm_entity {
 
         #[async_trait::async_trait]
         impl $crate::traits::LlmProviderTrait for $name {
-            // type ProviderType = Self;
-
-            // fn provider_type(&self) -> &Self::ProviderType {
-            //     self
-            // }
-
             fn name(&self) -> &str {
                 Self::PROVIDER_NAME
             }
@@ -98,7 +135,9 @@ macro_rules! llm_entity {
             }
 
             fn supports_model(&self, model: &str) -> bool {
-                Self::MODELS.contains(&model) || model.contains($provider_name) || self.extra_models.iter().any(|m| m == model)
+                Self::MODELS.contains(&model)
+                    || model.contains(Self::PROVIDER_NAME)
+                    || self.extra_models.iter().any(|m| m == model)
             }
 
             fn supported_models(&self) -> &[&str] {
@@ -109,8 +148,7 @@ macro_rules! llm_entity {
                 &self,
                 client: &reqwest::Client,
                 request: &crate::orchestrate::PromptRequest,
-            ) -> $crate::llm::HoResult< crate::orchestrate::PromptResponse> {
-
+            ) -> $crate::llm::HoResult<crate::orchestrate::PromptResponse> {
                 $crate::llm::joints::$api_type::handle_request(
                     self,
                     client,
@@ -134,6 +172,5 @@ macro_rules! llm_entity {
                 self.extra_models.push(model);
             }
         }
-
     };
 }

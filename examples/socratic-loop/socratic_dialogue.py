@@ -5,7 +5,7 @@ HO-Core Socratic Dialogue Agent
 
 An advanced Socratic dialogue system that integrates with ho-core's multi-LLM routing
 for geometric orchestration of AI conversations. Supports all ho-core LLM providers:
-AkashChat, Kimi Research, Grok, Ollama Local, OpenAI, and Anthropic.
+AkashMl, Kimi Research, Grok, Ollama Local, OpenAI, and Anthropic.
 
 This creates a sandloop demonstration showing how different LLMs can engage in
 philosophical dialogue following geometric principles (golden ratio timing,

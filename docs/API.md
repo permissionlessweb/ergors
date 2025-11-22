@@ -9,7 +9,7 @@ ERGORS uses Ed25519 signature-based authentication to protect sensitive endpoint
 ```sh
 curl -X POST http://localhost:8080/api/prompt \
      -H "Content-Type: application/json" \
-     -d '{"messages":[{"role": "user", "content": "how many barbers does jroc have?"}],"model":"akash","context":null,"llm_config":null}'
+     -d '{"messages":[{"role": "user", "content": "how many barbers does jroc have?"}],"model":"grok-4-0709","context":null,"llm_config":null}'
 ```
 
 ## Authentication Requirements: [Authentication Middlware](./API-AUTHENTICATION.md)

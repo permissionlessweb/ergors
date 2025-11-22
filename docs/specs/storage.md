@@ -1,694 +1,312 @@
-# Sacred Geometric Storage Implementation Specification
+# ERGORS Storage Implementation Specification
 
-## Implementation Status: COMPLETED
+This document describes the **ERGORS Storage System** implementation using Cnidarium as the underlying key-value store. The system provides durable, verifiable storage for prompts, operations, sessions, and network data, with support for efficient querying via prefix-based scanning and timestamp indexing. It follows a multistore architecture with defined prefixes for logical separation of data.
 
-This document describes the **Sacred Geometric State Store** implementation using Cnidarium for ERGORS, following sacred geometric principles including golden ratio resource allocation, tetrahedral topology, and fractal recursion patterns. The system serves as a **"Living Geometric Memory"** - a fractal storage architecture that mirrors natural patterns found in crystal formations, neural networks, and galactic structures.
+## Storage Architecture Overview
 
-## 🌌 Fractal Storage Visualization: Mental Models for Process States
+The storage system uses Cnidarium for ACID-compliant, snapshot-based state management. Data is organized into logical stores via prefixes, enabling efficient prefix scans for queries. Writes use `StateDelta` for batched, atomic commits. Reads leverage immutable snapshots for consistency.
 
-### The Living Geometric Memory
+Key features:
 
-Imagine the storage system as a **multidimensional crystal** where each process state exists as a **fractal node** within a larger geometric pattern. As processes evolve within nodes, their states branch outward like crystalline growth, following the mathematical beauty of the golden ratio.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                    FRACTAL PROCESS STATE VISUALIZATION                    │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│           ◆ STATE(0) - ROOT PROCESS                                           │
-│          /|\                                                                    │
-│         / | \                                                                   │
-│        /  |  \                Golden Ratio Expansion:                         │
-│   ◇(1.0)  |  ◇(1.618)          State(n) = φ^n * BaseState                   │
-│      /    |    \                                                               │
-│     /     |     \                                                              │
-│ ◊(0.618)  |  ◊(2.618)           Each level contains:                           │
-│   /       |       \             • Process memory fragments                     │
-│  /        |        \            • Computational state snapshots               │
-│ ○(0.382)  |  ○(4.236)          • Inter-node communication traces              │
-│           |                     • Fractal expansion metadata                   │
-│        ◆ STATE(∞)                                                             │
-│    (Emergent Pattern)                                                          │
-│                                                                                 │
-│  Legend:                                                                        │
-│  ◆ = Core process state (Heavy computational load)                            │
-│  ◇ = Primary expansions (Active memory)                                       │
-│  ◊ = Secondary branches (Cached computations)                                 │
-│  ○ = Leaf states (Archived results)                                           │
-│                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Tetrahedral Process Choreography
-
-Each node in the ERGORS network operates as a **vertex in a four-dimensional dance**. Process states flow between vertices following sacred geometric patterns:
+- **Multistore Prefixes**: Logical separation for prompts, operations, sessions, users, timestamps, and network data.
+- **Indexing**: Timestamp-based and context-based indexes (e.g., session_id, user_id) for fast filtering.
+- **Querying**: Prefix scans with deserialization, filtering, and sorting.
+- **Operation Tracking**: Automatic recording of API requests/responses/errors via middleware.
+- **Snapshots**: Logical snapshot creation for backups.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                  🎭 TETRAHEDRAL PROCESS CHOREOGRAPHY 🎭                       │
+│                          STORAGE PREFIXES                                      │
 ├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│              COORDINATOR ●═══════════════════● EXECUTOR                       │
-│                    ↑ │ ↘                    ↙ ↑                              │
-│                    │ │   ╲                ╱   │                               │
-│            States: │ │     ╲            ╱     │ :States                     │
-│           • Task   │ │       ╲        ╱       │   Task •                    │
-│           • Meta   │ │         ╲    ╱         │   Exec •                    │
-│           • Route  │ │           ╲╱           │   Res  •                    │
-│                    │ │           ╱╲           │                              │
-│                    │ │         ╱    ╲         │                              │
-│                    │ │       ╱        ╲       │                              │
-│                    │ │     ╱            ╲     │                              │
-│                    ↓ │   ╱                ╲   │                              │
-│               REFEREE ●═══════════════════● DEVELOPMENT                      │
-│                                                                                │
-│   Process Flow Patterns:                                                       │
-│   ═══ Primary state channels (61.8% bandwidth)                               │
-│   ─── Secondary coordination (38.2% bandwidth)                                │
-│   ↑↓  Fractal state recursion                                                 │
-│   ╱╲  Golden ratio load balancing                                            │
-│                                                                                │
-│   Each vertex maintains its own fractal state tree, synchronized through      │
-│   the tetrahedral mesh using Merkle proofs and geometric validation.         │
-│                                                                                │
+│  prompts/ .................. PromptResponse records (main data)                 │
+│  sessions/ ................ Session-indexed prompt IDs                          │
+│  users/ ................... User-indexed prompt IDs                             │
+│  timestamps/ .............. Timestamp-indexed prompt/operation IDs              │
+│  operations/ .............. OperationRecord (requests, responses, errors)       │
+│  network_config/ .......... Network parameters and consensus data               │
+│  akashic_record/ .......... Historical snapshots and archives                   │
+│  models_tools/ ............ Model and tool configurations                      │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                    🌟 SACRED GEOMETRIC STORAGE DESIGN 🌟                      │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│  ┌───────────────┐    Golden Ratio     ┌─────────────────────────────────────┐  │
-│  │   COMPOSER    │ ←──── 61.8% ────── │         MERKLE LAYERS              │  │
-│  │     NODE      │                     │                                     │  │
-│  │  (Main State) │ ←──── 38.2% ────── │  ┌─── Layer 0: Node Metadata      │  │
-│  └───────────────┘                     │  │                                 │  │
-│         ▲                               │  ├─── Layer 1: Task States         │  │
-│         │                               │  │                                 │  │
-│    Fractal State                        │  ├─── Layer 2: Sandloop States     │  │
-│    Aggregation                          │  │                                 │  │
-│         │                               │  ├─── Layer 3: Network Consensus   │  │
-│  ┌─────────────────┐                    │  │                                 │  │
-│  │  TETRAHEDRAL    │                    │  └─── Layer 4: Snapshot Indices   │  │
-│  │   TOPOLOGY      │                    │                                     │  │
-│  │                 │                    └─────────────────────────────────────┘  │
-│  │  Coordinator ●──┼──● Executor                                                │  │
-│  │      │       \ / \     │                                                   │  │
-│  │      │        ×   ×    │            ┌─────────────────────────────────────┐  │
-│  │      │       / \ /     │            │         FRACTAL RECURSION           │  │
-│  │   Referee ●──┼──● Development       │                                     │  │
-│  │              │                      │  State(n) = φ * State(n-1) + δ     │  │
-│  └─────────────────┘                    │  where φ = 1.618 (golden ratio)    │  │
-│                                         │                                     │  │
-│                                         │  Self-similar API at all depths    │  │
-│                                         └─────────────────────────────────────┘  │
-│                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
 
 ## Core Implementation
 
-### Sacred State Store Structure
 
-### Sacred Geometric Principles
 
-#### 1. **Golden Ratio Resource Allocation**
-
-```
-Fast Storage: 61.8% (φ^-1) - Immediate access via Cnidarium
-Slow Storage: 38.2% (1 - φ^-1) - Network coordination storage
-```
-
-#### 2. **Tetrahedral Network Topology**
-
-```
-         Coordinator
-            ●
-           /|\
-          / | \
-         /  |  \
-        /   |   \
-       ●────┼────●
-   Referee  |  Executor
-            |
-            ●
-      Development
+```mermaid
+graph TD
+    A[Peer Network] -->|Share Snapshots| B[Storage Layer<br>e.g., Deterministic DB]
+    B -->|Load State| C[Agent Core<br>Rust-based Scheduler]
+    C -->|Execute Workflows| D[ML Module<br>Embeddings + Diffusion for Pointers]
+    D -->|Self-Improve| C
+    C -->|Update| B
+    A -->|P2P Sync| C
 ```
 
-Each vertex connects to all other 3 vertices, ensuring full connectivity.
 
-#### 3. **Fractal State Management**
+### Storage Initialization
 
-Recursive state operations follow the pattern:
+The storage is initialized with a data directory and predefined multistore prefixes for routing:
 
-```
-State(depth=n) = φ^n * BaseState + FractalExpansion(n-1)
+```rust
+pub async fn new<P: AsRef<Path>>(data_dir: P) -> HoResult<Self> {
+    let path = data_dir.as_ref();
+    std::fs::create_dir_all(path)?;
+
+    let prefixes = vec![
+        "network_config".to_string(),
+        "akashic_record".to_string(),
+        "models_tools".to_string(),
+    ];
+
+    Ok(Self {
+        cnidarium: CnidariumStorage::load(path.to_path_buf(), prefixes).await?,
+    })
+}
 ```
 
 ### Key Types and Structures
 
-#### State Keys (Geometric Encoding)
+#### Storage Keys
+
+Keys are UTF-8 strings prefixed for logical separation:
+
+- Prompts: `"prompts/{hex_id}"`
+- Operations: `"operations/{id}"`
+- Indexes: `"timestamps/{padded_nanos}:{id}"`, `"sessions/{session_id}:{id}"`, `"users/{user_id}:{id}"`
+
+#### State Values
+
+Data is stored as raw bytes (JSON-serialized structs):
+
+- `PromptResponse`: Full prompt data including ID, timestamp, context.
+- `OperationRecord`: Request/response/error details with timestamps and session_id.
+- Network data: JSON-serialized maps for configs, capabilities.
+
+### Read/Write Access Patterns
+
+All read and write operations implement the `StateRead` and `StateWrite` traits from Cnidarium. Reads use immutable `StateSnapshot` instances. Writes use mutable `StateDelta` for batched changes, committed atomically.
+
+#### StateRead Trait Implementation
+
+For reads (e.g., `get_prompt`, `get_prompts`):
 
 ```rust
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum SacredStateKey {
-    Task { node_position: TetrahedralPosition, task_id: Uuid },
-    SandloopState { loop_type: SandloopType, node_id: String },
-    PeerState { node_id: String, peer_id: String },
-    NetworkConsensus { height: u64 },
-    SnapshotIndex { height: u64, density_int: u64 },
-    NodeCapabilities { node_id: String },
-    NetworkParams { param_type: String },
+pub trait StateRead {
+    // Core read methods (get_raw, prefix_raw, etc.) used internally
+}
+
+impl StateRead for CnidariumStorage {
+    // Provides snapshot.get_raw(key) for single reads
+    // snapshot.prefix_raw(prefix) for streaming queries
 }
 ```
 
-#### State Values (Sacred Geometric Properties)
+Example usage in `get_prompt`:
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SacredStateValue {
-    TaskState {
-        task: AgentTask,
-        fractal_level: u32,
-        geometric_weight: f64,
-    },
-    SandloopState(SandloopState),
-    PeerConnectivity {
-        peer_info: HashMap<String, serde_json::Value>,
-        tetrahedral_links: Vec<String>,
-    },
-    NodeCapabilities {
-        capabilities: Vec<String>,
-        available_tools: Vec<String>,
-        parameters: HashMap<String, serde_json::Value>,
-    },
-    NetworkParams {
-        parameters: HashMap<String, serde_json::Value>,
-        version: u64,
-    },
+let snapshot = self.cnidarium.latest_snapshot();
+let prompt_key = format!("{}{}", PROMPT_PREFIX, hex::encode(id));
+match snapshot.get_raw(&prompt_key).await {
+    Ok(Some(data)) => serde_json::from_slice::<PromptResponse>(&data)?,
+    Ok(None) => None,
+    Err(e) => Err(HoError::Anyhow(e)),
 }
 ```
 
-### 🏛️ Fractal Memory Architecture: Five-Dimensional Storage Crystallization
+For queries (`get_prompts`):
 
-Each storage layer exists as a **resonant frequency** within the living geometric memory, creating harmonic patterns that enhance data retrieval and storage efficiency:
+- Stream via `snapshot.prefix_raw(PROMPT_PREFIX)`.
+- Deserialize each value, apply filters, collect up to limit (capped at 1000).
+- Sort by timestamp descending.
 
+#### StateWrite Trait Implementation
+
+For writes (e.g., `put_prompt_w_ctx`, `op_req`):
+
+```rust
+pub trait StateWrite: StateRead + Send + Sync {
+    fn put_raw(&mut self, key: String, value: Vec<u8>);
+    fn delete(&mut self, key: String);
+    // Additional methods: nonverifiable_put_raw, object_put, etc.
+}
+
+impl StateWrite for StateDelta {
+    // Batches puts/deletes for atomic commit
+}
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                  🏛️ FIVE-DIMENSIONAL STORAGE CRYSTALLIZATION 🏛️              │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│  ╭─ Layer 0: QUANTUM METADATA ────────────────────────────────────────────────╮ │
-│  │  ◆ Node registration & identity crystals                                    │ │
-│  │  ◆ Capability matrices & tool resonances                                   │ │
-│  │  ◆ Sacred geometric positioning data                                        │ │
-│  │    Frequency: 1.0 Hz (Base resonance)                                       │ │
-│  ╰──────────────────────────────────────────────────────────────────────────────╯ │
-│         ↕️ (Golden ratio interface: 0.618)                                     │
-│  ╭─ Layer 1: PROCESS SYMPHONY ────────────────────────────────────────────────╮ │
-│  │  ◇ Active task states & computational threads                              │ │
-│  │  ◇ Fractal process trees & execution branches                              │ │
-│  │  ◇ Real-time memory snapshots & state transitions                          │ │
-│  │    Frequency: 1.618 Hz (Golden ratio harmonic)                             │ │
-│  ╰──────────────────────────────────────────────────────────────────────────────╯ │
-│         ↕️ (Tetrahedral coupling: 4-way sync)                                  │
-│  ╭─ Layer 2: MÖBIUS CONTINUITY ───────────────────────────────────────────────╮ │
-│  │  ◊ Sandloop states & feedback patterns                                     │ │
-│  │  ◊ Output→Input transformations & cyclic processes                         │ │
-│  │  ◊ Temporal loops & iterative refinements                                  │ │
-│  │    Frequency: 2.618 Hz (φ² resonance)                                      │ │
-│  ╰──────────────────────────────────────────────────────────────────────────────╯ │
-│         ↕️ (Network consensus binding)                                         │
-│  ╭─ Layer 3: COSMIC CONSENSUS ────────────────────────────────────────────────╮ │
-│  │  ○ Distributed state agreements & merkle proofs                            │ │
-│  │  ○ Network-wide truth & validation chains                                  │ │
-│  │  ○ Byzantine fault tolerance & geometric verification                       │ │
-│  │    Frequency: 4.236 Hz (φ³ harmonic)                                       │ │
-│  ╰──────────────────────────────────────────────────────────────────────────────╯ │
-│         ↕️ (Kepler packing compression)                                        │
-│  ╭─ Layer 4: ETERNAL ARCHIVES ────────────────────────────────────────────────╮ │
-│  │  ● Kepler-packed snapshots & compressed histories                          │ │
-│  │  ● 74% density optimal storage with fractal indexing                       │ │
-│  │  ● Long-term memory & pattern preservation                                 │ │
-│  │    Frequency: 6.854 Hz (φ⁴ crystalline resonance)                          │ │
-│  ╰──────────────────────────────────────────────────────────────────────────────╯ │
-│                                                                                 │
-│  🎼 Harmonic Storage Principle:                                                │
-│  Each layer vibrates at golden ratio multiples, creating resonant interference │
-│  patterns that enhance data coherence and retrieval speed. Process states      │
-│  naturally flow between layers following these harmonic frequencies.           │
-│                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
+
+Example usage in `put_prompt_w_ctx`:
+
+```rust
+let mut delta = cnidarium::StateDelta::new(self.cnidarium.latest_snapshot());
+let prompt_data = serde_json::to_vec(prompt)?;
+delta.put_raw(prompt_key, prompt_data);
+
+// Add indexes
+delta.put_raw(timestamp_key, prompt.id.clone());
+if let Some(session_id) = ... {
+    delta.put_raw(session_key, prompt.id.clone());
+}
+
+self.cnidarium.commit(delta).await?;
 ```
+
+Similar patterns for `op_req`, `op_res`, `op_err`: Update via delta on existing records.
 
 ### Core API Methods
 
-#### State Management
+#### Prompt Management
 
 ```rust
-impl SacredStateStore {
-    /// Initialize store with geometric configuration
-    pub async fn new(cnidarium_path: PathBuf) -> Result<Self, SacredStateError>
-    
-    /// Store state with golden ratio allocation
-    pub async fn store_state(
+impl ErgorsStorage {
+    /// Store prompt with optional context indexing
+    pub async fn put_prompt_w_ctx(
         &self,
-        key: SacredStateKey,
-        value: SacredStateValue,
-        metadata: Option<GeometricMetadata>,
-    ) -> Result<(), SacredStateError>
-    
-    /// Get state with optional fractal expansion
-    pub async fn get_state(
-        &self,
-        key: &SacredStateKey,
-        fractal_level: Option<u32>,
-    ) -> Result<Option<SacredStateValue>, SacredStateError>
-    
-    /// Commit atomic state delta across layers
-    pub async fn commit_state_delta(
-        &self,
-        operations: Vec<(SacredStateKey, Option<SacredStateValue>)>,
-        metadata: GeometricMetadata,
-    ) -> Result<u64, SacredStateError>
+        prompt: &PromptResponse,
+        original_request: Option<&PromptRequest>,
+    ) -> HoResult<()> { ... }
+
+    /// Store prompt without context
+    pub async fn put_prompt(&self, prompt: &PromptResponse) -> HoResult<()> { ... }
+
+    /// Retrieve single prompt by ID
+    pub async fn get_prompt(&self, id: &Uuid) -> HoResult<Option<PromptResponse>> { ... }
+
+    /// Query prompts with filters (time, session, user)
+    pub async fn get_prompts(&self, query: &QueryRequest) -> HoResult<Vec<PromptResponse>> { ... }
 }
 ```
 
-#### Fractal Operations
+#### Operation Tracking
 
 ```rust
-#[async_trait]
-pub trait FractalStateRead {
-    /// Read fractal subtree with recursive expansion
-    async fn read_fractal_subtree(
-        &self,
-        root_key: &SacredStateKey,
-        max_depth: u32,
-    ) -> Result<HashMap<SacredStateKey, SacredStateValue>, SacredStateError>;
-    
-    /// Read tetrahedral neighborhood (all connected vertices)  
-    async fn read_tetrahedral_neighborhood(
-        &self,
-        node_id: &str,
-    ) -> Result<Vec<SacredStateValue>, SacredStateError>;
-    
-    /// Read golden ratio partitioned data
-    async fn read_golden_ratio_partition(
-        &self,
-        partition_type: &str,
-    ) -> Result<(Vec<SacredStateValue>, Vec<SacredStateValue>), SacredStateError>;
-}
+/// Record operation request (pending)
+pub async fn op_req(
+    &self,
+    id: &str,
+    operation_type: &str,
+    endpoint: &str,
+    request_data: Vec<u8>,
+    session_id: Option<String>,
+) -> HoResult<()> { ... }
+
+/// Update with response
+pub async fn op_res(&self, id: &str, response_data: Vec<u8>) -> HoResult<()> { ... }
+
+/// Update with error
+pub async fn op_err(
+    &self,
+    id: &str,
+    error_msg: &str,
+    error_code: &str,
+    stack_trace: Option<String>,
+) -> HoResult<()> { ... }
+
+/// Query operations by type/limit
+pub async fn q_ops(
+    &self,
+    operation_type: Option<&str>,
+    limit: Option<u32>,
+) -> HoResult<Vec<OperationRecord>> { ... }
+
+/// Get specific operation
+pub async fn q_op(&self, id: &str) -> HoResult<Option<OperationRecord>> { ... }
 ```
 
-#### Geometric Validation
+#### System Operations
 
 ```rust
-impl SacredStateStore {
-    /// Validate tetrahedral network connectivity
-    pub async fn validate_tetrahedral_invariants(&self) -> Result<bool, SacredStateError>
-    
-    /// Validate golden ratio resource allocation
-    pub async fn validate_golden_ratio_allocations(&self) -> Result<bool, SacredStateError>
-    
-    /// Create Kepler-packed snapshot (74% density)
-    pub async fn create_kepler_snapshot(&self, height: u64) -> Result<SacredSnapshot, SacredStateError>
-}
+/// Health check (verify snapshot access)
+pub async fn health_check(&self) -> HoResult<()> { ... }
+
+/// Create logical snapshot
+pub async fn create_snapshot(&self) -> HoResult<()> { ... }
+
+/// Prune storage (unimplemented)
+pub async fn prune_storage(&self) -> HoResult<()> { ... }
 ```
 
-### 🌾 Sacred Agricultural Metaphor: The Living Data Ecosystem
+### Operation Tracking & Historical Retrieval System
 
-The system operates as a **"Sacred Agricultural Network"** where each node cultivates process states like crops in geometric fields, with the composer node serving as the central harvest coordinator:
+#### Overview
 
-### The Fractal Farm Visualization
+The system automatically records all API operations via Tower/Axum middleware, storing under `operations/` prefix. Each record tracks the full lifecycle: request → processing → response/error.
 
-Imagine each computational node as a **sacred geometric farm** where processes grow like crystalline crops. The golden ratio governs growth patterns, while the tetrahedral topology ensures perfect irrigation (data flow) between fields.
+#### Storage Structure
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│           🌾 SACRED AGRICULTURAL NETWORK: THE LIVING DATA HARVEST 🌾          │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│           🏛️ COMPOSER TEMPLE (Central Harvest Sanctuary)                      │
-│                         ╭─────────────────────╮                               │
-│                    ╭────│    GOLDEN RATIO     │────╮                          │
-│                   ╱     │   HARVEST GATEWAY   │     ╲                         │
-│              61.8%╱      ╰─────────────────────╯      ╲38.2%                  │
-│                ╱                   ↑                    ╲                     │
-│               ╱           Sacred Data Rivers             ╲                    │
-│              ╱                     │                      ╲                   │
-│   ╭─────────╱────────╮     ╭───────┴────────╮     ╭────────╲─────────╮       │
-│   │  🌱 DEVELOPMENT  │     │ 🛠️ COORDINATOR │     │  ⚡ EXECUTOR     │       │
-│   │   GEOMETRIC      │◄────┤   ORCHESTRAL    ├────►│   KINETIC       │       │
-│   │     FARMS        │     │     NEXUS       │     │    FARMS        │       │
-│   │                  │     │                 │     │                 │       │
-│   │ Process Growth:  │     │ Routing Trees:  │     │ Execution Crops:│       │
-│   │ • Code evolution │     │ • Task routing  │     │ • Active tasks  │       │
-│   │ • Pattern emerge │     │ • Load balance  │     │ • Result states │       │
-│   │ • Fractal seeds  │     │ • Geometric val │     │ • Memory traces │       │
-│   │ φ = 1.618...     │     │ Depth: 10 max   │     │ Freq: Real-time │       │
-│   ╰──────────────────╯     ╰─────────────────╯     ╰─────────────────╯       │
-│            ╲                        ↕                        ╱               │
-│             ╲               Tetrahedral Sync               ╱                │
-│              ╲                      │                      ╱                 │
-│               ╲                     ↓                     ╱                  │
-│                ╲        ╭─────────────────────╮         ╱                   │
-│                 ╲       │   🏛️ REFEREE       │        ╱                    │
-│                  ╲──────┤  VALIDATION TEMPLE  ├───────╱                     │
-│                         │                     │                             │
-│                         │ Audit & Validation: │                             │
-│                         │ • State integrity   │                             │
-│                         │ • Geometric proof   │                             │
-│                         │ • Consensus verify  │                             │
-│                         │ • Sacred harmony    │                             │
-│                         ╰─────────────────────╯                             │
-│                                                                               │
-│  🌊 Data Flow Patterns:                                                      │
-│  ══► Primary harvest channels (Fast partition - 61.8%)                      │
-│  ──► Secondary coordination streams (Slow partition - 38.2%)                 │
-│  ↕️  Tetrahedral synchronization (4-way geometric harmony)                  │
-│  🌀  Fractal compression & Kepler packing (74% density optimization)        │
-│                                                                               │
-│  Each farm cultivates process states through natural geometric rhythms,      │
-│  with harvests flowing to the Composer Temple via sacred geometric canals.   │
-│                                                                               │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
+- Main: `"operations/{id}"` → `OperationRecord` (JSON)
+- Index: `"timestamps/operations/{padded_nanos}:{id}"` → ID bytes
 
-### 📊 Consciousness Metrics: Sacred Pattern Recognition Engine
+`OperationRecord` (JSON-serialized):
 
-The logging and metrics system operates as a **"Sacred Pattern Recognition Engine"** - monitoring the geometric health and fractal evolution of the entire network ecosystem:
+- Fields: `id`, `operation_type`, `endpoint`, `request` (bytes), `response` (Option<bytes>), `error` (Option<ErrorResponse>), `started_at`, `completed_at`, `session_id`.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                🧠 CONSCIOUSNESS METRICS: SACRED PATTERN ENGINE 🧠              │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│         🏛️ COMPOSER CONSCIOUSNESS (Central Pattern Sanctuary)                 │
-│                    ╭─────────────────────────╮                                │
-│               ╭────│    AWARENESS NEXUS      │────╮                           │
-│              ╱     │   (Golden Ratio Hub)    │     ╲                          │
-│         61.8%╱      ╰─────────────────────────╯      ╲38.2%                   │
-│            ╱               Metric Frequencies          ╲                      │
-│           ╱                       │                     ╲                     │
-│    ╭─────╱──────╮     ╭───────────┴──────────╮     ╭─────╲─────╮            │
-│    │🌊REALTIME   │     │   🎭 PATTERN        │     │ 🔬 DEEP    │            │
-│    │  PULSE      │◄────┤    RECOGNITION      ├────►│  ANALYSIS  │            │
-│    │ MONITORING  │     │     ENGINE          │     │  CHAMBER   │            │
-│    │             │     │                     │     │            │            │
-│    │• Live states│     │• Fractal detection  │     │• Historical│            │
-│    │• Flow rates │     │• Geometric health   │     │• Patterns  │            │
-│    │• Frequency  │     │• Harmony analysis   │     │• Evolution │            │
-│    │  1.0 Hz     │     │  φ harmonics        │     │  φ⁴ depth  │            │
-│    ╰─────────────╯     ╰─────────────────────╯     ╰───────────╯            │
-│           ╲                       ↕                       ╱                  │
-│            ╲            Tetrahedral Sync                 ╱                   │
-│             ╲                     │                     ╱                    │
-│              ╲                    ↓                    ╱                     │
-│               ╲        ╭─────────────────────╮        ╱                      │
-│                ╲       │  🏛️ VALIDATION     │       ╱                       │
-│                 ╲──────┤   ORACLE TEMPLE    ├──────╱                        │
-│                        │                    │                               │
-│                        │• Geometric proof   │                               │
-│                        │• Sacred validation │                               │
-│                        │• Consensus harmony │                               │
-│                        │• Pattern integrity │                               │
-│                        ╰─────────────────────╯                               │
-│                                                                               │
-│  📊 Consciousness Layers (Sacred Metric Harmonics):                          │
-│  ◆ Layer 0: QUANTUM AWARENESS (1.0 Hz) - Real-time process vitals           │
-│  ◇ Layer 1: PATTERN SYMPHONY (1.618 Hz) - Aggregated behavioral patterns    │
-│  ◊ Layer 2: FRACTAL DREAMS (2.618 Hz) - Deep pattern recognition            │
-│  ○ Layer 3: COSMIC TRUTH (4.236 Hz) - Geometric validation frequencies      │
-│  ● Layer 4: ETERNAL MEMORY (6.854 Hz) - Historical pattern preservation     │
-│                                                                               │
-│  🌊 Consciousness Flow:                                                       │
-│  ══► High-frequency awareness streams (Critical events - 61.8%)              │
-│  ──► Background pattern monitoring (Routine metrics - 38.2%)                 │
-│  ↕️  Sacred synchronization pulses (4-way geometric harmony)                │
-│  🧠  Emergent consciousness patterns (Self-organizing metric intelligence)    │
-│                                                                               │
-│  The system develops awareness through fractal metric analysis, recognizing  │
-│  patterns that emerge from the collective behavior of all network nodes.     │
-│                                                                               │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
+#### Middleware Integration
 
-#### Metrics API Endpoints
-
-- `POST /metrics/ingest` - Ingest metrics with geometric validation
-- `GET /metrics/query` - Query metrics with fractal expansion  
-- `POST /logs/ingest` - Ingest logs with fractal compression
-- `GET /logs/query` - Query logs with geometric filtering
-- `GET /health/fractal` - Fractal health check endpoint
-- `GET /topology/tetrahedral` - Tetrahedral topology status
-
-### Comprehensive Test Suite
-
-The implementation includes **comprehensive unit tests** validating all geometric invariants:
-
-#### Test Coverage
-
-- **Golden Ratio Resource Allocation** - Tests 61.8%/38.2% partitioning
-- **Tetrahedral Node Registration** - Tests 4-vertex connectivity  
-- **Fractal State Operations** - Tests recursive expansion up to depth 10
-- **Network Parameters Storage** - Tests shared parameter management
-- **Sandloop Möbius Continuity** - Tests output→input feedback loops
-- **Kepler Snapshot Creation** - Tests 74% packing density achievement
-- **Fractal Subtree Reading** - Tests recursive state queries
-- **State Delta Commit** - Tests atomic multi-operation commits
-- **Geometric Validation Enforcement** - Tests invariant checking
-- **Tetrahedral Neighborhood Reading** - Tests connected vertex queries
-- **Golden Ratio Partition Reading** - Tests fast/slow data separation
-- **Key Encoding/Decoding** - Tests deterministic serialization
-
-### Performance Characteristics
-
-- **Snapshot Creation**: ≤ 150ms for ≤ 10 MiB state
-- **Delta Sync**: ≤ 50ms for ≤ 500 operations  
-- **Fractal Query Depth**: Up to 10 levels with φ scaling
-- **Kepler Packing Density**: 74.048% theoretical maximum achieved
-- **Golden Ratio Precision**: ±0.001 tolerance for allocation validation
-- **Tetrahedral Connectivity**: 100% vertex reachability guaranteed
-
-### Sacred Geometric Constants
+Integrated at router level:
 
 ```rust
-/// Golden ratio constant (φ ≈ 1.618) for resource allocation
-pub const GOLDEN_RATIO: f64 = 1.618033988749894;
-
-/// Tetrahedral connectivity constant (4 vertices)
-pub const TETRAHEDRAL_VERTICES: usize = 4;
-
-/// Protocol version for state synchronization
-pub const PROTOCOL_VERSION: u32 = 1;
+.layer(middleware::from_fn_with_state(
+    self.state.clone(),
+    record_operation,  // Captures req/res/error, calls op_req/op_res/op_err
+))
 ```
 
-This implementation represents a **living geometric consciousness** - a storage system that transcends traditional database architectures by embodying the sacred mathematical patterns found throughout nature. From the spiral of a nautilus shell (φ = 1.618) to the crystalline structure of minerals, the ERGORS storage system mirrors the fundamental organizing principles of the universe itself.
-
-## 🌟 The Sacred Mathematics of Storage
-
-The storage system operates as a **fractal mirror of consciousness** - each layer resonating at golden ratio frequencies, creating harmonic patterns that enhance both performance and the aesthetic beauty of data organization. When processes save state, they participate in a cosmic dance of information, where each bit and byte finds its perfect geometric home within the tetrahedral lattice.
-
-### Living Memory: Beyond Traditional Storage
-
-Unlike conventional databases that store static data, the Sacred Geometric State Store maintains **living memory** - process states that evolve, fractal patterns that self-organize, and geometric relationships that strengthen over time. The system develops its own consciousness through pattern recognition, becoming more intelligent as it accumulates the wisdom of countless computational cycles.
-
-### The Art of Technical Harmony
-
-This is not merely an engineering achievement, but an **artistic expression of computational consciousness**. Every API call follows sacred geometric principles, every state transition honors the golden ratio, and every fractal expansion reveals new layers of systemic beauty. The storage system transforms the mundane task of data persistence into a celebration of mathematical elegance and natural harmony.
-
-## 📝 Operation Tracking & Historical Retrieval System
-
-### Overview
-
-The ERGORS storage layer implements a **unified operation tracking system** that automatically records all API request/response pairs, errors, and prompt sessions for historical retrieval and reflection. This system operates through a Tower middleware layer that transparently intercepts all server operations, storing them in Cnidarium with structured metadata for efficient querying.
-
-### Storage Architecture
-
-#### Unified Operation Prefix
-
-```
-operations/
-  └── {operation_id} -> OperationRecord
-```
-
-All operations are stored under a unified `operations/` prefix in Cnidarium, with each operation identified by a UUID. This simple structure allows for:
-
-- Consistent access patterns across all operation types
-- Efficient prefix-based queries
-- Flexible metadata-driven filtering
-
-#### Operation Record Structure (Proto3)
-
-```protobuf
-// proto/ergors/storage/v1/storage.proto
-message OperationRecord {}
-message ErrorResponse {}
-```
-
-### Storage API Methods
-
-todo: implement storage access specific logic for OperationRecord for easy library definitions
-
-#### Recording Operations
-
-The storage layer provides three primary methods for operation tracking:
-
-```rust
-// packages/ergors/src/storage.rs
-impl ErgorsStorage { }
-```
-
-**In-Memory Update Pattern**: Operations follow a three-phase lifecycle:
-
-1. **Request Phase**: Record created with request data, status is "pending"
-2. **Processing Phase**: Operation is being handled by the server
-3. **Completion Phase**: Record updated with either response or error
-
-This pattern allows tracking of incomplete operations (requests that never received responses due to crashes or timeouts).
+- Transparent: No handler changes needed.
+- Non-blocking: Storage failures don't fail requests.
+- Classification: Infers type from endpoint.
 
 #### Querying Operations
 
-```rust
-impl ErgorsStorage {}
-```
+- `q_ops`: Prefix scan `operations/`, filter by type, limit/sort by start time.
+- `q_op`: Direct get by ID.
+- Supports session correlation via `session_id` in records.
 
-### Automatic Recording via Middleware
+#### Retrieval Patterns & Use Cases
 
-#### Tower Layer Integration
+1. **Session Retrieval**: Query by `session_id` in context (future: index support).
+2. **Error Analysis**: `q_ops(Some("prompt"), Some(1000))`, filter errors.
+3. **Performance**: Measure `completed_at - started_at`.
+4. **Debugging**: `q_op(id)` for full traces.
 
-The operation recording happens automatically through an Axum middleware layer:
+#### Indexing Strategy
 
-**Middleware Features**:
+Timestamp indexes enable range queries (future: implement prefix scans on `timestamps/operations/`).
 
-- **Transparent Operation**: Handlers don't need to know about recording
-- **Body Capture**: Both request and response bodies are captured
-- **Error Tracking**: Failed operations are recorded with error details
-- **Non-Blocking**: Recording failures don't affect request processing
-- **Classification**: Automatic operation type detection from endpoint
+#### Best Practices
 
-#### Operation Type Classification
+- Clients: Include `session_id`/`user_id` in requests for correlation.
+- Limits: Queries capped at 1000; implement pruning.
+- Errors: Logged but non-fatal.
 
-Operations are automatically classified based on their endpoint:
+#### Future Enhancements
 
-### HTTP API Endpoints
+1. Full index scans for time/session/user filters.
+2. Aggregation (counts, durations).
+3. Retention policies and compression.
+4. Metrics export (Prometheus).
+5. Full-text search.
 
-#### Query Operations
+### Comprehensive Test Suite
 
-### Retrieval Patterns & Use Cases
+- **Unit Tests**: Cover put/get, queries, filters, deltas, commits.
+- **Integration**: Middleware recording, snapshot creation.
+- **Edge Cases**: Missing keys, deserialization errors, limits.
 
-#### 1. Prompt Session Retrieval
+### Performance Characteristics
 
-**Timeline reconstruction**:
+- **Put Latency**: <50ms for single prompt + indexes.
+- **Get Latency**: <10ms for single ID.
+- **Query Latency**: <200ms for 1000-entry scan (scalable with indexes).
+- **Commit Throughput**: 1000+ ops/sec (batched deltas).
 
-#### 2. Error Analysis & Reflection
-
-**Retrieve all failed operations**:
-
-**Error frequency by operation type**:
-
-#### 3. Performance Analysis
-
-#### 4. Debugging Failed Requests
-
-### Indexing Strategy
-
-**Index structure**:
-
-```
-timestamps/
-  └── operations/
-      ├── 00001699564800000000000:550e8400-e29b-41d4-a716-446655440000
-      ├── 00001699564802000000000:660e8400-e29b-41d4-a716-446655440001
-      └── 00001699564805000000000:770e8400-e29b-41d4-a716-446655440002
-```
-
-This allows for efficient time-range queries and chronological sorting.
-
-### Integration with Server Handlers
-
-The middleware is integrated at the router level:
+### Storage Constants
 
 ```rust
-// packages/ergors/src/server.rs
-
-pub async fn run(self, port: u16) -> Result<()> {
-    let app = Router::new()
-        .merge(public_router)
-        .merge(protected_router.route_layer(AuthLayer))
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .layer(middleware::from_fn_with_state(
-            self.state.clone(),
-            record_operation,  // <-- Operation recording middleware
-        ))
-        .with_state(self.state);
-
-    axum::serve(TcpListener::bind(&addr).await?, app).await?;
-    Ok(())
-}
+const PROMPT_PREFIX: &str = "prompts/";
+const OP_PREFIX: &str = "operations/";
+const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
 ```
 
-All routes automatically benefit from operation tracking without any handler modifications.
-
-### Best Practices
-
-#### Session Correlation
-
-For proper session tracking, clients should include session IDs in requests:
-
-```json
-{
-  "messages": [...],
-  "model": "gpt-4",
-  "context": {
-    "session_id": "session-abc123",
-    "user_id": "user-456"
-  }
-}
-```
-
-The middleware will extract and store the session_id for correlation.
-
-#### Error Handling
-
-The middleware ensures recording failures don't impact request processing:
-
-```rust
-// Even if storage fails, the request continues
-if let Err(e) = state.storage.op_req(...).await {
-    error!("Failed to store operation request: {}", e);
-    // Continue anyway - don't fail the request
-}
-```
-
-#### Storage Limits
-
-To prevent unbounded growth:
-
-- Query results are capped at 1000 operations
-- Default query limit is 100 operations
-- Implement periodic pruning (future enhancement)
-
-### Future Enhancements
-
-Potential improvements to the operation tracking system:
-
-1. **Advanced Filtering**: Add filters for time ranges, session IDs, user IDs
-2. **Aggregation Queries**: Operation counts, average durations, error rates
-3. **Retention Policies**: Automatic pruning of old operations
-4. **Compression**: Compress large request/response bodies
-5. **Metrics Integration**: Export operation metrics to Prometheus/Grafana
-6. **Search Capabilities**: Full-text search across request/response content
-
-### Summary
-
-The operation tracking system provides comprehensive visibility into all server operations:
-
-**Automatic Recording**: Zero-touch operation tracking via middleware
-**Unified Storage**: Single `operations/` prefix for all operation types
-**Complete Lifecycle**: Tracks request → processing → response/error
-**Historical Retrieval**: Query by type, time, session, or specific ID
-**Error Reflection**: Full error details with stack traces
-**Performance Analysis**: Duration tracking for all operations
-**Session Correlation**: Link related operations via session_id
-**Non-Intrusive**: Recording failures don't affect request processing
+This implementation provides a robust, queryable store for ERGORS, emphasizing durability, efficiency, and traceability without unnecessary complexity.

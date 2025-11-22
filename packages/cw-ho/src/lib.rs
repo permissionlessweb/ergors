@@ -10,12 +10,12 @@ pub mod storage;
 pub mod traits;
 // Re-export the macro for external use
 use crate::{
-    auth::AuthCmd, call::CallCmd, init::InitCmd, network::manager::PeerInfo, server::Server,
+    auth::AuthCmd, call::CallCmd, init::InitCmd, network::manager::PeerInfo,
+    server::Server as CwHoServer, storage::ErgorsStorage,
 };
 
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
-use cnidarium::Storage as CnidariumStorage;
 use ho_std::{
     config::env::{default_home, init_env},
     constants::CONFIG_FILE_NAME,
@@ -36,17 +36,11 @@ use {
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::sync::{mpsc, RwLock};
-use tracing::{error, info};
+use tracing::error;
 
 // Define all wrapper types using the macro
 define_wrapper!(ErgorsConfig, HoConfig);
 define_wrapper!(CwHoLlmRouterConfig, LlmRouterConfig);
-
-/// Defines the storage used for this CwHo.
-/// implemenations in ./storage.rs
-pub struct ErgorsStorage {
-    cnidarium: CnidariumStorage,
-}
 
 /// Minimal network manager for ergors/ implementations in ./manager.rs
 pub struct ErgorsNetworkManifold {
@@ -130,21 +124,21 @@ pub enum Commands {
 }
 
 pub fn start(cli: Cli) -> HoResult<()> {
-    let path: Utf8PathBuf = cli.home.as_path().join(CONFIG_FILE_NAME);
-    let config = ErgorsConfig::load(&path)?;
+    let p: Utf8PathBuf = cli.home.as_path().join(CONFIG_FILE_NAME);
+    let c = ErgorsConfig::load(&p)?;
     init_env(cli.home.as_path())?;
 
     // Create commonware runtime configuration
     Runner::new(RuntimeConfig::default()).start(|context| async move {
-        let server = match Server::new(config.clone(), context).await {
+        let s = match CwHoServer::new(c.clone(), context).await {
             Ok(s) => s,
             Err(e) => {
                 error!("Failed to start server: {}", e);
                 return;
             }
         };
-        if let Err(e) = server.run().await {
-            println!("{:#?}", config.clone());
+        if let Err(e) = s.run().await {
+            println!("{:#?}", c.clone());
             error!("Ergors Error: {}", e);
             error!("Ergors Error: {:#?}", e.backtrace());
         }

@@ -1,5 +1,5 @@
 use crate::traits::Wrap;
-use crate::{ErgorsConfig, CwHoLlmRouterConfig};
+use crate::{CwHoLlmRouterConfig, ErgorsConfig};
 
 use camino::Utf8Path;
 use ho_std::llm::{HoError, HoResult};
@@ -16,12 +16,13 @@ impl HoConfigTrait for ErgorsConfig {
     type LLMConfig = CwHoLlmRouterConfig;
     type HoConfigResult = HoResult<()>;
 
-    fn new(home_dir: &Utf8Path) -> Self {
+    fn new(home: &Utf8Path) -> Self {
         Self(HoConfig {
             network: Some(NetworkConfig::new()),
             identity: Some(NodeIdentity::new()),
-            storage: Some(StorageConfig::new(home_dir)),
-            llm: Some(LlmRouterConfig::new(home_dir)),
+            storage: Some(StorageConfig::new(home)),
+            llm: Some(LlmRouterConfig::new(home)),
+            home: home.as_str().into(),
         })
     }
 
@@ -48,53 +49,8 @@ impl HoConfigTrait for ErgorsConfig {
     fn validate(&self) -> Self::HoConfigResult {
         self.network().validate()?;
         self.llm().validate()?;
-        // Note: identity validation should be handled through the trait
-        // self.identity().validate()?;
-        //     // validate llm config
-        //     // - self.llm().providers
-        //     //      a. there should be atleast one provider
-        //     // - self.llm().providers.expect("yes").cfg
-        //     //    b. there should be atleast one entity: self.llm().providers.expect("yes").cfg
-        //     // should be one of the available models
-        //     self.llm().providers.expect("yes").cfg[0].default_model
-        //     // should be one of the expected strategy enums
-        //     self.llm().providers.expect("yes").cfg[0].default_strategy
-        //     // should be a valid https url string
-        //     self.llm().providers.expect("yes").cfg[0].endpoint
-        //     // max_retries should never be more than 10
-        //     self.llm().providers.expect("yes").cfg[0].max_retries
-        //     // should be atleast one
-        //     self.llm().providers.expect("yes").cfg[0].models
-        //     // should never be more than 10 mins
-        //     self.llm().providers.expect("yes").cfg[0].timeout_seconds
-        //     // - self.llm().api_keys_file
-        //     //      a. shpold exist and all llm entities should have an associeated api key in use
-        //     //      b. max_retries should never be more than 10
-
-        //     // validate network config
-        //     // should  never be more than 10
-        //     self.network().max_peers()
-        //     // should never be more than 5 mins in ms
-        //     self.network().connection_timeout_ms()
-
-        //     self.network().listen_address()
-        //     self.network().listen_port()
-        //     // validate identity config
-        //     self.identity().host
-        //     // should be one of valid OS types
-        //     self.identity().os()
-        //     // should be one of valid node types
-        //     self.identity().node_type
-        // // _________ _________ _________ _________ _________
-        //     // TODO: if no private or public key, create new one and add to the api-key.toml file used
-        //     // should always have a private key
-        //     self.identity().private_key
-        //     // should always have a public key
-        //     self.identity().public_key
-
-        // _________ _________ _________ _________ _________
-        // validate storage config
-
+        // self.storage.validate
+        // self.identity.validate
         Ok(())
     }
 
@@ -177,6 +133,8 @@ impl LLMRouterConfigTrait for CwHoLlmRouterConfig {
         todo!()
     }
     fn validate(&self) -> HoResult<()> {
+        // validate each llm provider has keys defined in .env file
+        for llm in &self.0.entities {}
         Ok(())
     }
 }

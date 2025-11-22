@@ -1,11 +1,14 @@
 use bip32::XPrv;
+use decaf377_rdsa::{SigningKey, SpendAuth};
 use std::convert::TryFrom;
 
-use hmac::Hmac;
 use crate::{
-    traits::DomainType,
-    types::ergors::keys::{v1 as pb, *},
+    keys::prf, traits::DomainType, types::{
+        ergors::keys::{v1 as pb, *},
+        keys::v1::FullViewingKey,
+    }
 };
+use hmac::Hmac;
 use pbkdf2::pbkdf2;
 use serde::{Deserialize, Serialize};
 
@@ -30,8 +33,8 @@ pub struct SpendKeyBytes(pub [u8; SPENDKEY_LEN_BYTES]);
 #[serde(try_from = "pb::SpendKey", into = "pb::SpendKey")]
 pub struct SpendKey {
     seed: SpendKeyBytes,
-    // ask: SigningKey<SpendAuth>,
-    // fvk: FullViewingKey,
+    ask: SigningKey<SpendAuth>,
+    fvk: FullViewingKey,
 }
 
 impl PartialEq for SpendKey {
@@ -64,11 +67,11 @@ impl From<SpendKey> for pb::SpendKey {
 
 impl From<SpendKeyBytes> for SpendKey {
     fn from(seed: SpendKeyBytes) -> Self {
-        // let ask = SigningKey::new_from_field(prf::expand_ff(b"Penumbra_ExpndSd", &seed.0, &[0; 1]));
-        // let nk = NullifierKey(prf::expand_ff(b"Penumbra_ExpndSd", &seed.0, &[1; 1]));
-        // let fvk = FullViewingKey::from_components(ask.into(), nk);
+        let ask = SigningKey::new_from_field(prf::expand_ff(b"Penumbra_ExpndSd", &seed.0, &[0; 1]));
+        let nk = NullifierKey(prf::expand_ff(b"Penumbra_ExpndSd", &seed.0, &[1; 1]));
+        let fvk = FullViewingKey::from_components(ask.into(), nk);
 
-        Self { seed }
+        Self { seed, ask, fvk }
     }
 }
 
@@ -129,25 +132,25 @@ impl SpendKey {
     // XXX how many of these do we need? leave them for now
     // but don't document until design is more settled
 
-    // pub fn spend_auth_key(&self) -> &SigningKey<SpendAuth> {
-    //     &self.ask
-    // }
+    pub fn spend_auth_key(&self) -> &SigningKey<SpendAuth> {
+        &self.ask
+    }
 
-    // pub fn full_viewing_key(&self) -> &FullViewingKey {
-    //     &self.fvk
-    // }
+    pub fn full_viewing_key(&self) -> &FullViewingKey {
+        &self.fvk
+    }
 
-    // pub fn nullifier_key(&self) -> &NullifierKey {
-    //     self.fvk.nullifier_key()
-    // }
+    pub fn nullifier_key(&self) -> &NullifierKey {
+        self.fvk.nullifier_key()
+    }
 
-    // pub fn outgoing_viewing_key(&self) -> &OutgoingViewingKey {
-    //     self.fvk.outgoing()
-    // }
+    pub fn outgoing_viewing_key(&self) -> &OutgoingViewingKey {
+        self.fvk.outgoing()
+    }
 
-    // pub fn incoming_viewing_key(&self) -> &IncomingViewingKey {
-    //     self.fvk.incoming()
-    // }
+    pub fn incoming_viewing_key(&self) -> &IncomingViewingKey {
+        self.fvk.incoming()
+    }
 }
 
 impl From<[u8; SPENDKEY_LEN_BYTES]> for SpendKeyBytes {
@@ -186,11 +189,4 @@ impl std::str::FromStr for SpendKey {
         }
         .try_into()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use super::*;
 }
