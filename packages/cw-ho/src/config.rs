@@ -1,5 +1,5 @@
+use crate::define_wrapper;
 use crate::traits::Wrap;
-use crate::{CwHoLlmRouterConfig, ErgorsConfig};
 
 use camino::Utf8Path;
 use ho_std::llm::{HoError, HoResult};
@@ -8,6 +8,9 @@ use ho_std::types::ergors::{network::v1::*, orch::v1::*, storage::v1::*};
 use ho_std::traits::file_ops::ConfigLoaderTrait;
 use ho_std::traits::{HoConfigTrait, LLMRouterConfigTrait, NetworkConfigTrait, NodeIdentityTrait};
 use ho_std::utils::DefaultFileOps;
+// Define all wrapper types using the macro
+define_wrapper!(ErgorsConfig, HoConfig);
+define_wrapper!(CwHoLlmRouterConfig, LlmRouterConfig);
 
 // Network trait implementations for proto types
 impl HoConfigTrait for ErgorsConfig {
@@ -43,7 +46,7 @@ impl HoConfigTrait for ErgorsConfig {
     }
 
     fn llm(&self) -> &Self::LLMConfig {
-        CwHoLlmRouterConfig::wrap_ref(self.llm.as_ref().expect("ego is useful in moderation"))
+        CwHoLlmRouterConfig::wrap_ref(self.llm.as_ref().expect("ego is useful in moderation (cannot access llmConfig)"))
     }
 
     fn validate(&self) -> Self::HoConfigResult {

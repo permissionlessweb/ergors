@@ -4,6 +4,7 @@ impl crate::types::storage::v1::StorageConfig {
         memories.data_dir = data_dir
             .join(crate::constants::DATA_FOLDER_NAME)
             .to_string();
+        tracing::debug!("StorageConfig: {:#?}", memories);
         memories
     }
 }

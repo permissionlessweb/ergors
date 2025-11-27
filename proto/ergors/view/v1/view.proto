@@ -9,8 +9,5 @@ import "google/protobuf/any.proto";
 // transaction-related actions, to request data from a view service, which is
 // responsible for synchronizing and scanning the public chain state with one or
 // more full viewing keys.
-service ViewService {
- 
- 
-}
+service ViewService {}
   

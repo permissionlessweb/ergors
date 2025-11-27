@@ -12,7 +12,7 @@ pub trait Wrap<Inner> {
 #[macro_export]
 macro_rules! define_wrapper {
     ($wrapper:ident, $inner:ty) => {
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
         #[serde(transparent)]
         pub struct $wrapper(pub $inner);
 

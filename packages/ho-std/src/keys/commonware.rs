@@ -32,6 +32,7 @@ impl NodeIdentityTrait for NodeIdentity {
         ego.node_type = NodeType::Unspecified.as_str_name().into();
         ego.os = HostOs::Unspecified.into();
         ego.host = "127.0.0.1".into();
+        tracing::debug!("NodeIdentity: {:#?}", ego);
         ego
     }
 

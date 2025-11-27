@@ -33,5 +33,5 @@ pbjson-build = "0.7.0"
 pbjson-types = "0.7.0"
 
 [lib]
-name = "cw_hoe_proto"
+name = "ergors_proto"
 path = "src/lib.rs"

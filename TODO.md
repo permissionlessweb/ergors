@@ -1,5 +1,11 @@
 # PRIORITIZE SOVEREIGN MODEL USE
 
+- SAVE NEW SESSIONS
+- LOAD STATUS AND NETWORK
+- BETTER CLIENT USE
+- cli chat,tips and query examples,
+- DEEP WIKI
+
 - SESSION SNAPSHOT AND STORAGE WORKFLOW TESTS
 
 - RECIPIES: EMBEDDING STORAGE: Ability to store embeddings for reuse of known/familiar/common code for agentic workflows. correct storage mapping and data routing.
@@ -30,6 +36,7 @@
   - AKASH workflow (terraform/custom bash scripts)
 - benchmarking via criterion
 - cw-jsonfilter chips: resulable chips for filtering out data during agentic instruct prompts for simpler tasks
+- rust analyser filter: filter for token count minimization
 
 ## NETWORK
 
@@ -84,7 +91,7 @@
 ## ORCHESTRATOR SERVICE
 
 - unit + integration tetss
-
+- [structured outputs for functional calling during sandloops and other agentic sessions](https://docs.x.ai/docs/guides/structured-outputs)
 - Sandloops: Extend sandloop execution so outputs from one node become inputs for another node, maintaining Möbius continuity over the network. This requires state synchronization and inter-node messaging.
 
 ## TESTING
@@ -108,6 +115,8 @@
 ### GROK TOOLS
 
 ### OPENAI TOOLS
+
+refactor mesage to derive openapi defintion structure from our api messages.
 
 ### CLAUDE TOOLS
 
@@ -133,3 +142,9 @@
 ### Kimi
 
 ## TEXTUALIZE
+
+## Research
+
+<https://medium.com/@farissyariati/ask-your-codebase-anything-using-ollama-embeddings-and-rag-c65081a5ef20>
+<https://github.com/AsyncFuncAI/deepwiki-open>
+<https://medium.com/@sjng/deepwiki-why-i-open-sourced-an-ai-powered-wiki-generator-b67b624e4679>

@@ -113,7 +113,36 @@ cargo run  --bin ergors start
 
 ## Environment Variables
 
-[for a dedicated list of environment variables and their defaults check here.](./packages/ho-std/src/config/README.md)
+### RUST_LOG
+
+> [for a dedicated list of environment variables and their defaults check here.](./packages/ho-std/src/constants.rs)
+
+Controls the logging level for the entire application. This is the standard Rust tracing environment variable.
+
+**Levels** (from least to most verbose):
+
+* `error` - Only errors
+* `warn` - Warnings and errors
+* `info` - Informational messages, warnings, and errors (default)
+* `debug` - Debug information plus all above
+* `trace` - Trace-level debugging plus all above
+
+**Examples**:
+
+```bash
+# Basic levels
+export RUST_LOG=info          # Default - general operational logs
+export RUST_LOG=debug          # Detailed debugging information
+export RUST_LOG=trace          # Very verbose trace-level logging
+
+# Module-specific levels
+export RUST_LOG=ergors=debug,tower_http=info    # Debug for ergors, info for tower_http
+export RUST_LOG=ergors::server=trace            # Trace only server module
+
+# Target specific components
+export RUST_LOG=ergors::middleware=debug        # Debug middleware operations
+export RUST_LOG=ergors::storage=trace           # Trace storage operations
+```
 
 ## Testing Library
 

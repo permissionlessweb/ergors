@@ -1,3 +1,4 @@
+mod api_keys;
 mod cost;
 mod joints;
 mod macros;
@@ -8,6 +9,7 @@ pub mod state_ext;
 use anyhow::Result;
 
 // pub use macros::{find_entity, registered_entities, LlmEntityDescriptor};
+pub use api_keys::*;
 pub use cost::*;
 pub use joints::*;
 pub use prompt::*;
@@ -33,6 +35,7 @@ impl LlmRouterConfig {
             LlmModel::Anthropic.default_entity(),
             LlmModel::OpenAi.default_entity(),
         ];
+        tracing::debug!("LlmRouterConfig: {:#?}", neurons);
         neurons
     }
     pub fn update_default_entity(&mut self, model: LlmModel) {

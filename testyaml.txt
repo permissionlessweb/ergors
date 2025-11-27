@@ -1,0 +1,1258 @@
+ write a readme for :
+{"cost":0.0,"id":[15,27,67,21,237,9,65,178,141,107,149,12,100,0,26,104],"latency_ms":null,"model":"grok-code-fast-1","prompt":"255d0aa261380dee653be46fcabbb9f4dd0dbd1b09181db78b76c8386fa77cc3","provider":"default","response":["Below is a concrete, technical review of the provided Rust implementation of the `HeadstashCircuit` against the given specification (\"Spec: Zk-Airdrop Claiming\"). I have focused exclusively on **accuracy** (i.e., does the implementation correctly reflect the spec's requirements, constraints, and cryptographic flows?) and **completeness** (i.e., are all required components implemented, or are there gaps?). I have **criticized** where the implementation is incomplete (e.g., missing constraints, derivations, or checks that are explicitly required by the spec) or misinterprets functionality (e.g., misuse of chips, incorrect handling of inputs/outputs, or deviations from described flows). Emotional concerns, opinions, or suggestions outside of correctness/completeness are omitted.\n\nMy analysis is structured by key spec sections and circuit components, drawing direct comparisons to the spec's requirements. Key spec excerpts are referenced for context. Assumptions: The spec is authoritative; the code must fully enforce all constraints and derivations for security/privacy; tests are reviewed for correctness but do not substitute for missing constraints in `synthesize`.\n\n### 1. **Overall Circuit Structure and Configuration (Accuracy: Partial; Completeness: Incomplete)**\n   - **Spec Reference**: The spec outlines a circuit with 7 private witnesses, 5 public inputs, constants, and derived values (e.g., `cm`, `recp`). It requires native Pallas operations, foreign field arithmetic (FFA) for secp256k1, Sinsemilla for hashing/trees, Poseidon for HKDF/nullifiers, and ECC for pairings. Public inputs include `nul` (nullifier), `nd`, `v`, `recp` (not fully listed in struct but implied), and `genesis_root` (anchor).\n   - **Implementation Review**:\n     - The `HeadstashCircuit` struct includes most witnesses (e.g., `esk`, `e_pk_x/y`, `rho`, `psi`, `cm`, `fdi`, `v`, `nd`, `recp`) and closely matches spec witnesses/inputs. However, `Instance` struct includes `anchor`, `nf_old`, `cmx`, but the circuit does not constrain all to public instances (see below).\n     - Configuration (`configure`): Chips (EccChip, Secp256k1Chip, PoseidonChip, SinsemillaChip, MerkleChip, NoteCommitChip) are correctly instantiated, with advice/column allocations matching spec (e.g., 10 advices, secp256k1 Fp/Fq chips on separate columns [0-2, 3-5]). Shared fixed columns for ECC/Poseidon reduce size correctly. AddChip and lookups are appropriate. **Completeness Issue**: Configuration is solid, but `synthesize` does not fully utilize all chips (e.g., NoteCommitChip is configured but unused in `synthesize`, despite spec requiring note commitments).\n     - **Misinterpretation**: Spec requires deriving `recp` (as `Poseidon(recp_raw)` or similar), but `recp` is a direct witness with no in-circuit derivation/constraint. This violates spec's \"Derived\" section.\n\n### 2. **Key Pairing and Proof of Ownership (Accuracy: Partial; Completeness: Incomplete)**\n   - **Spec Reference**: \"constrain a key pair (epk,esk) are paired by division with G\" via secp256k1 operations. Ownership is proven via HKDF: derive `hkdf_sk` from `esk`, `leaf`, `recp`, `psi` (using Poseidon), then use in nullifier derivation. This ensures \"users prove they know `esk` via nullifier as public input.\"\n   - **Implementation Review**:\n     - Secp256k1 key pairing (Step 1 in `synthesize`): `Secp256k1Chip::prove_key_pairing` correctly constrains `epk = esk * G_secp256k1` using FFA (3x88-bit limbs, range-checked via 9x10-bit chunks reusing Sinsemilla table). This matches spec for ownership via pairing.\n     - HKDF/Nullifier: `nk` is witnessed (from external `NullifierDerivingKey::derive_from(esk, rho)`), and `gadget::derive_nullifier` hashes `(nk, rho, psi, cm)` via Poseidon, constraining `nf = DeriveNullifier_nk(rho,psi,m)`. **Misinterpretation**: Spec requires HKDF in-circuit to derive `hkdf_sk` from `esk` + other inputs (e.g., `recp`, `v`, `nd`, `fdi`, `psi`), using Poseidon for HKDF (e.g., `pallas_sk = poseidon_hash([DST_HKDF, esk_native, m])`). Code skips this, witnessing `nk` directly without constraining its derivation from `esk`. This breaks ownership proof—adversaries could use invalid `nk` without proving `esk` knowledge beyond pairing. Per spec questions (\"have we constrained `nk` is hash-derived?\"), this is missing.\n     - **Completeness Issue**: No in-circuit HKDF constraint on `nk`. `e_sk_crt` from pairing is unused (spec implies using derived `hkdf_sk` in nullifier flow). Tests check pairing but don't verify HKDF derivation.\n\n### 3. **Merkle Inclusion and Genesis Distribution Tree (Accuracy: Low; Completeness: Incomplete)**\n   - **Spec Reference**: Genesis tree (Sinsemilla HashDomain) with leaves `H_DST_HKDF(elig_pk || nd || v || fdi)` (public bindings to balances). Root is `genesis_root` (public). Users prove inclusion of their leaf to claim eligibility. Leaf derivation includes `epk` (private in circuit but part of hash).\n   - **Implementation Review**:\n     - Merkle check (Step 2): `MerkleChip::calculate_root` from `path`, `pos`, and `leaf = cm.extract_p()`. **Major Misinterpretation**: Spec requires leaf as Sinsemilla hash of `(epk, nd, v, fdi)`, proving inclusion in genesis tree. Code uses `cm` (note commitment) as leaf, implying a note-commitment tree (spec mentions this as \"futureproof\" but not for MVP genesis inclusion). This mismatches spec—no genesis eligibility proof. Root isn't constrained to public `anchor` (spec requires public root). Per spec questions (\"have we constrained `leaf` is on tree with known instance `root`?\"), root is derived but not enforced equal to public input.\n     - **Completeness Issue**: No in-circuit derivation of leaf from `epk`, `nd`, `v`, `fdi` (spec's \"Leaf Input Preparation\"). `cm` is witnessed but not derived/constrained (see next). Instance includes `anchor`, but no constraint `calculated_root == anchor`. Tests use dummy paths without enforcing correct root—invalid proofs could pass.\n     - SinsemillaChip: Correctly configured, but misused for note-commitment tree instead of genesis.\n\n### 4. **Note Commitments and Nullifiers (Accuracy: Partial; Completeness: Incomplete)**\n   - **Spec Reference**: `cm = Poseidon(recp, v, rho, psi, rcm)` (derived in-circuit). Nullifier prevents double-spend, derived via HKDF/Poseidon (e.g., hash `hkdf_sk`, `rho`, `psi`, multiply by NullifierK). `cmx` (extracted `cm`) and `nf` are public.\n   - **Implementation Review**:\n     - Note Commitments: `cm` is witnessed but not derived in-circuit (violates spec \"Derived\" section). No constraint `cm == Poseidon(recp, v, rho, psi, rcm)`. `NoteCommitChip` is configured but unused. Per spec questions (\"have we constrained `leaf` is derived from provided values?\"), no. Tests generate `cm` outside.\n     - Nullifiers: Derived via `derive_nullifier` (Poseidon on `nk`, `rho`, `psi`, `cm`), constrained to public `NF`. But as above, `nk` derivation from `esk` (via HKDF) is not constrained in-circuit, weakening double-spend prevention. Spec's multiplication by NullifierK is absent.\n     - Public Constraints: Only `nf` is constrained to instance (correct). But `cmx` (e.g., extracted `cm`) and `anchor` (root) are in `Instance` but unconstrained (spec requires them as public inputs).\n     - **Completeness Issue**: No in-circuit `cm` derivation or `rcm` PRF. No `cmx` extraction/constraint. `NoteCommitChip` (for decomposition/checking) is unused, despite spec needing it for `NoteCommit_new`.\n\n### 5. **Public Inputs, Witnesses, and Constraints (Accuracy: Low; Completeness: Incomplete)**\n   - **Spec Reference**: Public inputs: `nul`, `nd`, `v`, `recp`, `genesis_root`. Private witnesses as listed. Constants like DSTs, generators. All derivations/constraints enforced.\n   - **Implementation Review**:\n     - Witnesses (Step 2): Correctly assigned, but `recp` lacks derivation. `cm` assigned but not derived.\n     - Constraints: Key pairing, nullifier to public, but missing root-to-anchor, `cm` derivation, leaf derivation, and full HKDF. Per code questions, these are gaps (\"q: have we constrained...\").\n     - Instance Columns: `ANCHOR`, `CV_NET_X/Y`, `NF`, `RK_X/Y`, `CMX` defined, but only `NF` constrained. `CMX` (spec's `cmx`) unconstrained.\n     - **Misinterpretation**: `CV_NET_X/Y`, `RK_X/Y` in offsets but unused—spec doesn't require these (focus on anchor, nf, cmx).\n     - TODO: Code has \"// TODO: complete implement headstash circuit synthesisation\", confirming incompleteness.\n\n### 6. **Chip Usage and FFA (Accuracy: Partial; Completeness: Adequate for Implemented Parts)**\n   - **Spec Reference**: FFA for secp256k1 (3x88-bit limbs, 9x10-bit checks). Sinsemilla for trees, Poseidon for hashes/HKDF, ECC for pairings.\n   - **Implementation Review**: FFA is correctly implemented (limbs/chunks via RangeChip). Chips are configured well, but underutilized (e.g., NoteCommitChip, full Sinsemilla/Poseidon flows incomplete). No misinterpretations in FFA itself.\n\n### 7. **Tests and Edge Cases (Accuracy: Low; Completeness: Partial)**\n   - Valid test generates circuit but doesn't enforce missing constraints (e.g., invalid `nk` could pass without HKDF check). Invalid pairing test is correct but doesn't cover full spec gaps. Without witnesses test is trivial. Configurations/costs are checked but don't validate constraints.\n   - **Misinterpretation**: Tests assume valid circuit generation implies correctness, but missing constraints (e.g., root/leaf) allow invalid proofs.\n\n### Summary of Critical Issues\n- **Incomplete Implementation**: Major gaps in `synthesize` (e.g., no `cm` derivation, no leaf derivation for Merkle, no HKDF constraint, unconstrained public inputs like `anchor`/`cmx`). NoteCommitChip unused. TODO acknowledges this.\n- **Misinterpretations**: Merkle treats `cm` as leaf instead of deriving genesis leaf from `epk`/`nd`/`v`/`fdi`. HKDF for `nk` not in-circuit. Nullifier flow deviates from spec's HKDF/Poseidon/multiplication. Public inputs not fully constrained.\n- **Impact**: Circuit does not fully enforce spec's privacy/security (e.g., double-spend prevention, ownership proof, genesis inclusion). Proofs could be invalid without detection. To fix: Implement missing derivations/constraints in `synthesize`, correct Merkle leaf, add HKDF in-circuit. Tests must verify constraints post-fix. This is not a complete/provable implementation."],"timestamp":"2025-11-24T22:41:46+00:00","tokens_used":{"completion":2493,"prompt":16206,"total":20755}}
+
+given  
+Give me an concrete review on the implementation of this circuit. do not conern with my emotions when determining your results, concern the accuracy of the implementation for the given specification and ciritize where we need to complete the implemntation of where we are misinerpreti=ng functionality with regards to the chip functions -
+use self::gadget::add_chip::{AddChip, AddConfig};
+use group::Curve;
+
+use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp as Secp256k1Fp, Fq as Secp256k1Fq};
+use halo2_gadgets::{
+    ecc::{
+        chip::{EccChip, EccConfig},
+        FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort, ScalarVar,
+    },
+    poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
+    sinsemilla::{
+        chip::{SinsemillaChip, SinsemillaConfig},
+        merkle::{
+            chip::{MerkleChip, MerkleConfig},
+            MerklePath,
+        },
+    },
+    utilities::lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
+};
+
+use halo2_proofs::{
+    circuit::{floor_planner, Layouter, Value},
+    plonk::{self, Advice, Column, Instance as InstanceColumn},
+};
+use pasta_curves::pallas;
+
+use crate::{
+    circuit::{
+        gadget::{
+            assign_free_advice,
+            secp256k1_chip::{Secp256k1Chip, Secp256k1Config},
+        },
+        note_commit::{NoteCommitChip, NoteCommitConfig},
+    },
+    constants::{
+        fixed_bases::HeadstashFixedBases as HFixedBases,
+        sinsemilla::HeadstashCommitDomains as HCommitDomains, HeadstashHashDomains as HashDomains,
+        MERKLE_DEPTH_HEADSTASH,
+    },
+    keys::NullifierDerivingKey,
+    note::{ExtractedNoteCommitment, NoteCommitment, Nullifier, Rho},
+    tree::{Anchor, MerkleHashHeadstash},
+};
+
+// Absolute offsets for public inputs.
+const ANCHOR: usize = 0;
+const CV_NET_X: usize = 1;
+const CV_NET_Y: usize = 2;
+const NF: usize = 3;
+const RK_X: usize = 4;
+const RK_Y: usize = 5;
+const CMX: usize = 6;
+
+pub mod gadget;
+mod note_commit;
+
+#[derive(Clone, Debug)]
+pub struct HeadstashConfig {
+    primary: Column<InstanceColumn>,
+    advices: [Column<Advice>; 10],
+    add_config: AddConfig,
+    ecc_config: EccConfig<HFixedBases>,
+    secp256k1: Secp256k1Config,
+    poseidon_cfg: PoseidonConfig<pallas::Base, 3, 2>,
+    merkle_cfg: MerkleConfig<HashDomains, HCommitDomains, HFixedBases>,
+    sinsemilla_cfg: SinsemillaConfig<HashDomains, HCommitDomains, HFixedBases>,
+    nc_cfg: NoteCommitConfig,
+}
+
+/// The Headstash Action circuit.
+#[derive(Clone, Debug, Default)]
+pub struct HeadstashCircuit {
+    // Merkle path witnesses
+    pub(crate) path: Value<[MerkleHashHeadstash; MERKLE_DEPTH_HEADSTASH]>,
+    pub(crate) pos: Value<u32>,
+
+    // Note randomness
+    pub(crate) psi: Value<pallas::Base>,
+    pub(crate) rho: Value<Rho>,
+    pub(crate) cm: Value<NoteCommitment>,
+
+    // Secp256k1 key pair (foreign field) - represented as 3x88-bit limbs in circuit
+    pub(crate) esk: Value<Secp256k1Fq>, // Eligible secret key (scalar field)
+    pub(crate) e_pk_x: Value<Secp256k1Fp>, // Eligible public key x-coordinate (base field)
+    pub(crate) e_pk_y: Value<Secp256k1Fp>, // Eligible public key y-coordinate (base field)
+
+    // Nullifier deriving key (derived from esk via HKDF outside circuit)
+    pub(crate) nk: Value<NullifierDerivingKey>,
+
+    // Fixed denomination index (private)
+    pub(crate) fdi: Value<pallas::Base>,
+
+    // Public inputs
+    pub(crate) v: Value<pallas::Base>,    // Note value
+    pub(crate) nd: Value<pallas::Base>,   // Note denomination (blake3 hash)
+    pub(crate) recp: Value<pallas::Base>, // recp address
+}
+
+impl plonk::Circuit<pallas::Base> for HeadstashCircuit {
+    type Config = HeadstashConfig;
+    type FloorPlanner = floor_planner::V1;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut plonk::ConstraintSystem<pallas::Base>) -> Self::Config {
+        // Current allocation (from circuit.rs:93-104):
+        // advices[0-9] = 10 columns total
+        // advices[5] = Poseidon partial_sbox
+        // advices[6-8] = Poseidon state
+        // advices[0-4] = Sinsemilla (5 columns)
+        // advices[6] = Sinsemilla message
+        // advices[9] = Range check column
+
+        // Proposed allocation for Secp256k1:
+        // fp_advices = [advices[0], advices[1], advices[2]]
+        // fq_advices = [advices[3], advices[4], advices[5]]
+        let advices = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
+
+        let q_orchard = meta.selector();
+
+        // Addition of two field elements.
+        let add_config = AddChip::configure(meta, advices[7], advices[8], advices[6]);
+
+        // Fixed columns for the Sinsemilla generator lookup table
+        let table_idx = meta.lookup_table_column();
+        let lookup = (
+            table_idx,
+            meta.lookup_table_column(),
+            meta.lookup_table_column(),
+        );
+
+        // Instance column used for public inputs
+        let primary = meta.instance_column();
+        meta.enable_equality(primary);
+
+        // Permutation over all advice columns.
+        for advice in advices.iter() {
+            meta.enable_equality(*advice);
+        }
+
+        // Poseidon requires four advice columns, while ECC incomplete addition requires
+        // six, so we could choose to configure them in parallel. However, we use two
+        // Poseidon invocation, one  and we have the rows to accommodate it serially.
+        // Instead, we reduce the proof size by sharing fixed columns between the ECC and
+        // Poseidon chips.
+        let lagrange_coeffs = [
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+        ];
+        let rc_a = lagrange_coeffs[2..5].try_into().unwrap();
+        let rc_b = lagrange_coeffs[5..8].try_into().unwrap();
+
+        // Also use the first Lagrange coefficient column for loading global constants.
+        // It's free real estate :)
+        meta.enable_constant(lagrange_coeffs[0]);
+
+        // We have a lot of free space in the right-most advice columns; use one of them
+        // for all of our range checks.
+        let rcfg10 = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
+        // Configuration for curve point operations.
+        // This uses 10 advice columns and spans the whole circuit.
+        let ecc_config =
+            EccChip::<HFixedBases>::configure(meta, advices, lagrange_coeffs, rcfg10.clone());
+
+        // Configuration for the Poseidon hash.
+        let poseidon_cfg = PoseidonChip::configure::<poseidon::P128Pow5T3>(
+            meta,
+            // We place the state columns after the partial_sbox column so that the
+            // pad-and-add region can be laid out more efficiently.
+            advices[6..9].try_into().unwrap(),
+            advices[5],
+            rc_a,
+            rc_b,
+        );
+
+        // Configuration for a Sinsemilla hash instantiation and a
+        // Merkle hash instantiation using this Sinsemilla instance.
+        // Since the Sinsemilla config uses only 5 advice columns,
+        // we can fit two instances side-by-side.
+        let (sinsemilla_cfg, merkle_cfg) = {
+            let sinsemilla_cfg = SinsemillaChip::configure(
+                meta,
+                advices[..5].try_into().unwrap(),
+                advices[6],
+                lagrange_coeffs[0],
+                lookup,
+                rcfg10,
+                false,
+            );
+            let merkle_cfg = MerkleChip::configure(meta, sinsemilla_cfg.clone());
+
+            (sinsemilla_cfg, merkle_cfg)
+        };
+
+        // Configuration to handle decomposition and canonicity checking
+        // for NoteCommit_new.
+        let nc_cfg = NoteCommitChip::configure(meta, advices, sinsemilla_cfg.clone());
+
+        // Secp256k1 curve paring config.TODO: ensure we define advice colums available to these accurately and document (3 each)
+        let secp256k1 = Secp256k1Config::configure(
+            meta,
+            [advices[0], advices[1], advices[2]],
+            [advices[3], advices[4], advices[5]],
+            rcfg10.clone(),
+        );
+        HeadstashConfig {
+            primary,
+            advices,
+            add_config,
+            secp256k1,
+            ecc_config,
+            poseidon_cfg,
+            merkle_cfg,
+            sinsemilla_cfg,
+            nc_cfg,
+        }
+    }
+
+    // TODO: complete implement headstash circuit synthesisation
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<pallas::Base>,
+    ) -> Result<(), plonk::Error> {
+        // Load the Sinsemilla generator lookup table used by the whole circuit.
+        SinsemillaChip::load(config.sinsemilla_cfg.clone(), &mut layouter)?;
+
+        // // Construct the ECC chip.
+        let ecc_chip = config.ecc_chip();
+
+        // 1. CONSTRAINT: Foreign-field (secp256k1) key pairing
+        // Prove epk = esk * G_secp256k1 using CRT representation (3x88-bit limbs)
+        let secp256k1_chip = Secp256k1Chip::construct(config.secp256k1.clone());
+        let (e_sk_crt, (_e_pk_x_crt, _e_pk_y_crt)) = secp256k1_chip.prove_key_pairing(
+            layouter.namespace(|| "secp256k1 key pairing: epk = esk * G"),
+            self.esk,
+            self.e_pk_x,
+            self.e_pk_y,
+        )?;
+
+        // // Witness private inputs that are used across multiple checks.
+        let (psi, rho, nk, cm, fdi, v, nd, recp) = {
+            // Witness psi
+            let psi = assign_free_advice(
+                layouter.namespace(|| "witness psi"),
+                config.advices[0],
+                self.psi,
+            )?;
+            // Witness rho
+            let rho = assign_free_advice(
+                layouter.namespace(|| "witness rho"),
+                config.advices[0],
+                self.rho.map(|rho| rho.into_inner()),
+            )?;
+            // Witness nk.
+            let nk = assign_free_advice(
+                layouter.namespace(|| "witness nk"),
+                config.advices[0],
+                self.nk.map(|nk| nk.inner()),
+            )?;
+
+            // Witness cm
+            let cm = Point::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "witness cm"),
+                self.cm.as_ref().map(|cm| cm.inner().to_affine()),
+            )?;
+
+            // Witness fdi.
+            let fdi = assign_free_advice(
+                layouter.namespace(|| "witness fdi"),
+                config.advices[0],
+                self.fdi,
+            )?;
+            // Witness v.
+            let v = assign_free_advice(
+                layouter.namespace(|| "witness v"),
+                config.advices[0],
+                self.v,
+            )?;
+            // Witness nd.
+            let nd = assign_free_advice(
+                layouter.namespace(|| "witness nd"),
+                config.advices[0],
+                self.nd,
+            )?;
+            // Witness recp.
+            let recp = assign_free_advice(
+                layouter.namespace(|| "witness recp"),
+                config.advices[0],
+                self.recp,
+            )?;
+
+            (psi, rho, nk, cm, fdi, v, nd, recp)
+        };
+
+        // 2. Merkle path validity check (GENESIS DISTRIBUTION INCLUSION).
+        let root = {
+            let path = self
+                .path
+                .map(|typed_path| typed_path.map(|node| node.inner()));
+            let merkle_inputs = MerklePath::construct(
+                [config.merkle_chip()],
+                HashDomains::MerkleCrh,
+                self.pos,
+                path,
+            );
+            let leaf = cm.extract_p().inner().clone();
+            merkle_inputs.calculate_root(layouter.namespace(|| "Merkle path"), leaf)?
+        };
+
+        // 3. Nullifier integrity: constraint that hkdf nullifier is equal to known with public and private inputs
+        let nf = {
+            let nf_old = gadget::derive_nullifier(
+                layouter.namespace(|| "nf = DeriveNullifier_nk(rho,psi,m)"),
+                config.poseidon_chip(),
+                config.add_chip(),
+                ecc_chip.clone(),
+                rho.clone(),
+                &psi,
+                &cm,
+                nk,
+            )?;
+
+            // Constrain nf to equal public input
+            layouter.constrain_instance(nf_old.inner().cell(), config.primary, NF)?;
+            nf_old
+        };
+
+        // q: have we constrained `leaf` is derived from provided values?
+        // q: have we constrained `leaf` is on tree with known instance `root`.
+        // q: have we constrained `nk` is hash-derived from the provided values?
+        // q: have we constrained the pairing of `(esk,epk)`?
+
+        Ok(())
+    }
+}
+
+/// Public inputs to the Orchard Action circuit.
+#[derive(Clone, Debug)]
+pub struct Instance {
+    // pub(crate) cv_net: ValueCommitment,
+    pub(crate) anchor: Anchor,
+    pub(crate) nf_old: Nullifier,
+    pub(crate) cmx: ExtractedNoteCommitment,
+    // pub(crate) rk: VerificationKey<SpendAuth>,
+    // pub(crate) enable_spend: bool,
+    // pub(crate) enable_output: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ff::{Field, PrimeField};
+    use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp as Secp256k1Fp, Fq as Secp256k1Fq};
+    use halo2_proofs::{dev::MockProver, plonk::Circuit};
+    use pasta_curves::pallas;
+    use rand::rngs::OsRng;
+    use secp256k1::{PublicKey, Secp256k1, SecretKey};
+
+    use crate::{
+        keys::{EligibleSk, NullifierDerivingKey},
+        note::{NoteCommitment, Rho},
+        tree::MerkleHashHeadstash,
+        value::{NoteDenom, NoteValue},
+    };
+
+    /// Degree for testing (2^18 = 262,144 rows for foreign field ops)
+    const K: u32 = 18;
+
+    /// Helper to generate a valid circuit instance using Note template
+    fn generate_valid_circuit() -> HeadstashCircuit {
+        use crate::{
+            address::RecpAddr,
+            keys::{EligiblePk, EligibleSk},
+            note::{Note, RandomSeed},
+        };
+        use cosmwasm_std::{testing::mock_dependencies, Api};
+        use ff::FromUniformBytes;
+
+        // 1. Generate secp256k1 key pair (esk, epk)
+        let e_sk_bytes = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+            0x1d, 0x1e, 0x1f, 0x20,
+        ];
+
+        let e_sk_secp = SecretKey::from_slice(&e_sk_bytes).expect("valid secret key");
+        let esk = EligibleSk::from(e_sk_secp);
+
+        // 2. Generate randomness (rho, rseed, psi)
+        let mut randomness_64 = [0; 64];
+        blake3::Hasher::new()
+            .update(&[0u8; 32]) // deterministic for testing
+            .finalize_xof()
+            .fill(&mut randomness_64);
+
+        let rho =
+            Rho::from_bytes(&pallas::Base::from_uniform_bytes(&randomness_64).to_repr()).unwrap();
+        let rseed = RandomSeed::from_bytes([1u8; 32], &rho).unwrap();
+
+        // 3. Note parameters
+        let v = NoteValue::from_raw(100);
+        let nd = NoteDenom::new_for_proof("TEST_DENOM");
+        let fdi = 0u64;
+
+        // 4. Create recp address
+        let mock_deps = mock_dependencies();
+        let recp = RecpAddr::try_from(
+            mock_deps
+                .api
+                .addr_canonicalize(
+                    &mock_deps
+                        .api
+                        .addr_make(&format!("test{}", hex::encode(rho.into_inner().to_repr())))
+                        .to_string(),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+
+        // 5. Create Note - this derives nk, cm, nullifier automatically
+        let note = Note::from_parts(recp, v, nd, fdi, esk, rho, rseed).unwrap();
+
+        // 6. Extract secp256k1 coordinates for circuit
+        let secp = Secp256k1::new();
+        let e_pk_secp = PublicKey::from_secret_key(&secp, &e_sk_secp);
+        let e_pk_bytes = e_pk_secp.serialize_uncompressed();
+        let e_pk_x_bytes: [u8; 32] = e_pk_bytes[1..33].try_into().unwrap();
+        let e_pk_y_bytes: [u8; 32] = e_pk_bytes[33..65].try_into().unwrap();
+
+        let e_sk_fq = Secp256k1Fq::from_repr(e_sk_bytes).expect("valid Fq");
+        let e_pk_x = Secp256k1Fp::from_repr(e_pk_x_bytes).expect("valid Fp");
+        let e_pk_y = Secp256k1Fp::from_repr(e_pk_y_bytes).expect("valid Fp");
+
+        // 7. Derive nk using HKDF
+        let nk = NullifierDerivingKey::derive_from(esk, rho);
+
+        let mut sin_root = pallas::Base::from_repr(
+            hex::decode("8638de243d78472519d9d163872694dcc7343658a0199e3a67b390c1bdbc7300")
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        )
+        .expect("field conversion error");
+
+        // let path = MerkleHashHeadstash::from(crate::tree::MerkleHashHeadstash(sin_root));
+        // 8. Create dummy Merkle path (for testing)
+        let path = [MerkleHashHeadstash::from_cmx(
+            &ExtractedNoteCommitment::from_bytes(&sin_root.to_repr())
+                .expect("sinsemilla headstash tree root derivation error"),
+        ); MERKLE_DEPTH_HEADSTASH];
+        let pos = 0u32;
+
+        HeadstashCircuit {
+            path: Value::known(path),
+            pos: Value::known(pos),
+            psi: Value::known(note.rseed().psi(&rho)),
+            rho: Value::known(rho),
+            cm: Value::known(note.commitment()),
+            esk: Value::known(e_sk_fq),
+            e_pk_x: Value::known(e_pk_x),
+            e_pk_y: Value::known(e_pk_y),
+            nk: Value::known(nk),
+            fdi: Value::known(pallas::Base::from(fdi)),
+            v: Value::known(v.to_fp_pallas()),
+            nd: Value::known(crate::spec::nd_to_fp(&nd)),
+            recp: Value::known(note.recp().to_pallas()),
+        }
+    }
+
+    #[test]
+    fn test_valid_headstash_circuit() {
+        let circuit = generate_valid_circuit();
+        println!("✓ Generated HeadstashCircuit, running MockProver...");
+        // Run MockProver
+        let prover = MockProver::run(K, &circuit, vec![vec![]]).expect("prover should run");
+
+        // Verify
+        match prover.verify() {
+            Ok(()) => println!("✓ Valid Headstash circuit verified successfully"),
+            Err(e) => {
+                eprintln!("✗ Circuit verification failed:");
+                for err in e.iter() {
+                    eprintln!("  - {:1?}", err);
+                }
+                panic!("Valid circuit should verify");
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "should verify")]
+    fn test_invalid_key_pairing_fails() {
+        let mut circuit = generate_valid_circuit();
+
+        // Tamper with public key
+        let secp = Secp256k1::new();
+        let wrong_sk = SecretKey::from_byte_array([42u8; 32]).unwrap();
+        let wrong_pk = PublicKey::from_secret_key(&secp, &wrong_sk);
+
+        let wrong_pk_bytes = wrong_pk.serialize_uncompressed();
+        let wrong_pk_x_bytes: [u8; 32] = wrong_pk_bytes[1..33].try_into().unwrap();
+        let wrong_pk_y_bytes: [u8; 32] = wrong_pk_bytes[33..65].try_into().unwrap();
+
+        circuit.e_pk_x = Value::known(Secp256k1Fp::from_repr(wrong_pk_x_bytes).unwrap());
+        circuit.e_pk_y = Value::known(Secp256k1Fp::from_repr(wrong_pk_y_bytes).unwrap());
+
+        let prover = MockProver::run(K, &circuit, vec![vec![]]).expect("prover should run");
+        prover.verify().expect("should verify");
+    }
+
+    #[test]
+    fn test_circuit_without_witnesses() {
+        let circuit = generate_valid_circuit();
+        let circuit_no_witnesses = circuit.without_witnesses();
+
+        let prover = MockProver::run(K, &circuit_no_witnesses, vec![vec![]]);
+        assert!(
+            prover.is_ok(),
+            "Circuit without witnesses should be constructable"
+        );
+    }
+
+    #[test]
+    fn test_circuit_configuration() {
+        use halo2_proofs::plonk::ConstraintSystem;
+        let mut cs = ConstraintSystem::<pallas::Base>::default();
+        let config = HeadstashCircuit::configure(&mut cs);
+
+        println!("Circuit configuration:");
+        println!("  - Advice columns: {}", config.advices.len());
+        assert_eq!(config.advices.len(), 10, "Should have 10 advice columns");
+    }
+
+    #[test]
+    fn test_circuit_cost() {
+        use halo2_proofs::dev::CircuitCost;
+        use pasta_curves::vesta;
+
+        let circuit = generate_valid_circuit();
+        let cost = CircuitCost::<vesta::Point, _>::measure(K, &circuit);
+
+        println!("\nCircuit cost:");
+        println!("  Degree: 2^{} = {} rows", K, 1 << K);
+        // println!("  Proof size (1 instance): {} bytes", cost.proof_size(1));
+
+        let proof_size = usize::from(cost.proof_size(1));
+        assert!(proof_size > 0, "Proof size should be non-zero");
+    }
+}
+
+
+# Spec: Zk-Airdrop Claiming
+>
+> **GOAL: Allow eligible headstash members to use zk-proofs to claim partial amounts of their rewards over time.**
+
+## Context
+
+Our current airdrop framework, `The Headstash Contract` powers distribution by mapping ECDSA addresses not native to the chain (ETH,SOL,etc) as eligible to claim a specific list of tokens. In order to claim, users need to verify they are owners of any eligible addresses secret key `esk`. This is done by generating a signature with `esk`, from a message that includes the address native to the chain that the user will use to broadcast the message to claim their allocations `recp`.
+
+```math
+\sigma = \text{Sign}_{\text{elig}_{\text{sk}}}\big( H(m) \big), \quad \text{where } \text{recp} \in m
+```
+
+**This creates an on-chain association between the eligible account `epk`, and the claiming address `recp`, which we want to prevent.**
+
+In order to prevent this association between verifying ownership & claiming tokens, there are 3 major obstacles:
+
+### Q: How Does Someone Prove They Own An Eligible Wallet Without Revealing Their Signature?
+
+**A: proof of ownership**: A circuit can provide certainty that an individual knows the private key paired with their public key of an eligible account, by use of the deterministic capabilities of a hash-based key deriving function (hkdf).
+
+### Q: How can someone prevent leaking where their claimed funds end up, if the total amount & distributions allocated are public?
+
+**A: Fixed Denomination Notes**: notes function as private UTXOs (Unspent Transaction Outputs) that represent claims to portions of the airdropped tokens. Each note contains sensitive data that must remain private, except for certain public components used for verification and transaction processing.
+
+A predetermined set of notes for users are generated based on initial allocations, classified by fixed-denomination amounts. Partial claims of genesis allocations are then possible, and allows eligble claimers to designate unique addresses for receiving allocations over a span of time rather than immediately.
+
+### Q: How are users prevented from claiming more funds then they are allocated?
+
+**A:nullifiers**: Deriving from private data within a note, collision-resistant nullifiers paired with note-commitments will prevent notes from being double-spent.note nullifiers derive from completely deterministic sources, such that it is impossible to alter one of the PRF inputs, that will result in the ability to reuse a note that has been spent.
+
+> **Notes About Design**
+> These obstacles are not unique to our requirements, and have been solved concretely by multiple teams, one for example is the zcash's sprout, sapling, and orchard protocols. We are designing our protocol for private airdrops so that we can leverage a large majority of the work done by the cypherpunk community, however there are some discrepancies we need to design around. Specifically:
+>
+> **1. Actions will be sending tokens to destination on a transparent ledger**
+> When someone is claiming, they will be revealing how much and to whom the claimed tokens are going to *(along with the other crucial components like nullifiers & note commitments)*.
+>
+> **2. Viewing key magic is simplified for this iteration**
+> We do not use diversifiers, viewing-keys & spending-keys as defined in multiple Zcash protocols, which is how note-commitments and nullifiers are
+> derived. We instead implement a simplified version that satisfies our requirements, without sacraficing any of the privacy
+> guarantees that are available with use of halo2 circuits.
+>
+## Requirements
+
+- **Keys: Self-Custody Key Management Systems**:
+  - a. Reproducible hash-based key derivation: generate & derive a key from use of an eligible key pair with entropy, both in circuit and out of circuit tooling.
+  - b. key rotation/authentication/backup-recovery system
+- **Private Proof Of Ownership: Hkdf + key pairing**
+  - a. constrain a derived key is know from given inputs for proof of ownership
+  - b. constrain a key pair (epk,esk)  are paired by divison with G to be an expected constant in the circuit used as element throughout.
+
+- **Sinsemilla Merkle Trees - hash & commit domains:** ensures inclusion ins specific headstash distribution instance, and in future can implement respendable note-commitments
+- **Nullifier & Note Commitments: Effecient & Private Double Spend Prevention**
+- **On-Chain Smart Contract:** Application layer state machine for spent-nullifiers list, token mint & distribution list
+- **Verifiable Service in TEE:** Certainty in transport & offchain runtime
+- **Randomness Generators:** Middleware for generating or acessing randomness oracles during proof generation.
+- **Metamask Snap Support:** Metamask plugin for deterministic proof-input preparation & generation wallet API.
+
+___
+
+## Hashes,Keys,Fields,Curves
+
+### Keys
+
+We have 3 main types of keys involved in this process.
+
+1. **Eligible Keys:**  *the keys that has a public allocation set for them, and is what we must keep any signature or hash derived from private, in order to retain privacy.*
+2. **Redemption Keys:** *the keys that will be recieving the public allocations claimed by the eligible keys*
+3. **HKDF keys:** *the keys that are deterministically derived from private inputs of a circuit*
+
+> HKDF keys are specifically used to make our proof of ownership step effecient & feasable in-circuit.
+
+| # | Key type         | Curve used | Primary crate | Public / Private usage | Typical Rust type (example) | Key‑derivation notes |
+|---|------------------|------------|--------------|------------------------|-----------------------------|----------------------|
+| 1 | **Eligible Key** | `secp256k1`  | `k256` (or `secp256k1`) | Public key is **published** in the allocation; **private key + any signatures / hashes must stay secret** to preserve privacy. | `k256::ecdsa::SigningKey` / `k256::ecdsa::VerifyingKey` | - |
+| 2 | **Redemption Key** | secp256k1 | `k256` (or `secp256k1`) | Public key is **the recp** of the claimed allocation; private key is used only to sign the redemption proof. | Same as Eligible (`SigningKey`/`VerifyingKey`) | May be pre‑generated or created on‑the‑fly; no HKDF involved. |
+| 3 | **HKDF‑derived Key** |  `pallas` | `pasta-curves` | Private key **only**; the corresponding public key is *not* exposed – it is used inside the circuit for proof‑of‑ownership. |   | Deterministically derived via posiedon based HKDF from circuit‑private inputs (e.g., a seed, a note commitment, a nullifier). The derived scalar is mapped to a pallas point using the crate’s `generator` |
+
+> NOTE: zcash orchard protocol implements key derivation for viewing, authorization, and privacy retention purposes. Our scope does not require the use of viewing or authorization keys, as the end results of tokens claimed will be public. A large portion of the modifications from the orchard protocol altering how note-commitments & nullifiers are derived, as they rely heavily on the use of the key structure used by zcash orchard protocol.
+
+### Curves
+
+  Our circuits primary curve is Pallas. We must mask forien curves field elements as expected field elements of our circuit native curve, and use Foreign Field Arithmetic aware logic.
+
+| Chip     | Field       | Curve|   Value | |
+|----------|-------------|--------------------------------------|--------------------------------------|------------|
+| **Sinsemilla**| **Base(`Fp`)** | **Pallas**  | `p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001`|  |
+| **Sinsemilla**| **Scalar(`Fq`)** | **Pallas**  | `q = 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001`|  |
+| **Sinsemilla**| **Point(`Ep`)** | **Pallas**  |  - |  |
+| **Hkdf_Fp**   | **Base(`Fp`)** |**Secp256k1**  | `p = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f`|  |
+| **Hkdf_Fq**| **Scalar(`Fq`)** | **Secp256k1**  |`q = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141`|  |
+
+## Hashes: Nullifier Key Generation Via HKDF
+
+- *every note must have a way to derive a unique identifier that proves the note has been spent, without revealing which note it was or linking multiple spends together.*
+
+Two core business logic requirement in the headstash circuit are to have a feasable way to verify that the owner of the `epk` is authorizing the spend of a specific note in a headstash instance, and prevent double-spending of headstash allocations. Normal ECDSA verification for field curves are computationally heavy in circuit, & generate extremely large proof sizes not compatible with on-chain gas limits & a nice UX.
+
+When a note is is being spent, the owner generates a nullifier & note commitment, using carefully structured derivation process that results in HKDF generated key `(hkdf_pk, hkdf_sk)` seeded from private input, powering the key separation, verifiablility, & cryptographic binding of the nullifier and note commitment.
+**Users end up proving they know the key pair `esk,epk` by providing the nullifier as a public input into the circuit when generating a proof.**This lets the circuit use the known curve equation & generator points to constrain that the two keys are either mathematically paired together or not, without ever needing to reveal these values, since constraint the generation point of secp256k1 to the two keys for an expected known value.
+
+> ### **To prevent double-spending of headstash allocations, a nullifier must be:**
+>
+> - **unique per note**
+> - **unlinkable to the owner’s address**
+> - **computable only by the note owner**
+> - **resistant to tampering, especially against attacks where an adversary might attempt to redirect funds during transmission.**
+
+### Derivation
+
+**Headstashes derive a keypair `(hkdf_sk,hkdf_pk)` that is on the pallas curve from the `esk`,*along with other private inputs*.** Specifically, we inlcude `esk`,`leaf`,`recp`,and a user PRF-derived valus `psi` in the HKDF input, cryptographically bind the nullifier to a specific fund destination, where only the owner has discrection in deciding who can derive the note from it since it depends on their private note_secret and the associated key of the `epk`.
+
+*This defends against a subtle but serious class of attacks man-in-the-middle modifications where an adversary intercepts a transaction and attempts to redirect funds to a different address, while reusing the same proof structure. Because the nullifier depends on the exact allocation being spent, any such alteration would result in a different derived `hkdf_pk`, causing the proof to fail verification.*
+
+- a. hash the `(hkdf_pk,hkdf_sk)` with `rho` via Posiedon
+- b. add hash output to psi
+- c. Multiply scalar by NullifierK
+
+### Hashing Functions
+
+#### Posiedon
+
+For effecieny in-circuit hashing, we are using Posiedon as the hkdf hashing algorithm. Poseidon is a ZK-friendly hash function used for nullifier derivation, note commitments.
+
+q: when exactly are we using the posiedon function
+
+#### Blake3
+
+For effecieny out of circuit, used as abci-like interface between token-denominations and inputs for `nd` into the circuit. Extremely , and we specifically drop 3 bits from the hash when describing an input, since the hashed values is a public known value we do not worry about the impact of collison resisance that occurs, and just specificy protocols to keep a map dedicated to the original values and their trimmed-hash representations.
+
+q: when exactly are we using the blake3 function
+
+### Derivation Inputs
+
+| Components   | Meaning                         | Type                                 | Public / Private / Constant / Output | Derivation |Use |
+|----------|---------------------------------|--------------------------------------|--------------------------------------|------------|--|
+| `DST_HEADSTASH`|  genesis tree dst hash  | | **Constant**                         | constant in library  | Genesis Trees |
+| `DST_HKDF`|  nullififer input dst hash   | | **Constant**                         | constant in library  |  hkdf-Keypair |
+| `SECP256_GENERATOR` |  generator point for secp256k1 curve  | | **Constant** | constant in library  |  hkdf-Keypair |
+| `root`   | Genesis Distribution Tree Root  | `u64`                                | **Constant**                          | *sinsemilla::HashDomain*  |
+| `rho`    |                                 |                                      | **Private**                          |  generated by user |
+| `rseed`  |                                 |                                      | **Private**                           |   generated by user ||
+| `psi`    | Note Randomness                 | ` `                                  | **Private**                          |generated by user |Nullifier,hkdf-Keypair|
+| `esk`| Eligible secret key             | `bytes[32]`                          | **Private**                          | 3x 88bit limbs | Key-Pairing |
+| `epk`| Eligible public key             | `bytes[32]`                          | **Private**                          | 3x 88bit limbs | Key-Pairing |
+| `fdi`    | Fixed Denomination Index        | `u64`                                | **Private**                          | *fully padded u64* | Nullifier |
+| `v`      | Note Value                      | `NoteValue(u64)`                     | **Public**                           | *fully padded u64* | Nullifier |
+| `nd`     | Note Denomination               | `NoteDenom([u8; <128])`              | **Public**                           | **blake3 Hash + top 3 bits** ||
+| `leaf`   | Note Leaf                       | `bytes[32]`                          | **Private**                          | *sinsemilla::HashDomain* |
+| `recp`   | Recipient Address               | `bytes[32]`                          | **Public**                           |  |
+
+> in order to derive `psi` & `rcm`, we have a `rseed` that is a randomness source in a PRF, that expends into each.
+
+## Sinsemilla Merkle Trees: Inclusion Constraints
+
+Sinsemilla is a ZK-friendly hash function designed specifically for Pallas/Vesta curves. We use it for both genesis distribution tree (HashDomain) and note commitment tree (CommitDomain).
+
+### 1. Genesis Distribution Tree: `HashDomain`
+
+**This is the static, starting state of the headstash before any claims happen.** Its purpose is to allow a user to prove a specific address `epk` is how we mesh key ownership constraints with airdrop instance eligibility, without revealing which specific address or note being claimed exactly is. Each leaf is a commitment to the `HashDomain`,that is public & binding an eligible recipients balance for a single token balance, so we can derive the expected hash result in circuit.
+
+```math
+\begin{array}{lcl}
+ \mathsf{m}=\text{Leaf}_{i,j}&= H_{\text{DST\_HKDF}}{\text{leaf}}\!\Bigl(
+        \underbrace{\text{elig\_pk}_{i}}_{\text{public address}}\;\parallel\;
+        \underbrace{\text{nd}_{j}}_{\text{token identifier}}\;\parallel\;
+        \underbrace{\text{v}_{i,j}}_{\text{amount for addr}_{i}}\;\parallel\;
+        \underbrace{\text{fdi}_{j}}_{\text{fixed\_denom\_index}}\Bigr)  
+\end{array}
+```
+
+```math
+\begin{aligned}
+
+\text{Root}
+   &= H_{\text{root}}\!\Bigl(
+        \{\,\text{Leaf}_{i,j}\mid
+          \text{addr}_{i}\in\text{Elig},
+          \text{nd}_{j}\in\mathcal{T}\,\}
+      \Bigr)
+\end{aligned}
+```
+
+<center>
+
+| Symbol | Meaning |
+|--------|---------|
+| $$\text{Elig}$$ | Set of all public addresses receiving tokens |
+| $$\mathcal{T}$$ | Set of token names being distributed |
+| $$\text{elig\_pk}_{i}$$ | The *i*‑th address in `Elig`, expected as an array of 3 88 bit limbs |
+| $$\text{nd}_{j}$$ | The *j*‑th token $\mathcal{T}$ hashed using a note denomination separation tag curve |
+| $$\text{v}_{i,j}$$ | Amount of token *j* sent to address *i* |
+| $$\text{fdi}_{j}$$ | Fixed denomination index for token *j*, always kept private and never revealed |
+| $$H_{\text{DST\_HKDF}}{\text{leaf}}$$ | Hash function that creates a leaf from the concatenated fields |
+| $$H_{\text{root}}$$ | (Merkle‑tree) hash that aggregates all leaves into the root |
+
+</center>
+
+### Tree Genesis: Leaf Input Preparation
+
+A leaf is computed using the sinsemilla hashing function with the following input specification. Notice that we must perform some preparation before input into the hashing sequence expected, so that we can have optimized proofs:
+
+<center>
+
+| Components   | Meaning                         | Type                                 | Public / Private / Constant / Output | Derivation |
+|----------|---------------------------------|--------------------------------------|--------------------------------------|------------|
+| `DST_HKDF`      |    |                                      | **Constant**                         |   |
+| `esk`| Eligible secret key             | `bytes[32]`                          | **Private**                          |  |
+| `fdi`    | Fixed Denomination Index        | `u64`                                | **Private**                          | *fully padded u64* |
+| `v`      | Note Value                      | `NoteValue(u64)`                     | **Public**                           | *fully padded u64* |
+| `nd`     | Note Denomination               | `NoteDenom([u8; <128])`              | **Public**                           | *blake3 Hash + top 3 bits |
+| `psi`    | Note Randomness                 | ` `                                  | **Private**                          ||
+
+</center>
+
+> - **Denomination hashing** – Since the length of a denomination is unknown, we hash `nd` with **blake3** to obtain a 32‑byte digest. *Sinsemilla* expects a
+> 253‑bit domain, so we simply clear the top three bits of the digest. The denomination is public, so smart contracts can map `nd` → `blake3(nd) &
+> 0x1FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF` in O(1) time.
+>
+> - **Padding for `v` and `fdi`** – Both values are `u64` (max 160 bits when concatenated). For table look‑ups we left‑pad each to the byte length required by the hashDomain of Sinsemilla (e.g., 32 bytes). This ensures the inputs line up with the fixed‑size field elements used inside the circuit.
+>
+> - **`epk` handling for Sinsemilla compatibility** – `epk` is a 32‑byte public‑key representation. The value is interpreted as a set of foriegn field element limbs; since we are focused on secp256k1 curve, we can expect 3 limbs of 88 bits to always fit within the pallas curve, to then allow reduction for each  88bit string for linear operations within the curve structure.
+> - **The Full key is required in‑circuit:** Even though `epk` is private for the prover, the circuit must receive the entire key as we need to enforce the relationship of the
+> `hkd_sk` being derived from a `esk` thyat is paired with an `epk`. This guarantees that the HKDF‑derived key used in the protocol is indeed tied to
+> the secret key `esk`.
+<!-- >q: can we use a point definition for the x & y of the keypair for a single input into the circuit and more clean decomposition? -->
+
+*This is how we enable non-interactive instances of headstash deployments, and can be optimized to bring more composability to these genesis distributions*
+
+#### Circuit Inputs
+
+```math
+\begin{array}{lcl}
+
+\textbf{Private witnesses} &
+\begin{cases}
+\mathsf{elig\_sk}\in\mathbb{F}_{\ell}      &\text{(secret scalar, 3x88bit limbs for pallas field compatibility)}\\[2pt]
+\mathsf{elig\_pk}= (X_{\mathsf{pk}},Y_{\mathsf{pk}})\in\mathbb{F}_{p}^{\,2}&\text{(corresponding public point)}\\
+\mathsf{leaf}= (X_{\mathsf{pk}},Y_{\mathsf{pk}})\in\mathbb{F}_{p}^{\,2}&\text{(specific leaf hash of note owner knows)}\\
+\mathsf{fdi}      \in \mathbb{F}_p      &\text{(fully padded u64 of fixed denomination index }fdi\text{)}\\[2pt]
+\mathsf{hkdf\_sk}  \in \{0,1\}^{256}   &\text{(32‑byte secret-key of Pallas curve key derived from eligible secret key)}\\[2pt]
+\mathsf{{\psi }}        \in \{0,1\}^{256}       &:= \text{PRF}_{\text{PSI}}\!\bigl(\mathsf{rseed},\,\rho\bigr) \in \mathbb{F}_p,\\[4pt]
+\mathsf{rcm} &:= \text{PRF}_{\text{RCM}}\!\bigl(\mathsf{rseed},\,\rho\bigr) \in \mathbb{F}_p,\\[6pt]
+\end{cases}
+\end{array}
+```
+
+```math
+\begin{array}{lcl}
+\\[10pt]
+\textbf{Public inputs} &
+\begin{cases}
+\mathsf{v}\in \mathbb{F}_p      &\text{(fully padded u64 of value being spent in note)}\\[2pt]
+\mathsf{H(nd\_{raw})}\in \mathbb{F}_p      &\text{(Posiedon Hash of notes token denomination }nd\text{)}\\[2pt]
+% \mathsf{recp}^{\ast}\in \mathbb{F}_p      &\text{(Posiedon Hash of recipient of notes token }nd\text{)}\\[2pt]
+\end{cases}
+\end{array}
+```
+
+```math
+\begin{array}{lcl}
+\\[10pt]
+\textbf{Constants} &
+\begin{cases}
+\mathtt{DST}_{\!{Nullifier}}= \texttt{DST\_NULL}&\text{(domain‑separation tag)}\\[2pt]
+\mathtt{DST}_{\!{Hkdf}}= \texttt{DST\_HKDF}&\text{(domain‑separation tag)}\\[2pt]
+\mathtt{DST}_{\!{Sinsemilla}}= \texttt{DST\_SIN}&\text{(domain‑separation tag)}\\[2pt]
+\mathbb{F}_p &\text{base field of the Pallas curve}\\[2pt]
+G_{secp256k1}   = (G_{x},G_{y})                     &\text{(generator point secp256k1)}\\
+\ell = \texttt{CURVE\_ORDER}            &\text{(sub‑group order)}
+\end{cases}
+\end{array}
+```
+
+```math
+\begin{array}{lcl}
+\textbf{Derived} &
+\begin{cases}
+ \mathsf{cm}\;:=\;\text{Poseidon}_{\mathbb{F}_p}\!\bigl(\mathsf{recp},\,v,\,\rho,\,\psi,\,\mathsf{rcm}\bigr)\\[2pt]
+ \mathsf{recp}\;:=\; \\[2pt]
+\end{cases}
+\end{array}
+```
+
+```rust
+pub struct PrivateWitnesses {
+    esk: secp256k1::Fq,
+    epk: secp256k1::Affine,
+    fdi: u64,
+    merkle_path: [pallas::Base; 2],
+    rho: pallas::Base,
+    psi: pallas::Base,
+}
+
+pub struct PublicInputs {
+    nul: pallas::Base,
+    nd: pallas::Base,
+    v: pallas::Base,
+    recp: pallas::Base,
+}
+pub struct Constants {
+     genesis_root: pallas::Base, 
+     sinsemilla_dst: pallas::Base,
+     secp_dst: pallas::Base,
+     hkdf_dst: pallas::Base,      // pallas point for hash of ownerships domain separation tag
+     null_dst: pallas::Base,      // note nullifier domain separation tag
+}
+// Total: 5 public inputs
+// Total: 7 private witnesses
+```
+
+___
+
+> <center>  DEMO: our script used to generate this is invokable via the command:
+>
+> `cargo run --bin create_merkle -- data/sinsemilla_json.json`</center>
+
+### note-commitments: futureproof system
+
+Note Commitments `cm` are also is disclosed publicly during claiming. They are derived from the private and public inputs of a note, allowing the origin of the claiming address to be private. note commitments are derived from both deterministic and non-deterministic inputs of a note, as we do not use note-commitments for preventing double spends (this is what nullifiers are for). For our use, this note commitment tree can be expand on to rely on more, as for things such as true utxo function of headstash notes and other future iterations.
+>
+> q: how can we actually implement a note-commitment tree given our specification, and taking into account possible discrepencies with
+> note-commitment generation timing between multiple parties?\
+> a: user maintains their own note-commitment tree, and requires the network to work together to allow users to keep track of notes that have been spent to allocate the value to them. This is only used when genesis notes are split into sub-notes, which is not in spec for the inital MVP, but will be a useful iteration for true private out of band notes
+
+> **q: do we damage the blinding of the rest of the inputs to the hashing function due to some being public and some being private?**
+>
+> a: no! thanks to the hardness of hashing functions, its unfeasable to retroactively derive the private inputs given all of the public inputs and the output hash.
+
+## Foreign Field Arithmetic (FFA)
+
+  Our circuit operates natively over the **Pallas base field** (`~255 bits`), but for the headstash contracts we need to verify operations on **secp256k1** keys, which use fields of size `~256 bits`. Since secp256k1 field elements **do not fit** natively in the Pallas field, we use **Chinese Remainder Theorem (CRT) representation** with limb decomposition.
+
+### Two-Level Representation
+
+Each secp256k1 field element is represented using a **dual representation**:
+
+#### 1. **Arithmetic Representation (88-bit limbs, each making use of 9x 10-bit decomposition for foreign field arithmetic )**
+
+  For field arithmetic (addition, multiplication, etc.), we decompose 256-bit values into **3 limbs of 88 bits each**:
+
+  ```value = limb[0] + limb[1] *2^88 + limb[2]* 2^176```
+
+  **Why 88 bits?**
+
+- `3 × 88 = 264 bits > 256 bits` (sufficient to represent secp256k1 field elements)
+- 88 bits fits comfortably in Pallas field capacity (254 bits)
+- Allows efficient carry handling during multi-precision arithmetic
+
+  **Arithmetic operations** (add, sub, mul, div) are performed on these 88-bit limbs using standard multi-precision algorithms with carry propagation.
+
+#### 2. **Range Check Representation (10-bit chunks)**
+
+  To **constrain** that each limb is actually < 2^88, we use **lookup range checks**. Since our circuit has an existing **10-bit lookup table** (from Sinsemilla, with K=10), each 88-bit limb is **decomposed
+  into 9 × 10-bit chunks** for range checking:
+
+  limb = chunk[0] + chunk[1] *2^10 + chunk[2]* 2^20 + ... + chunk[8] * 2^80
+
+  **Why 10-bit chunks?**
+
+- Reuses the existing Sinsemilla lookup table (`table_idx` column with 2^10 entries)
+- Avoids adding a new lookup argument (minimal proof overhead)
+- 9 chunks × 10 bits = 90 bits > 88 bits (sufficient coverage)
+
+  **Important:** The 10-bit decomposition is **only used for range checks**, not for arithmetic operations.
+
+#### CRT Integer Representation
+
+Each foreign field element is represented as a `ProperCrtUint<F>` where `F = Pallas::Base`:
+
+```rust
+pub struct ProperCrtUint<F> {
+    // Limb representation: value = Σ(limb[i] * 2^(limb_bits * i))
+    pub truncation: OverflowInteger<F>,
+    // Native field representation: value mod modulus::<F>()
+    pub native: AssignedValue<F>,
+    // Maximum limb value
+    pub max_limb_bits: usize,
+}
+```
+
+**How It Works:**
+
+1. Limb decomposition (for arithmetic):
+   - A 256-bit secp256k1 field element is split into 3 limbs of 88 bits
+   - Arithmetic operations (add, mul, etc.) work on these 88-bit limbs in 9x 10x bits
+2. Chunk decomposition (for range checks):
+   - Each 88-bit limb is further decomposed into 9 chunks of 10 bits
+   - Each 10-bit chunk is looked up in the existing Sinsemilla table
+   - This constrains each limb to be < 2^90 (which implies < 2^88)
+3. Native reduction:
+   - The value is also stored as value mod Pallas::Fq in native representation
+   - This enables efficient equality checks without limb-by-limb comparison
+4. Dual representation consistency:
+   - Both representations are constrained to be equivalent via:
+   `native ≡ limb[0] + limb[1] *2^88 + limb[2]* 2^176 (mod Pallas::Fq)`
+
+#### Constraining Foreign Fields in Circuit
+
+**Operation Flow:**
+
+1. Load foreign field element as witness:\
+   `FpChip::load_private( secp_value) → ProperCrtUint<Pallas::Base>`
+
+2. **Perform operations in CRT representation:**
+   - Addition: Add limbs element-wise, handle overflow via carry propagation
+   - Multiplication: Multiply limbs using multi-precision algorithm, reduce modulo secp256k1 prime
+   - Division: Compute modular inverse, multiply
+   - All operations maintain the 88-bit limb structure
+3. **Range check all limbs:**
+   - Decomposes each 88-bit limb into 9 × 10-bit chunks
+   - Looks up each chunk in the Sinsemilla table (K=10)
+   - Constrains: limb = chunk[0] + chunk[1]*2^10 + ... + chunk[8]*2^80
+   - This ensures limb < 2^90 (sufficient since 2^90 > 2^88)
+4. **Verify CRT consistency**:
+   - Constrain native value matches limb decomposition:
+   `native ≡ Σ(limb[i] *2^(88*i)) (mod Pallas::Fq)`
+
+**Critical Constraints:**
+
+1. **Limb Bounds:** Each limb must be < 2^88 (enforced by RangeChip lookups)
+2. **Modular Reduction:** After operations, values must be reduced mod foreign_prime
+3. **Native Consistency:** `native ≡ Σ limbs (mod Pallas::Fq)`
+4. **Carry Propagation:** Multi-limb arithmetic must handle carries correctly
+
+<!-- ## Circuit: User Interface
+**Public Inputs (exposed to verifier):**
+**Constants (hardwired into circuit):**
+**Private Witnesses (only prover knows):**
+**Derived Values (computed in-circuit):** -->
+
+```rust
+let m = poseidon_hash(dst_hkdf,[recp, v, nd, fdi,psi]); 
+let pallas_sk = poseidon_hash([DST_HKDF, esk_native, m]);
+let pallas_pk = pallas_sk * G_pallas;
+```
+
+### In-Circuit Constraint Flow
+
+**Step 1: Secp256k1 Key Pairing (Foreign Field)**
+**Step 2: HKDF Derivation (Native - In-Circuit!)**
+**Step 3: Genesis Distribution Inclusion(Sinsemilla HashDomain)**
+
+## Circuit: Chip Specs
+
+### PallasLookupRangeCheck
+
+There are 3 chips that use the lookup range check:
+
+| Chip| Use| limb-bits|
+|-------------------------------|--|-|
+| **ecc chip**| constraining object is within field bounds| |
+| **foreign field chip**| constraining objects (limbs) are within field bounds ||
+| **sinsemilla chip**|    Sinsemilla operations require range checks on bit decompositions and intermediate values |
+
+**Key Configuration Constants:foreign field chip**
+
+```rust
+// From halo2-ecc/configs/secp256k1/ecdsa_circuit.config
+const LIMB_BITS: usize = 88;
+const NUM_LIMBS: usize = 3;
+const LOOKUP_BITS: usize = 17;
+const DEGREE: u32 = 18; // Circuit size: 2^18 rows
+```
+
+The `RangeChip` is the foundation for foreign field arithmetic in our Pallas-based circuit. It provides lookup tables for efficient range checking of limb values, ensuring that our BigInt representations don't overflow when emulating non-native field arithmetic.
+
+**Limb Parameters (Secp256k1 → Pallas)**  
+
+| Parameter                     | Value / Details                                                                            |
+|-------------------------------|-------------------------------------------------------------------------------------------|
+| **limb_bits**                 | 88                                                                                        |
+| **num_limbs**                 | 3                                                                                         |
+| **Total bits**                | 264 (covers 256‑bit secp256k1 fields with an 8‑bit overflow buffer)                     |
+| **Lookup bits**               | 17 → lookup table size = 2⁷¹⁷ = 131,072 entries                                         |
+| **Rationale**                 | 88‑bit limbs fit comfortably within the Pallas field capacity while minimizing limbs   |
+| **RangeChip enforcement**    | `0 ≤ limb_i < 2^88` via lookup tables                                                    |
+
+### Ecc (Secp256k1 chip)
+
+The `EccChip` performs elliptic curve operations over `secp256k1` using foreign field arithmetic. It's essential for both key pairing verification (`pk = sk·G`) and HKDF constraints.
+
+#### Key Operations
+
+**1. Fixed-Base Scalar Multiplication** (for `pk = sk·G`)
+**Optimization:** Fixed-base multiplication uses precomputed multiples of G (windowed method) to reduce constraints compared to variable-base.
+
+### FpChip (Secp256k1::Fp)
+
+**Purpose:** Represents and operates on secp256k1 base field elements within the Pallas circuit.
+
+**Type Signature:**
+
+```rust
+pub type FpChip<'range, F> = fp::FpChip<'range, F, Secp256k1::Fp>;
+// where F = Pallas::Base (our native field)
+```
+
+**Construction:**
+
+```rust
+let fp_chip = FpChip::<Pallas::Base, Secp256k1::Fp>::new(
+    range,      // RangeChip for lookup tables
+    88,         // limb_bits
+    3,          // num_limbs
+);
+```
+
+**Core Operations:**
+
+- `load_private( value)` - Load Fp element as witness
+- `load_constant( value)` - Load Fp constant
+- `mul( a, b)` - Multiply two Fp elements
+- `add( a, b)` - Add two Fp elements
+- `sub( a, b)` - Subtract Fp elements
+- `assert_equal( a, b)` - Constrain equality
+- `enforce_less_than_p( a)` - Ensure a < secp256k1_p
+
+**Used For:**
+
+- Public key x, y coordinates
+- Elliptic curve point arithmetic
+
+### FqChip (Secp256k1::Fq)
+
+**Purpose:** Represents and operates on secp256k1 scalar field elements (the curve order).
+
+**Type Signature:**
+
+```rust
+pub type FqChip<'range, F> = fp::FpChip<'range, F, Secp256k1::Fq>;
+```
+
+**Construction:** Same as FpChip but parameterized with `Secp256k1::Fq`
+
+**Used For:**
+
+- Secret key `sk`
+
+**Critical Difference from FpChip:**
+
+- Modulus is `Secp256k1::Fq` (curve order) not `Secp256k1::Fp` (base field)
+- Used for scalars, not point coordinates
+- Operations are mod `0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141`
+
+### Ecc (Pallas curve chip)
+
+### Sinsemilla Chip
+
+### Merkle Chip
+
+### NoteCommitChip Chip
+
+## Non-Circuit Tooling
+
+## Metamask Snap: Headstash
+
+"A good UX does not require the user to learn anything they do not already know." Powered by this principle, we can make use of a metamask snap plugin to power the hkdf & note management steps:
+
+### Snap Requirements
+
+- download/import/store pubkeys eligible notes from headstash registry: download entire set once, discard non-related notes
+- free will derived entropy generation
+- perform hkdf + nullifier generation
+- broadcast to sc/verifiable service mesh/smart-contract
+
+## Smart-Account Use
+
+This contracts will keep hold the static verification key, record of the spent nullifiers, maintain control of funds to distribute, and power the proof verification.
+
+- x/token-factory contract/module middleware, or manually fund contract
+- middleware for external distribution contract & internal state.
+- cw-orchestrator: reproducible deployment
+
+## Verifiable Service Mesh
+
+A Verifiable Service mesh of nodes acting an a proxy for broadcasting proofs on chain unlocks a number of UX benefits:
+
+- dedicated API for broadcasting claims
+- minimizing fee-grants
+- delayed claiming support
+
+### Key Aggregation & Rotation
+
+- `AllOf(passkey,wallet,password confirmation)` authenticator for authorized key rotation (macro injected into authenticators for modular resuable injection of keyrotation workflow)
+
+### Additional Features
+
+## Genesis Bootstrapping
+
+### 1. Genesis Distribution Tree Construction
+
+First, the tree is constructed by separating separating all distributions into the smallest amount of fixed denomination notes, for each token allocated (The Headstash Airdrop distributes TERP & THIOL, so there is a set of leaves for each address due to their allocation including 2 tokens.). We generate leaves in an non-interactive manner using the pre-known public information available:
+
+### Step 2: Deploy Verifiable Proxy Service
+
+This steps involves deploying the verifiable service used to route claiming actions on-chain for proof validation,nullifier & note commitment storage, and also token distributions.
+
+#### Upload/Instantiate Zk-Headstash Contract
+
+#### Create/Seed Tokens To Distribute
+
+#### Register Service Owned Address w/ Smart-Account
+
+The proxy service must control an on-chain account, in order to register the zk-headstash contract as its on-chain authenticator.
+
+- **single feegrant/payment address**: Instead of allocating feegrants to each public address claiming headstashes, we can allocate a single feegrant to the services owned account.
+
+- **granularizes sequence of operations**: authenticators require specific steps of a tx broadcasted to be performed within the scope defined by the x/smart-account authentication module. This allows us to separate the signature verification coming from the off-chain service from the users proof verification sequence.
+
+### Step 3: Eligible Addresses Generate Proofs for claiming
+
+In the proof circuit, the user generates a proof that essentially encodes the following statements:
+
+- They own `addr_eligible` via `epk` `esk` pairing.
+- The note being spent corresponds to an unclaimed entry in the genesis Merkle tree.
+- The nullifier for the note being spent has been accurately defined to this note.
+
+### Step 4: Claim Spent Note By Contract Call
+
+A user will broadcast their proof generated to the verifiable service, which has feegrants registered under an account it controls to cover gas cost to broadcast to a chain state. The smart contract will enforce that a nullifier doesnt yet exist
+
+## Implementation Checklist
+
+- [x] Define Sinsemilla hashing parameters for Merkle trees and commitments.
+- [ ] Implement Halo2 circuits for:
+  - [ ] Merkle inclusion proofs
+  - [ ] Proof Of Ownership (key-pairing)
+  - [ ] Proof Of Destination (erc-7524)
+  - [ ] Nullifier derivation
+  - [ ] Note commitment derivation
+- [ ] Design smart contract to manage:
+  - Nullifier set
+  - Note commitment tree
+  - Token transfers
+  - Wavs service authentication
+- [ ] Develop off-line tools for key generation and proof construction.
+  - [x] secure random number generator
+  - [x] genesis proof generator
+  - [x] genesis fixed amount note generator
+
+### Claiming API
+
+- exposes API used for users to broadcast & claim allocations.
+
+### Fee Grants
+
+- provides single time feegrants to diversifier keys of claiming addresses
+
+## Randomness Generation
+
+In order to make it impossible to retroatively derive randomness used during the note-commitment generation (which in theory would be possible if an adversary had access to a device, the timestamp of when randomness was generated), we want to enable user-derived input as an additional seed to the PRNG process, such as drawing on the screen or allowing modular inputs
+
+> <center> DEMO: our script used to generate randomness can be invoked via :
+>
+> `cargo run --package zk-crates --bin generate_randomness`</center>
+
+## Research
+
+- <https://seanbowe.com/blog/tachyon-scaling-zcash-oblivious-synchronization/>
+- <https://0xparc.org/blog/zk-ecdsa-1>
+- <https://github.com/stealthdrop/stealthdrop>
+- <https://eips.ethereum.org/EIPS/eip-7524>
+- <https://www.rfc-editor.org/rfc/rfc9380.html>
+= <https://eprint.iacr.org/2017/1108.pdf>
+- <https://github.com/stealthdrop/stealthdrop>
+- <https://zips.z.cash/zip-0216>
+- <https://medium.com/zokrates/efficient-ecc-in-zksnarks-using-zokrates-bd9ae37b8186>
+- <https://datatracker.ietf.org/doc/html/rfc5869>
+- <https://github.com/dusk-network/jubjub-schnorr>
+- <https://christophe.petit.web.ulb.be/files/16PKC_primeECDLP.pdf>
+- <https://forum.zcashcommunity.com/t/status-update-rfc-zec-nam-shielded-airdrop-protocol/49144>
+- <https://ebuchman.github.io/pdf/snarks.pdf>
+- <https://github.com/DelphinusLab/halo2ecc-s>
+- <https://github.com/tahowallet/extension/pull/3638>
+- <https://halo2.zksecurity.xyz/intro/>
+- <https://github.com/Lightprotocol/light-poseidon>
+- <https://www.youtube.com/watch?v=r9hJiDrtukI>
+- <https://snaps.metamask.io/snap/npm/chainsafe/webzjs-zcash-snap/>
+- <https://eprint.iacr.org/2025/2031.pdf>
+- <https://github.com/axiom-crypto/halo2-lib/blob/community-edition/halo2-ecc/src/secp256k1/tests/ecdsa.rs>
+

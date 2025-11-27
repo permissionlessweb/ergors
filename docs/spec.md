@@ -17,11 +17,37 @@ cnardium merkle-jellyfish-tree, storage keys + read & write trait implementation
 
 ## LLM
 
+## Agentic Functions
+
+### prompt note
+
+1. inital request
+
+- request
+- function defintion
+
+2. response
+
+- messages field
+        - assistant text
+        - tool-call function
+- where function calls given in api result are passed to ergors and performed.
+-
+
+3. request with function call result
+
+sends response back llm inference with:
+
+- chat history: can be preprocessed for syntax & filtering, can be optimized by storing hash of embedding of response and store provide in context
+- function call result: can be prepressed before re
+- provide original user request
+
+4. response
+
+- same as inital response, creating agentic loop
+- use as checkpoint for agentic action merkle tree compression for hashes of actions logged
+
 ## Privacy
-
-## prompt note: private-verifiable prompt & response
-
-
 
 ## auction plan: agentic pair loop
 
@@ -42,7 +68,6 @@ cnardium merkle-jellyfish-tree, storage keys + read & write trait implementation
 We will create accountable expect set of data points during agentic sessions due to loggic tracing of loggic actions and errors. This will let us have a known map of sequences per agentic session, as like a proof circuit table, and give the change to introduce transport middlewares for node connection filters on a local-permit basis (essentially firewalls to ensure logs and actions are within bounds consentfully specified between node connections).
 
 We will be able to increment the amount of actions a node takes (write,read,response), and constrain the hash of the transitions of the state of the node during the runitme, creating a thread of hashes that can be used for recursive proof of knowledge of a state commitment.
- 
 
 ## Verifiable Release Builds
 
@@ -59,3 +84,7 @@ We will be able to increment the amount of actions a node takes (write,read,resp
 ### Reflection
 
 ### Sandloops
+
+## Research
+
+- <https://docs.x.ai/docs/guides/function-calling>

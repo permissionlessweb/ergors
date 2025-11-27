@@ -1,49 +1,21 @@
 # Logging Actions
 
-# Logging & Error Tracing Configuration
+## Logging & Error Tracing Configuration
 
 ## Overview
 
 ERGORS uses Rust's `tracing` ecosystem for structured logging with configurable verbosity levels. All API operations are automatically traced and errors include full error chains and stack traces based on environment configuration.
 
-## Environment Variables
-
-### RUST_LOG
-
-Controls the logging level for the entire application. This is the standard Rust tracing environment variable.
-
-**Levels** (from least to most verbose):
-- `error` - Only errors
-- `warn` - Warnings and errors
-- `info` - Informational messages, warnings, and errors (default)
-- `debug` - Debug information plus all above
-- `trace` - Trace-level debugging plus all above
-
-**Examples**:
-
-```bash
-# Basic levels
-export RUST_LOG=info          # Default - general operational logs
-export RUST_LOG=debug          # Detailed debugging information
-export RUST_LOG=trace          # Very verbose trace-level logging
-
-# Module-specific levels
-export RUST_LOG=ergors=debug,tower_http=info    # Debug for ergors, info for tower_http
-export RUST_LOG=ergors::server=trace            # Trace only server module
-
-# Target specific components
-export RUST_LOG=ergors::middleware=debug        # Debug middleware operations
-export RUST_LOG=ergors::storage=trace           # Trace storage operations
-```
-
 ### RUST_LOG_DETAIL
 
 Controls whether detailed error traces (error chains and backtraces) are included in:
+
 1. API error responses (JSON)
 2. Storage operation error records
 3. Log output
 
 **Values**:
+
 - `true` - Include full error chains and backtraces
 - `false` - Basic error messages only (default)
 
@@ -67,6 +39,7 @@ export RUST_LOG=debug  # RUST_LOG_DETAIL automatically becomes true
 Controls whether Rust generates backtraces for errors (separate from tracing).
 
 **Values**:
+
 - `0` - No backtraces (default)
 - `1` - Full backtraces
 - `full` - Full backtraces with all frames
@@ -177,6 +150,7 @@ OperationRecord {
 ### Middleware Span
 
 Every request gets a tracing span with these fields:
+
 - `operation_id` - Unique UUID for the operation
 - `operation_type` - Classified operation type (prompt, bootstrap, etc.)
 - `endpoint` - API endpoint path
@@ -184,6 +158,7 @@ Every request gets a tracing span with these fields:
 ### Additional Contextual Fields
 
 Logs automatically include:
+
 - `error_type` - Category of error (CONFIG_ERROR, STORAGE_ERROR, etc.)
 - `error_chain` - Full error cause chain (when detailed)
 - `root_cause` - Root cause of error (when detailed)
@@ -260,22 +235,26 @@ export RUST_LOG_FORMAT=json  # If implemented
 ## Best Practices
 
 ### Development
+
 - Use `RUST_LOG=debug` or `RUST_LOG=trace` for full visibility
 - Enable `RUST_LOG_DETAIL=true` to capture error chains
 - Enable `RUST_BACKTRACE=1` for Rust panic stack traces
 
 ### Staging
+
 - Use `RUST_LOG=info` with `RUST_LOG_DETAIL=true`
 - Captures all operations with detailed errors for debugging
 - Manageable log volume with good error diagnostics
 
 ### Production
+
 - Use `RUST_LOG=info` with `RUST_LOG_DETAIL=false` for normal operations
 - Switch to `RUST_LOG=debug RUST_LOG_DETAIL=true` when investigating issues
 - Use module-specific levels to focus on problem areas
 - Consider log aggregation tools (e.g., Grafana Loki, ELK stack)
 
 ### Performance Considerations
+
 - `RUST_LOG=trace` with `RUST_LOG_DETAIL=true` has the highest overhead
 - Each log level adds minimal overhead (~nanoseconds per log call)
 - Detailed error traces add ~100-500 microseconds per error
@@ -284,11 +263,13 @@ export RUST_LOG_FORMAT=json  # If implemented
 ## Integration with Monitoring
 
 ### Prometheus Metrics (Future)
+
 - Export error counts by type
 - Track operation durations
 - Monitor storage operation latency
 
 ### Structured Log Aggregation
+
 - Use JSON formatter for structured log ingestion
 - Filter by `operation_id` to trace request lifecycle
 - Aggregate by `error_type` for error pattern analysis
@@ -297,26 +278,28 @@ export RUST_LOG_FORMAT=json  # If implemented
 ## Troubleshooting
 
 ### No Logs Appearing
+
 - Check `RUST_LOG` is set
 - Default is `info` - try `debug` for more output
 - Verify logs aren't filtered by external tool
 
 ### Missing Error Details
+
 - Ensure `RUST_LOG_DETAIL=true` or `RUST_LOG=debug`
 - Check error responses include `error_chain` field
 - Verify storage records have `stack_trace` populated
 
 ### Too Many Logs
+
 - Reduce level: `info` → `warn` → `error`
 - Use module-specific filters: `RUST_LOG=ergors=info,tower_http=warn`
 - Disable detailed traces: `RUST_LOG_DETAIL=false`
 
 ### Performance Issues
+
 - Reduce to `info` or `warn` level
 - Disable detailed tracing: `RUST_LOG_DETAIL=false`
 - Use module-specific levels for targeted debugging
-
-
 
 ## Storage Layer of All Actions
 
@@ -522,6 +505,7 @@ The ERGORS (Life Creativity Engine) project is a distributed multi-LLM agent orc
 Below is an ASCII representation of the foundational principles guiding ERGORS's logging and metrics system, reflecting sacred geometry and distributed observability with creative visualization:
 
 ```
+
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                🌟 SACRED GEOMETRY LOGGING PRINCIPLES 🌟                  │
 ├────────────────────────────────────────────────────────────────────────────┤
@@ -548,6 +532,7 @@ Below is an ASCII representation of the foundational principles guiding ERGORS's
 │  └─────────────────────────┘                     └───────────────────────┘  │
 │                                                                            │
 └────────────────────────────────────────────────────────────────────────────┘
+
 ```
    
 

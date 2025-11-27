@@ -1,18 +1,14 @@
-use crate::ErgorsConfig;
-use anyhow::{Context, Result};
+use anyhow::Result;
 
-use ho_std::config::api_keys::configure_api_keys_interactive;
 use ho_std::constants::LLM_API_KEYS_FILE;
+use ho_std::llm::configure_api_keys_interactive;
 use ho_std::traits::HoConfigTrait;
-
 use ho_std::types::keys::v1::SpendKey;
- 
+
+use std::io::{IsTerminal as _, Read};
 use std::{env, fs};
-use std::{
-    io::{stdin, IsTerminal as _, Read, Write},
-    str::FromStr,
-};
-use termion::screen::IntoAlternateScreen;
+
+use crate::config::ErgorsConfig;
 
 #[derive(Debug, clap::Parser)]
 pub struct InitCmd {
@@ -28,7 +24,7 @@ pub enum InitTopSubCmd {
     New {},
     // prompt cli helper for guiding through configuring api keys
     #[clap(display_order = 200)]
-    LlmApiKeys {},
+    Llms {},
     // configure
     #[clap(display_order = 900)]
     UnsafeWipe {},
@@ -102,7 +98,7 @@ impl InitCmd {
                 std::fs::write(output_path, env_content).expect("Failed to write.");
                 config
             }
-            InitTopSubCmd::LlmApiKeys {} => {
+            InitTopSubCmd::Llms {} => {
                 // Run interactive API keys configuration
                 let api_keys_path = home_dir.as_ref().join(LLM_API_KEYS_FILE);
                 configure_api_keys_interactive(&api_keys_path)?;
