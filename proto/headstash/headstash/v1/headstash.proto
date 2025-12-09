@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package headstash.actions.v1;
+
+import "google/protobuf/struct.proto";
+
+
+service HeadstashService {
+      // retrieve token holder distribution
+      rpc CreateHeadstashNotes(MsgCreateHeadstashNotes) returns (MsgCreateHeadstashNoteResponse);
+      rpc CreateNewHeadstash(MsgCreateHeadstash) returns (MsgCreateHeadstashResponse);
+      rpc ClaimHeadstash(MsgClaimHeadstash) returns (MsgClaimHeadstashResponse);
+      // generate headstash instance tree
+      rpc CreateHeadstashTree(MsgCreateHeadstashTree) returns (MsgCreateHeadstashTreeResponse);
+      // determine piecewise distribution
+      // prepare headstash config
+      // create new headstash 
+}
+
+service HeadstashActionsService {
+      // find new headstash
+      // list headstash info 
+      // perform headstash action
+}
+
+message MsgCreateHeadstashTreeResponse {}
+message MsgCreateHeadstashTree {}
+message MsgPrepareNoteNullifierResponse {}
+message MsgPrepareNoteNullifier {}
+message MsgCreateHeadstash {}
+message MsgCreateHeadstashResponse {}
+message MsgCreateHeadstashNotes {}
+message MsgCreateHeadstashNoteResponse {}
+
+// Used when claiming a headstash note. Contains all public inputs, plus note nullifier.
+message MsgRegisterHeadstash {
+      string addr = 1;
+      uint64 v = 3;
+      bytes null = 4;
+}
+// Used when claiming a headstash note. Contains all public inputs, plus note nullifier.
+message MsgClaimHeadstash {
+      string recp = 1;
+      string nd = 2;
+      uint64 v = 3;
+      bytes null = 4;
+}
+
+message MsgClaimHeadstashResponse {
+      bool valid = 1;
+}
+
+ 

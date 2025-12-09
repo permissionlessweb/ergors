@@ -10,12 +10,12 @@ tell me about - finish implmenting llm provider trait in library with clear defi
 ─────────────────────────────────────────────────────────
 > lets implement the custody client within our auth
   middleware such that we run checks for keys able to
-  access endpoints reigstered in the cnardium storage,
+  access endpoints reigstered in the cnidarium storage,
   we want to use the existing storage client and dedicated
   
 ## Multi-goal acomplishing action
 
-we already have prepped a custody client server model for use when authorizaing actions to be compatible with various offline/external signing methods. We can make a custom dedicated API Key storage that interafaces with a dedicated layer of the jmt we use for storage (cnardium) by storaging the encrypted keys to its storage and then when prompts come in we can have this server implement this. Since we are going to have. By defining the use of the prompt note we are generating, we can wire in the wallet and plan instructions for creating the objects and strucutre to pass. THis requires access to the custody defintioints , which we still need to interface in with a  client so we can power this, so lets use this goal by the solution allowing the soft-kms to access teh jmt app state for read and writing encrypted api keys to a dedicated layer so we can access them for various actions
+we already have prepped a custody client server model for use when authorizaing actions to be compatible with various offline/external signing methods. We can make a custom dedicated API Key storage that interafaces with a dedicated layer of the jmt we use for storage (cnidarium) by storaging the encrypted keys to its storage and then when prompts come in we can have this server implement this. Since we are going to have. By defining the use of the prompt note we are generating, we can wire in the wallet and plan instructions for creating the objects and strucutre to pass. THis requires access to the custody defintioints , which we still need to interface in with a  client so we can power this, so lets use this goal by the solution allowing the soft-kms to access teh jmt app state for read and writing encrypted api keys to a dedicated layer so we can access them for various actions
 
 ## Context
 

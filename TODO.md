@@ -41,7 +41,7 @@
 ## NETWORK
 
 - improve node_identity definitions:
-  - validate state thoughout network by taking advantage of merkle cnardium merkle tree
+  - validate state thoughout network by taking advantage of merkle cnidarium merkle tree
   - update node type
   - grant permissions for auth bypass
   - grant filters on node communication requests
@@ -120,6 +120,7 @@ refactor mesage to derive openapi defintion structure from our api messages.
 
 ### CLAUDE TOOLS
 
+- ergo-rs cli hooks: 
 ### KIMI TOOLS
 
 <https://github.com/MoonshotAI/kosong>

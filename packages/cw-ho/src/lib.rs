@@ -3,7 +3,9 @@ pub mod call;
 pub mod config;
 
 pub mod init;
+pub mod headstash;
 pub mod middleware;
+pub mod orchestrator;
 pub mod network;
 pub mod server;
 pub mod storage;

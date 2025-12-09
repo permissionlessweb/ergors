@@ -46,7 +46,7 @@ impl ::prost::Name for FungibleTokenPacketData {
     }
 }
 /// A Penumbra transaction action requesting an ICS20 transfer.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Ics20Withdrawal {
     #[prost(message, optional, tag = "1")]
     pub amount: ::core::option::Option<super::super::num::v1::Amount>,

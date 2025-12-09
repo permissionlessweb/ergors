@@ -725,9 +725,9 @@ mod tests {
 
 #### Step X
 
-### Cnardium Storage X Gray_Scott Diffusion
+### cnidarium Storage X Gray_Scott Diffusion
 
-## Goal: Trigger Cnardium Storage Snapshots To Occur On High Fidelity Buffer Fill
+## Goal: Trigger cnidarium Storage Snapshots To Occur On High Fidelity Buffer Fill
 
 - Storage Keys are deterministcally filled into 4K image buffer (3840 x 2160).
 

@@ -68,6 +68,8 @@ fn main() -> anyhow::Result<()> {
                 "./ergors/sct/v1/sct.proto",
                 "./ergors/tct/v1/tct.proto",
                 "./ergors/types/v1/common.proto",
+                "./headstash/headstash/v1/headstash.proto",
+                "./headstash/extendo/v1/extendo.proto",
                 "./rust-vendored/tendermint/p2p/types.proto",
                 "./rust-vendored/tendermint/abci/types.proto",
                 "./rust-vendored/tendermint/types/validator.proto",
@@ -76,7 +78,7 @@ fn main() -> anyhow::Result<()> {
                 "./rust-vendored/ibc/core/client/v1/query.proto",
                 "./rust-vendored/ibc/core/connection/v1/query.proto",
             ],
-            &["./ergors/", "./rust-vendored/"],
+            &[  "./headstash/","./ergors/", "./rust-vendored/"],
         )?;
 
     // Finally, build pbjson Serialize, Deserialize impls:

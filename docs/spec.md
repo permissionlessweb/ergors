@@ -7,11 +7,17 @@ This document provides a comprehensive specification for the Ergors codebase, de
 
 user keys and node keys. nodes must register user keys to grant authorization to api middleware.
 
-## Storage
+### Key Types
 
-cnardium merkle-jellyfish-tree, storage keys + read & write trait implementation for componsents default method for interfacing with storage layer
+### Custody Client
 
-## Node
+### Libraries and Demos
+
+## Storage: Cnidarium
+
+cnidarium merkle-jellyfish-tree, storage keys + read & write trait implementation for componsents default method for interfacing with storage layer
+
+## Node: Commonware 
 
 ## Network
 

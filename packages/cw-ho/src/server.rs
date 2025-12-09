@@ -1,6 +1,5 @@
 use crate::{
-    middleware::record_operation, storage::ErgorsStorage, ErgorsAppState, ErgorsConfig,
-    ErgorsNetworkManifold, LlmRouter,
+    storage::ErgorsStorage, ErgorsAppState, ErgorsConfig, ErgorsNetworkManifold, LlmRouter,
 };
 use axum::{
     extract::{Query, State},
@@ -26,12 +25,63 @@ pub struct Server {
 }
 
 impl Server {
+    pub async fn run(self) -> HoResult<()> {
+        // Use the new generic route structure from ho-std
+        let (public_router, protected_router) = ho_std::define_routes! {
+            public_routes: [
+                { path: "/api/prompt", method: post, handler: crate::orchestrator::handle_prompt },
+                { path: "/api/operations", method: get, handler: handle_query_operations },
+                { path: "/cosmos/extend-vote", method: get, handler: crate::headstash::vote_ext::handle_vote_extension },
+                { path: "/headstash/claim", method: post, handler: crate::headstash::claim::handle_headstash_claim },
+                { path: "/headstash/upload", method: get, handler: crate::headstash::ipfs::handle_headstash_metadata_storage },
+                { path: "/headstash/watch", method: get, handler: crate::headstash::indexer::handle_indexer_instructions },
+                { path: "/network/topology", method: get, handler: handle_network_topology },
+                { path: "/health", method: get, handler: handle_health },
+            ],
+            protected_routes: [
+                { path: "/api/prompts", method: get, handler: handle_query },
+                { path: "/orchestrate/fractal", method: post, handler: crate::orchestrator::handle_fractal_hoe_creation },
+                { path: "/orchestrate/prune", method: post, handler: crate::storage::handle_prune },
+                // { path: "/orchestrate/bootstrap", method: post, handler: handle_bootstrap },
+                ]
+        };
+        let server_addr = format!(
+            "{}:{}",
+            self.state.c.network().listen_address,
+            self.state.c.identity().api_port,
+        );
+
+        // Build router with operation recording middleware
+        let app = Router::new()
+            .merge(public_router)
+            .merge(protected_router.route_layer(AuthLayer))
+            .layer(CorsLayer::permissive())
+            .layer(TraceLayer::new_for_http())
+            .layer(middleware::from_fn_with_state(
+                self.state.clone(),
+                crate::middleware::record_operation,
+            ))
+            .with_state(self.state);
+
+        axum::serve(TcpListener::bind(&server_addr).await?, app)
+            .await
+            .map_err(|e| HoError::Cfg(format!("Dayum yo: {}", e)))?;
+        Ok(())
+    }
+
     pub async fn new(c: ErgorsConfig, ctx: Context) -> HoResult<Self> {
         Self::validate_llm_api_keys(&c)?;
         c.validate()?;
-
         let mut nm = ErgorsNetworkManifold::new(c.identity(), ctx).await;
-        let s = ErgorsStorage::new(&c.storage().data_dir).await?;
+        let s = ErgorsStorage::new(
+            &c.storage().data_dir,
+            vec![
+                "network_config".to_string(),
+                "akashic_record".to_string(),
+                "models_tools".to_string(),
+            ],
+        )
+        .await?;
         nm.start_network(c.network()).await?;
 
         // Encrypt and store API keys on server startup
@@ -238,151 +288,6 @@ impl Server {
 
     //     Ok(())
     // }
-
-    pub async fn run(self) -> HoResult<()> {
-        // Use the new generic route structure from ho-std
-        let (public_router, protected_router) = ho_std::define_routes! {
-            public_routes: [
-                { path: "/health", method: get, handler: handle_health },
-                { path: "/api/prompt", method: post, handler: handle_prompt },
-                { path: "/network/topology", method: get, handler: handle_network_topology },
-                { path: "/api/operations", method: get, handler: handle_query_operations },
-            ],
-            protected_routes: [
-                { path: "/api/prompts", method: get, handler: handle_query },
-                { path: "/orchestrate/fractal", method: post, handler: handle_fractal_hoe_creation },
-                { path: "/orchestrate/prune", method: post, handler: handle_prune },
-                // { path: "/orchestrate/bootstrap", method: post, handler: handle_bootstrap },
-
-                ]
-        };
-        let server_addr = format!(
-            "{}:{}",
-            self.state.c.network().listen_address,
-            self.state.c.identity().api_port,
-        );
-
-        // Build router with operation recording middleware
-        let app = Router::new()
-            .merge(public_router)
-            .merge(protected_router.route_layer(AuthLayer))
-            .layer(CorsLayer::permissive())
-            .layer(TraceLayer::new_for_http())
-            .layer(middleware::from_fn_with_state(
-                self.state.clone(),
-                record_operation,
-            ))
-            .with_state(self.state);
-
-        axum::serve(TcpListener::bind(&server_addr).await?, app)
-            .await
-            .map_err(|e| HoError::Cfg(format!("Dayum yo: {}", e)))?;
-        Ok(())
-    }
-}
-
-async fn handle_fractal_hoe_creation(// State(_state): State<ErgorsAppState>,
-    // Json(request): Json<PromptRequest>,
-) -> Json<serde_json::Value> {
-    info!("🌀 Creating fractal hoe");
-    //TODO: boostrap new node via desired method
-    // Create persistent SSH connection manager
-    // let mut ssh_manager = SSHConnectionManager::new(target_node.to_string());
-    info!("🔌 Step 1: Establishing persistent SSH connection");
-    // match ssh_manager.connect().await {}
-    info!("🛠️  Step 2: Installing development environment on target node");
-    // ssh_manager.install_dev_environment_via_ssh(&mut ssh_manager).await
-    info!("📊  Step 3: Closing SSH connection before returning");
-    // Close SSH connection before returning
-    // let _ = ssh_manager.close().await;
-    Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
-}
-
-async fn handle_prune(
-    State(state): State<ErgorsAppState>,
-    Json(_request): Json<PromptRequest>,
-) -> Json<serde_json::Value> {
-    //TODO: prune all non-coordinator nodes storage state by bradcasting its cnardium state to up to the coordinator node.
-    info!("🔌 Step 1: snapshot, prepend metadata & broadcast to coordinator node");
-    info!("🔌 Step 2: Dump snapshot of state and broadcast to coordinator node");
-    match state.s.create_snapshot().await {
-        Ok(_) => {}
-        Err(_e) => return Json(error_json("ErgorsStorage snapshot failed", "STORAGE_ERROR")),
-    };
-
-    info!("🔌 Step 3: Prune node state");
-    match state.s.prune_storage().await {
-        Ok(_) => {}
-        Err(_e) => return Json(error_json("ErgorsStorage prune failed", "STORAGE_ERROR")),
-    };
-    Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
-}
-
-async fn handle_prompt(
-    State(state): State<ErgorsAppState>,
-    Json(r): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
-    let pr = match serde_json::from_value::<PromptRequest>(r.clone()) {
-        Ok(r) => r,
-        Err(e) => {
-            return Json(error_json(
-                &format!(
-                    "Invalid request format: {}. Expected format: {:#?}",
-                    e,
-                    PromptRequest::default()
-                ),
-                "INVALID_REQUEST",
-            ));
-        }
-    };
-
-    if pr.messages.is_empty() {
-        return Json(error_json(
-            "Prompt messages cannot be empty",
-            "INVALID_PROMPT",
-        ));
-    }
-
-    match state.r.handle_request(&pr, &pr.model).await {
-        Ok(llm_response) => {
-            let response = PromptResponse {
-                id: Uuid::new_v4().into(),
-                prompt: blake3::Blake3::hash(serde_json::to_string(&pr).unwrap().as_bytes())
-                    .to_string(),
-                response: llm_response.response,
-                model: pr.model.to_string(),
-                timestamp: Some(pbjson_types::Timestamp {
-                    seconds: chrono::Utc::now().timestamp(),
-                    nanos: 0,
-                }),
-                tokens_used: llm_response.tokens_used,
-                provider: "default".to_string(), // TODO: get deterministic provider from storage
-                cost: Some(0.0),
-                latency_ms: None,
-                // context: request.context.clone(),
-            };
-
-            // Store to Cnidarium with original request context
-            if let Err(e) = state.s.put_prompt_w_ctx(&response, Some(&pr)).await {
-                error!("Failed to store prompt to storage: {}", e);
-            }
-
-            Json(serde_json::to_value(response).unwrap())
-        }
-        Err(e) => {
-            // Log error with full chain if detail enabled
-            let error_chain = e.error_chain();
-            error!(
-                error_type = e.to_string(),
-                error = %e,
-                error_chain = ?error_chain,
-                root_cause = ?error_chain.last(),
-                "❌ LLM processing failed"
-            );
-            // Use detailed error response which respects RUST_LOG_DETAIL env
-            Json(error_json_detailed(&e))
-        }
-    }
 }
 
 async fn handle_query(
@@ -451,6 +356,7 @@ async fn handle_network_topology(State(state): State<ErgorsAppState>) -> Json<se
     }))
 }
 
+/// `handle_query_operations`: query
 async fn handle_query_operations(
     State(state): State<ErgorsAppState>,
     Query(params): Query<serde_json::Value>,

@@ -6,7 +6,7 @@ config file specifies:
 - LLM models and tools available
 - type of node this config file will be used for
 - node_id & ip addr of conductor node
-- storage params for cnardium
+- storage params for cnidarium
 - sandloop params: paramaters that can be tuned for how a node participates in agentic workflow
 
 

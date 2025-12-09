@@ -1,6 +1,8 @@
+use crate::ErgorsAppState;
+use axum::{extract::State, Json};
 use cnidarium::{StateRead, StateWrite, Storage as CnidariumStorage};
 use futures::StreamExt;
-
+use ho_std::error::error_json;
 use ho_std::llm::{HoError, HoResult};
 use ho_std::traits::MessageExt;
 use ho_std::types::ergors::{orch::v1::*, storage::v1::*};
@@ -14,6 +16,7 @@ const USER_INDEX_PREFIX: &str = "users/";
 const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
 const OP_PREFIX: &str = "operations/";
 const API_KEY_PREFIX: &str = "custody/api_keys/";
+const HEADSTASH: &str = "headstash/";
 
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
@@ -21,18 +24,10 @@ pub struct ErgorsStorage {
 }
 
 impl ErgorsStorage {
-    pub async fn new<P: AsRef<Path>>(data_dir: P) -> HoResult<Self> {
+    pub async fn new<P: AsRef<Path>>(data_dir: P, prefixes: Vec<String>) -> HoResult<Self> {
         let path = data_dir.as_ref();
         std::fs::create_dir_all(path)?;
-
         info!("📂 Initializing Cnidarium storage at: {}", path.display());
-        // Define substore prefixes to align with multistore routing
-        let prefixes = vec![
-            "network_config".to_string(),
-            "akashic_record".to_string(),
-            "models_tools".to_string(),
-        ];
-
         Ok(Self {
             cs: CnidariumStorage::load(path.to_path_buf(), prefixes).await?,
         })
@@ -420,15 +415,11 @@ impl ErgorsStorage {
     ) -> HoResult<Vec<OperationRecord>> {
         let mut results = Vec::new();
         let mut count = 0;
-        let limit = limit.unwrap_or(100).min(1000);
-        let snapshot = self.cs.latest_snapshot();
-        let mut operation_stream = snapshot.prefix_raw(OP_PREFIX);
-
+        let mut operation_stream = self.cs.latest_snapshot().prefix_raw(OP_PREFIX);
         while let Some(entry_result) = operation_stream.next().await {
-            if count >= limit {
+            if count >= limit.unwrap_or(100).min(1000) {
                 break;
             }
-
             match entry_result {
                 Ok((key, value)) => {
                     match serde_json::from_slice::<OperationRecord>(&value) {
@@ -565,4 +556,24 @@ impl ErgorsStorage {
 
         Ok(providers)
     }
+}
+
+pub async fn handle_prune(
+    State(state): State<ErgorsAppState>,
+    Json(_request): Json<PromptRequest>,
+) -> Json<serde_json::Value> {
+    //TODO: prune all non-coordinator nodes storage state by bradcasting its cnidarium state to up to the coordinator node.
+    info!("🔌 Step 1: snapshot, prepend metadata & broadcast to coordinator node");
+    info!("🔌 Step 2: Dump snapshot of state and broadcast to coordinator node");
+    match state.s.create_snapshot().await {
+        Ok(_) => {}
+        Err(_e) => return Json(error_json("ErgorsStorage snapshot failed", "STORAGE_ERROR")),
+    };
+
+    info!("🔌 Step 3: Prune node state");
+    match state.s.prune_storage().await {
+        Ok(_) => {}
+        Err(_e) => return Json(error_json("ErgorsStorage prune failed", "STORAGE_ERROR")),
+    };
+    Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
 }
