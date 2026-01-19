@@ -91,6 +91,7 @@ fn main() -> anyhow::Result<()> {
                 "./ergors/network/v1/network.proto",
                 "./ergors/view/v1/view.proto",
                 "./ergors/orch/v1/orch.proto",
+                "./ergors/proxy/v1/proxy.proto",
                 "./ergors/storage/v1/storage.proto",
                 "./ergors/sct/v1/sct.proto",
                 "./ergors/tct/v1/tct.proto",
@@ -102,6 +103,13 @@ fn main() -> anyhow::Result<()> {
                 "./rust-vendored/tendermint/types/validator.proto",
                 "./rust-vendored/ibc/applications/transfer/v1/query.proto",
                 "./rust-vendored/ibc/core/channel/v1/query.proto",
+                "./rust-vendored/cosmwasm/wasm/v1/authz.proto",
+                "./rust-vendored/cosmwasm/wasm/v1/genesis.proto",
+                "./rust-vendored/cosmwasm/wasm/v1/ibc.proto",
+                "./rust-vendored/cosmwasm/wasm/v1/proposal_legacy.proto",
+                "./rust-vendored/cosmwasm/wasm/v1/query.proto",
+                "./rust-vendored/cosmwasm/wasm/v1/tx.proto",
+                "./rust-vendored/cosmwasm/wasm/v1/types.proto",
                 "./rust-vendored/ibc/core/client/v1/query.proto",
                 "./rust-vendored/ibc/core/connection/v1/query.proto",
                 "./ergors/akash/node/akash/deployment/v1beta3/deployment.proto",
@@ -207,7 +215,8 @@ fn main() -> anyhow::Result<()> {
                             .replace(", serde::Deserialize", "")
                             .replace("serde::Deserialize, ", "")
                             .replace("serde::Serialize", "")
-                            .replace("serde::Deserialize", "");
+                            .replace("serde::Deserialize", "")
+                            .replace("serde::Serialize, serde::Deserialize,", "");
 
                         if new_derive.contains("#[derive()") || new_derive == "#[derive" {
                             // Remove the derive line entirely if empty

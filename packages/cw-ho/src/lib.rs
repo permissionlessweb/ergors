@@ -8,13 +8,15 @@ pub mod init;
 pub mod middleware;
 pub mod network;
 pub mod orchestrator;
+pub mod proxy;
 pub mod server;
 pub mod storage;
 pub mod traits;
 
-// #[cfg(feature = "cw")]
-// pub mod cosmwasm;
-// use ho_std::wasm::WasmRuntime;
+#[cfg(feature = "cw")]
+pub mod cosmwasm;
+#[cfg(feature = "cw")]
+use ho_std::wasm::WasmRuntime;
 
 // Re-export the macro for external use
 use crate::{config::ErgorsConfig, network::manager::PeerInfo, storage::ErgorsStorage};
@@ -25,6 +27,8 @@ use {
     commonware_cryptography::ed25519, commonware_p2p::authenticated,
     commonware_runtime::tokio::Context,
 };
+
+
 
 /// Minimal network manager for ergors/ implementations in ./manager.rs
 pub struct ErgorsNetworkManifold {
@@ -66,9 +70,9 @@ pub struct ErgorsAppState {
     pub t: Instant,
     /// c = variable config
     pub c: ErgorsConfig,
-    ///// wasm = WASM runtime (when cw feature is enabled)
-    // #[cfg(feature = "cw")]
-    // pub wasm: Arc<WasmRuntime>,
+    /// wasm = WASM runtime (when cw feature is enabled)
+    #[cfg(feature = "cw")]
+    pub wasm: Arc<WasmRuntime>,
 }
 
 impl ErgorsAppState {
@@ -78,7 +82,7 @@ impl ErgorsAppState {
         nm: Arc<tokio::sync::Mutex<ErgorsNetworkManifold>>,
         t: Instant,
         c: ErgorsConfig,
-        // #[cfg(feature = "cw")] wasm: Arc<WasmRuntime>,
+        #[cfg(feature = "cw")] wasm: Arc<WasmRuntime>,
     ) -> Self {
         Self {
             r,
@@ -86,8 +90,8 @@ impl ErgorsAppState {
             nm,
             t,
             c,
-            // #[cfg(feature = "cw")]
-            // wasm,
+            #[cfg(feature = "cw")]
+            wasm,
         }
     }
 }

@@ -12,6 +12,9 @@
 
 mod serde;
 
+// Re-export commonly used prost traits
+pub use prost::{Message, Name};
+
 pub mod config;
 pub mod constants;
 pub mod error;
@@ -25,8 +28,8 @@ pub mod traits;
 pub mod transports;
 pub mod utils;
 
-// #[cfg(feature = "cw")]
-// pub mod wasm;
+#[cfg(feature = "cw")]
+pub mod wasm;
 // pub mod examples;
 
 #[allow(deprecated, unused_imports, clippy::large_enum_variant)]

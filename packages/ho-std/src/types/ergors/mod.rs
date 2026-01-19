@@ -98,13 +98,13 @@ pub mod cosmos {
     }
 }
 
-// pub mod cosmwasm {
-//     pub mod wasm {
-//         pub mod v1 {
-//             include!("gen/cosmwasm.wasm.v1.rs");
-//         }
-//     }
-// }
+pub mod cosmwasm {
+    pub mod wasm {
+        pub mod v1 {
+            include!("gen/cosmwasm.wasm.v1.rs");
+        }
+    }
+}
 
 pub mod custody {
     pub mod v1 {
@@ -148,6 +148,13 @@ pub mod orch {
         include!("gen/ergors.orch.v1.rs");
     }
 }
+
+pub mod proxy {
+    pub mod v1 {
+        include!("gen/ergors.proxy.v1.rs");
+    }
+}
+
 pub mod storage {
 
     pub mod v1 {

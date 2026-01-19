@@ -1,0 +1,355 @@
+syntax = "proto3";
+
+package ergors.proxy.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+// ProxySession represents a complete proxy interaction between CLI tool and upstream provider
+message ProxySession {
+  string session_id = 1;           // Extracted from x-request-id or generated
+  ClientType client_type = 2;      // CLI tool type
+  ProxyApiFormat api_format = 3;   // ANTHROPIC | OPENAI
+
+  // Request capture
+  bytes raw_request = 4;           // Original request body
+  AnthropicRequest anthropic_request = 5;  // Parsed if Anthropic format
+  OpenAiChatRequest openai_request = 6;    // Parsed if OpenAI format
+
+  // Response capture
+  bool is_streaming = 7;
+  repeated StreamChunk chunks = 8;         // SSE chunks captured
+  bytes final_response = 9;                // Aggregated response
+
+  // Metadata
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp completed_at = 11;
+  uint64 total_tokens_input = 12;
+  uint64 total_tokens_output = 13;
+  string model = 14;
+  string error_message = 15;
+
+  // Tool usage tracking
+  repeated ToolCall tool_calls = 16;
+  repeated ToolResult tool_results = 17;
+
+  // Additional metadata
+  map<string, string> headers = 18;
+  string upstream_provider = 19;
+}
+
+enum ClientType {
+  CLIENT_TYPE_UNSPECIFIED = 0;
+  CLIENT_TYPE_CLAUDE_CODE = 1;
+  CLIENT_TYPE_OPENCODE = 2;
+  CLIENT_TYPE_CURSOR = 3;
+  CLIENT_TYPE_CUSTOM = 4;
+}
+
+enum ProxyApiFormat {
+  PROXY_API_FORMAT_UNSPECIFIED = 0;
+  PROXY_API_FORMAT_ANTHROPIC = 1;
+  PROXY_API_FORMAT_OPENAI = 2;
+}
+
+// ============================================
+// Anthropic API Types (/v1/messages)
+// ============================================
+
+message AnthropicRequest {
+  string model = 1;
+  repeated AnthropicMessage messages = 2;
+  string system = 3;  // Optional system prompt
+  uint32 max_tokens = 4;
+  double temperature = 5;
+  bool stream = 6;
+  repeated AnthropicTool tools = 7;
+  map<string, string> metadata = 8;
+  double top_p = 9;
+  repeated string stop_sequences = 10;
+}
+
+message AnthropicMessage {
+  string role = 1;  // "user" | "assistant"
+  // Content can be string or array of content blocks
+  oneof content {
+    string text = 2;
+    AnthropicContentBlocks blocks = 3;
+  }
+}
+
+message AnthropicContentBlocks {
+  repeated AnthropicContentBlock blocks = 1;
+}
+
+message AnthropicContentBlock {
+  string type = 1;  // "text" | "image" | "tool_use" | "tool_result"
+  string text = 2;
+  AnthropicToolUse tool_use = 3;
+  AnthropicToolResult tool_result = 4;
+  AnthropicImageSource source = 5;  // For image blocks
+}
+
+message AnthropicImageSource {
+  string type = 1;       // "base64"
+  string media_type = 2; // "image/jpeg", "image/png", etc.
+  string data = 3;       // base64-encoded image data
+}
+
+message AnthropicTool {
+  string name = 1;
+  string description = 2;
+  google.protobuf.Struct input_schema = 3;
+}
+
+message AnthropicToolUse {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Struct input = 3;
+}
+
+message AnthropicToolResult {
+  string tool_use_id = 1;
+  string content = 2;
+  bool is_error = 3;
+}
+
+// Anthropic response format
+message AnthropicResponse {
+  string id = 1;
+  string type = 2;  // "message"
+  string role = 3;  // "assistant"
+  repeated AnthropicContentBlock content = 4;
+  string model = 5;
+  string stop_reason = 6;
+  string stop_sequence = 7;
+  AnthropicUsage usage = 8;
+}
+
+message AnthropicUsage {
+  uint32 input_tokens = 1;
+  uint32 output_tokens = 2;
+}
+
+// ============================================
+// OpenAI API Types (/v1/chat/completions)
+// ============================================
+
+message OpenAiChatRequest {
+  string model = 1;
+  repeated OpenAiChatMessage messages = 2;
+  double temperature = 3;
+  uint32 max_tokens = 4;
+  bool stream = 5;
+  repeated OpenAiChatTool tools = 6;
+  string tool_choice = 7;  // "none" | "auto" | {"type": "function", "function": {"name": "..."}}
+  double top_p = 8;
+  double frequency_penalty = 9;
+  double presence_penalty = 10;
+  repeated string stop = 11;
+  string user = 12;
+}
+
+message OpenAiChatMessage {
+  string role = 1;  // "system" | "user" | "assistant" | "tool"
+  string content = 2;
+  string name = 3;
+  repeated OpenAiToolCall tool_calls = 4;
+  string tool_call_id = 5;  // For tool response messages
+}
+
+message OpenAiChatTool {
+  string type = 1;  // "function"
+  OpenAiFunction function = 2;
+}
+
+message OpenAiFunction {
+  string name = 1;
+  string description = 2;
+  google.protobuf.Struct parameters = 3;
+}
+
+message OpenAiToolCall {
+  string id = 1;
+  string type = 2;
+  OpenAiFunctionCall function = 3;
+}
+
+message OpenAiFunctionCall {
+  string name = 1;
+  string arguments = 2;  // JSON string
+}
+
+// OpenAI response format
+message OpenAiChatResponse {
+  string id = 1;
+  string object = 2;  // "chat.completion"
+  int64 created = 3;
+  string model = 4;
+  repeated OpenAiChatChoice choices = 5;
+  OpenAiChatUsage usage = 6;
+  string system_fingerprint = 7;
+}
+
+message OpenAiChatChoice {
+  uint32 index = 1;
+  OpenAiChatMessage message = 2;
+  OpenAiChatDelta delta = 3;  // For streaming
+  string finish_reason = 4;  // "stop" | "length" | "tool_calls" | "content_filter"
+}
+
+message OpenAiChatDelta {
+  string role = 1;
+  string content = 2;
+  repeated OpenAiToolCall tool_calls = 3;
+}
+
+message OpenAiChatUsage {
+  uint32 prompt_tokens = 1;
+  uint32 completion_tokens = 2;
+  uint32 total_tokens = 3;
+}
+
+// ============================================
+// Common Tool Tracking Types
+// ============================================
+
+message ToolCall {
+  string id = 1;
+  string name = 2;
+  string arguments_json = 3;
+  google.protobuf.Timestamp called_at = 4;
+  ToolCallSource source = 5;
+}
+
+enum ToolCallSource {
+  TOOL_CALL_SOURCE_UNSPECIFIED = 0;
+  TOOL_CALL_SOURCE_ANTHROPIC = 1;
+  TOOL_CALL_SOURCE_OPENAI = 2;
+}
+
+message ToolResult {
+  string tool_call_id = 1;
+  string result_json = 2;
+  bool is_error = 3;
+  google.protobuf.Timestamp returned_at = 4;
+}
+
+// ============================================
+// SSE Streaming Types
+// ============================================
+
+message StreamChunk {
+  uint32 sequence = 1;
+  string event_type = 2;          // e.g., "content_block_delta", "message_delta", "chunk"
+  bytes data = 3;                 // Raw SSE data
+  google.protobuf.Timestamp received_at = 4;
+  string delta_text = 5;          // Extracted text delta if applicable
+}
+
+// Anthropic SSE event types
+enum AnthropicStreamEvent {
+  ANTHROPIC_STREAM_EVENT_UNSPECIFIED = 0;
+  ANTHROPIC_STREAM_EVENT_MESSAGE_START = 1;
+  ANTHROPIC_STREAM_EVENT_CONTENT_BLOCK_START = 2;
+  ANTHROPIC_STREAM_EVENT_CONTENT_BLOCK_DELTA = 3;
+  ANTHROPIC_STREAM_EVENT_CONTENT_BLOCK_STOP = 4;
+  ANTHROPIC_STREAM_EVENT_MESSAGE_DELTA = 5;
+  ANTHROPIC_STREAM_EVENT_MESSAGE_STOP = 6;
+  ANTHROPIC_STREAM_EVENT_PING = 7;
+  ANTHROPIC_STREAM_EVENT_ERROR = 8;
+}
+
+// ============================================
+// Query/List Proxy Sessions
+// ============================================
+
+message QueryProxySessionsRequest {
+  ClientType client_type = 1;
+  ProxyApiFormat api_format = 2;
+  string model = 3;
+  google.protobuf.Timestamp after = 4;
+  google.protobuf.Timestamp before = 5;
+  uint32 limit = 6;
+  uint32 offset = 7;
+  bool include_chunks = 8;  // Whether to include streaming chunks in response
+}
+
+message QueryProxySessionsResponse {
+  repeated ProxySession sessions = 1;
+  uint32 total_count = 2;
+  bool has_more = 3;
+}
+
+message GetProxySessionRequest {
+  string session_id = 1;
+  bool include_chunks = 2;
+}
+
+message GetProxySessionResponse {
+  ProxySession session = 1;
+}
+
+// ============================================
+// Capture Events (Internal)
+// ============================================
+
+message CaptureEvent {
+  oneof event {
+    SessionStartEvent session_start = 1;
+    ChunkEvent chunk = 2;
+    SessionCompleteEvent session_complete = 3;
+    SessionErrorEvent session_error = 4;
+  }
+}
+
+message SessionStartEvent {
+  string session_id = 1;
+  bytes raw_request = 2;
+  ProxyApiFormat api_format = 3;
+  ClientType client_type = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+message ChunkEvent {
+  string session_id = 1;
+  StreamChunk chunk = 2;
+}
+
+message SessionCompleteEvent {
+  string session_id = 1;
+  bytes final_response = 2;
+  uint64 input_tokens = 3;
+  uint64 output_tokens = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+message SessionErrorEvent {
+  string session_id = 1;
+  string error_message = 2;
+  uint32 status_code = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+// ============================================
+// Proxy Configuration
+// ============================================
+
+message ProxyConfig {
+  bool enabled = 1;
+  bool capture_requests = 2;
+  bool capture_responses = 3;
+  bool capture_streaming_chunks = 4;
+  uint32 max_chunk_buffer_size = 5;  // Max chunks to buffer per session
+  uint64 session_ttl_seconds = 6;    // How long to keep sessions
+  repeated string allowed_models = 7; // Empty = all allowed
+  repeated string blocked_models = 8;
+  AuthMode auth_mode = 9;
+}
+
+enum AuthMode {
+  AUTH_MODE_UNSPECIFIED = 0;
+  AUTH_MODE_PASSTHROUGH = 1;   // Use API key from incoming request
+  AUTH_MODE_CONFIGURED = 2;    // Use ERGORS configured API keys
+  AUTH_MODE_BOTH = 3;          // Try passthrough first, fall back to configured
+}

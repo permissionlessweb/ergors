@@ -5,7 +5,7 @@ use futures::StreamExt;
 use ho_std::error::error_json;
 use ho_std::llm::{HoError, HoResult};
 use ho_std::traits::MessageExt;
-use ho_std::types::ergors::{orch::v1::*, storage::v1::*};
+use ho_std::types::ergors::{orch::v1::*, proxy::v1::*, storage::v1::*};
 use std::path::Path;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -17,6 +17,8 @@ const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
 const OP_PREFIX: &str = "operations/";
 const API_KEY_PREFIX: &str = "custody/api_keys/";
 const HEADSTASH: &str = "headstash/";
+const PROXY_SESSION_PREFIX: &str = "proxy_sessions/";
+const PROXY_CLIENT_INDEX_PREFIX: &str = "proxy_sessions_by_client/";
 
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
@@ -555,6 +557,151 @@ impl ErgorsStorage {
         }
 
         Ok(providers)
+    }
+
+    // ========================================
+    // Proxy Session Storage Methods
+    // ========================================
+
+    /// Store a proxy session to persistent storage.
+    pub async fn put_proxy_session(&self, session: &ProxySession) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        // Main session record
+        let session_key = format!("{}{}", PROXY_SESSION_PREFIX, session.session_id);
+        let session_data = serde_json::to_vec(session)?;
+        delta.put_raw(session_key.clone(), session_data);
+
+        // Index by client type
+        let client_type_name = match session.client_type {
+            0 => "unspecified",
+            1 => "claude_code",
+            2 => "opencode",
+            3 => "cursor",
+            4 => "custom",
+            _ => "unknown",
+        };
+        let client_index_key = format!(
+            "{}{}:{}",
+            PROXY_CLIENT_INDEX_PREFIX, client_type_name, session.session_id
+        );
+        delta.put_raw(client_index_key, session.session_id.as_bytes().to_vec());
+
+        // Index by timestamp for efficient time-range queries
+        if let Some(ref ts) = session.started_at {
+            let ts_index_key = format!(
+                "proxy_sessions_by_time/{:020}:{}",
+                ts.seconds, session.session_id
+            );
+            delta.put_raw(ts_index_key, session.session_id.as_bytes().to_vec());
+        }
+
+        self.cs.commit(delta).await?;
+
+        info!(
+            "💾 Stored proxy session: {} (client: {}, model: {})",
+            session.session_id, client_type_name, session.model
+        );
+
+        Ok(())
+    }
+
+    /// Get a proxy session by ID.
+    pub async fn get_proxy_session(&self, session_id: &str) -> HoResult<Option<ProxySession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let session_key = format!("{}{}", PROXY_SESSION_PREFIX, session_id);
+
+        match snapshot.get_raw(&session_key).await {
+            Ok(Some(data)) => {
+                let session: ProxySession = serde_json::from_slice(&data)?;
+                Ok(Some(session))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get proxy session {}: {}", session_id, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Query proxy sessions with filters.
+    pub async fn query_proxy_sessions(
+        &self,
+        query: &QueryProxySessionsRequest,
+    ) -> HoResult<Vec<ProxySession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut results = Vec::new();
+        let limit = query.limit.max(1).min(1000) as usize;
+
+        info!(
+            "🔍 Querying proxy sessions with limit: {}, offset: {}",
+            limit, query.offset
+        );
+
+        let mut stream = snapshot.prefix_raw(PROXY_SESSION_PREFIX);
+        let mut count = 0;
+        let mut skipped = 0;
+
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, value)) => {
+                    match serde_json::from_slice::<ProxySession>(&value) {
+                        Ok(session) => {
+                            // Apply filters
+                            if query.client_type != 0 && session.client_type != query.client_type {
+                                continue;
+                            }
+                            if query.api_format != 0 && session.api_format != query.api_format {
+                                continue;
+                            }
+                            if !query.model.is_empty() && session.model != query.model {
+                                continue;
+                            }
+
+                            // Apply offset
+                            if skipped < query.offset as usize {
+                                skipped += 1;
+                                continue;
+                            }
+
+                            // Apply limit
+                            if count >= limit {
+                                break;
+                            }
+
+                            results.push(session);
+                            count += 1;
+                        }
+                        Err(e) => {
+                            warn!("Failed to deserialize proxy session: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading proxy session stream: {}", e);
+                }
+            }
+        }
+
+        // Sort by start time (most recent first)
+        results.sort_by(|a, b| {
+            let b_ts = b.started_at.as_ref().map(|t| t.seconds).unwrap_or(0);
+            let a_ts = a.started_at.as_ref().map(|t| t.seconds).unwrap_or(0);
+            b_ts.cmp(&a_ts)
+        });
+
+        info!("🔍 Query returned {} proxy sessions", results.len());
+        Ok(results)
+    }
+
+    /// Delete a proxy session.
+    pub async fn delete_proxy_session(&self, session_id: &str) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let session_key = format!("{}{}", PROXY_SESSION_PREFIX, session_id);
+        delta.delete(session_key);
+        self.cs.commit(delta).await?;
+        info!("🗑️  Deleted proxy session: {}", session_id);
+        Ok(())
     }
 }
 

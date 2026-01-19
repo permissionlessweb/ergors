@@ -87,10 +87,7 @@ mod tests {
         assert_eq!(wasm_code_key(1), "wasm/code/1");
         assert_eq!(wasm_code_info_key(1), "wasm/code_info/1");
         assert_eq!(wasm_contract_key("ergors1abc"), "wasm/contract/ergors1abc");
-        assert_eq!(
-            wasm_contract_by_code_key(1, 0),
-            "wasm/contract_by_code/1/0"
-        );
+        assert_eq!(wasm_contract_by_code_key(1, 0), "wasm/contract_by_code/1/0");
         assert_eq!(
             wasm_contract_state_key("ergors1abc", b"balance"),
             "wasm/state/ergors1abc/62616c616e6365"

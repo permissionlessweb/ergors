@@ -36,12 +36,17 @@ impl Server {
                 { path: "/headstash/upload", method: get, handler: crate::headstash::ipfs::handle_headstash_metadata_storage },
                 { path: "/headstash/watch", method: get, handler: crate::headstash::indexer::handle_indexer_instructions },
                 { path: "/network/topology", method: get, handler: handle_network_topology },
+                // Proxy endpoints for CLI tools (Claude Code, opencode)
+                { path: "/v1/messages", method: post, handler: crate::proxy::handle_anthropic_proxy },
+                { path: "/v1/chat/completions", method: post, handler: crate::proxy::handle_openai_proxy },
                 // { path: "/orchestrate/bootstrap", method: post, handler: crate::deploy::handle_bootstrap },
                 // { path: "/headstash/cosmwasm", method: get, handler: crate::cosmwasm::handle_cosmwasm_action },
                 { path: "/health", method: get, handler: handle_health },
             ],
             protected_routes: [
                 { path: "/api/prompts", method: get, handler: handle_query },
+                { path: "/api/proxy/sessions", method: get, handler: crate::proxy::handle_query_sessions },
+                { path: "/api/proxy/sessions/:id", method: get, handler: crate::proxy::handle_get_session },
                 { path: "/orchestrate/fractal", method: post, handler: crate::orchestrator::handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: crate::storage::handle_prune },
                 ]
@@ -85,15 +90,15 @@ impl Server {
         .await?;
         nm.start_network(c.network()).await?;
 
-        // // Initialize CosmWasm VM runtime
-        // #[cfg(feature = "cw")]
-        // let wasm_runtime = {
-        //     // use ho_std::wasm::WasmRuntime;
-        //     use std::path::PathBuf;
+        // Initialize CosmWasm VM runtime
+        #[cfg(feature = "cw")]
+        let wasm_runtime = {
+            use ho_std::wasm::WasmRuntime;
+            use std::path::PathBuf;
 
-        //     let cache_dir = PathBuf::from(&c.storage().data_dir).join("wasm_cache");
-        //     Arc::new(WasmRuntime::new(cache_dir)?)
-        // };
+            let cache_dir = PathBuf::from(&c.storage().data_dir).join("wasm_cache");
+            Arc::new(WasmRuntime::new(cache_dir)?)
+        };
 
         // Encrypt and store API keys on server startup
         // Self::encrypt_and_store_api_keys(&c, &s).await?;
@@ -110,9 +115,9 @@ impl Server {
                 Instant::now(),
                 // c == config
                 c.clone(),
-                // // wasm == WASM runtime
-                // #[cfg(feature = "cw")]
-                // wasm_runtime,
+                // wasm == WASM runtime
+                #[cfg(feature = "cw")]
+                wasm_runtime,
             ),
         })
     }

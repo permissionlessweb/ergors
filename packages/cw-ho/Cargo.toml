@@ -20,6 +20,7 @@ zk-headstash  = { workspace = true }
 ho-std  = { workspace = true, features = ["rpc"] }
 ergors-proto = { path = "../../proto" }
 anyhow = { workspace = true }
+async-stream = { workspace = true }
 axum = { workspace = true }
 bytes = { workspace = true }
 camino = { workspace = true }
@@ -42,6 +43,7 @@ rpassword = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 toml = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }

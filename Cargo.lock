@@ -2509,6 +2509,7 @@ name = "ergors"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "axum",
  "bytes",
  "camino",
@@ -2534,6 +2535,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tokio",
+ "tokio-stream",
  "tokio-test",
  "toml 0.8.23",
  "tower-http 0.5.2",
@@ -7671,6 +7673,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
