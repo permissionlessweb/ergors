@@ -25,6 +25,51 @@
 
 pub use prost::{Message, Name};
 
+// Re-export akash modules at the expected locations for generated code
+pub mod market {
+    pub use crate::types::ergors::akash::market::*;
+}
+pub mod manifest {
+    pub use crate::types::ergors::akash::manifest::*;
+}
+
+pub mod akash {
+
+    pub mod base {
+        pub mod v1beta3 {
+
+            include!("gen/akash.base.v1beta3.rs");
+        }
+    }
+    pub mod deployment {
+        pub mod v1beta3 {
+            include!("gen/akash.deployment.v1beta3.rs");
+        }
+    }
+    pub mod escrow {
+        pub mod v1beta3 {
+            include!("gen/akash.escrow.v1beta3.rs");
+        }
+    }
+    pub mod manifest {
+        pub mod v2beta2 {
+            include!("gen/akash.manifest.v2beta2.rs");
+        }
+    }
+    pub mod market {
+        pub mod v1beta4 {
+            include!("gen/akash.market.v1beta4.rs");
+        }
+    }
+    pub mod provider {
+        pub mod lease {
+            pub mod v1 {
+                include!("gen/akash.provider.lease.v1.rs");
+            }
+        }
+    }
+}
+
 pub mod actions {
     pub mod v1 {
         include!("gen/ergors.actions.v1.rs");
@@ -35,6 +80,32 @@ pub mod asset {
         include!("gen/ergors.asset.v1.rs");
     }
 }
+
+pub mod cosmos {
+    pub mod base {
+        pub mod v1beta1 {
+            include!("gen/cosmos.base.v1beta1.rs");
+        }
+        pub mod query {
+            pub mod v1beta1 {
+                include!("gen/cosmos.base.query.v1beta1.rs");
+            }
+        }
+    }
+    pub mod v1 {
+        include!("gen/cosmos_proto.rs");
+        // include!("gen/cosmos.ics23.v1.rs");
+    }
+}
+
+// pub mod cosmwasm {
+//     pub mod wasm {
+//         pub mod v1 {
+//             include!("gen/cosmwasm.wasm.v1.rs");
+//         }
+//     }
+// }
+
 pub mod custody {
     pub mod v1 {
         include!("gen/ergors.custody.v1.rs");
@@ -101,12 +172,12 @@ pub mod num {
     }
 }
 
-pub mod ibc {
-    pub mod v1 {
-        include!("gen/ergors.ibc.v1.rs");
-        // include!("gen/ergors.ibc.v1.serde.rs");
-    }
-}
+// pub mod ibc {
+//     pub mod v1 {
+//         include!("gen/ergors.ibc.v1.rs");
+//         // include!("gen/ergors.ibc.v1.serde.rs");
+//     }
+// }
 
 pub mod txhash {
     pub mod v1 {

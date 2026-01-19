@@ -2,26 +2,29 @@ pub mod auth;
 pub mod call;
 pub mod config;
 
-pub mod init;
+pub mod deploy;
 pub mod headstash;
+pub mod init;
 pub mod middleware;
-pub mod orchestrator;
 pub mod network;
+pub mod orchestrator;
 pub mod server;
 pub mod storage;
 pub mod traits;
 
+// #[cfg(feature = "cw")]
+// pub mod cosmwasm;
+// use ho_std::wasm::WasmRuntime;
+
 // Re-export the macro for external use
 use crate::{config::ErgorsConfig, network::manager::PeerInfo, storage::ErgorsStorage};
-
 use ho_std::{llm::LlmRouter, types::ergors::network::v1::*};
+use std::{collections::HashMap, sync::Arc, time::Instant};
+use tokio::sync::{mpsc, RwLock};
 use {
     commonware_cryptography::ed25519, commonware_p2p::authenticated,
     commonware_runtime::tokio::Context,
 };
-
-use std::{collections::HashMap, sync::Arc, time::Instant};
-use tokio::sync::{mpsc, RwLock};
 
 /// Minimal network manager for ergors/ implementations in ./manager.rs
 pub struct ErgorsNetworkManifold {
@@ -49,7 +52,8 @@ pub struct ErgorsNetworkManifold {
 /// `s` = storage\
 /// `nm` = network manifold\
 /// `t` = time\
-/// `c` = variable config
+/// `c` = variable config\
+/// `wasm` = WASM runtime (optional)
 #[derive(Clone)]
 pub struct ErgorsAppState {
     /// r = router
@@ -62,6 +66,9 @@ pub struct ErgorsAppState {
     pub t: Instant,
     /// c = variable config
     pub c: ErgorsConfig,
+    ///// wasm = WASM runtime (when cw feature is enabled)
+    // #[cfg(feature = "cw")]
+    // pub wasm: Arc<WasmRuntime>,
 }
 
 impl ErgorsAppState {
@@ -71,7 +78,16 @@ impl ErgorsAppState {
         nm: Arc<tokio::sync::Mutex<ErgorsNetworkManifold>>,
         t: Instant,
         c: ErgorsConfig,
+        // #[cfg(feature = "cw")] wasm: Arc<WasmRuntime>,
     ) -> Self {
-        Self { r, s, nm, t, c }
+        Self {
+            r,
+            s,
+            nm,
+            t,
+            c,
+            // #[cfg(feature = "cw")]
+            // wasm,
+        }
     }
 }

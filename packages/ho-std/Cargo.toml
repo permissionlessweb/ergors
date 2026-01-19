@@ -11,8 +11,10 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["grpc-transport"]
+default = ["grpc-transport", "cw"]
 std = ["prost/std"]
+cw = ["cosmwasm-vm","wasmer","wasmer-middlewares","wasmer-types"] # cosmwasm vm features
+# cw = []
 rpc = []
 grpc = ["std", "tonic", "tonic-prost"]
 grpc-transport = ["grpc", "tonic/transport"]
@@ -91,6 +93,13 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
+
+cosmwasm-vm = { workspace = true, optional = true, features = ["stargate"] }
+wasmer = { workspace = true, default-features = false, features = ["singlepass"], optional = true }
+wasmer-middlewares = { workspace = true,   optional = true }
+wasmer-types = { workspace = true,   optional = true }
+
+
 
 [dev-dependencies]
 proptest = { workspace = true }

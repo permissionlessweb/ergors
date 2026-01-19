@@ -531,10 +531,10 @@ pub trait PromptResponseTrait {
     fn tokens_used(&self) -> &Self::TokenUsage;
 
     /// Get cost
-    fn cost(&self) -> Option<f64>;
+    fn cost(&self) -> f64;
 
     /// Get latency
-    fn latency_ms(&self) -> Option<u64>;
+    fn latency_ms(&self) -> u64;
 
     // /// Get context
     // fn context(&self) -> Option<&Self::Context>;

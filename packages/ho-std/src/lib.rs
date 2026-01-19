@@ -6,40 +6,27 @@
     rustdoc::broken_intra_doc_links,
     clippy::derive_partial_eq_without_eq
 )]
-#![forbid(unsafe_code)]
+// #![forbid(unsafe_code)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_import_braces)]
 #![cfg_attr(not(feature = "std"), no_std)]
-
-//! ERGORS Protocol Buffer Definitions
-//!
-//! This crate provides protocol buffer definitions for the ERGORS (CommonWare Host Orchestrator)
-//! **Storage Layer** - LLM prompt/response storage, query operations, and health monitoring
-//! **Node Identity & Configuration Definition** - Node coordination, cosmic task management, network topology
-//! **Newtorking & Communication Layer** - Node coordination, cosmic task management, network topology
-//! **Agentic Orchestration Layer** - Node coordination, cosmic task management, network topology
-//! **Deployment Layer** - Node coordination, cosmic task management, network topology
-//! **Authorization Client & Proof Generating Middleware** - Node coordination, cosmic task management, network topology
-//!
-//! The proto definitions are organized following the sacred geometry principles embedded
-//! in the ERGORS architecture, with fractal recursion, golden ratio scaling, and tetrahedral
-//! network topologies.
-//! 
 
 mod serde;
 
 pub mod config;
 pub mod constants;
-pub mod deploy;
 pub mod error;
+pub mod languages;
 pub mod llm;
 pub mod network;
 pub mod orchestrate;
-pub mod python;
 pub mod server;
 pub mod storage;
 pub mod traits;
 pub mod transports;
 pub mod utils;
+
+// #[cfg(feature = "cw")]
+// pub mod wasm;
 // pub mod examples;
 
 #[allow(deprecated, unused_imports, clippy::large_enum_variant)]
@@ -56,7 +43,5 @@ use crate::llm::HoError;
 // pub mod shared_impl;
 
 pub type HoResult<T> = std::result::Result<T, HoError>;
-
-
 
 extern crate alloc;

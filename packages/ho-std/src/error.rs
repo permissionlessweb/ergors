@@ -56,6 +56,10 @@ pub enum HoError {
     Orchestration(String),
     #[error("Storage error: {0}")]
     Storage(String),
+    #[error("WASM error: {0}")]
+    Wasm(String),
+    #[error("Crypto error: {0}")]
+    Crypto(String),
     #[error("Serialization error: {0}")]
     Serialization(String),
     #[error("DeSerialization error: {0}")]
