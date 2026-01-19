@@ -116,13 +116,13 @@ impl ApiJoint for AnthropticJoint {
                 response: content,
                 timestamp: Some(chrono::Utc::now().into()),
                 tokens_used: Some(final_usage),
-                cost: Some(CostCalculator::calculate_cost(
+                cost: CostCalculator::calculate_cost(
                     provider_name,
                     &req.model,
                     final_usage.prompt,
                     final_usage.completion,
-                )),
-                latency_ms: Some(latency_ms),
+                ),
+                latency_ms,
             })
         } else {
             let error_text = response.text().await?;

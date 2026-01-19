@@ -62,19 +62,21 @@ impl ErgorsStorage {
         // Create context-based indexes if original request is provided
         if let Some(request) = original_request {
             if let Some(ref context) = request.context {
-                // Index by session_id if present
-                if let Some(ref session_id) = context.session_id {
-                    let session_key = format!("{}{}:{}", SESSION_INDEX_PREFIX, session_id, id);
+                // Index by session_id
+                let sid = context.session_id.clone();
+                let uid = context.user_id.clone();
+              
+                    let session_key = format!("{}{}:{}", SESSION_INDEX_PREFIX, sid, id);
                     delta.put_raw(session_key, prompt.id.clone());
-                    debug!("Created session index for {}: {}", session_id, id);
-                }
+                    debug!("Created session index for {}: {}", sid, id);
+ 
 
-                // Index by user_id if present
-                if let Some(ref user_id) = context.user_id {
-                    let user_key = format!("{}{}:{}", USER_INDEX_PREFIX, user_id, id);
-                    delta.put_raw(user_key, prompt.id.clone());
-                    debug!("Created user index for {}: {}", user_id, id);
-                }
+                // Index by user_id 
+              
+            let user_key = format!("{}{}:{}", USER_INDEX_PREFIX, uid, id);
+            delta.put_raw(user_key, prompt.id.clone());
+            debug!("Created user index for {}: {}", uid, id);
+ 
             }
         }
 

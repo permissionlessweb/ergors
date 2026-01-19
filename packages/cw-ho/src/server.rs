@@ -36,13 +36,14 @@ impl Server {
                 { path: "/headstash/upload", method: get, handler: crate::headstash::ipfs::handle_headstash_metadata_storage },
                 { path: "/headstash/watch", method: get, handler: crate::headstash::indexer::handle_indexer_instructions },
                 { path: "/network/topology", method: get, handler: handle_network_topology },
+                // { path: "/orchestrate/bootstrap", method: post, handler: crate::deploy::handle_bootstrap },
+                // { path: "/headstash/cosmwasm", method: get, handler: crate::cosmwasm::handle_cosmwasm_action },
                 { path: "/health", method: get, handler: handle_health },
             ],
             protected_routes: [
                 { path: "/api/prompts", method: get, handler: handle_query },
                 { path: "/orchestrate/fractal", method: post, handler: crate::orchestrator::handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: crate::storage::handle_prune },
-                // { path: "/orchestrate/bootstrap", method: post, handler: handle_bootstrap },
                 ]
         };
         let server_addr = format!(
@@ -84,6 +85,16 @@ impl Server {
         .await?;
         nm.start_network(c.network()).await?;
 
+        // // Initialize CosmWasm VM runtime
+        // #[cfg(feature = "cw")]
+        // let wasm_runtime = {
+        //     // use ho_std::wasm::WasmRuntime;
+        //     use std::path::PathBuf;
+
+        //     let cache_dir = PathBuf::from(&c.storage().data_dir).join("wasm_cache");
+        //     Arc::new(WasmRuntime::new(cache_dir)?)
+        // };
+
         // Encrypt and store API keys on server startup
         // Self::encrypt_and_store_api_keys(&c, &s).await?;
 
@@ -99,6 +110,9 @@ impl Server {
                 Instant::now(),
                 // c == config
                 c.clone(),
+                // // wasm == WASM runtime
+                // #[cfg(feature = "cw")]
+                // wasm_runtime,
             ),
         })
     }
@@ -125,9 +139,9 @@ impl Server {
                     continue;
                 }
             }
-
+            let key_ref = provider_config.api_key.clone();
             // Check if API key is configured in environment
-            if let Some(key_ref) = &provider_config.api_key {
+            if &key_ref != "" {
                 if key_ref.starts_with("${") && key_ref.ends_with("}") {
                     let env_var_name = &key_ref[2..key_ref.len() - 1];
 
@@ -338,7 +352,7 @@ async fn handle_health(State(state): State<ErgorsAppState>) -> Json<HealthRespon
         version: env!("CARGO_PKG_VERSION").to_string(),
         uptime_seconds: uptime,
         storage_status,
-        network_status: Some(network_status),
+        network_status,
     })
 }
 

@@ -41,8 +41,13 @@ impl ApiJoint for OpenAiJoint {
                 .llm_config
                 .as_ref()
                 .and_then(|c| Some(c.temperature))
-                .or(Some(1)),
-            max_tokens: req.llm_config.as_ref().and_then(|c| Some(c.max_tokens)),
+                .or(Some(1))
+                .unwrap_or_default(),
+            max_tokens: req
+                .llm_config
+                .as_ref()
+                .and_then(|c| Some(c.max_tokens))
+                .unwrap_or_default(),
         };
 
         let start = std::time::Instant::now();
@@ -101,13 +106,13 @@ impl ApiJoint for OpenAiJoint {
                     completion: usage.completion_tokens,
                     total: usage.total_tokens,
                 }),
-                cost: Some(CostCalculator::calculate_cost(
+                cost: CostCalculator::calculate_cost(
                     provider_name,
                     &req.model,
                     usage.prompt_tokens,
                     usage.completion_tokens,
-                )),
-                latency_ms: Some(latency_ms),
+                ),
+                latency_ms,
             })
         } else {
             let error_text = response.text().await?;

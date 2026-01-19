@@ -58,8 +58,8 @@ pub async fn handle_prompt(
                 }),
                 tokens_used: llm_response.tokens_used,
                 provider: "default".to_string(), // TODO: get deterministic provider from storage
-                cost: Some(0.0),
-                latency_ms: None,
+                cost: 0.0,
+                latency_ms: 0,
                 // context: request.context.clone(),
             };
 

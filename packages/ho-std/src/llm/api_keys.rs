@@ -16,7 +16,7 @@ use termion::{clear, color, cursor, style};
 
 impl ApiKeysJson {
     /// Create a new default configuration with ollama_local enabled
-    pub fn new() -> Self {
+    pub fn new(api: &str) -> Self {
         let mut providers = HashMap::new();
 
         // Add ollama_local by default (no API key needed)
@@ -24,7 +24,7 @@ impl ApiKeysJson {
         providers.insert(
             "ollama_local".to_string(),
             ProviderWithAuth {
-                api_key: None,
+                api_key: api.into(),
                 entity: Some(ollama.default_entity()),
             },
         );
@@ -33,10 +33,9 @@ impl ApiKeysJson {
             metadata: Some(ApiKeysMetadata {
                 version: "2.0.0".to_string(),
                 description: "ERGORS Node API Keys - Configure your LLM providers".to_string(),
-                golden_ratio_note: Some(
+                golden_ratio_note:
                     "Provider selection uses φ ≈ 1.618 weighting when strategy = 'GoldenRatio'"
                         .to_string(),
-                ),
             }),
             providers,
             global_settings: Some(GlobalSettings {
@@ -158,7 +157,7 @@ pub fn configure_api_keys_interactive(api_keys_path: &Utf8PathBuf) -> Result<()>
     let mut config = if api_keys_path.exists() {
         ApiKeysJson::load(api_keys_path)?
     } else {
-        ApiKeysJson::new()
+        ApiKeysJson::new("")
     };
 
     // Setup termion
@@ -636,9 +635,9 @@ fn save_configuration(config: &mut ApiKeysJson, providers: &[ProviderMenuItem]) 
         let key = get_provider_key(provider.model);
 
         let api_key = if !matches!(provider.model, LlmModel::OllamaLocal) {
-            Some(format!("${{{}}}", get_env_var_name(provider.model)))
+            format!("${{{}}}", get_env_var_name(provider.model))
         } else {
-            None
+            "".into()
         };
 
         let provider_config = ProviderWithAuth {

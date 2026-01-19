@@ -71,11 +71,11 @@ impl PromptResponseTrait for PromptResponse {
         })
     }
 
-    fn cost(&self) -> Option<f64> {
+    fn cost(&self) -> f64 {
         self.cost
     }
 
-    fn latency_ms(&self) -> Option<u64> {
+    fn latency_ms(&self) -> u64 {
         self.latency_ms
     }
 
@@ -94,10 +94,10 @@ impl PromptResponseTrait for PromptResponse {
     }
 
     fn set_cost(&mut self, cost: f64) {
-        self.cost = Some(cost);
+        self.cost = cost;
     }
 
     fn set_latency(&mut self, latency_ms: u64) {
-        self.latency_ms = Some(latency_ms);
+        self.latency_ms = latency_ms;
     }
 }
