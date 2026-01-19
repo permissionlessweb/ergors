@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package headstash.actions.v1;
 
-import "google/protobuf/struct.proto";
-
 
 service HeadstashService {
       // retrieve token holder distribution

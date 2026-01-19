@@ -1,7 +1,5 @@
 # buf.yaml
 version: v1
-roots:
-  - proto
 name: buf.build/permissionlessweb/ergors
 deps:
   - buf.build/googleapis/googleapis

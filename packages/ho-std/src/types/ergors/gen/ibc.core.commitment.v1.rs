@@ -2,8 +2,7 @@
 /// MerkleRoot defines a merkle root hash.
 /// In the Cosmos SDK, the AppHash of a block header becomes the root.
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct MerkleRoot {
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message, serde::Serialize, serde::Deserialize)] {
     #[prost(bytes = "vec", tag = "1")]
     pub hash: ::prost::alloc::vec::Vec<u8>,
 }
@@ -21,8 +20,7 @@ impl ::prost::Name for MerkleRoot {
 /// The constructed key from the Path and the key will be append(Path.KeyPath,
 /// append(Path.KeyPrefix, key...))
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct MerklePrefix {
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message, serde::Serialize, serde::Deserialize)] {
     #[prost(bytes = "vec", tag = "1")]
     pub key_prefix: ::prost::alloc::vec::Vec<u8>,
 }
@@ -40,8 +38,7 @@ impl ::prost::Name for MerklePrefix {
 /// arbitrary structured object (defined by a commitment type).
 /// MerklePath is represented from root-to-leaf
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct MerklePath {
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message, serde::Serialize, serde::Deserialize)] {
     #[prost(string, repeated, tag = "1")]
     pub key_path: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -61,8 +58,7 @@ impl ::prost::Name for MerklePath {
 /// should be succinct.
 /// MerkleProofs are ordered from leaf-to-root
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MerkleProof {
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)] {
     #[prost(message, repeated, tag = "1")]
     pub proofs: ::prost::alloc::vec::Vec<
         super::super::super::super::cosmos::ics23::v1::CommitmentProof,

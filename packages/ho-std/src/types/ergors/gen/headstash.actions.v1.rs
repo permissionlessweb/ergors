@@ -103,6 +103,28 @@ impl ::prost::Name for MsgCreateHeadstashNoteResponse {
         "/headstash.actions.v1.MsgCreateHeadstashNoteResponse".into()
     }
 }
+/// Used when claiming a headstash note. Contains all public inputs, plus note nullifier.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MsgRegisterHeadstash {
+    #[prost(string, tag = "1")]
+    pub addr: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub v: u64,
+    #[prost(bytes = "vec", tag = "4")]
+    pub null: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for MsgRegisterHeadstash {
+    const NAME: &'static str = "MsgRegisterHeadstash";
+    const PACKAGE: &'static str = "headstash.actions.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "headstash.actions.v1.MsgRegisterHeadstash".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/headstash.actions.v1.MsgRegisterHeadstash".into()
+    }
+}
+/// Used when claiming a headstash note. Contains all public inputs, plus note nullifier.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MsgClaimHeadstash {

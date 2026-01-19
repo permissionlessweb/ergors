@@ -44,8 +44,8 @@ pub struct CosmicTask {
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag = "8")]
     pub result: ::core::option::Option<::pbjson_types::Struct>,
-    #[prost(string, optional, tag = "9")]
-    pub error: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "9")]
+    pub error: ::prost::alloc::string::String,
 }
 impl ::prost::Name for CosmicTask {
     const NAME: &'static str = "CosmicTask";
@@ -164,10 +164,10 @@ pub struct PromptResponse {
     pub timestamp: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag = "7")]
     pub tokens_used: ::core::option::Option<TokenUsage>,
-    #[prost(double, optional, tag = "8")]
-    pub cost: ::core::option::Option<f64>,
-    #[prost(uint64, optional, tag = "9")]
-    pub latency_ms: ::core::option::Option<u64>,
+    #[prost(double, tag = "8")]
+    pub cost: f64,
+    #[prost(uint64, tag = "9")]
+    pub latency_ms: u64,
 }
 impl ::prost::Name for PromptResponse {
     const NAME: &'static str = "PromptResponse";
@@ -200,12 +200,12 @@ impl ::prost::Name for PromptMessage {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PromptContext {
-    #[prost(string, optional, tag = "1")]
-    pub session_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "2")]
-    pub user_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "3")]
-    pub thread_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub user_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub thread_id: ::prost::alloc::string::String,
 }
 impl ::prost::Name for PromptContext {
     const NAME: &'static str = "PromptContext";
@@ -308,10 +308,10 @@ pub struct OpenAiRequest {
     pub model: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub messages: ::prost::alloc::vec::Vec<OpenAiMessage>,
-    #[prost(uint32, optional, tag = "3")]
-    pub temperature: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "4")]
-    pub max_tokens: ::core::option::Option<u32>,
+    #[prost(uint32, tag = "3")]
+    pub temperature: u32,
+    #[prost(uint32, tag = "4")]
+    pub max_tokens: u32,
 }
 impl ::prost::Name for OpenAiRequest {
     const NAME: &'static str = "OpenAiRequest";
@@ -461,8 +461,8 @@ impl ::prost::Name for LlmEntity {
 pub struct LoggingConfig {
     #[prost(string, tag = "1")]
     pub level: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "2")]
-    pub file: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "2")]
+    pub file: ::prost::alloc::string::String,
 }
 impl ::prost::Name for LoggingConfig {
     const NAME: &'static str = "LoggingConfig";
@@ -499,8 +499,8 @@ pub struct HealthResponse {
     pub uptime_seconds: u64,
     #[prost(string, tag = "4")]
     pub storage_status: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "5")]
-    pub network_status: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "5")]
+    pub network_status: ::prost::alloc::string::String,
 }
 impl ::prost::Name for HealthResponse {
     const NAME: &'static str = "HealthResponse";
@@ -516,16 +516,16 @@ impl ::prost::Name for HealthResponse {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct QueryPromptsRequest {
-    #[prost(string, optional, tag = "1")]
-    pub session_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "2")]
-    pub user_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(uint32, optional, tag = "3")]
-    pub limit: ::core::option::Option<u32>,
-    #[prost(uint64, optional, tag = "4")]
-    pub before_timestamp: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "5")]
-    pub after_timestamp: ::core::option::Option<u64>,
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub user_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub limit: u32,
+    #[prost(uint64, tag = "4")]
+    pub before_timestamp: u64,
+    #[prost(uint64, tag = "5")]
+    pub after_timestamp: u64,
 }
 impl ::prost::Name for QueryPromptsRequest {
     const NAME: &'static str = "QueryPromptsRequest";
@@ -623,7 +623,7 @@ impl ::prost::Name for Ssh {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Cloud {
     #[prost(oneof = "cloud::Provider", tags = "1, 2, 3")]
     pub provider: ::core::option::Option<cloud::Provider>,
@@ -631,7 +631,7 @@ pub struct Cloud {
 /// Nested message and enum types in `Cloud`.
 pub mod cloud {
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Provider {
         #[prost(message, tag = "1")]
         Akash(super::Akash),
@@ -690,9 +690,26 @@ impl ::prost::Name for Docker {
         "/ergors.orch.v1.Docker".into()
     }
 }
+/// Akash Network deployment via Console API (not raw chain)
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Akash {}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Akash {
+    /// Console API key (x-api-key header)
+    #[prost(string, tag = "1")]
+    pub api_key: ::prost::alloc::string::String,
+    /// SDL (Stack Definition Language) content as string
+    #[prost(string, tag = "2")]
+    pub sdl_content: ::prost::alloc::string::String,
+    /// Deposit in USD (minimum $5)
+    #[prost(uint32, tag = "3")]
+    pub deposit_usd: u32,
+    /// Console API base URL (default: <https://api.cloudmos.io>)
+    #[prost(string, tag = "4")]
+    pub api_base_url: ::prost::alloc::string::String,
+    /// Optional certificate for mTLS authentication
+    #[prost(message, optional, tag = "5")]
+    pub certificate: ::core::option::Option<AkashCertificate>,
+}
 impl ::prost::Name for Akash {
     const NAME: &'static str = "Akash";
     const PACKAGE: &'static str = "ergors.orch.v1";
@@ -701,6 +718,24 @@ impl ::prost::Name for Akash {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.Akash".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashCertificate {
+    #[prost(string, tag = "1")]
+    pub cert_pem: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub key_pem: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AkashCertificate {
+    const NAME: &'static str = "AkashCertificate";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashCertificate".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashCertificate".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -762,12 +797,12 @@ pub struct BootstrapNodeRequest {
     /// name provided to the node you are bootstrapping
     #[prost(string, tag = "1")]
     pub target_node: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "2")]
-    pub ssh_key_path: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "3")]
-    pub ssh_user: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "4")]
-    pub ssh_port: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "2")]
+    pub ssh_key_path: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub ssh_user: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub ssh_port: ::prost::alloc::string::String,
 }
 impl ::prost::Name for BootstrapNodeRequest {
     const NAME: &'static str = "BootstrapNodeRequest";
@@ -833,8 +868,8 @@ pub struct CreateFractalResponse {
     pub task_id: ::prost::alloc::string::String,
     #[prost(enumeration = "CosmicTaskStatus", tag = "2")]
     pub status: i32,
-    #[prost(string, optional, tag = "3")]
-    pub error: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "3")]
+    pub error: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
 }
@@ -854,8 +889,8 @@ impl ::prost::Name for CreateFractalResponse {
 pub struct PruneNodeRequest {
     #[prost(bool, tag = "1")]
     pub force: bool,
-    #[prost(uint64, optional, tag = "2")]
-    pub retain_after_timestamp: ::core::option::Option<u64>,
+    #[prost(uint64, tag = "2")]
+    pub retain_after_timestamp: u64,
 }
 impl ::prost::Name for PruneNodeRequest {
     const NAME: &'static str = "PruneNodeRequest";
@@ -876,8 +911,8 @@ pub struct PruneNodeResponse {
     pub pruned_bytes: u64,
     #[prost(uint64, tag = "3")]
     pub pruned_entries: u64,
-    #[prost(string, optional, tag = "4")]
-    pub error: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "4")]
+    pub error: ::prost::alloc::string::String,
 }
 impl ::prost::Name for PruneNodeResponse {
     const NAME: &'static str = "PruneNodeResponse";
@@ -938,8 +973,8 @@ pub struct RouteMetadata {
     /// Proto type URL (e.g., "ergors.orch.v1.HealthResponse")
     #[prost(string, tag = "6")]
     pub response_type: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "7")]
-    pub description: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "7")]
+    pub description: ::prost::alloc::string::String,
 }
 impl ::prost::Name for RouteMetadata {
     const NAME: &'static str = "RouteMetadata";
@@ -1000,8 +1035,8 @@ pub struct ApiKeysMetadata {
     pub version: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub description: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "3")]
-    pub golden_ratio_note: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "3")]
+    pub golden_ratio_note: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ApiKeysMetadata {
     const NAME: &'static str = "ApiKeysMetadata";
@@ -1018,8 +1053,8 @@ impl ::prost::Name for ApiKeysMetadata {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProviderWithAuth {
-    #[prost(string, optional, tag = "1")]
-    pub api_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "1")]
+    pub api_key: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "2")]
     pub entity: ::core::option::Option<LlmEntity>,
 }
@@ -1073,6 +1108,358 @@ impl ::prost::Name for Instructions {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.Instructions".into()
+    }
+}
+/// Runtime state for a deployment
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeploymentState {
+    #[prost(string, tag = "1")]
+    pub deployment_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "DeploymentType", tag = "2")]
+    pub deployment_type: i32,
+    #[prost(enumeration = "DeploymentStatus", tag = "3")]
+    pub status: i32,
+    #[prost(message, optional, tag = "4")]
+    pub bootstrap_method: ::core::option::Option<BootstrapMethod>,
+    #[prost(message, optional, tag = "5")]
+    pub identity: ::core::option::Option<super::super::network::v1::NodeIdentity>,
+    #[prost(message, optional, tag = "6")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "7")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "8")]
+    pub started_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "9")]
+    pub completed_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Runtime information
+    #[prost(message, optional, tag = "10")]
+    pub runtime: ::core::option::Option<DeploymentRuntime>,
+    /// Progress tracking
+    #[prost(message, repeated, tag = "11")]
+    pub events: ::prost::alloc::vec::Vec<DeploymentEvent>,
+    /// Resource tracking
+    #[prost(message, optional, tag = "12")]
+    pub resources: ::core::option::Option<ResourceMetrics>,
+    /// Error information
+    #[prost(string, tag = "13")]
+    pub error_message: ::prost::alloc::string::String,
+    #[prost(string, tag = "14")]
+    pub error_trace: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeploymentState {
+    const NAME: &'static str = "DeploymentState";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeploymentState".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeploymentState".into()
+    }
+}
+/// Runtime information for active deployments
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeploymentRuntime {
+    /// Network endpoints
+    #[prost(string, repeated, tag = "1")]
+    pub endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag = "2")]
+    pub api_endpoint: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub p2p_endpoint: ::prost::alloc::string::String,
+    /// Provider-specific data
+    #[prost(message, optional, tag = "4")]
+    pub akash: ::core::option::Option<AkashRuntime>,
+    /// Health check data
+    #[prost(message, optional, tag = "5")]
+    pub health: ::core::option::Option<HealthCheckData>,
+    /// Configuration
+    #[prost(map = "string, string", tag = "6")]
+    pub env_vars: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    #[prost(string, tag = "7")]
+    pub version: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeploymentRuntime {
+    const NAME: &'static str = "DeploymentRuntime";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeploymentRuntime".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeploymentRuntime".into()
+    }
+}
+/// Akash-specific runtime data
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashRuntime {
+    /// dseq
+    #[prost(string, tag = "1")]
+    pub deployment_sequence: ::prost::alloc::string::String,
+    /// oseq
+    #[prost(string, tag = "2")]
+    pub order_sequence: ::prost::alloc::string::String,
+    /// gseq
+    #[prost(string, tag = "3")]
+    pub group_sequence: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub provider_address: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub lease_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "6")]
+    pub service_endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// in uakt
+    #[prost(uint64, tag = "7")]
+    pub lease_price_per_block: u64,
+    #[prost(string, tag = "8")]
+    pub provider_host_uri: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AkashRuntime {
+    const NAME: &'static str = "AkashRuntime";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashRuntime".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashRuntime".into()
+    }
+}
+/// Health check information
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HealthCheckData {
+    #[prost(bool, tag = "1")]
+    pub is_healthy: bool,
+    #[prost(string, tag = "2")]
+    pub last_check_time: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub consecutive_failures: u32,
+    #[prost(string, tag = "4")]
+    pub health_endpoint: ::prost::alloc::string::String,
+}
+impl ::prost::Name for HealthCheckData {
+    const NAME: &'static str = "HealthCheckData";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.HealthCheckData".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.HealthCheckData".into()
+    }
+}
+/// Deployment event for audit trail
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeploymentEvent {
+    #[prost(message, optional, tag = "1")]
+    pub timestamp: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(enumeration = "DeploymentStatus", tag = "2")]
+    pub status: i32,
+    #[prost(string, tag = "3")]
+    pub message: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub metadata_json: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeploymentEvent {
+    const NAME: &'static str = "DeploymentEvent";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeploymentEvent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeploymentEvent".into()
+    }
+}
+/// Resource metrics for deployments
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ResourceMetrics {
+    #[prost(uint32, tag = "1")]
+    pub cpu_millicores: u32,
+    #[prost(uint64, tag = "2")]
+    pub memory_bytes: u64,
+    #[prost(uint64, tag = "3")]
+    pub storage_bytes: u64,
+    #[prost(uint32, tag = "4")]
+    pub bandwidth_mbps: u32,
+    #[prost(double, tag = "5")]
+    pub cost_per_hour: f64,
+}
+impl ::prost::Name for ResourceMetrics {
+    const NAME: &'static str = "ResourceMetrics";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ResourceMetrics".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ResourceMetrics".into()
+    }
+}
+/// Request to deploy multiple resources in parallel
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeployBatchRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub deployments: ::prost::alloc::vec::Vec<DeploymentSpec>,
+    #[prost(bool, tag = "2")]
+    pub wait_for_completion: bool,
+    #[prost(uint32, tag = "3")]
+    pub timeout_seconds: u32,
+}
+impl ::prost::Name for DeployBatchRequest {
+    const NAME: &'static str = "DeployBatchRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeployBatchRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeployBatchRequest".into()
+    }
+}
+/// Specification for a single deployment
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeploymentSpec {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(enumeration = "DeploymentType", tag = "2")]
+    pub deployment_type: i32,
+    #[prost(message, optional, tag = "3")]
+    pub bootstrap_method: ::core::option::Option<BootstrapMethod>,
+    #[prost(message, optional, tag = "4")]
+    pub identity: ::core::option::Option<super::super::network::v1::NodeIdentity>,
+    /// For LLM inference deployments
+    #[prost(message, optional, tag = "5")]
+    pub llm_config: ::core::option::Option<LlmEntity>,
+    /// Arbitrary labels for organization
+    #[prost(map = "string, string", tag = "6")]
+    pub labels: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for DeploymentSpec {
+    const NAME: &'static str = "DeploymentSpec";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeploymentSpec".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeploymentSpec".into()
+    }
+}
+/// Response for batch deployment
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeployBatchResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub deployments: ::prost::alloc::vec::Vec<DeploymentState>,
+    #[prost(uint32, tag = "2")]
+    pub successful: u32,
+    #[prost(uint32, tag = "3")]
+    pub failed: u32,
+    #[prost(uint32, tag = "4")]
+    pub pending: u32,
+}
+impl ::prost::Name for DeployBatchResponse {
+    const NAME: &'static str = "DeployBatchResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeployBatchResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeployBatchResponse".into()
+    }
+}
+/// Query deployment state
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QueryDeploymentRequest {
+    #[prost(string, tag = "1")]
+    pub deployment_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "DeploymentType", tag = "2")]
+    pub deployment_type: i32,
+    #[prost(enumeration = "DeploymentStatus", tag = "3")]
+    pub status: i32,
+    #[prost(uint32, tag = "4")]
+    pub limit: u32,
+}
+impl ::prost::Name for QueryDeploymentRequest {
+    const NAME: &'static str = "QueryDeploymentRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.QueryDeploymentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.QueryDeploymentRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryDeploymentResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub deployments: ::prost::alloc::vec::Vec<DeploymentState>,
+    #[prost(uint32, tag = "2")]
+    pub total_count: u32,
+}
+impl ::prost::Name for QueryDeploymentResponse {
+    const NAME: &'static str = "QueryDeploymentResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.QueryDeploymentResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.QueryDeploymentResponse".into()
+    }
+}
+/// Update deployment
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateDeploymentRequest {
+    #[prost(string, tag = "1")]
+    pub deployment_id: ::prost::alloc::string::String,
+    /// For stop/start operations
+    #[prost(enumeration = "DeploymentStatus", tag = "2")]
+    pub target_status: i32,
+    /// Update environment variables
+    #[prost(map = "string, string", tag = "3")]
+    pub env_vars: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for UpdateDeploymentRequest {
+    const NAME: &'static str = "UpdateDeploymentRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.UpdateDeploymentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.UpdateDeploymentRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateDeploymentResponse {
+    #[prost(message, optional, tag = "1")]
+    pub deployment: ::core::option::Option<DeploymentState>,
+    #[prost(bool, tag = "2")]
+    pub success: bool,
+    #[prost(string, tag = "3")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for UpdateDeploymentResponse {
+    const NAME: &'static str = "UpdateDeploymentResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.UpdateDeploymentResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.UpdateDeploymentResponse".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1265,6 +1652,91 @@ impl HttpMethod {
             "HTTP_METHOD_PUT" => Some(Self::Put),
             "HTTP_METHOD_DELETE" => Some(Self::Delete),
             "HTTP_METHOD_PATCH" => Some(Self::Patch),
+            _ => None,
+        }
+    }
+}
+/// Deployment type classification
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum DeploymentType {
+    Unspecified = 0,
+    /// Full ERGORS node deployment
+    Node = 1,
+    /// LLM inference provider endpoint
+    LlmInference = 2,
+}
+impl DeploymentType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "DEPLOYMENT_TYPE_UNSPECIFIED",
+            Self::Node => "DEPLOYMENT_TYPE_NODE",
+            Self::LlmInference => "DEPLOYMENT_TYPE_LLM_INFERENCE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "DEPLOYMENT_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "DEPLOYMENT_TYPE_NODE" => Some(Self::Node),
+            "DEPLOYMENT_TYPE_LLM_INFERENCE" => Some(Self::LlmInference),
+            _ => None,
+        }
+    }
+}
+/// Deployment status lifecycle
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum DeploymentStatus {
+    Unspecified = 0,
+    Pending = 1,
+    Provisioning = 2,
+    Deploying = 3,
+    Running = 4,
+    Updating = 5,
+    Stopping = 6,
+    Stopped = 7,
+    Failed = 8,
+    Terminated = 9,
+}
+impl DeploymentStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "DEPLOYMENT_STATUS_UNSPECIFIED",
+            Self::Pending => "DEPLOYMENT_STATUS_PENDING",
+            Self::Provisioning => "DEPLOYMENT_STATUS_PROVISIONING",
+            Self::Deploying => "DEPLOYMENT_STATUS_DEPLOYING",
+            Self::Running => "DEPLOYMENT_STATUS_RUNNING",
+            Self::Updating => "DEPLOYMENT_STATUS_UPDATING",
+            Self::Stopping => "DEPLOYMENT_STATUS_STOPPING",
+            Self::Stopped => "DEPLOYMENT_STATUS_STOPPED",
+            Self::Failed => "DEPLOYMENT_STATUS_FAILED",
+            Self::Terminated => "DEPLOYMENT_STATUS_TERMINATED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "DEPLOYMENT_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "DEPLOYMENT_STATUS_PENDING" => Some(Self::Pending),
+            "DEPLOYMENT_STATUS_PROVISIONING" => Some(Self::Provisioning),
+            "DEPLOYMENT_STATUS_DEPLOYING" => Some(Self::Deploying),
+            "DEPLOYMENT_STATUS_RUNNING" => Some(Self::Running),
+            "DEPLOYMENT_STATUS_UPDATING" => Some(Self::Updating),
+            "DEPLOYMENT_STATUS_STOPPING" => Some(Self::Stopping),
+            "DEPLOYMENT_STATUS_STOPPED" => Some(Self::Stopped),
+            "DEPLOYMENT_STATUS_FAILED" => Some(Self::Failed),
+            "DEPLOYMENT_STATUS_TERMINATED" => Some(Self::Terminated),
             _ => None,
         }
     }

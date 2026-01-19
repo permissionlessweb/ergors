@@ -15,12 +15,11 @@ proc-macro = true
 [dependencies]
 itertools = "0.10.3"
 proc-macro2 = "1.0.40"
-prost-types = "0.14.1"
 quote = "1.0.20"
 syn = "1.0.98"
 
 [dev-dependencies]
-cosmwasm-std = { version = "3.0.1", features = ["stargate"] }
+# cosmwasm-std = { version = "3.0.1", features = ["stargate"] }
 prost = "0.14.1"
 serde = "1.0.142"
 trybuild = { version = "1.0.63", features = ["diff"] }

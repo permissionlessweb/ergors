@@ -46,8 +46,7 @@ impl ::prost::Name for FungibleTokenPacketData {
     }
 }
 /// A Penumbra transaction action requesting an ICS20 transfer.
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
-pub struct Ics20Withdrawal {
+#[derive(Clone, PartialEq, Eq, ::prost::Message, serde::Serialize, serde::Deserialize)] {
     #[prost(message, optional, tag = "1")]
     pub amount: ::core::option::Option<super::super::num::v1::Amount>,
     #[prost(message, optional, tag = "2")]
@@ -149,8 +148,7 @@ impl ::prost::Name for ConsensusState {
         "/ergors.ibc.v1.ConsensusState".into()
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct VerifiedHeights {
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)] {
     #[prost(message, repeated, tag = "1")]
     pub heights: ::prost::alloc::vec::Vec<::ibc_proto::ibc::core::client::v1::Height>,
 }

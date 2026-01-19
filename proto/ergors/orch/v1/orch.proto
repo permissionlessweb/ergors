@@ -4,7 +4,6 @@ package ergors.orch.v1;
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
-import "types/v1/common.proto";
 import "network/v1/network.proto";
 import "storage/v1/storage.proto";
 
@@ -33,11 +32,11 @@ message CosmicTask {
   OrchestrateTask task_type = 2;
   CosmicTaskStatus status = 3;
   string prompt = 4;
-  optional FractalRequirements fractal_requirements = 5;
+  FractalRequirements fractal_requirements = 5;
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp updated_at = 7;
-  optional google.protobuf.Struct result = 8;
-  optional string error = 9;
+  google.protobuf.Struct result = 8;
+  string error = 9;
 }
 
 enum OrchestrateTask {
@@ -68,7 +67,7 @@ message CosmicContext {
 }
 
 message FractalRequirements {
-  optional CosmicContext context = 1;
+  CosmicContext context = 1;
   uint32 recursion_depth = 2;
   double self_similarity_threshold = 3;
   bool golden_ratio_compliance = 4;
@@ -86,8 +85,8 @@ message FractalRequirements {
 message PromptRequest {
   repeated PromptMessage messages = 1;
   string model = 2;
-  optional PromptContext context = 3;
-  optional LlmPromptConfig llm_config = 4;
+  PromptContext context = 3;
+  LlmPromptConfig llm_config = 4;
 }
 
 message PromptResponse {
@@ -98,8 +97,8 @@ message PromptResponse {
   repeated string response = 5;
   google.protobuf.Timestamp timestamp = 6;
   TokenUsage tokens_used = 7;
-  optional double cost = 8;
-  optional uint64 latency_ms = 9;
+  double cost = 8;
+  uint64 latency_ms = 9;
 }
 
 message PromptMessage {
@@ -108,9 +107,9 @@ message PromptMessage {
 }
 
 message PromptContext {
-  optional string session_id = 1;
-  optional string user_id = 2;
-  optional string thread_id = 3;
+  string session_id = 1;
+  string user_id = 2;
+  string thread_id = 3;
 }
 
 message TokenUsage {
@@ -153,8 +152,8 @@ message LocalLlmConfig {
 message OpenAiRequest {
   string model = 1;
   repeated OpenAiMessage messages = 2;
-  optional uint32 temperature = 3;
-  optional uint32 max_tokens = 4;
+  uint32 temperature = 3;
+  uint32 max_tokens = 4;
 }
 
 message OpenAiUsage {
@@ -216,7 +215,7 @@ message LlmEntity {
 
 message LoggingConfig {
   string level = 1;
-  optional string file = 2;
+  string file = 2;
 }
 
 // Route Request/Response Messages
@@ -230,16 +229,16 @@ message HealthResponse {
   string version = 2;
   uint64 uptime_seconds = 3;
   string storage_status = 4;
-  optional string network_status = 5;
+  string network_status = 5;
 }
 
 // Query endpoint
 message QueryPromptsRequest {
-  optional string session_id = 1;
-  optional string user_id = 2;
-  optional uint32 limit = 3;
-  optional uint64 before_timestamp = 4;
-  optional uint64 after_timestamp = 5;
+  string session_id = 1;
+  string user_id = 2;
+  uint32 limit = 3;
+  uint64 before_timestamp = 4;
+  uint64 after_timestamp = 5;
 }
 
 message QueryPromptsResponse {
@@ -279,7 +278,23 @@ oneof provider {
 message Bluetooth {}
 message Local {}
 message Docker {}
-message Akash {}
+
+// Akash Network deployment via Console API (not raw chain)
+message Akash {
+  string api_key = 1; // Console API key (x-api-key header)
+  string sdl_content = 2; // SDL (Stack Definition Language) content as string
+  uint32 deposit_usd = 3; // Deposit in USD (minimum $5)
+  string api_base_url = 4; // Console API base URL (default: https://api.cloudmos.io)
+
+  // Optional certificate for mTLS authentication
+  AkashCertificate certificate = 5;
+}
+
+message AkashCertificate {
+  string cert_pem = 1;
+  string key_pem = 2;
+}
+
 message Wavs {}
 message Phala {}
 
@@ -296,9 +311,9 @@ message BootstrapResponse {
 message BootstrapNodeRequest {
   // name provided to the node you are bootstrapping
   string target_node = 1;
-  optional string ssh_key_path = 2;
-  optional string ssh_user = 3;
-  optional string ssh_port = 4;
+  string ssh_key_path = 2;
+  string ssh_user = 3;
+  string ssh_port = 4;
 }
 
 message BootstrapNodeResponse {
@@ -314,27 +329,27 @@ message BootstrapNodeResponse {
 message CreateFractalRequest {
   string prompt = 1;
   FractalRequirements requirements = 2;
-  optional PromptContext context = 3;
+  PromptContext context = 3;
 }
 
 message CreateFractalResponse {
   string task_id = 1;
   CosmicTaskStatus status = 2;
-  optional string error = 3;
+  string error = 3;
   google.protobuf.Timestamp created_at = 4;
 }
 
 // Prune endpoint
 message PruneNodeRequest {
   bool force = 1;
-  optional uint64 retain_after_timestamp = 2;
+  uint64 retain_after_timestamp = 2;
 }
 
 message PruneNodeResponse {
   bool success = 1;
   uint64 pruned_bytes = 2;
   uint64 pruned_entries = 3;
-  optional string error = 4;
+  string error = 4;
 }
 
 // Network topology endpoint
@@ -362,7 +377,7 @@ message RouteMetadata {
   bool requires_auth = 4;
   string request_type = 5;  // Proto type URL (e.g., "ergors.orch.v1.HealthRequest")
   string response_type = 6; // Proto type URL (e.g., "ergors.orch.v1.HealthResponse")
-  optional string description = 7;
+  string description = 7;
 }
 
 message RouteRegistry {
@@ -373,22 +388,22 @@ message RouteRegistry {
 
 // JSON structure for the api-keys.json file
 message ApiKeysJson {
-  optional ApiKeysMetadata metadata = 1;
+  ApiKeysMetadata metadata = 1;
   map<string, ProviderWithAuth> providers = 2;
-  optional GlobalSettings global_settings = 3;
-  optional Instructions instructions = 4;
+  GlobalSettings global_settings = 3;
+  Instructions instructions = 4;
 }
 
 message ApiKeysMetadata {
   string version = 1;
   string description = 2;
-  optional string golden_ratio_note = 3;
+  string golden_ratio_note = 3;
 }
 
 /// Provider configuration with authentication
 /// Combines LlmEntity (standard type) with api_key and prompt defaults
 message ProviderWithAuth {
-  optional string api_key = 1;
+  string api_key = 1;
   LlmEntity entity = 2;
 }
 
@@ -403,5 +418,163 @@ message GlobalSettings {
 message Instructions {
   repeated string setup = 1;
   repeated string security = 2;
+}
+
+// ========================================
+// Deployment State Management Types
+// ========================================
+
+// Deployment type classification
+enum DeploymentType {
+  DEPLOYMENT_TYPE_UNSPECIFIED = 0;
+  DEPLOYMENT_TYPE_NODE = 1; // Full ERGORS node deployment
+  DEPLOYMENT_TYPE_LLM_INFERENCE = 2; // LLM inference provider endpoint
+}
+
+// Deployment status lifecycle
+enum DeploymentStatus {
+  DEPLOYMENT_STATUS_UNSPECIFIED = 0;
+  DEPLOYMENT_STATUS_PENDING = 1;
+  DEPLOYMENT_STATUS_PROVISIONING = 2;
+  DEPLOYMENT_STATUS_DEPLOYING = 3;
+  DEPLOYMENT_STATUS_RUNNING = 4;
+  DEPLOYMENT_STATUS_UPDATING = 5;
+  DEPLOYMENT_STATUS_STOPPING = 6;
+  DEPLOYMENT_STATUS_STOPPED = 7;
+  DEPLOYMENT_STATUS_FAILED = 8;
+  DEPLOYMENT_STATUS_TERMINATED = 9;
+}
+
+// Runtime state for a deployment
+message DeploymentState {
+  string deployment_id = 1;
+  DeploymentType deployment_type = 2;
+  DeploymentStatus status = 3;
+  BootstrapMethod bootstrap_method = 4;
+  network.v1.NodeIdentity identity = 5;
+
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp completed_at = 9;
+
+  // Runtime information
+  DeploymentRuntime runtime = 10;
+
+  // Progress tracking
+  repeated DeploymentEvent events = 11;
+
+  // Resource tracking
+  ResourceMetrics resources = 12;
+
+  // Error information
+  string error_message = 13;
+  string error_trace = 14;
+}
+
+// Runtime information for active deployments
+message DeploymentRuntime {
+  // Network endpoints
+  repeated string endpoints = 1;
+  string api_endpoint = 2;
+  string p2p_endpoint = 3;
+
+  // Provider-specific data
+  AkashRuntime akash = 4;
+
+  // Health check data
+  HealthCheckData health = 5;
+
+  // Configuration
+  map<string, string> env_vars = 6;
+  string version = 7;
+}
+
+// Akash-specific runtime data
+message AkashRuntime {
+  string deployment_sequence = 1; // dseq
+  string order_sequence = 2; // oseq
+  string group_sequence = 3; // gseq
+  string provider_address = 4;
+  string lease_id = 5;
+  repeated string service_endpoints = 6;
+  uint64 lease_price_per_block = 7; // in uakt
+  string provider_host_uri = 8;
+}
+
+// Health check information
+message HealthCheckData {
+  bool is_healthy = 1;
+  string last_check_time = 2;
+  uint32 consecutive_failures = 3;
+  string health_endpoint = 4;
+}
+
+// Deployment event for audit trail
+message DeploymentEvent {
+  google.protobuf.Timestamp timestamp = 1;
+  DeploymentStatus status = 2;
+  string message = 3;
+  string metadata_json = 4;
+}
+
+// Resource metrics for deployments
+message ResourceMetrics {
+  uint32 cpu_millicores = 1;
+  uint64 memory_bytes = 2;
+  uint64 storage_bytes = 3;
+  uint32 bandwidth_mbps = 4;
+  double cost_per_hour = 5;
+}
+
+// Request to deploy multiple resources in parallel
+message DeployBatchRequest {
+  repeated DeploymentSpec deployments = 1;
+  bool wait_for_completion = 2;
+  uint32 timeout_seconds = 3;
+}
+
+// Specification for a single deployment
+message DeploymentSpec {
+  string name = 1;
+  DeploymentType deployment_type = 2;
+  BootstrapMethod bootstrap_method = 3;
+  network.v1.NodeIdentity identity = 4;
+  LlmEntity llm_config = 5; // For LLM inference deployments
+  map<string, string> labels = 6; // Arbitrary labels for organization
+}
+
+// Response for batch deployment
+message DeployBatchResponse {
+  repeated DeploymentState deployments = 1;
+  uint32 successful = 2;
+  uint32 failed = 3;
+  uint32 pending = 4;
+}
+
+// Query deployment state
+message QueryDeploymentRequest {
+  string deployment_id = 1;
+  DeploymentType deployment_type = 2;
+  DeploymentStatus status = 3;
+  uint32 limit = 4;
+}
+
+message QueryDeploymentResponse {
+  repeated DeploymentState deployments = 1;
+  uint32 total_count = 2;
+}
+
+// Update deployment
+message UpdateDeploymentRequest {
+  string deployment_id = 1;
+  DeploymentStatus target_status = 2; // For stop/start operations
+   map<string, string> env_vars = 3; // Update environment variables
+}
+
+message UpdateDeploymentResponse {
+  DeploymentState deployment = 1;
+  bool success = 2;
+  string message = 3;
 }
 
