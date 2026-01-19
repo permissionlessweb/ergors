@@ -173,7 +173,10 @@ impl pb::custody_service_server::CustodyService for SoftKms {
             .api_keys
             .get(provider_name)
             .ok_or_else(|| {
-                Status::not_found(format!("No API key configured for provider: {}", provider_name))
+                Status::not_found(format!(
+                    "No API key configured for provider: {}",
+                    provider_name
+                ))
             })?
             .clone();
 

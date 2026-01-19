@@ -31,7 +31,6 @@ pub async fn handle_vote_extension(
     // retrieve any pending nullifiers/claim details from storage/mempool to include in voteExt
 
     // respond to validator with these values.
- 
 
     Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
         "not yet implemented: `handle_headstash_metadata_storage`"

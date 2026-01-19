@@ -3,6 +3,12 @@
 
 This document provides a comprehensive specification for the Ergors codebase, detailing the functionality, flow, and implementation of core components based on existing documentation and code structure. It is organized by the specified categories, drawing from docs/specs files and code in packages/ho-std and packages/cw-ho. The spec emphasizes truthful representation of the current codebase, highlighting key traits, modules, and geometric principles (e.g., golden ratio allocation, tetrahedral topology, Möbius sandloops, fractal recursion).
 
+## Purpose
+
+## Design
+
+## Storage: Cnidarium
+
 ## Keys
 
 user keys and node keys. nodes must register user keys to grant authorization to api middleware.
@@ -11,13 +17,7 @@ user keys and node keys. nodes must register user keys to grant authorization to
 
 ### Custody Client
 
-### Libraries and Demos
-
-## Storage: Cnidarium
-
-cnidarium merkle-jellyfish-tree, storage keys + read & write trait implementation for componsents default method for interfacing with storage layer
-
-## Node: Commonware 
+## Node: Commonware
 
 ## Network
 
@@ -32,7 +32,7 @@ cnidarium merkle-jellyfish-tree, storage keys + read & write trait implementatio
 - request
 - function defintion
 
-2. response
+1. response
 
 - messages field
         - assistant text
@@ -40,7 +40,7 @@ cnidarium merkle-jellyfish-tree, storage keys + read & write trait implementatio
 - where function calls given in api result are passed to ergors and performed.
 -
 
-3. request with function call result
+1. request with function call result
 
 sends response back llm inference with:
 
@@ -48,7 +48,7 @@ sends response back llm inference with:
 - function call result: can be prepressed before re
 - provide original user request
 
-4. response
+1. response
 
 - same as inital response, creating agentic loop
 - use as checkpoint for agentic action merkle tree compression for hashes of actions logged

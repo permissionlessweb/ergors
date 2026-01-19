@@ -46,7 +46,11 @@ impl HoConfigTrait for ErgorsConfig {
     }
 
     fn llm(&self) -> &Self::LLMConfig {
-        CwHoLlmRouterConfig::wrap_ref(self.llm.as_ref().expect("ego is useful in moderation (cannot access llmConfig)"))
+        CwHoLlmRouterConfig::wrap_ref(
+            self.llm
+                .as_ref()
+                .expect("ego is useful in moderation (cannot access llmConfig)"),
+        )
     }
 
     fn validate(&self) -> Self::HoConfigResult {

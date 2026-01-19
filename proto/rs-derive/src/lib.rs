@@ -1,4 +1,3 @@
-
 use itertools::Itertools;
 use proc_macro::TokenStream;
 use proc_macro2::TokenTree;

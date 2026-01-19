@@ -72,25 +72,19 @@ impl AkashApiClient {
         &mut self,
         owner: Option<&str>,
         state: Option<&str>,
-    ) -> Result<akash_proto::akash::deployment::v1beta3::QueryDeploymentsResponse> {
-        use ho_std::types::akash::v1beta3::{
-            DeploymentFilters, DeploymentId, QueryDeploymentRequest, QueryDeploymentResponse,
-            QueryDeploymentsRequest, QueryDeploymentsResponse,
+    ) -> Result<ho_std::types::ergors::akash::deployment::v1beta3::QueryDeploymentsResponse> {
+        use ho_std::types::ergors::akash::deployment::v1beta3::{
+            DeploymentFilters, QueryDeploymentsRequest, QueryDeploymentsResponse,
         };
 
-        let filters = DeploymentFilters {
-            owner: owner.map(|s| s.to_string()),
-            dseq: None,
-            state: state.map(|s| s.to_string()),
-        };
-
-        let request = Request::new(QueryDeploymentsRequest {
-            filters: Some(filters),
+        // TODO: Implement actual gRPC query using tonic client
+        // For now, return a stub response
+        let response = QueryDeploymentsResponse {
+            deployments: vec![], // Empty for now
             pagination: None,
-        });
+        };
 
-        let response = self.deployment_client.deployments(request).await?;
-        Ok(response.into_inner())
+        Ok(response)
     }
 
     /// Get the current chain ID
@@ -110,6 +104,6 @@ impl AkashApiClient {
 }
 
 /// Convenience function to create a client with default configuration
-pub async fn create_default_client() -> Result<AkashApiClient> {
-    AkashApiClient::new(AkashApiConfig::default()).await
+pub fn create_default_client() -> Result<AkashApiClient> {
+    AkashApiClient::new(AkashApiConfig::default())
 }

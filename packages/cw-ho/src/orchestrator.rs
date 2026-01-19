@@ -86,7 +86,6 @@ pub async fn handle_prompt(
     }
 }
 
-
 pub async fn handle_fractal_hoe_creation(// State(_state): State<ErgorsAppState>,
     // Json(request): Json<PromptRequest>,
 ) -> Json<serde_json::Value> {
@@ -103,7 +102,6 @@ pub async fn handle_fractal_hoe_creation(// State(_state): State<ErgorsAppState>
     // let _ = ssh_manager.close().await;
     Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
 }
-
 
 /// Main Cosmic Orchestrator implementing AgentOrchestrator from Python
 pub struct CosmicOrchestrator {

@@ -2,9 +2,8 @@
 //!
 //! This module provides a type-safe way to define routes using proto-generated types
 //! following the type/value tuple pattern for standardized transport layer communication.
-use prost::Name;
 use crate::orchestrate::*;
-
+use prost::Name;
 
 /// Generic route definition using proto types
 /// This follows the type/value pattern where request/response types are proto messages

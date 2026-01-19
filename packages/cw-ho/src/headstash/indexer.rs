@@ -1,4 +1,4 @@
-// define logic that poweres registering a websocket subcription 
+// define logic that poweres registering a websocket subcription
 
 use crate::{
     middleware::record_operation, storage::ErgorsStorage, ErgorsAppState, ErgorsConfig,
@@ -28,16 +28,14 @@ pub async fn handle_indexer_instructions(
     State(state): State<ErgorsAppState>,
     Json(r): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
-
-    // register/remove/update websocket subscription with smart-contract 
+    // register/remove/update websocket subscription with smart-contract
     // if register, ensure we do not already have subscription for exact same (contract,action)
     // if remove, ensure headstash contract is not active
-    
+
     Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
         "not yet implemented: `handle_headstash_metadata_storage`"
     ))))
 }
-
 
 // if new headstash is created:
 // - download local metadata and ipfs information regarding distribution

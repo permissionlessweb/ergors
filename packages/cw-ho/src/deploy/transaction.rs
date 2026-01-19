@@ -65,11 +65,7 @@ impl TxBroadcaster {
             "mode": "BROADCAST_MODE_SYNC"
         });
 
-        let response = self.http_client
-            .post(&url)
-            .json(&payload)
-            .send()
-            .await?;
+        let response = self.http_client.post(&url).json(&payload).send().await?;
 
         if !response.status().is_success() {
             let error_text = response.text().await?;
@@ -88,11 +84,7 @@ impl TxBroadcaster {
             "tx": unsigned_tx,
         });
 
-        let response = self.http_client
-            .post(&url)
-            .json(&payload)
-            .send()
-            .await?;
+        let response = self.http_client.post(&url).json(&payload).send().await?;
 
         if !response.status().is_success() {
             let error_text = response.text().await?;
@@ -188,7 +180,8 @@ impl SimpleKeyring {
 
     /// Get key by name
     pub fn get_key(&self, name: &str) -> Result<&KeyInfo> {
-        self.keys.get(name)
+        self.keys
+            .get(name)
             .ok_or_else(|| anyhow!("Key '{}' not found", name))
     }
 
