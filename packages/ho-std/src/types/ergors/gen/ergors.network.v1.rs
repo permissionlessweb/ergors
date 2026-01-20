@@ -122,7 +122,7 @@ impl ::prost::Name for NodeIdentity {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NetworkMessage {
-    #[prost(oneof = "network_message::MessageType", tags = "1, 2, 3, 6, 7")]
+    #[prost(oneof = "network_message::MessageType", tags = "1, 2, 3, 6, 7, 8")]
     pub message_type: ::core::option::Option<network_message::MessageType>,
 }
 /// Nested message and enum types in `NetworkMessage`.
@@ -140,6 +140,8 @@ pub mod network_message {
         Request(super::Request),
         #[prost(message, tag = "7")]
         Response(super::Response),
+        #[prost(message, tag = "8")]
+        WorkspaceSync(super::super::super::git::v1::WorkspaceSync),
     }
 }
 impl ::prost::Name for NetworkMessage {

@@ -3,6 +3,7 @@ syntax = "proto3";
 package ergors.network.v1;
 
 import "google/protobuf/struct.proto";
+import "git/v1/git.proto";
 
 message Request {
   string request_id = 1;
@@ -55,6 +56,7 @@ message NetworkMessage {
     SandloopState sandloop_state = 3;
     Request request = 6;
     Response response = 7;
+    ergors.git.v1.WorkspaceSync workspace_sync = 8;
   }
 }
 

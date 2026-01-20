@@ -14,6 +14,55 @@ message EncryptedApiKey {
   string encryption_method = 4;  // e.g., "ed25519-xchacha20poly1305"
 }
 
+// Encrypted node identity for secure private key storage
+// The private key is encrypted using password-based key derivation (Argon2 + ChaCha20Poly1305)
+message EncryptedNodeIdentity {
+  // The public key (always stored in plaintext for identification)
+  bytes public_key = 1;
+  // The encrypted private key (ChaCha20Poly1305 encrypted blob)
+  bytes encrypted_private_key = 2;
+  // Encryption metadata
+  google.protobuf.Timestamp encrypted_at = 3;
+  // Encryption method identifier (e.g., "argon2id-chacha20poly1305-v1")
+  string encryption_method = 4;
+  // Salt for key derivation (stored separately from encrypted blob for flexibility)
+  bytes kdf_salt = 5;
+  // Key derivation parameters (JSON encoded for forward compatibility)
+  // Contains: memory_cost, time_cost, parallelism, output_length
+  string kdf_params = 6;
+  // Version for migration support
+  uint32 version = 7;
+  // Optional node metadata (user, host, ports etc.)
+  optional NodeIdentityMetadata metadata = 8;
+}
+
+// Non-sensitive metadata about the node identity
+message NodeIdentityMetadata {
+  string user = 1;
+  string host = 2;
+  uint32 p2p_port = 3;
+  uint32 api_port = 4;
+  uint32 ssh_port = 5;
+  string node_type = 6;
+  string os = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp last_used = 9;
+}
+
+// Custody backend configuration
+message NodeIdentityCustodyConfig {
+  // Backend type: "plaintext", "password_encrypted", "node_key_encrypted", "threshold", "remote"
+  string backend = 1;
+  // Whether to cache decrypted keys in memory
+  bool cache_keys = 2;
+  // TTL for cached keys in seconds (0 = no expiry)
+  uint64 cache_ttl_secs = 3;
+  // Path to encrypted identity file
+  string identity_path = 4;
+  // Remote custody endpoint (for remote backend)
+  string remote_endpoint = 5;
+}
+
 message ProviderMetadata {
   string name = 1;
   string base_url = 2;

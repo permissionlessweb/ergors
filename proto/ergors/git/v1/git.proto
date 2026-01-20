@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package ergors.git.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Workspace metadata stored in Cnidarium
+message WorkspaceMetadata {
+    string workspace_id = 1;
+    string name = 2;
+    string remote_url = 3;           // Origin remote URL
+    string local_path = 4;           // Path under ~/.ergors/workspaces/
+    bytes head_commit = 5;           // Current HEAD SHA
+    string default_branch = 6;
+    google.protobuf.Timestamp created_at = 7;
+    google.protobuf.Timestamp last_synced = 8;
+}
+
+// Task worktree assignment
+message TaskWorktree {
+    string task_id = 1;
+    string workspace_id = 2;
+    string branch = 3;               // task/{task_id}
+    string worktree_path = 4;
+    bytes base_commit = 5;
+    TaskWorktreeStatus status = 6;
+    string assigned_node_id = 7;
+    google.protobuf.Timestamp created_at = 8;
+}
+
+// Status of a task worktree
+enum TaskWorktreeStatus {
+    TASK_WORKTREE_STATUS_UNSPECIFIED = 0;
+    TASK_WORKTREE_STATUS_CREATING = 1;
+    TASK_WORKTREE_STATUS_ACTIVE = 2;
+    TASK_WORKTREE_STATUS_COMMITTING = 3;
+    TASK_WORKTREE_STATUS_MERGING = 4;
+    TASK_WORKTREE_STATUS_COMPLETED = 5;
+    TASK_WORKTREE_STATUS_FAILED = 6;
+    TASK_WORKTREE_STATUS_CONFLICT = 7;  // Merge conflict needs resolution
+}
+
+// Sync action for P2P coordination messages
+enum SyncAction {
+    SYNC_ACTION_UNSPECIFIED = 0;
+    SYNC_ACTION_FETCH_REQUEST = 1;   // Request peer to fetch from us
+    SYNC_ACTION_PUSH_NOTIFY = 2;     // Notify peer we pushed
+    SYNC_ACTION_MERGE_COMPLETE = 3;  // Task merged to main
+    SYNC_ACTION_CONFLICT = 4;        // Merge conflict needs resolution
+}
+
+// Git identity derived from node identity (ED25519 -> SSH)
+message GitIdentity {
+    string node_id = 1;
+    bytes ed25519_pubkey = 2;
+    string ssh_fingerprint = 3;
+    string author_name = 4;          // e.g., "ergors-{short_id}"
+    string author_email = 5;         // e.g., "{short_id}@ergors.local"
+}
+
+// Commit reference
+message CommitRef {
+    bytes hash = 1;                  // 20-byte SHA-1 or 32-byte SHA-256
+    string branch = 2;
+    uint64 height = 3;               // Linear commit height
+    google.protobuf.Timestamp timestamp = 4;
+}
+
+// Workspace sync message (sent over P2P channels)
+message WorkspaceSync {
+    string workspace_id = 1;
+    SyncAction action = 2;
+    string branch = 3;
+    bytes commit_hash = 4;
+    string sender_node_id = 5;
+    google.protobuf.Timestamp timestamp = 6;
+}
+
+// List of workspaces
+message WorkspaceList {
+    repeated WorkspaceMetadata workspaces = 1;
+}
+
+// List of task worktrees
+message TaskWorktreeList {
+    repeated TaskWorktree worktrees = 1;
+}

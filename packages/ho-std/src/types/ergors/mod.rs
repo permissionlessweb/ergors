@@ -197,6 +197,18 @@ pub mod types {
     }
 }
 
+pub mod git {
+    pub mod v1 {
+        include!("gen/ergors.git.v1.rs");
+    }
+}
+
+pub mod management {
+    pub mod v1 {
+        include!("gen/ergors.management.v1.rs");
+    }
+}
+
 pub mod tendermint {
     pub mod crypto {
         include!("gen/tendermint.crypto.rs");

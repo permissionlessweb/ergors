@@ -1,0 +1,915 @@
+syntax = "proto3";
+package ergors.management.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "network/v1/network.proto";
+import "git/v1/git.proto";
+
+// Minimal management service for CLI-to-engine communication
+// Reuses types from network.proto where possible
+service ManagementService {
+  // Lifecycle
+  rpc GetStatus(Empty) returns (EngineStatus);
+  rpc Shutdown(ShutdownRequest) returns (OperationResult);
+
+  // Node Identity - uses network.NodeIdentity
+  rpc GetNodeIdentity(Empty) returns (ergors.network.v1.NodeIdentity);
+  rpc GenerateNodeIdentity(NodeTypeRequest) returns (IdentityResponse);
+  rpc ImportNodeIdentity(ImportIdentityRequest) returns (OperationResult);
+
+  // Configuration - returns raw TOML or JSON
+  rpc GetConfig(Empty) returns (ConfigData);
+  rpc UpdateConfig(ConfigUpdate) returns (OperationResult);
+
+  // Network - reuses network.NodeInfo and network.NetworkTopology
+  rpc GetNetworkTopology(Empty) returns (ergors.network.v1.NetworkTopology);
+  rpc AddPeer(PeerAddress) returns (OperationResult);
+  rpc RemovePeer(NodeIdRequest) returns (OperationResult);
+
+  // Network routing operations (for OpenCode tools)
+  rpc AnnounceNode(AnnounceNodeRequest) returns (AnnounceNodeResponse);
+  rpc RouteMessage(RouteMessageRequest) returns (RouteMessageResponse);
+
+  // Providers
+  rpc ListProviders(Empty) returns (ProviderList);
+  rpc ConfigureProvider(ProviderConfig) returns (OperationResult);
+  rpc TestProvider(ProviderName) returns (ProviderTestResult);
+
+  // Auth Tokens
+  rpc RegisterAuthToken(TokenLabel) returns (TokenResponse);
+  rpc RevokeAuthToken(TokenIdRequest) returns (OperationResult);
+  rpc ListAuthTokens(Empty) returns (TokenList);
+
+  // Streaming for TUI dashboard
+  rpc StreamHealth(StreamRequest) returns (stream HealthUpdate);
+  rpc StreamLogs(LogStreamRequest) returns (stream LogEntry);
+
+  // ============================================
+  // Session Management - Fractal Session System
+  // ============================================
+
+  // Lifecycle operations
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  rpc UpdateSession(UpdateSessionRequest) returns (UpdateSessionResponse);
+  rpc DeleteSession(DeleteSessionRequest) returns (OperationResult);
+
+  // State management
+  rpc PauseSession(PauseSessionRequest) returns (PauseSessionResponse);
+  rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
+  rpc CompleteSession(CompleteSessionRequest) returns (CompleteSessionResponse);
+  rpc FailSession(FailSessionRequest) returns (OperationResult);
+
+  // Fractal hierarchy operations
+  rpc SpawnChildSession(SpawnChildRequest) returns (SpawnChildResponse);
+  rpc GetSessionHierarchy(GetHierarchyRequest) returns (GetHierarchyResponse);
+  rpc RollupChildSessions(RollupRequest) returns (RollupResponse);
+
+  // Query operations
+  rpc QuerySessions(QuerySessionsRequest) returns (QuerySessionsResponse);
+  rpc ListSessionsByNode(ListByNodeRequest) returns (ListByNodeResponse);
+  rpc ListSessionsByRoot(ListByRootRequest) returns (ListByRootResponse);
+
+  // Cross-node operations
+  rpc SyncSession(SyncSessionRequest) returns (SyncSessionResponse);
+  rpc MigrateSession(MigrateSessionRequest) returns (MigrateSessionResponse);
+
+  // Streaming
+  rpc StreamSessionUpdates(StreamSessionRequest) returns (stream SessionUpdate);
+
+  // ============================================
+  // Git Workspace Management
+  // ============================================
+
+  // Workspace lifecycle
+  rpc AddWorkspace(AddWorkspaceRequest) returns (AddWorkspaceResponse);
+  rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
+  rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  rpc RemoveWorkspace(RemoveWorkspaceRequest) returns (OperationResult);
+  rpc SyncWorkspace(SyncWorkspaceRequest) returns (SyncWorkspaceResponse);
+
+  // Task worktree operations
+  rpc CreateTaskWorktree(CreateTaskWorktreeRequest) returns (CreateTaskWorktreeResponse);
+  rpc ListTaskWorktrees(ListTaskWorktreesRequest) returns (ListTaskWorktreesResponse);
+  rpc CompleteTaskWorktree(CompleteTaskWorktreeRequest) returns (CompleteTaskWorktreeResponse);
+  rpc FailTaskWorktree(FailTaskWorktreeRequest) returns (OperationResult);
+  rpc ResolveConflict(ResolveConflictRequest) returns (ResolveConflictResponse);
+}
+
+// Common empty request
+message Empty {}
+
+// Generic operation result - reduces request/response type count
+message OperationResult {
+  bool success = 1;
+  string message = 2;  // Error message if !success, or info message
+}
+
+// Engine status - unique to management
+message EngineStatus {
+  string version = 1;
+  google.protobuf.Timestamp started_at = 2;
+  uint64 uptime_seconds = 3;
+  EngineState state = 4;
+  string storage_status = 5;
+  string network_status = 6;
+  uint32 connected_peers = 7;
+  uint64 total_requests_handled = 8;
+}
+
+enum EngineState {
+  ENGINE_STATE_UNSPECIFIED = 0;
+  ENGINE_STATE_STARTING = 1;
+  ENGINE_STATE_RUNNING = 2;
+  ENGINE_STATE_DEGRADED = 3;
+  ENGINE_STATE_STOPPING = 4;
+  ENGINE_STATE_STOPPED = 5;
+}
+
+// Shutdown request
+message ShutdownRequest {
+  bool force = 1;
+}
+
+// Node identity requests
+message NodeTypeRequest {
+  ergors.network.v1.NodeType node_type = 1;
+}
+
+message IdentityResponse {
+  bytes public_key = 1;
+  string node_id = 2;
+  string mnemonic_phrase = 3;  // Only returned on generation
+}
+
+message ImportIdentityRequest {
+  oneof import_method {
+    string mnemonic_phrase = 1;
+    bytes private_key = 2;
+  }
+  ergors.network.v1.NodeType node_type = 3;
+}
+
+// Config
+message ConfigData {
+  bytes data = 1;  // Raw TOML bytes
+  string format = 2;  // "toml" or "json"
+}
+
+message ConfigUpdate {
+  string key = 1;
+  string value = 2;
+}
+
+// Network - simple wrapper types
+message PeerAddress {
+  string address = 1;
+}
+
+message NodeIdRequest {
+  string node_id = 1;
+}
+
+// Network routing types (for OpenCode tools integration)
+message AnnounceNodeRequest {
+  repeated string capabilities = 1;
+  float load_factor = 2;  // 0.0 - 1.0
+}
+
+message AnnounceNodeResponse {
+  bool acknowledged = 1;
+  uint32 peers_notified = 2;
+}
+
+message RouteMessageRequest {
+  // Action: "send_to_role", "broadcast", "request"
+  string action = 1;
+  // Target role (for send_to_role action)
+  optional ergors.network.v1.NodeType target_role = 2;
+  // Target node ID (for direct request)
+  optional string target_node_id = 3;
+  // Message type: "task_coordination", "workspace_sync", "request"
+  string message_type = 4;
+  // Serialized message payload
+  bytes payload = 5;
+  // Timeout in milliseconds (for request action)
+  uint32 timeout_ms = 6;
+}
+
+message RouteMessageResponse {
+  bool success = 1;
+  uint32 nodes_reached = 2;
+  // Response payload (for request action)
+  optional bytes response_payload = 3;
+  string error_message = 4;
+}
+
+// Provider types
+message ProviderList {
+  repeated ProviderInfo providers = 1;
+  string default_provider = 2;
+}
+
+message ProviderInfo {
+  string name = 1;
+  bool configured = 2;
+  bool enabled = 3;
+}
+
+message ProviderConfig {
+  string name = 1;
+  string api_key = 2;
+  bool set_as_default = 3;
+}
+
+message ProviderName {
+  string name = 1;
+}
+
+message ProviderTestResult {
+  bool success = 1;
+  uint32 latency_ms = 2;
+  string error_message = 3;
+}
+
+// Auth token types
+message TokenLabel {
+  string label = 1;
+}
+
+message TokenResponse {
+  string token = 1;
+  string token_id = 2;
+}
+
+message TokenIdRequest {
+  string token_id = 1;
+}
+
+message TokenList {
+  repeated TokenInfo tokens = 1;
+}
+
+message TokenInfo {
+  string token_id = 1;
+  string label = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp last_used = 4;
+}
+
+// Streaming types
+message StreamRequest {
+  uint32 interval_ms = 1;  // Default 1000ms
+}
+
+message HealthUpdate {
+  google.protobuf.Timestamp timestamp = 1;
+  double cpu_usage = 2;
+  uint64 memory_bytes = 3;
+  uint32 active_connections = 4;
+  uint64 requests_per_second = 5;
+  map<string, string> component_status = 6;
+}
+
+message LogStreamRequest {
+  string level = 1;  // debug, info, warn, error
+  uint32 tail_lines = 2;
+}
+
+message LogEntry {
+  google.protobuf.Timestamp timestamp = 1;
+  string level = 2;
+  string target = 3;
+  string message = 4;
+  map<string, string> fields = 5;
+}
+
+// ============================================
+// Fractal Session Types
+// ============================================
+
+// FractalSession: Self-similar session structure at any hierarchy level
+// Supports parent/child relationships, cross-node coordination, and state snapshots
+message FractalSession {
+  // Unique identifier for this session
+  string session_id = 1;
+
+  // Session classification
+  SessionType session_type = 2;
+  SessionStatus status = 3;
+  SessionScope scope = 4;
+
+  // Fractal hierarchy
+  string parent_session_id = 5;           // Empty for root sessions
+  repeated string child_session_ids = 6;  // Direct children only
+  uint32 fractal_depth = 7;               // 0 for root, increments for children
+  string root_session_id = 8;             // Always points to ultimate root
+
+  // Node ownership and participation
+  string owner_node_id = 9;               // Node that controls this session
+  ergors.network.v1.NodeType owner_node_type = 10;
+  repeated SessionParticipant participants = 11;
+
+  // Temporal bounds
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  google.protobuf.Timestamp started_at = 14;
+  google.protobuf.Timestamp paused_at = 15;
+  google.protobuf.Timestamp completed_at = 16;
+
+  // Labeling and metadata
+  map<string, string> labels = 17;        // User-defined labels
+  map<string, string> metadata = 18;      // System metadata
+  repeated string tags = 19;              // Quick classification tags
+
+  // State management for pause/resume
+  SessionStateSnapshot state_snapshot = 20;
+
+  // Content (polymorphic via oneof)
+  oneof content {
+    AgenticSessionContent agentic = 21;
+    OrchestrationSessionContent orchestration = 22;
+    ProxySessionContent proxy = 23;
+    ValidationSessionContent validation = 24;
+  }
+
+  // Fractal metrics (self-similar at each level)
+  FractalMetrics metrics = 25;
+
+  // Propagation rules for child sessions
+  SessionPropagation propagation = 26;
+}
+
+// Session participant info
+message SessionParticipant {
+  string node_id = 1;
+  ergors.network.v1.NodeType node_type = 2;
+  ParticipantRole role = 3;
+  google.protobuf.Timestamp joined_at = 4;
+  bool is_active = 5;
+}
+
+enum ParticipantRole {
+  PARTICIPANT_ROLE_UNSPECIFIED = 0;
+  PARTICIPANT_ROLE_OWNER = 1;
+  PARTICIPANT_ROLE_EXECUTOR = 2;
+  PARTICIPANT_ROLE_OBSERVER = 3;
+  PARTICIPANT_ROLE_VALIDATOR = 4;
+}
+
+// Session types
+enum SessionType {
+  SESSION_TYPE_UNSPECIFIED = 0;
+  SESSION_TYPE_AGENTIC = 1;        // LLM-driven agent session
+  SESSION_TYPE_ORCHESTRATION = 2;  // CosmicTask orchestration
+  SESSION_TYPE_PROXY = 3;          // CLI tool proxy capture
+  SESSION_TYPE_VALIDATION = 4;     // Referee validation session
+  SESSION_TYPE_COMPOSITE = 5;      // Multi-type parent session
+}
+
+// Session status lifecycle
+enum SessionStatus {
+  SESSION_STATUS_UNSPECIFIED = 0;
+  SESSION_STATUS_CREATED = 1;     // Session created, not started
+  SESSION_STATUS_ACTIVE = 2;      // Currently executing
+  SESSION_STATUS_PAUSED = 3;      // Paused, can resume
+  SESSION_STATUS_WAITING = 4;     // Waiting for child sessions
+  SESSION_STATUS_COMPLETED = 5;   // Successfully completed
+  SESSION_STATUS_FAILED = 6;      // Failed with error
+  SESSION_STATUS_CANCELLED = 7;   // Manually cancelled
+  SESSION_STATUS_MIGRATING = 8;   // Being transferred to another node
+}
+
+// Session scope determines isolation and network behavior
+enum SessionScope {
+  SESSION_SCOPE_UNSPECIFIED = 0;
+  SESSION_SCOPE_LOCAL = 1;        // Single node only
+  SESSION_SCOPE_NETWORK = 2;      // Across tetrahedral network (default)
+  SESSION_SCOPE_ISOLATED = 3;     // Sandboxed, no parent state access
+  SESSION_SCOPE_SHARED = 4;       // Full parent state inheritance
+}
+
+// ============================================
+// Session Content Types
+// ============================================
+
+message AgenticSessionContent {
+  repeated PromptExchange exchanges = 1;
+  string current_task_id = 2;
+  map<string, google.protobuf.Value> context_stack = 3;
+  uint32 iteration_count = 4;
+  uint32 max_recursion_depth = 5;
+  double golden_ratio_state = 6;
+}
+
+message PromptExchange {
+  string request_id = 1;
+  string prompt = 2;
+  string response = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  uint32 tokens_used = 5;
+  double cost = 6;
+}
+
+message OrchestrationSessionContent {
+  repeated TaskAssignment task_assignments = 1;
+  string coordinator_node_id = 2;
+  uint32 total_tasks = 3;
+  uint32 completed_tasks = 4;
+}
+
+message TaskAssignment {
+  string task_id = 1;
+  string assigned_node_id = 2;
+  string child_session_id = 3;  // Session spawned for this task
+  string status = 4;
+}
+
+message ProxySessionContent {
+  string client_type = 1;         // Claude Code, Opencode, Cursor, etc.
+  string api_format = 2;          // ANTHROPIC or OPENAI
+  repeated string tool_invocations = 3;
+  uint32 total_requests = 4;
+  uint32 total_tokens = 5;
+  double total_cost = 6;
+}
+
+message ValidationSessionContent {
+  string validated_session_id = 1;  // Session being validated
+  repeated ValidationCheck checks = 2;
+  ValidationResult result = 3;
+}
+
+message ValidationCheck {
+  string check_id = 1;
+  string check_type = 2;
+  bool passed = 3;
+  string details = 4;
+  google.protobuf.Timestamp checked_at = 5;
+}
+
+message ValidationResult {
+  bool is_valid = 1;
+  string summary = 2;
+  repeated string issues = 3;
+  double confidence_score = 4;
+}
+
+// ============================================
+// State Snapshot for Pause/Resume
+// ============================================
+
+message SessionStateSnapshot {
+  bytes serialized_state = 1;      // Full state for resumption
+  string state_hash = 2;           // Integrity check (blake3)
+  uint64 state_version = 3;        // Monotonic version
+  google.protobuf.Timestamp captured_at = 4;
+
+  // Child state references (for fractal resume)
+  map<string, string> child_state_hashes = 5;
+}
+
+// ============================================
+// Fractal Metrics (self-similar at each level)
+// ============================================
+
+message FractalMetrics {
+  // Resource usage at this level
+  uint64 total_tokens_consumed = 1;
+  double total_cost = 2;
+  uint64 total_latency_ms = 3;
+
+  // Fractal statistics
+  uint32 child_session_count = 4;
+  uint32 total_descendant_count = 5;  // All nested children
+  uint32 max_depth_reached = 6;
+
+  // Rollup metrics from children (aggregated)
+  uint64 aggregated_tokens = 7;
+  double aggregated_cost = 8;
+  uint64 aggregated_latency_ms = 9;
+
+  // Golden ratio compliance (0.0-1.0)
+  double golden_ratio_efficiency = 10;
+}
+
+// ============================================
+// Propagation Rules
+// ============================================
+
+message SessionPropagation {
+  // What inherits to children
+  bool inherit_labels = 1;
+  bool inherit_metadata = 2;
+  bool inherit_participants = 3;
+
+  // State sharing
+  StateVisibility state_visibility = 4;
+
+  // Child constraints
+  uint32 max_children = 5;
+  uint32 max_depth = 6;
+
+  // Rollup behavior
+  RollupStrategy rollup_strategy = 7;
+}
+
+enum StateVisibility {
+  STATE_VISIBILITY_UNSPECIFIED = 0;
+  STATE_VISIBILITY_NONE = 1;       // Children cannot see parent state
+  STATE_VISIBILITY_READ = 2;       // Children can read parent state
+  STATE_VISIBILITY_WRITE = 3;      // Children can modify shared state
+}
+
+enum RollupStrategy {
+  ROLLUP_STRATEGY_UNSPECIFIED = 0;
+  ROLLUP_STRATEGY_NONE = 1;        // No automatic rollup
+  ROLLUP_STRATEGY_ON_COMPLETE = 2; // Rollup when child completes
+  ROLLUP_STRATEGY_STREAMING = 3;   // Continuous rollup
+}
+
+// ============================================
+// Session Request/Response Messages
+// ============================================
+
+message CreateSessionRequest {
+  SessionType session_type = 1;
+  SessionScope scope = 2;
+  string parent_session_id = 3;  // Optional, for child creation
+  map<string, string> labels = 4;
+  map<string, string> metadata = 5;
+  repeated string tags = 6;
+  SessionPropagation propagation = 7;
+  oneof initial_content {
+    AgenticSessionContent agentic = 8;
+    OrchestrationSessionContent orchestration = 9;
+    ProxySessionContent proxy = 10;
+  }
+}
+
+message CreateSessionResponse {
+  FractalSession session = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+  bool include_children = 2;
+  uint32 max_depth = 3;  // For hierarchy retrieval
+}
+
+message GetSessionResponse {
+  FractalSession session = 1;
+  repeated FractalSession children = 2;  // If include_children = true
+}
+
+message UpdateSessionRequest {
+  string session_id = 1;
+  map<string, string> labels = 2;
+  map<string, string> metadata = 3;
+  repeated string tags = 4;
+}
+
+message UpdateSessionResponse {
+  FractalSession session = 1;
+}
+
+message DeleteSessionRequest {
+  string session_id = 1;
+  bool cascade = 2;  // Delete children too
+}
+
+message PauseSessionRequest {
+  string session_id = 1;
+  bool cascade = 2;  // Cascade pause to children
+}
+
+message PauseSessionResponse {
+  FractalSession session = 1;
+  repeated string paused_child_ids = 2;
+  SessionStateSnapshot snapshot = 3;
+}
+
+message ResumeSessionRequest {
+  string session_id = 1;
+  bool cascade = 2;  // Resume children too
+}
+
+message ResumeSessionResponse {
+  FractalSession session = 1;
+  repeated string resumed_child_ids = 2;
+}
+
+message CompleteSessionRequest {
+  string session_id = 1;
+  google.protobuf.Struct result = 2;
+}
+
+message CompleteSessionResponse {
+  FractalSession session = 1;
+  FractalMetrics final_metrics = 2;
+}
+
+message FailSessionRequest {
+  string session_id = 1;
+  string error_message = 2;
+  string error_code = 3;
+}
+
+// Fractal hierarchy operations
+message SpawnChildRequest {
+  string parent_session_id = 1;
+  SessionType child_type = 2;
+  SessionScope child_scope = 3;
+  map<string, string> labels = 4;
+  string assigned_node_id = 5;  // Optional, for cross-node spawning
+}
+
+message SpawnChildResponse {
+  FractalSession child_session = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+message GetHierarchyRequest {
+  string session_id = 1;
+  bool include_ancestors = 2;
+  bool include_descendants = 3;
+  uint32 max_depth = 4;
+}
+
+message GetHierarchyResponse {
+  FractalSession session = 1;
+  repeated FractalSession ancestors = 2;  // Root first
+  repeated FractalSession descendants = 3; // BFS order
+  SessionHierarchyStats stats = 4;
+}
+
+message SessionHierarchyStats {
+  uint32 total_sessions = 1;
+  uint32 max_depth = 2;
+  uint32 active_sessions = 3;
+  uint32 completed_sessions = 4;
+  FractalMetrics aggregated_metrics = 5;
+}
+
+message RollupRequest {
+  string parent_session_id = 1;
+  bool force_rollup = 2;  // Even if children not complete
+}
+
+message RollupResponse {
+  FractalSession updated_parent = 1;
+  FractalMetrics rolled_up_metrics = 2;
+}
+
+// Query operations
+message QuerySessionsRequest {
+  // Type filters
+  SessionType session_type = 1;
+  SessionStatus status = 2;
+  SessionScope scope = 3;
+
+  // Ownership filters
+  string owner_node_id = 4;
+  ergors.network.v1.NodeType owner_node_type = 5;
+
+  // Label filters (AND logic)
+  map<string, string> label_filters = 6;
+  repeated string tag_filters = 7;  // OR logic
+
+  // Hierarchy filters
+  string parent_session_id = 8;
+  string root_session_id = 9;
+  uint32 min_depth = 10;
+  uint32 max_depth = 11;
+
+  // Time filters
+  google.protobuf.Timestamp created_after = 12;
+  google.protobuf.Timestamp created_before = 13;
+
+  // Pagination
+  uint32 limit = 14;
+  uint32 offset = 15;
+
+  // Ordering
+  SessionOrderBy order_by = 16;
+  bool descending = 17;
+}
+
+enum SessionOrderBy {
+  SESSION_ORDER_BY_UNSPECIFIED = 0;
+  SESSION_ORDER_BY_CREATED_AT = 1;
+  SESSION_ORDER_BY_UPDATED_AT = 2;
+  SESSION_ORDER_BY_DEPTH = 3;
+  SESSION_ORDER_BY_CHILD_COUNT = 4;
+}
+
+message QuerySessionsResponse {
+  repeated FractalSession sessions = 1;
+  uint32 total_count = 2;
+  bool has_more = 3;
+}
+
+message ListByNodeRequest {
+  string node_id = 1;
+  SessionStatus status = 2;
+  uint32 limit = 3;
+}
+
+message ListByNodeResponse {
+  repeated FractalSession sessions = 1;
+}
+
+message ListByRootRequest {
+  string root_session_id = 1;
+  bool flatten = 2;  // Return flat list vs tree
+}
+
+message ListByRootResponse {
+  repeated FractalSession sessions = 1;
+  SessionHierarchyStats stats = 2;
+}
+
+// Cross-node operations
+message SyncSessionRequest {
+  string session_id = 1;
+  string target_node_id = 2;
+  bool full_sync = 3;  // Include all children
+}
+
+message SyncSessionResponse {
+  bool success = 1;
+  string sync_hash = 2;
+  uint32 sessions_synced = 3;
+}
+
+message MigrateSessionRequest {
+  string session_id = 1;
+  string target_node_id = 2;
+  bool migrate_children = 3;
+}
+
+message MigrateSessionResponse {
+  FractalSession migrated_session = 1;
+  string new_owner_node_id = 2;
+  repeated string migrated_child_ids = 3;
+}
+
+// Streaming
+message StreamSessionRequest {
+  string session_id = 1;
+  bool include_children = 2;
+}
+
+message SessionUpdate {
+  string session_id = 1;
+  SessionStatus old_status = 2;
+  SessionStatus new_status = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  string update_type = 5;  // "status", "state", "metrics", "child_added"
+  FractalSession snapshot = 6;
+}
+
+// ============================================
+// Git Workspace Management Messages
+// ============================================
+
+// Add workspace request
+message AddWorkspaceRequest {
+  string name = 1;
+  string remote_url = 2;  // Optional, empty for local workspace
+}
+
+message AddWorkspaceResponse {
+  bool success = 1;
+  ergors.git.v1.WorkspaceMetadata workspace = 2;
+  string error_message = 3;
+}
+
+// Get workspace request
+message GetWorkspaceRequest {
+  string workspace_id = 1;
+}
+
+message GetWorkspaceResponse {
+  ergors.git.v1.WorkspaceMetadata workspace = 1;
+  repeated ergors.git.v1.TaskWorktree active_worktrees = 2;
+}
+
+// List workspaces request
+message ListWorkspacesRequest {
+  uint32 limit = 1;
+  uint32 offset = 2;
+}
+
+message ListWorkspacesResponse {
+  repeated ergors.git.v1.WorkspaceMetadata workspaces = 1;
+  uint32 total_count = 2;
+}
+
+// Remove workspace request
+message RemoveWorkspaceRequest {
+  string workspace_id = 1;
+  bool force = 2;  // Remove even if active worktrees exist
+}
+
+// Sync workspace request
+message SyncWorkspaceRequest {
+  string workspace_id = 1;
+  string remote_name = 2;  // Default: "origin"
+  bool push = 3;           // Push local changes
+  bool fetch = 4;          // Fetch remote changes
+}
+
+message SyncWorkspaceResponse {
+  bool success = 1;
+  string message = 2;
+  bytes new_head_commit = 3;
+}
+
+// Create task worktree request
+message CreateTaskWorktreeRequest {
+  string workspace_id = 1;
+  string task_id = 2;
+  string assigned_node_id = 3;  // Optional
+}
+
+message CreateTaskWorktreeResponse {
+  bool success = 1;
+  ergors.git.v1.TaskWorktree worktree = 2;
+  string error_message = 3;
+}
+
+// List task worktrees request
+message ListTaskWorktreesRequest {
+  string workspace_id = 1;  // Filter by workspace (optional)
+  string assigned_node_id = 2;  // Filter by node (optional)
+  int32 status = 3;  // Filter by status (optional, 0 = all)
+}
+
+message ListTaskWorktreesResponse {
+  repeated ergors.git.v1.TaskWorktree worktrees = 1;
+}
+
+// Complete task worktree request
+message CompleteTaskWorktreeRequest {
+  string task_id = 1;
+  string commit_message = 2;
+  bool merge_to_main = 3;  // Merge the task branch to main
+}
+
+message CompleteTaskWorktreeResponse {
+  bool success = 1;
+  string commit_hash = 2;
+  bool merged = 3;
+  string error_message = 4;
+}
+
+// Fail task worktree request
+message FailTaskWorktreeRequest {
+  string task_id = 1;
+  string reason = 2;
+  bool cleanup = 3;  // Remove the worktree
+}
+
+// Resolve conflict in a task worktree request
+message ResolveConflictRequest {
+  string task_id = 1;
+  ConflictResolutionStrategy strategy = 2;
+  repeated FileResolution file_resolutions = 3;  // Per-file resolutions for MANUAL strategy
+}
+
+// Strategy for resolving conflicts
+enum ConflictResolutionStrategy {
+  CONFLICT_RESOLUTION_STRATEGY_UNSPECIFIED = 0;
+  CONFLICT_RESOLUTION_STRATEGY_OURS = 1;      // Keep our (task branch) changes
+  CONFLICT_RESOLUTION_STRATEGY_THEIRS = 2;    // Keep their (main) changes
+  CONFLICT_RESOLUTION_STRATEGY_MANUAL = 3;    // Use provided file_resolutions
+  CONFLICT_RESOLUTION_STRATEGY_ABORT = 4;     // Abort and reset to pre-merge state
+}
+
+// Per-file conflict resolution
+message FileResolution {
+  string file_path = 1;
+  ResolutionChoice choice = 2;
+  bytes custom_content = 3;  // For CUSTOM choice
+}
+
+// Choice for individual file resolution
+enum ResolutionChoice {
+  RESOLUTION_CHOICE_UNSPECIFIED = 0;
+  RESOLUTION_CHOICE_OURS = 1;
+  RESOLUTION_CHOICE_THEIRS = 2;
+  RESOLUTION_CHOICE_CUSTOM = 3;
+}
+
+// Resolve conflict response
+message ResolveConflictResponse {
+  bool success = 1;
+  string commit_hash = 2;  // Commit hash after resolution
+  repeated string remaining_conflicts = 3;  // Any remaining conflicts
+  string error_message = 4;
+}

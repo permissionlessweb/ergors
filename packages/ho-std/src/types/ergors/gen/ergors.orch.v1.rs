@@ -556,7 +556,7 @@ impl ::prost::Name for QueryPromptsResponse {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BootstrapRequest {
     /// bootstrap method
     #[prost(message, optional, tag = "1")]
@@ -576,7 +576,7 @@ impl ::prost::Name for BootstrapRequest {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BootstrapMethod {
     #[prost(oneof = "bootstrap_method::Method", tags = "1, 2, 3, 4")]
     pub method: ::core::option::Option<bootstrap_method::Method>,
@@ -584,7 +584,7 @@ pub struct BootstrapMethod {
 /// Nested message and enum types in `BootstrapMethod`.
 pub mod bootstrap_method {
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Method {
         #[prost(message, tag = "1")]
         Ssh(super::Ssh),
@@ -623,15 +623,15 @@ impl ::prost::Name for Ssh {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Cloud {
-    #[prost(oneof = "cloud::Provider", tags = "1, 2, 3")]
+    #[prost(oneof = "cloud::Provider", tags = "1, 2, 3, 4")]
     pub provider: ::core::option::Option<cloud::Provider>,
 }
 /// Nested message and enum types in `Cloud`.
 pub mod cloud {
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Provider {
         #[prost(message, tag = "1")]
         Akash(super::Akash),
@@ -639,6 +639,8 @@ pub mod cloud {
         Wavs(super::Wavs),
         #[prost(message, tag = "3")]
         Phala(super::Phala),
+        #[prost(message, tag = "4")]
+        Ec2(super::Ec2),
     }
 }
 impl ::prost::Name for Cloud {
@@ -738,9 +740,18 @@ impl ::prost::Name for AkashCertificate {
         "/ergors.orch.v1.AkashCertificate".into()
     }
 }
+/// WAVS (Web3 Agent Virtual Stack) deployment
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Wavs {}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Wavs {
+    #[prost(string, tag = "1")]
+    pub api_key: ::prost::alloc::string::String,
+    /// "mainnet" or "testnet"
+    #[prost(string, tag = "2")]
+    pub network: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub component_id: ::prost::alloc::string::String,
+}
 impl ::prost::Name for Wavs {
     const NAME: &'static str = "Wavs";
     const PACKAGE: &'static str = "ergors.orch.v1";
@@ -751,9 +762,20 @@ impl ::prost::Name for Wavs {
         "/ergors.orch.v1.Wavs".into()
     }
 }
+/// Phala Network TEE deployment
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Phala {}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Phala {
+    #[prost(string, tag = "1")]
+    pub api_key: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub cluster_id: ::prost::alloc::string::String,
+    /// "sgx" or "tdx"
+    #[prost(string, tag = "3")]
+    pub tee_mode: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub contract_id: ::prost::alloc::string::String,
+}
 impl ::prost::Name for Phala {
     const NAME: &'static str = "Phala";
     const PACKAGE: &'static str = "ergors.orch.v1";
@@ -762,6 +784,40 @@ impl ::prost::Name for Phala {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.Phala".into()
+    }
+}
+/// AWS EC2 deployment
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Ec2 {
+    #[prost(string, tag = "1")]
+    pub region: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub instance_type: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub ami_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub key_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub security_group_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub subnet_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "7")]
+    pub iam_instance_profile: ::prost::alloc::string::String,
+    #[prost(map = "string, string", tag = "8")]
+    pub tags: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for Ec2 {
+    const NAME: &'static str = "Ec2";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.Ec2".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.Ec2".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1182,6 +1238,13 @@ pub struct DeploymentRuntime {
     >,
     #[prost(string, tag = "7")]
     pub version: ::prost::alloc::string::String,
+    /// Additional provider runtimes
+    #[prost(message, optional, tag = "8")]
+    pub ec2: ::core::option::Option<Ec2Runtime>,
+    #[prost(message, optional, tag = "9")]
+    pub phala: ::core::option::Option<PhalaRuntime>,
+    #[prost(message, optional, tag = "10")]
+    pub wavs: ::core::option::Option<WavsRuntime>,
 }
 impl ::prost::Name for DeploymentRuntime {
     const NAME: &'static str = "DeploymentRuntime";
@@ -1226,6 +1289,77 @@ impl ::prost::Name for AkashRuntime {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.AkashRuntime".into()
+    }
+}
+/// EC2-specific runtime data
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Ec2Runtime {
+    #[prost(string, tag = "1")]
+    pub instance_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub public_ip: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub private_ip: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub availability_zone: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub instance_state: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub public_dns: ::prost::alloc::string::String,
+}
+impl ::prost::Name for Ec2Runtime {
+    const NAME: &'static str = "Ec2Runtime";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.Ec2Runtime".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.Ec2Runtime".into()
+    }
+}
+/// Phala-specific runtime data
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PhalaRuntime {
+    #[prost(string, tag = "1")]
+    pub contract_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub cluster_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "3")]
+    pub worker_endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag = "4")]
+    pub attestation_report: ::prost::alloc::string::String,
+}
+impl ::prost::Name for PhalaRuntime {
+    const NAME: &'static str = "PhalaRuntime";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.PhalaRuntime".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.PhalaRuntime".into()
+    }
+}
+/// WAVS-specific runtime data
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WavsRuntime {
+    #[prost(string, tag = "1")]
+    pub component_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub trigger_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "3")]
+    pub service_endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for WavsRuntime {
+    const NAME: &'static str = "WavsRuntime";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.WavsRuntime".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.WavsRuntime".into()
     }
 }
 /// Health check information

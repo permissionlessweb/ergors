@@ -23,6 +23,110 @@ impl ::prost::Name for EncryptedApiKey {
         "/ergors.storage.v1.EncryptedApiKey".into()
     }
 }
+/// Encrypted node identity for secure private key storage
+/// The private key is encrypted using password-based key derivation (Argon2 + ChaCha20Poly1305)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct EncryptedNodeIdentity {
+    /// The public key (always stored in plaintext for identification)
+    #[prost(bytes = "vec", tag = "1")]
+    pub public_key: ::prost::alloc::vec::Vec<u8>,
+    /// The encrypted private key (ChaCha20Poly1305 encrypted blob)
+    #[prost(bytes = "vec", tag = "2")]
+    pub encrypted_private_key: ::prost::alloc::vec::Vec<u8>,
+    /// Encryption metadata
+    #[prost(message, optional, tag = "3")]
+    pub encrypted_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Encryption method identifier (e.g., "argon2id-chacha20poly1305-v1")
+    #[prost(string, tag = "4")]
+    pub encryption_method: ::prost::alloc::string::String,
+    /// Salt for key derivation (stored separately from encrypted blob for flexibility)
+    #[prost(bytes = "vec", tag = "5")]
+    pub kdf_salt: ::prost::alloc::vec::Vec<u8>,
+    /// Key derivation parameters (JSON encoded for forward compatibility)
+    /// Contains: memory_cost, time_cost, parallelism, output_length
+    #[prost(string, tag = "6")]
+    pub kdf_params: ::prost::alloc::string::String,
+    /// Version for migration support
+    #[prost(uint32, tag = "7")]
+    pub version: u32,
+    /// Optional node metadata (user, host, ports etc.)
+    #[prost(message, optional, tag = "8")]
+    pub metadata: ::core::option::Option<NodeIdentityMetadata>,
+}
+impl ::prost::Name for EncryptedNodeIdentity {
+    const NAME: &'static str = "EncryptedNodeIdentity";
+    const PACKAGE: &'static str = "ergors.storage.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.storage.v1.EncryptedNodeIdentity".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.storage.v1.EncryptedNodeIdentity".into()
+    }
+}
+/// Non-sensitive metadata about the node identity
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NodeIdentityMetadata {
+    #[prost(string, tag = "1")]
+    pub user: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub host: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub p2p_port: u32,
+    #[prost(uint32, tag = "4")]
+    pub api_port: u32,
+    #[prost(uint32, tag = "5")]
+    pub ssh_port: u32,
+    #[prost(string, tag = "6")]
+    pub node_type: ::prost::alloc::string::String,
+    #[prost(string, tag = "7")]
+    pub os: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "8")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "9")]
+    pub last_used: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for NodeIdentityMetadata {
+    const NAME: &'static str = "NodeIdentityMetadata";
+    const PACKAGE: &'static str = "ergors.storage.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.storage.v1.NodeIdentityMetadata".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.storage.v1.NodeIdentityMetadata".into()
+    }
+}
+/// Custody backend configuration
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NodeIdentityCustodyConfig {
+    /// Backend type: "plaintext", "password_encrypted", "node_key_encrypted", "threshold", "remote"
+    #[prost(string, tag = "1")]
+    pub backend: ::prost::alloc::string::String,
+    /// Whether to cache decrypted keys in memory
+    #[prost(bool, tag = "2")]
+    pub cache_keys: bool,
+    /// TTL for cached keys in seconds (0 = no expiry)
+    #[prost(uint64, tag = "3")]
+    pub cache_ttl_secs: u64,
+    /// Path to encrypted identity file
+    #[prost(string, tag = "4")]
+    pub identity_path: ::prost::alloc::string::String,
+    /// Remote custody endpoint (for remote backend)
+    #[prost(string, tag = "5")]
+    pub remote_endpoint: ::prost::alloc::string::String,
+}
+impl ::prost::Name for NodeIdentityCustodyConfig {
+    const NAME: &'static str = "NodeIdentityCustodyConfig";
+    const PACKAGE: &'static str = "ergors.storage.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.storage.v1.NodeIdentityCustodyConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.storage.v1.NodeIdentityCustodyConfig".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProviderMetadata {

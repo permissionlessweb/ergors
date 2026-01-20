@@ -8,13 +8,15 @@ import "network/v1/network.proto";
 import "storage/v1/storage.proto";
 
 
-// Configuration Types  
+// Configuration Types
 message HoConfig {
   network.v1.NetworkConfig network = 1;
   network.v1.NodeIdentity identity = 2;
   storage.v1.StorageConfig storage = 3;
   LlmRouterConfig llm = 4;
   string home = 5;
+  // Custody configuration for node identity key management
+  storage.v1.NodeIdentityCustodyConfig custody = 6;
 }
 
 
@@ -268,11 +270,12 @@ message Ssh {
 }
 
 message Cloud {
-oneof provider {
-  Akash akash = 1;
-  Wavs wavs = 2;
-  Phala phala = 3;
-}
+  oneof provider {
+    Akash akash = 1;
+    Wavs wavs = 2;
+    Phala phala = 3;
+    Ec2 ec2 = 4;
+  }
 }
 
 message Bluetooth {}
@@ -295,8 +298,32 @@ message AkashCertificate {
   string key_pem = 2;
 }
 
-message Wavs {}
-message Phala {}
+// WAVS (Web3 Agent Virtual Stack) deployment
+message Wavs {
+  string api_key = 1;
+  string network = 2;  // "mainnet" or "testnet"
+  string component_id = 3;
+}
+
+// Phala Network TEE deployment
+message Phala {
+  string api_key = 1;
+  string cluster_id = 2;
+  string tee_mode = 3;  // "sgx" or "tdx"
+  string contract_id = 4;
+}
+
+// AWS EC2 deployment
+message Ec2 {
+  string region = 1;
+  string instance_type = 2;
+  string ami_id = 3;
+  string key_name = 4;
+  string security_group_id = 5;
+  string subnet_id = 6;
+  string iam_instance_profile = 7;
+  map<string, string> tags = 8;
+}
 
 message BootstrapResponse {
   string id = 1;
@@ -488,6 +515,11 @@ message DeploymentRuntime {
   // Configuration
   map<string, string> env_vars = 6;
   string version = 7;
+
+  // Additional provider runtimes
+  Ec2Runtime ec2 = 8;
+  PhalaRuntime phala = 9;
+  WavsRuntime wavs = 10;
 }
 
 // Akash-specific runtime data
@@ -500,6 +532,31 @@ message AkashRuntime {
   repeated string service_endpoints = 6;
   uint64 lease_price_per_block = 7; // in uakt
   string provider_host_uri = 8;
+}
+
+// EC2-specific runtime data
+message Ec2Runtime {
+  string instance_id = 1;
+  string public_ip = 2;
+  string private_ip = 3;
+  string availability_zone = 4;
+  string instance_state = 5;
+  string public_dns = 6;
+}
+
+// Phala-specific runtime data
+message PhalaRuntime {
+  string contract_id = 1;
+  string cluster_id = 2;
+  repeated string worker_endpoints = 3;
+  string attestation_report = 4;
+}
+
+// WAVS-specific runtime data
+message WavsRuntime {
+  string component_id = 1;
+  string trigger_id = 2;
+  repeated string service_endpoints = 3;
 }
 
 // Health check information
