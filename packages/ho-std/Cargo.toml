@@ -55,6 +55,7 @@ flate2 = { workspace = true }
 fmt = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
+git2 = { workspace = true }
 governor = { workspace = true }
 hex = { workspace = true }
 hmac = "0.12.0"
@@ -79,7 +80,7 @@ serde = { workspace = true }
 serde-cw-value = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-tempfile = { workspace = true }
+ssh-key = { workspace = true }
 termion = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -103,5 +104,5 @@ wasmer-types = { workspace = true,   optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-tempfile = "3.23.0"
+tempfile = { workspace = true }
 tokio-test = "0.4"

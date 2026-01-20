@@ -3,7 +3,7 @@
 use axum::{
     body::Body,
     extract::Request,
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::{IntoResponse, Response},
 };
 use commonware_codec::DecodeExt;
@@ -183,11 +183,8 @@ fn validate_timestamp(timestamp_str: &str) -> Result<(), Auth> {
 use anyhow::Result;
 use rand::{CryptoRng, RngCore};
 
-use crate::types::{
-    actions::v1::{AuthorizationData, TransactionPlan},
-    ergors::keys::v1::*,
-};
-use crate::{error::Auth, types::ergors::custody::v1::*};
+use crate::error::Auth;
+use crate::types::{actions::v1::TransactionPlan, ergors::keys::v1::*};
 
 impl TransactionPlan {
     /// Authorize this [`TransactionPlan`] with the provided [`SpendKey`].

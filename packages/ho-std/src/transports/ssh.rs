@@ -1,6 +1,5 @@
 use anyhow::Context;
-use std::path::Path;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::constants::*;
 

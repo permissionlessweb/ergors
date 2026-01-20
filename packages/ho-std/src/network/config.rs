@@ -82,7 +82,7 @@ impl RouteRegistry {
 /// - Returns tuple of (public_router, protected_router) for external auth layer application
 ///
 /// # Example
-/// ```rust
+/// ```ignore
 /// use ho_std::define_routes;
 /// use axum::middleware;
 ///

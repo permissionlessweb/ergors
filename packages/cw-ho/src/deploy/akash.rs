@@ -16,9 +16,7 @@ use tokio::time::sleep;
 
 // Import our API client and proto types
 use crate::deploy::api_client::{AkashApiClient, AkashApiConfig};
-use crate::deploy::proto_types::*;
 use crate::deploy::transaction::{SimpleKeyring, TxBroadcaster, TxConfig};
-use ergors_proto;
 
 #[derive(Debug)]
 struct AkashConfig {

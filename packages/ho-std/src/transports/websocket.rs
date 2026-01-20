@@ -3,20 +3,12 @@
 //! Browser-compatible WebSocket transport for web applications and hybrid deployments.
 //! Supports sacred geometric message validation with fallback compatibility.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    sync::Arc,
     time::{Duration, SystemTime},
 };
-use tokio::{
-    sync::{broadcast, RwLock},
-    task::JoinHandle,
-    time::interval,
-};
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 
 use crate::constants::*;
 

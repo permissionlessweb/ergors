@@ -1,8 +1,10 @@
 pub mod auth;
 pub mod call;
 pub mod config;
-
+pub mod daemon;
 pub mod deploy;
+pub mod git;
+pub mod grpc;
 pub mod headstash;
 pub mod init;
 pub mod middleware;
@@ -10,6 +12,7 @@ pub mod network;
 pub mod orchestrator;
 pub mod proxy;
 pub mod server;
+pub mod session;
 pub mod storage;
 pub mod traits;
 
@@ -27,8 +30,6 @@ use {
     commonware_cryptography::ed25519, commonware_p2p::authenticated,
     commonware_runtime::tokio::Context,
 };
-
-
 
 /// Minimal network manager for ergors/ implementations in ./manager.rs
 pub struct ErgorsNetworkManifold {

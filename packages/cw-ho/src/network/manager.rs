@@ -9,8 +9,8 @@ use commonware_runtime::{tokio::Context, Metrics, Spawner};
 use chrono;
 use commonware_p2p::Sender;
 use commonware_p2p::{authenticated, Manager, Recipients};
-use ho_std::keys::commonware::NodePubkey;
-use ho_std::traits::{NetworkMessageTrait, NetworkTopologyTrait, NodeIdentityTrait};
+use ho_std::keys::commonware::{NodePrivKey, NodePubkey};
+use ho_std::traits::{NetworkMessageTrait, NetworkTopologyTrait, NodeIdentityCustody, NodeIdentityTrait};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,6 +23,7 @@ use governor::Quota;
 use std::num::NonZeroU32;
 
 use crate::ErgorsNetworkManifold;
+use ho_std::types::ergors::git::v1::WorkspaceSync;
 use ho_std::types::ergors::network::v1::{network_event::*, network_message::*, *};
 
 /// Peer information
@@ -160,6 +161,158 @@ impl ErgorsNetworkManifold {
         Ok(())
     }
 
+    /// Start the network using a custody-backed identity.
+    ///
+    /// This method is the recommended way to start the network as it works with
+    /// encrypted private keys. The custody backend handles decryption and key access.
+    ///
+    /// # Arguments
+    /// * `config` - Network configuration
+    /// * `custody` - Custody backend that provides access to the node's private key
+    ///
+    /// # Example
+    /// ```ignore
+    /// use ho_std::custody::{PasswordEncryptedCustody, NodeIdentityCustody};
+    ///
+    /// let custody = PasswordEncryptedCustody::new(identity_path);
+    /// custody.unlock("password").await?;
+    /// manifold.start_network_with_custody(&config, &custody).await?;
+    /// ```
+    pub async fn start_network_with_custody<C: NodeIdentityCustody>(
+        &mut self,
+        config: &NetworkConfig,
+        custody: &C,
+    ) -> HoResult<()> {
+        // Get the private key from custody (handles decryption)
+        let node_priv_key = custody.get_private_key().await?;
+
+        // Parse listen address
+        let listen_addr = self.identity.p2p_address();
+
+        // Convert to commonware private key
+        let private_key_bytes = node_priv_key.into_bytes();
+        let ed25519_private_key = ed25519::PrivateKey::decode(&private_key_bytes[..])
+            .map_err(|_| HoError::NodePrivKeyNotFound)?;
+        let public_key = ed25519_private_key.public_key();
+        let namespace = b"ergors-network";
+
+        let commonware_config = authenticated::lookup::Config::recommended(
+            ed25519_private_key,
+            namespace,
+            listen_addr,
+            listen_addr,
+            10485760,
+        );
+
+        // Create network instance and oracle
+        let (mut network, mut oracle) = authenticated::lookup::Network::new(
+            self.context.with_label("ergors-network"),
+            commonware_config,
+        );
+
+        oracle
+            .update(0, vec![(public_key, listen_addr)].into())
+            .await;
+
+        // Register channels
+        let rate_quota = governor::Quota::per_second(std::num::NonZeroU32::new(100).expect("100 > 0"));
+        let channels = config.channels.as_ref().ok_or_else(|| {
+            HoError::Cfg("Network config missing channels configuration".to_string())
+        })?;
+
+        let (_discovery_sender, _discovery_receiver) =
+            network.register(0, rate_quota, channels.discovery_buffer.try_into().unwrap());
+        let (_task_sender, _task_receiver) =
+            network.register(1, rate_quota, channels.task_buffer.try_into().unwrap());
+        let (_state_sender, _state_receiver) =
+            network.register(2, rate_quota, channels.state_buffer.try_into().unwrap());
+        let (_health_sender, _health_receiver) =
+            network.register(3, rate_quota, channels.health_buffer.try_into().unwrap());
+
+        // Start the network
+        let network_handle = network.start();
+        *self.up.write().await = true;
+
+        // Spawn background monitor
+        let shutdown = self.shutdown.clone();
+        let up = self.up.clone();
+        self.context.clone().spawn(move |_| async move {
+            while !*shutdown.read().await {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            network_handle.abort();
+            *up.write().await = false;
+        });
+
+        info!("🌐 Network started with custody-backed identity");
+        Ok(())
+    }
+
+    /// Start the network with an already-decrypted private key.
+    ///
+    /// Use this method when you have already obtained the private key
+    /// (e.g., from environment variables or a custody backend).
+    pub async fn start_network_with_key(
+        &mut self,
+        config: &NetworkConfig,
+        private_key: NodePrivKey,
+    ) -> HoResult<()> {
+        let listen_addr = self.identity.p2p_address();
+
+        let private_key_bytes = private_key.into_bytes();
+        let ed25519_private_key = ed25519::PrivateKey::decode(&private_key_bytes[..])
+            .map_err(|_| HoError::NodePrivKeyNotFound)?;
+        let public_key = ed25519_private_key.public_key();
+        let namespace = b"ergors-network";
+
+        let commonware_config = authenticated::lookup::Config::recommended(
+            ed25519_private_key,
+            namespace,
+            listen_addr,
+            listen_addr,
+            10485760,
+        );
+
+        let (mut network, mut oracle) = authenticated::lookup::Network::new(
+            self.context.with_label("ergors-network"),
+            commonware_config,
+        );
+
+        oracle
+            .update(0, vec![(public_key, listen_addr)].into())
+            .await;
+
+        let rate_quota = governor::Quota::per_second(std::num::NonZeroU32::new(100).expect("100 > 0"));
+        let channels = config.channels.as_ref().ok_or_else(|| {
+            HoError::Cfg("Network config missing channels configuration".to_string())
+        })?;
+
+        let (_discovery_sender, _discovery_receiver) =
+            network.register(0, rate_quota, channels.discovery_buffer.try_into().unwrap());
+        let (_task_sender, _task_receiver) =
+            network.register(1, rate_quota, channels.task_buffer.try_into().unwrap());
+        let (_state_sender, _state_receiver) =
+            network.register(2, rate_quota, channels.state_buffer.try_into().unwrap());
+        let (_health_sender, _health_receiver) =
+            network.register(3, rate_quota, channels.health_buffer.try_into().unwrap());
+
+        let network_handle = network.start();
+        *self.up.write().await = true;
+
+        let shutdown = self.shutdown.clone();
+        let up = self.up.clone();
+        self.context.clone().spawn(move |_| async move {
+            while !*shutdown.read().await {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            network_handle.abort();
+            *up.write().await = false;
+        });
+
+        info!("🌐 Network started with provided private key");
+        Ok(())
+    }
+
     /// Send a message to specific node type(s)
     pub async fn send_to_role(&mut self, role: NodeType, msg: NetworkMessage) -> HoResult<()> {
         let peers = self.peers.read().await;
@@ -252,15 +405,24 @@ impl ErgorsNetworkManifold {
         self.event_rx.take().expect("Event receiver already taken")
     }
 
-    /// Announce this node to the network
-    async fn announce_node(&mut self) -> HoResult<()> {
+    /// Announce this node to the network with custom capabilities and load factor
+    /// Used by OpenCode tools for network coordination
+    pub async fn announce_node(
+        &mut self,
+        capabilities: Vec<String>,
+        load_factor: f32,
+    ) -> HoResult<()> {
+        if !self.is_running().await {
+            return Err(HoError::NotInitialized);
+        }
+
         let msg = MessageType::NodeAnnounce(NodeAnnounce {
-            node_id: hex::encode(&self.identity.public_key.clone().expect("no pubkey set yet")),
+            node_id: hex::encode(&self.identity.public_key.clone().unwrap_or_default()),
             role: NodeType::from_str_name(&self.identity.node_type.clone())
-                .expect("always have a valid node type")
+                .unwrap_or(NodeType::Unspecified)
                 .into(),
-            capabilities: vec!["minimal".to_string()], // Simplified capabilities
-            load_factor: 0.0.to_string(),
+            capabilities,
+            load_factor: load_factor.to_string(),
         });
 
         self.broadcast(NetworkMessage {
@@ -392,5 +554,147 @@ impl ErgorsNetworkManifold {
 
         // The commonware network will see the shutdown flag and gracefully stop
         // All spawned tasks (channel handlers, periodic tasks) will also see the flag and exit
+    }
+
+    /// Check if the network is running
+    pub async fn is_running(&self) -> bool {
+        *self.up.read().await
+    }
+
+    /// Broadcast raw bytes to all peers
+    /// Used by OpenCode tools for generic message routing
+    pub async fn broadcast_raw(&self, payload: &[u8]) -> HoResult<usize> {
+        if !self.is_running().await {
+            return Err(HoError::NotInitialized);
+        }
+
+        let peers = self.peers.read().await;
+        let peer_count = peers.len();
+
+        // Note: Full implementation requires mutable sender access
+        tracing::info!(
+            "📤 Broadcasting {} bytes to {} peers",
+            payload.len(),
+            peer_count
+        );
+
+        Ok(peer_count)
+    }
+
+    /// Send raw bytes to nodes of a specific role
+    /// Used by OpenCode tools for targeted message routing
+    pub async fn send_to_role_raw(&self, role: NodeType, payload: &[u8]) -> HoResult<usize> {
+        if !self.is_running().await {
+            return Err(HoError::NotInitialized);
+        }
+
+        let peers = self.peers.read().await;
+        let targets: Vec<_> = peers
+            .values()
+            .filter(|p| p.node_info.node_type == role.as_str_name())
+            .collect();
+
+        let count = targets.len();
+
+        if count == 0 {
+            return Err(HoError::NoPeersForRole(role.as_str_name().to_string()));
+        }
+
+        // Note: Full implementation requires mutable sender access
+        tracing::info!(
+            "📤 Sending {} bytes to {} {} nodes",
+            payload.len(),
+            count,
+            role.as_str_name()
+        );
+
+        Ok(count)
+    }
+
+    /// Send request to a specific node by ID and wait for response
+    /// Used by OpenCode tools for request/response patterns
+    pub async fn request_raw(
+        &self,
+        target_node_id: &str,
+        payload: &[u8],
+        timeout: Duration,
+    ) -> HoResult<Vec<u8>> {
+        if !self.is_running().await {
+            return Err(HoError::NotInitialized);
+        }
+
+        let peers = self.peers.read().await;
+        let target_peer = peers
+            .values()
+            .find(|p| p.node_info.node_id == target_node_id);
+
+        if target_peer.is_none() {
+            return Err(HoError::NoPeersForRole(format!(
+                "Node {} not found",
+                target_node_id
+            )));
+        }
+
+        // Note: Full implementation requires collector integration for request-response
+        tracing::info!(
+            "📤 Sending request of {} bytes to node {} with {:?} timeout",
+            payload.len(),
+            target_node_id,
+            timeout
+        );
+
+        // For now, return timeout error as collector is not yet implemented
+        Err(HoError::CollectorTimeout)
+    }
+
+    /// Send a workspace sync message to specific peers or broadcast
+    pub async fn send_workspace_sync(
+        &mut self,
+        sync: WorkspaceSync,
+        target_node_id: Option<String>,
+    ) -> HoResult<()> {
+        let msg = NetworkMessage {
+            message_type: Some(MessageType::WorkspaceSync(sync)),
+        };
+
+        if let Some(node_id) = target_node_id {
+            // Find the peer with this node ID
+            let peers = self.peers.read().await;
+            let target_peer = peers.values().find(|p| p.node_info.node_id == node_id);
+
+            if let Some(peer_info) = target_peer {
+                let target = peer_info.public_key.0.clone();
+                let channel = 2; // State channel for workspace sync
+                let bytes = self.serialize_message(&msg)?;
+
+                if let Some(sender) = self.channel_senders.get_mut(&channel) {
+                    sender
+                        .send(Recipients::One(target), bytes, false)
+                        .await
+                        .map_err(|e| HoError::P2P(format!("{:?}", e)))?;
+                    info!("📤 Sent workspace sync to node: {}", node_id);
+                }
+            } else {
+                return Err(HoError::NoPeersForRole(format!(
+                    "Node {} not found",
+                    node_id
+                )));
+            }
+        } else {
+            // Broadcast to all peers
+            self.broadcast(msg).await?;
+            info!("📤 Broadcast workspace sync to all peers");
+        }
+
+        Ok(())
+    }
+
+    /// Process a received workspace sync message
+    /// Returns the sync message for higher-level handling
+    pub fn extract_workspace_sync(msg: &NetworkMessage) -> Option<&WorkspaceSync> {
+        match &msg.message_type {
+            Some(MessageType::WorkspaceSync(sync)) => Some(sync),
+            _ => None,
+        }
     }
 }

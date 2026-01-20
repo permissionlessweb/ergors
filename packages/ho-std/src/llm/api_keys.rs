@@ -14,6 +14,16 @@ use termion::input::{MouseTerminal, TermRead};
 use termion::raw::IntoRawMode;
 use termion::{clear, color, cursor, style};
 
+/// All LlmModel variants for iteration (excluding Custom)
+const ALL_LLM_MODELS: &[LlmModel] = &[
+    LlmModel::OpenAi,
+    LlmModel::Anthropic,
+    LlmModel::OllamaLocal,
+    LlmModel::AkashMl,
+    LlmModel::Grok,
+    LlmModel::KimiResearch,
+];
+
 impl ApiKeysJson {
     /// Create a new default configuration with ollama_local enabled
     pub fn new(api: &str) -> Self {
@@ -28,6 +38,59 @@ impl ApiKeysJson {
                 entity: Some(ollama.default_entity()),
             },
         );
+
+        Self {
+            metadata: Some(ApiKeysMetadata {
+                version: "2.0.0".to_string(),
+                description: "ERGORS Node API Keys - Configure your LLM providers".to_string(),
+                golden_ratio_note:
+                    "Provider selection uses φ ≈ 1.618 weighting when strategy = 'GoldenRatio'"
+                        .to_string(),
+            }),
+            providers,
+            global_settings: Some(GlobalSettings {
+                default_timeout_seconds: 60,
+                max_retry_attempts: 3,
+                golden_ratio_weighting: true,
+                fallback_enabled: true,
+                health_check_interval_seconds: 300,
+            }),
+            instructions: Some(Instructions {
+                setup: vec![
+                    "1. Use 'ergors init llm-api-keys' to configure providers interactively"
+                        .to_string(),
+                    "2. Set 'enabled': true for providers you want to use".to_string(),
+                    "3. Adjust model selections and parameters as needed".to_string(),
+                    "4. Environment variables are supported: ${MY_API_KEY}".to_string(),
+                    "5. Local providers (like Ollama) don't need API keys".to_string(),
+                ],
+                security: vec![
+                    "⚠️  Never commit API keys to version control".to_string(),
+                    "✅ Add api-keys.json to your .gitignore".to_string(),
+                    "✅ Use environment variables for production keys".to_string(),
+                    "✅ Restrict file permissions: chmod 600 api-keys.json".to_string(),
+                ],
+            }),
+        }
+    }
+
+    /// Generate a complete template with all providers from LlmModel variants.
+    /// This ensures the template always matches the expected types.
+    pub fn generate_template() -> Self {
+        let mut providers = HashMap::new();
+
+        for model in ALL_LLM_MODELS {
+            let key = get_provider_key(*model);
+            let api_key = get_api_key_template(*model);
+
+            providers.insert(
+                key.to_string(),
+                ProviderWithAuth {
+                    api_key,
+                    entity: Some(model.default_entity()),
+                },
+            );
+        }
 
         Self {
             metadata: Some(ApiKeysMetadata {
@@ -111,6 +174,15 @@ fn get_env_var_name(provider: LlmModel) -> &'static str {
     }
 }
 
+/// Get the API key template string for a provider.
+/// Returns empty string for local providers, env var reference for others.
+fn get_api_key_template(provider: LlmModel) -> String {
+    match provider {
+        LlmModel::OllamaLocal => String::new(), // No API key needed
+        _ => format!("${{{}}}", get_env_var_name(provider)),
+    }
+}
+
 /// Get provider key name (lowercase identifier)
 fn get_provider_key(provider: LlmModel) -> &'static str {
     match provider {
@@ -153,11 +225,19 @@ enum ConfigStep {
 
 /// Interactive CLI for configuring API keys using termion TUI - 3 step process
 pub fn configure_api_keys_interactive(api_keys_path: &Utf8PathBuf) -> Result<()> {
-    // Load existing config or create new one
+    // Load existing config or create from template
+    // If file exists but can't be parsed (e.g., has null values), regenerate from template
     let mut config = if api_keys_path.exists() {
-        ApiKeysJson::load(api_keys_path)?
+        match ApiKeysJson::load(api_keys_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("⚠️  Existing config at {} is invalid: {}", api_keys_path, e);
+                eprintln!("   Regenerating from template...");
+                ApiKeysJson::generate_template()
+            }
+        }
     } else {
-        ApiKeysJson::new("")
+        ApiKeysJson::generate_template()
     };
 
     // Setup termion

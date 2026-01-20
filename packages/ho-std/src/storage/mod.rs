@@ -1,3 +1,7 @@
+pub mod identity;
+
+pub use identity::{EncryptedIdentityBuilder, IdentityStorage};
+
 impl crate::types::storage::v1::StorageConfig {
     pub fn new(data_dir: &camino::Utf8Path) -> Self {
         let mut memories = Self::default();

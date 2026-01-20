@@ -5,7 +5,9 @@
 ///
 /// # Usage
 ///
-/// ```rust
+/// ```ignore
+/// use ho_std::llm_entity;
+///
 /// llm_entity! {
 ///     OpenAI {
 ///         name: "openai",

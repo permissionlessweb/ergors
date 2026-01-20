@@ -1,8 +1,10 @@
 use anyhow::Result;
 
 use ho_std::constants::LLM_API_KEYS_FILE;
+use ho_std::git::GitIdentity;
+use ho_std::keys::commonware::NodePrivKey;
 use ho_std::llm::configure_api_keys_interactive;
-use ho_std::traits::HoConfigTrait;
+use ho_std::traits::{HoConfigTrait, NodeIdentityTrait};
 use ho_std::types::keys::v1::SpendKey;
 
 use std::io::{IsTerminal as _, Read};
@@ -96,6 +98,14 @@ impl InitCmd {
                 let env_content = fs::read_to_string(template_path.join("templates/example.env"))
                     .expect("Failed to read templates/example.env. Make sure it exists.");
                 std::fs::write(output_path, env_content).expect("Failed to write.");
+
+                // Generate SSH keys for git workspace operations
+                let ssh_dir = home_dir.as_ref().join("ssh");
+                if let Err(e) = self.generate_ssh_keys(&ssh_dir, &config) {
+                    eprintln!("Warning: Failed to generate SSH keys: {}", e);
+                    eprintln!("You can manually generate them later with 'ergors init ssh-keys'");
+                }
+
                 config
             }
             InitTopSubCmd::Llms {} => {
@@ -130,6 +140,45 @@ impl InitCmd {
         // generate default env file in home dir as well
 
         config
+    }
+
+    /// Generate SSH keys for git workspace operations
+    ///
+    /// Creates ED25519 SSH keys derived from the node identity for use with
+    /// git operations (clone, push, pull).
+    fn generate_ssh_keys(&self, ssh_dir: &camino::Utf8Path, config: &ErgorsConfig) -> Result<()> {
+        use ho_std::traits::NodeIdentityTrait;
+
+        // Get node identity from config
+        let identity = config.identity();
+
+        // Get or generate private key
+        let private_key = if let Some(pk_bytes) = &identity.private_key {
+            NodePrivKey::from_bytes(pk_bytes)
+                .ok_or_else(|| anyhow::anyhow!("Invalid private key in config"))?
+        } else {
+            // Generate new key if none exists
+            NodePrivKey::new(&mut rand::rngs::OsRng)
+        };
+
+        let public_key = private_key.id();
+
+        // Create git identity and write SSH keys
+        let git_identity = GitIdentity::from_node_keys(&private_key, &public_key)
+            .map_err(|e| anyhow::anyhow!("Failed to create git identity: {}", e))?;
+
+        git_identity
+            .write_ssh_keys(ssh_dir.as_std_path())
+            .map_err(|e| anyhow::anyhow!("Failed to write SSH keys: {}", e))?;
+
+        println!("SSH keys generated:");
+        println!("  Private: {}/id_ed25519", ssh_dir);
+        println!("  Public:  {}/id_ed25519.pub", ssh_dir);
+        println!("  Fingerprint: {}", git_identity.ssh_fingerprint());
+        println!();
+        println!("Add the public key to your git remotes for authentication.");
+
+        Ok(())
     }
 }
 

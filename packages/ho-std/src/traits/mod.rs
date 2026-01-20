@@ -27,11 +27,16 @@ pub mod message;
 
 pub use {domain::*, file_ops::*, message::*};
 
-use crate::{error::HoResult, keys::commonware::NodePrivKey, types::ergors::network::v1::*};
+use crate::{
+    error::HoResult,
+    keys::commonware::{NodePrivKey, NodePubkey},
+    types::ergors::network::v1::*,
+};
 
 use async_trait::async_trait;
 use camino::Utf8Path;
 use cnidarium::StateRead;
+use commonware_cryptography::ed25519;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -74,6 +79,84 @@ pub trait NodeIdentityTrait {
 
     fn get_private_key_from_env() -> NodePrivKey;
     fn private_key_from_hex(hex_string: &str) -> Option<NodePrivKey>;
+}
+
+// ============================================
+// Custody-backed Node Identity traits
+// Category: custody, security
+// ============================================
+
+/// Custody backend type for node identity key management
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodeIdentityCustodyBackend {
+    /// Plaintext storage (legacy, insecure for production)
+    Plaintext,
+    /// Password-encrypted using ChaCha20Poly1305 + Argon2
+    PasswordEncrypted,
+    /// Encrypted using the node's own key (for API keys etc.)
+    NodeKeyEncrypted,
+    /// Threshold custody with distributed key shares
+    Threshold,
+    /// Remote custody service via gRPC
+    RemoteCustody(String),
+}
+
+impl Default for NodeIdentityCustodyBackend {
+    fn default() -> Self {
+        Self::PasswordEncrypted
+    }
+}
+
+/// Core trait for custody-backed node identity operations.
+///
+/// This trait abstracts over different custody backends (password-encrypted,
+/// threshold, HSM, etc.) while providing a uniform interface for node identity
+/// operations like signing and key access.
+///
+/// # Security
+///
+/// - Private keys are never stored in plaintext at rest
+/// - Decryption happens on-demand and keys can be cached with TTL
+/// - All key access operations can be audited
+#[async_trait]
+pub trait NodeIdentityCustody: Send + Sync {
+    /// Get the custody backend type
+    fn backend(&self) -> NodeIdentityCustodyBackend;
+
+    /// Get the public key (always available without decryption)
+    fn public_key(&self) -> HoResult<NodePubkey>;
+
+    /// Get the private key, decrypting if necessary.
+    ///
+    /// This operation may require user interaction (password entry)
+    /// or network calls (remote custody) depending on the backend.
+    async fn get_private_key(&self) -> HoResult<NodePrivKey>;
+
+    /// Sign a message using ed25519 with optional namespace.
+    ///
+    /// This is the primary operation for network authentication.
+    /// The namespace is prepended to the message before signing.
+    async fn sign_ed25519(
+        &self,
+        namespace: Option<&[u8]>,
+        message: &[u8],
+    ) -> HoResult<ed25519::Signature>;
+
+    /// Export SSH keys to the specified directory for git operations.
+    ///
+    /// Creates id_ed25519 and id_ed25519.pub files in the directory.
+    async fn export_ssh_keys(&self, ssh_dir: &Path) -> HoResult<()>;
+
+    /// Check if the private key is currently cached/unlocked
+    fn is_unlocked(&self) -> bool;
+
+    /// Lock the custody, clearing any cached key material
+    async fn lock(&self);
+
+    /// Get the raw 32-byte private key bytes for encryption operations.
+    ///
+    /// This is used for deriving encryption keys for API keys etc.
+    async fn get_key_bytes(&self) -> HoResult<[u8; 32]>;
 }
 
 // Network-related traits for ERGORS system
@@ -1115,4 +1198,349 @@ pub trait OrchestratorTrait {
     fn apply_golden_ratio_scaling(&self, value: f64) -> f64 {
         value * 1.618033988749894
     }
+}
+
+// ============================================
+// Session-related traits for ERGORS system
+// Category: session
+// ============================================
+
+use crate::types::ergors::management::v1::{
+    CreateSessionRequest, FractalSession, QuerySessionsRequest, SessionPropagation,
+    SessionStateSnapshot, SessionStatus, SessionUpdate, SpawnChildRequest,
+};
+
+/// Core trait for fractal session lifecycle management
+/// Provides self-similar session operations at any hierarchy level
+#[async_trait]
+pub trait SessionTrait {
+    type Session;
+    type StateSnapshot;
+    type Metrics;
+
+    // === Lifecycle Operations ===
+
+    /// Create a new session with optional parent for hierarchy
+    async fn create(&self, request: CreateSessionRequest) -> HoResult<Self::Session>;
+
+    /// Get a session by ID
+    async fn get(&self, session_id: &str) -> HoResult<Option<Self::Session>>;
+
+    /// Update session labels, metadata, and tags
+    async fn update(
+        &self,
+        session_id: &str,
+        labels: Option<HashMap<String, String>>,
+        metadata: Option<HashMap<String, String>>,
+        tags: Option<Vec<String>>,
+    ) -> HoResult<Self::Session>;
+
+    /// Delete a session (optionally cascade to children)
+    async fn delete(&self, session_id: &str, cascade: bool) -> HoResult<()>;
+
+    // === State Management ===
+
+    /// Pause session execution, capturing state snapshot
+    async fn pause(&self, session_id: &str, cascade: bool) -> HoResult<Self::StateSnapshot>;
+
+    /// Resume a paused session from its state snapshot
+    async fn resume(&self, session_id: &str, cascade: bool) -> HoResult<Self::Session>;
+
+    /// Mark session as successfully completed
+    async fn complete(
+        &self,
+        session_id: &str,
+        result: Option<pbjson_types::Struct>,
+    ) -> HoResult<Self::Session>;
+
+    /// Mark session as failed with error details
+    async fn fail(
+        &self,
+        session_id: &str,
+        error: &str,
+        error_code: Option<&str>,
+    ) -> HoResult<Self::Session>;
+
+    // === Status Queries ===
+
+    /// Get current session status
+    fn status(&self, session: &Self::Session) -> SessionStatus;
+
+    /// Check if session is currently active
+    fn is_active(&self, session: &Self::Session) -> bool;
+
+    /// Check if session is a root session (no parent)
+    fn is_root(&self, session: &Self::Session) -> bool;
+
+    /// Check if session can be modified
+    fn is_mutable(&self, session: &Self::Session) -> bool {
+        let status = self.status(session);
+        matches!(
+            status,
+            SessionStatus::Created | SessionStatus::Active | SessionStatus::Paused
+        )
+    }
+}
+
+/// Trait for fractal session hierarchy operations
+/// Supports parent/child relationships and recursive metrics aggregation
+#[async_trait]
+pub trait FractalSessionTrait: SessionTrait {
+    // === Hierarchy Operations ===
+
+    /// Spawn a child session linked to parent
+    async fn spawn_child(
+        &self,
+        parent_session_id: &str,
+        request: SpawnChildRequest,
+    ) -> HoResult<Self::Session>;
+
+    /// Get parent session (None if root)
+    async fn get_parent(&self, session_id: &str) -> HoResult<Option<Self::Session>>;
+
+    /// Get direct children of a session
+    async fn get_children(&self, session_id: &str) -> HoResult<Vec<Self::Session>>;
+
+    /// Get the root session of any session in the hierarchy
+    async fn get_root(&self, session_id: &str) -> HoResult<Self::Session>;
+
+    /// Get all ancestors from session to root (root first)
+    async fn get_ancestors(&self, session_id: &str) -> HoResult<Vec<Self::Session>>;
+
+    /// Get all descendants (BFS order) with optional depth limit
+    async fn get_descendants(
+        &self,
+        session_id: &str,
+        max_depth: Option<u32>,
+    ) -> HoResult<Vec<Self::Session>>;
+
+    // === Fractal Metrics ===
+
+    /// Rollup metrics from all descendants into parent
+    async fn rollup_metrics(&self, session_id: &str) -> HoResult<Self::Metrics>;
+
+    /// Get fractal depth (0 for root)
+    fn fractal_depth(&self, session: &Self::Session) -> u32;
+
+    /// Get direct child count
+    fn child_count(&self, session: &Self::Session) -> u32;
+
+    /// Get total descendant count (all nested children)
+    fn descendant_count(&self, session: &Self::Session) -> u32;
+
+    // === Propagation Rules ===
+
+    /// Check if labels should inherit to children
+    fn should_inherit_labels(&self, session: &Self::Session) -> bool;
+
+    /// Check if metadata should inherit to children
+    fn should_inherit_metadata(&self, session: &Self::Session) -> bool;
+
+    /// Check if participants should inherit to children
+    fn should_inherit_participants(&self, session: &Self::Session) -> bool;
+
+    /// Get propagation configuration
+    fn propagation(&self, session: &Self::Session) -> Option<&SessionPropagation>;
+}
+
+/// Trait for cross-node session coordination
+/// Supports distributed session management across tetrahedral network
+#[async_trait]
+pub trait SessionCoordinationTrait: FractalSessionTrait {
+    type Topology: NetworkTopologyTrait;
+
+    // === Cross-Node Operations ===
+
+    /// Sync session state to another node
+    async fn sync_to_node(
+        &self,
+        session_id: &str,
+        target_node_id: &str,
+        full_sync: bool,
+    ) -> HoResult<String>;
+
+    /// Migrate session ownership to another node
+    async fn migrate_to_node(
+        &self,
+        session_id: &str,
+        target_node_id: &str,
+        migrate_children: bool,
+    ) -> HoResult<Self::Session>;
+
+    // === Node Ownership ===
+
+    /// Get owning node ID
+    fn owner_node_id(&self, session: &Self::Session) -> &str;
+
+    /// Get owning node type
+    fn owner_node_type(&self, session: &Self::Session) -> NodeType;
+
+    /// Check if this node owns the session
+    fn is_local_owner(&self, session: &Self::Session) -> bool;
+
+    // === Distributed Locking ===
+
+    /// Acquire distributed lock on session
+    async fn acquire_lock(&self, session_id: &str) -> HoResult<SessionLock>;
+
+    /// Release distributed lock
+    async fn release_lock(&self, lock: SessionLock) -> HoResult<()>;
+
+    /// Check if session is locked
+    async fn is_locked(&self, session_id: &str) -> HoResult<bool>;
+
+    // === Notifications ===
+
+    /// Notify all participants of session update
+    async fn notify_participants(&self, session_id: &str, update: SessionUpdate) -> HoResult<()>;
+}
+
+/// Distributed lock for session operations
+#[derive(Debug, Clone)]
+pub struct SessionLock {
+    pub session_id: String,
+    pub lock_id: String,
+    pub owner_node_id: String,
+    pub acquired_at: std::time::SystemTime,
+    pub expires_at: std::time::SystemTime,
+}
+
+impl SessionLock {
+    /// Check if lock is still valid (not expired)
+    pub fn is_valid(&self) -> bool {
+        std::time::SystemTime::now() < self.expires_at
+    }
+
+    /// Get remaining time until expiration
+    pub fn time_remaining(&self) -> Option<std::time::Duration> {
+        self.expires_at
+            .duration_since(std::time::SystemTime::now())
+            .ok()
+    }
+}
+
+/// Trait for session storage operations
+/// Provides CRUD and indexing for fractal sessions
+#[async_trait]
+pub trait SessionStorageTrait {
+    // === Core CRUD ===
+
+    /// Store a session
+    async fn put_session(&self, session: &FractalSession) -> HoResult<()>;
+
+    /// Get a session by ID
+    async fn get_session(&self, session_id: &str) -> HoResult<Option<FractalSession>>;
+
+    /// Delete a session
+    async fn delete_session(&self, session_id: &str) -> HoResult<()>;
+
+    // === Query Operations ===
+
+    /// Query sessions with filters
+    async fn query_sessions(&self, query: &QuerySessionsRequest) -> HoResult<Vec<FractalSession>>;
+
+    /// Count sessions matching query
+    async fn count_sessions(&self, query: &QuerySessionsRequest) -> HoResult<u64>;
+
+    // === Index Operations ===
+
+    /// Get sessions by parent ID
+    async fn get_sessions_by_parent(&self, parent_id: &str) -> HoResult<Vec<FractalSession>>;
+
+    /// Get all sessions in a hierarchy by root ID
+    async fn get_sessions_by_root(&self, root_id: &str) -> HoResult<Vec<FractalSession>>;
+
+    /// Get sessions owned by a node
+    async fn get_sessions_by_owner(&self, owner_node_id: &str) -> HoResult<Vec<FractalSession>>;
+
+    /// Get sessions by status
+    async fn get_sessions_by_status(&self, status: SessionStatus) -> HoResult<Vec<FractalSession>>;
+
+    /// Get sessions by label key-value pair
+    async fn get_sessions_by_label(&self, key: &str, value: &str) -> HoResult<Vec<FractalSession>>;
+
+    /// Get sessions by tag
+    async fn get_sessions_by_tag(&self, tag: &str) -> HoResult<Vec<FractalSession>>;
+
+    // === State Snapshot Operations ===
+
+    /// Store state snapshot for a session
+    async fn put_state_snapshot(
+        &self,
+        session_id: &str,
+        snapshot: &SessionStateSnapshot,
+    ) -> HoResult<()>;
+
+    /// Get latest state snapshot
+    async fn get_state_snapshot(&self, session_id: &str) -> HoResult<Option<SessionStateSnapshot>>;
+
+    /// Get state snapshot by version
+    async fn get_state_snapshot_version(
+        &self,
+        session_id: &str,
+        version: u64,
+    ) -> HoResult<Option<SessionStateSnapshot>>;
+}
+
+/// Trait for session labeling and classification
+/// Supports reinforcement learning classification
+pub trait SessionLabelingTrait {
+    // === Label Operations ===
+
+    /// Add or update a label
+    fn add_label(&mut self, key: &str, value: &str);
+
+    /// Remove a label
+    fn remove_label(&mut self, key: &str);
+
+    /// Get a label value
+    fn get_label(&self, key: &str) -> Option<&str>;
+
+    /// Get all labels
+    fn labels(&self) -> &HashMap<String, String>;
+
+    // === Tag Operations ===
+
+    /// Add a tag
+    fn add_tag(&mut self, tag: &str);
+
+    /// Remove a tag
+    fn remove_tag(&mut self, tag: &str);
+
+    /// Check if has tag
+    fn has_tag(&self, tag: &str) -> bool;
+
+    /// Get all tags
+    fn tags(&self) -> &[String];
+
+    // === Metadata Operations ===
+
+    /// Set metadata value
+    fn set_metadata(&mut self, key: &str, value: &str);
+
+    /// Get metadata value
+    fn get_metadata(&self, key: &str) -> Option<&str>;
+
+    /// Get all metadata
+    fn metadata(&self) -> &HashMap<String, String>;
+
+    // === Classification ===
+
+    /// Classify session for reinforcement learning
+    fn classify_for_reinforcement(&self) -> SessionClassification;
+}
+
+/// Classification result for reinforcement learning
+#[derive(Debug, Clone)]
+pub struct SessionClassification {
+    /// Success score (0.0-1.0)
+    pub success_score: f64,
+    /// Complexity score (0.0-1.0)
+    pub complexity_score: f64,
+    /// Learning value - how valuable for RL training
+    pub learning_value: f64,
+    /// Recommended labels based on analysis
+    pub recommended_labels: Vec<(String, String)>,
+    /// Recommended tags based on analysis
+    pub recommended_tags: Vec<String>,
 }
