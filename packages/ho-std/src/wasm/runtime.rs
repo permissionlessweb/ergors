@@ -14,13 +14,19 @@ use cnidarium::Storage;
 
 #[cfg(feature = "cw")]
 use {
-    crate::wasm::backend::{CnidariumQuerier, CnidariumStorage, WasmVmBackend},
-    cosmwasm_std::{Addr, Coin, Env, MessageInfo, Timestamp},
-    cosmwasm_vm::{capabilities_from_csv, Backend, Cache, CacheOptions, InstanceOptions, Size},
+    crate::wasm::backend::{
+        CnidariumQuerier, CnidariumStorage, ContractInfoResponse, QuerierStateReader, WasmVmBackend,
+    },
+    crate::wasm::state_ext::{WasmVmCnidariumStateRead, WasmVmCnidariumStateWrite},
+    cosmwasm_std::{Addr, BlockInfo, Coin, ContractInfo, Env, MessageInfo, Timestamp},
+    cosmwasm_vm::{
+        call_execute, call_instantiate, call_query, capabilities_from_csv, Backend, Cache,
+        CacheOptions, InstanceOptions, Size,
+    },
     sha2::{Digest, Sha256},
     std::path::PathBuf,
     std::sync::Arc,
-    tracing::{debug, info},
+    tracing::{debug, info, warn},
 };
 
 /// Default gas limits for contract operations
@@ -69,6 +75,71 @@ pub struct WasmRuntime {
     execute_gas_limit: u64,
     /// Default gas limit for query operations
     query_gas_limit: u64,
+}
+
+/// State reader for cross-contract queries using Cnidarium snapshots
+///
+/// This wraps a Cnidarium Storage and provides synchronous access to state
+/// through the QuerierStateReader trait, enabling cross-contract queries
+/// during contract execution.
+#[cfg(feature = "cw")]
+struct SnapshotStateReader {
+    storage: Storage,
+}
+
+#[cfg(feature = "cw")]
+impl SnapshotStateReader {
+    fn new(storage: Storage) -> Self {
+        Self { storage }
+    }
+}
+
+#[cfg(feature = "cw")]
+impl QuerierStateReader for SnapshotStateReader {
+    fn get_contract_state(&self, contract_address: &str, key: &[u8]) -> Option<Vec<u8>> {
+        // Bridge async to sync for cross-contract queries
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                let snapshot = self.storage.latest_snapshot();
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async {
+                        snapshot
+                            .get_contract_state(contract_address, key)
+                            .await
+                            .ok()
+                            .flatten()
+                    })
+                })
+            }
+            Err(_) => None,
+        }
+    }
+
+    fn get_contract_info(&self, contract_address: &str) -> Option<ContractInfoResponse> {
+        // Bridge async to sync for cross-contract queries
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                let snapshot = self.storage.latest_snapshot();
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async {
+                        match snapshot.get_wasm_contract_info(contract_address).await {
+                            Ok(Some(info)) => Some(ContractInfoResponse {
+                                code_id: info.code_id,
+                                creator: info.creator,
+                                admin: if info.admin.is_empty() {
+                                    None
+                                } else {
+                                    Some(info.admin)
+                                },
+                            }),
+                            _ => None,
+                        }
+                    })
+                })
+            }
+            Err(_) => None,
+        }
+    }
 }
 
 #[cfg(feature = "cw")]
@@ -202,12 +273,16 @@ impl WasmRuntime {
         delta.put_raw(hash_key, code_id.to_le_bytes().to_vec());
 
         // Update next code ID
-        delta.put_raw(next_id_key.to_string(), (code_id + 1).to_le_bytes().to_vec());
+        delta.put_raw(
+            next_id_key.to_string(),
+            (code_id + 1).to_le_bytes().to_vec(),
+        );
 
         // Commit changes to storage
-        state.commit(delta).await.map_err(|e| {
-            HoError::Storage(format!("Failed to store WASM code: {}", e))
-        })?;
+        state
+            .commit(delta)
+            .await
+            .map_err(|e| HoError::Storage(format!("Failed to store WASM code: {}", e)))?;
 
         info!(
             "Stored WASM code with ID: {} for creator: {}",
@@ -223,42 +298,184 @@ impl WasmRuntime {
     /// queries always see the latest committed state.
     pub async fn query_contract(
         &self,
-        _state: &Storage,
+        state: &Storage,
         contract_address: String,
-        _msg: Vec<u8>,
+        msg: Vec<u8>,
     ) -> HoResult<cosmwasm_std::ContractResult<cosmwasm_std::Binary>> {
+        use cnidarium::StateRead;
+
         // Acquire shared read lock for concurrent queries
         let _node_lock = self.state_lock.read().await;
 
-        // TODO: Implement full contract querying
-        debug!("Contract {} queried with node-wide consistency (latest state)", contract_address);
+        let snapshot = state.latest_snapshot();
 
-        // Placeholder response - would be actual contract query result
-        Ok(cosmwasm_std::ContractResult::Ok(cosmwasm_std::Binary::default()))
+        // Load contract info to get code_id
+        let contract_info = snapshot
+            .get_wasm_contract_info(&contract_address)
+            .await?
+            .ok_or_else(|| HoError::Wasm(format!("Contract not found: {}", contract_address)))?;
+
+        let code_id = contract_info.code_id;
+
+        // Load WASM code
+        let wasm_code = snapshot
+            .get_wasm_code(code_id)
+            .await?
+            .ok_or_else(|| HoError::Wasm(format!("Code not found for code_id: {}", code_id)))?;
+
+        // Get checksum from cache (store_code validates and returns checksum)
+        let checksum = self
+            .cache
+            .store_code(&wasm_code, true, false)
+            .map_err(|e| HoError::Wasm(format!("Failed to get code checksum: {}", e)))?;
+
+        // Create state reader for querier
+        let state_reader = Arc::new(SnapshotStateReader::new(state.clone()));
+
+        // Create backend components
+        let api = WasmVmBackend;
+        let querier = CnidariumQuerier::with_state_reader(state_reader);
+
+        // For queries, we use a dummy storage since queries should not write
+        let mut dummy_delta = cnidarium::StateDelta::new(snapshot.clone());
+        let storage = unsafe { CnidariumStorage::new(contract_address.clone(), &mut dummy_delta) };
+
+        let backend = Backend {
+            api,
+            storage,
+            querier,
+        };
+
+        // Create instance options
+        let options = InstanceOptions {
+            gas_limit: self.query_gas_limit,
+        };
+
+        // Get VM instance
+        let mut instance = self
+            .cache
+            .get_instance(&checksum, backend, options)
+            .map_err(|e| HoError::Wasm(format!("Failed to create VM instance: {}", e)))?;
+
+        // Create query environment
+        let env = self.create_env(&contract_address);
+
+        // Execute query using cosmwasm_vm::call_query
+        let result = call_query(&mut instance, &env, &msg)
+            .map_err(|e| HoError::Wasm(format!("Query execution failed: {}", e)))?;
+
+        debug!(
+            "Contract {} queried with node-wide consistency (latest state)",
+            contract_address
+        );
+
+        Ok(result)
     }
 
-    /// Instantiate a contract (placeholder for now)
+    /// Instantiate a contract with full VM execution
     pub async fn instantiate_contract(
         &self,
-        _state: &Storage,
+        state: &Storage,
         code_id: u64,
         creator: String,
-        _admin: Option<String>,
+        admin: Option<String>,
         label: String,
-        _msg: Vec<u8>,
-        _funds: Vec<Coin>,
+        msg: Vec<u8>,
+        funds: Vec<Coin>,
         node_id: &str,
     ) -> HoResult<(String, cosmwasm_std::ContractResult<cosmwasm_std::Response>)> {
+        use cnidarium::StateRead;
+
         // Acquire node-wide exclusive lock for state consistency
         let _node_lock = self.state_lock.write().await;
 
         // Generate contract address
-        let contract_address = self.generate_contract_address(code_id, &creator, &label, node_id)?;
+        let contract_address =
+            self.generate_contract_address(code_id, &creator, &label, node_id)?;
 
-        debug!("Contract {} instantiated with node-wide synchronization", contract_address);
+        // Create StateDelta for atomic state updates
+        let snapshot = state.latest_snapshot();
+        let mut delta = cnidarium::StateDelta::new(snapshot.clone());
 
-        // Placeholder response
-        Ok((contract_address, cosmwasm_std::ContractResult::Ok(cosmwasm_std::Response::default())))
+        // Load WASM code
+        let wasm_code = delta
+            .get_wasm_code(code_id)
+            .await?
+            .ok_or_else(|| HoError::Wasm(format!("Code not found for code_id: {}", code_id)))?;
+
+        // Get checksum from cache
+        let checksum = self
+            .cache
+            .store_code(&wasm_code, true, false)
+            .map_err(|e| HoError::Wasm(format!("Failed to get code checksum: {}", e)))?;
+
+        // Create state reader for querier
+        let state_reader = Arc::new(SnapshotStateReader::new(state.clone()));
+
+        // Create backend components
+        let api = WasmVmBackend;
+        let querier = CnidariumQuerier::with_state_reader(state_reader);
+
+        // Create storage for this contract
+        let storage = unsafe { CnidariumStorage::new(contract_address.clone(), &mut delta) };
+
+        let backend = Backend {
+            api,
+            storage,
+            querier,
+        };
+
+        // Create instance options
+        let options = InstanceOptions {
+            gas_limit: self.instantiate_gas_limit,
+        };
+
+        // Get VM instance
+        let mut instance = self
+            .cache
+            .get_instance(&checksum, backend, options)
+            .map_err(|e| HoError::Wasm(format!("Failed to create VM instance: {}", e)))?;
+
+        // Create environment and message info
+        let env = self.create_env(&contract_address);
+        let info = self.create_message_info(&creator, funds);
+
+        // Execute instantiate using cosmwasm_vm::call_instantiate
+        let result = call_instantiate(&mut instance, &env, &info, &msg)
+            .map_err(|e| HoError::Wasm(format!("Instantiate execution failed: {}", e)))?;
+
+        // If instantiate succeeded, store contract info and commit state
+        if result.is_ok() {
+            // Store contract info
+            let contract_info = crate::wasm::state_ext::ContractInfo {
+                code_id,
+                creator: creator.clone(),
+                admin: admin.unwrap_or_default(),
+                label: label.clone(),
+                created: None,
+                ibc_port_id: String::new(),
+                extension: None,
+            };
+            delta.put_wasm_contract_info(&contract_address, &contract_info);
+
+            // Commit state changes
+            state
+                .commit(delta)
+                .await
+                .map_err(|e| HoError::Storage(format!("Failed to commit contract state: {}", e)))?;
+
+            info!(
+                "Contract {} instantiated with code_id {} by {}",
+                contract_address, code_id, creator
+            );
+        } else {
+            warn!(
+                "Contract instantiation failed for {}: {:?}",
+                contract_address, result
+            );
+        }
+
+        Ok((contract_address, result))
     }
 
     /// Execute a contract with node-wide state consistency
@@ -267,27 +484,123 @@ impl WasmRuntime {
     /// and immediately visible to subsequent operations.
     pub async fn execute_contract(
         &self,
-        _state: &Storage,
+        state: &Storage,
         contract_address: String,
-        _sender: String,
-        _msg: Vec<u8>,
-        _funds: Vec<Coin>,
+        sender: String,
+        msg: Vec<u8>,
+        funds: Vec<Coin>,
     ) -> HoResult<cosmwasm_std::ContractResult<cosmwasm_std::Response>> {
+        use cnidarium::StateRead;
+
         // Acquire node-wide exclusive lock for state consistency
         let _node_lock = self.state_lock.write().await;
 
-        // TODO: Implement full contract execution
-        // 1. Load contract info from state
-        // 2. Load contract code from cache
-        // 3. Create execution environment
-        // 4. Execute contract with message
-        // 5. Apply state changes via StateDelta
-        // 6. Commit to storage
+        // Create StateDelta for atomic state updates
+        let snapshot = state.latest_snapshot();
+        let mut delta = cnidarium::StateDelta::new(snapshot.clone());
 
-        debug!("Contract {} executed with node-wide synchronization", contract_address);
+        // Load contract info to get code_id
+        let contract_info = delta
+            .get_wasm_contract_info(&contract_address)
+            .await?
+            .ok_or_else(|| HoError::Wasm(format!("Contract not found: {}", contract_address)))?;
 
-        // Placeholder response
-        Ok(cosmwasm_std::ContractResult::Ok(cosmwasm_std::Response::default()))
+        let code_id = contract_info.code_id;
+
+        // Load WASM code
+        let wasm_code = delta
+            .get_wasm_code(code_id)
+            .await?
+            .ok_or_else(|| HoError::Wasm(format!("Code not found for code_id: {}", code_id)))?;
+
+        // Get checksum from cache
+        let checksum = self
+            .cache
+            .store_code(&wasm_code, true, false)
+            .map_err(|e| HoError::Wasm(format!("Failed to get code checksum: {}", e)))?;
+
+        // Create state reader for querier
+        let state_reader = Arc::new(SnapshotStateReader::new(state.clone()));
+
+        // Create backend components
+        let api = WasmVmBackend;
+        let querier = CnidariumQuerier::with_state_reader(state_reader);
+
+        // Create storage for this contract
+        let storage = unsafe { CnidariumStorage::new(contract_address.clone(), &mut delta) };
+
+        let backend = Backend {
+            api,
+            storage,
+            querier,
+        };
+
+        // Create instance options
+        let options = InstanceOptions {
+            gas_limit: self.execute_gas_limit,
+        };
+
+        // Get VM instance
+        let mut instance = self
+            .cache
+            .get_instance(&checksum, backend, options)
+            .map_err(|e| HoError::Wasm(format!("Failed to create VM instance: {}", e)))?;
+
+        // Create environment and message info
+        let env = self.create_env(&contract_address);
+        let info = self.create_message_info(&sender, funds);
+
+        // Execute contract using cosmwasm_vm::call_execute
+        let result = call_execute(&mut instance, &env, &info, &msg)
+            .map_err(|e| HoError::Wasm(format!("Execute failed: {}", e)))?;
+
+        // If execution succeeded, commit state changes
+        if result.is_ok() {
+            state
+                .commit(delta)
+                .await
+                .map_err(|e| HoError::Storage(format!("Failed to commit contract state: {}", e)))?;
+
+            debug!(
+                "Contract {} executed successfully by {}",
+                contract_address, sender
+            );
+        } else {
+            warn!(
+                "Contract execution failed for {}: {:?}",
+                contract_address, result
+            );
+        }
+
+        Ok(result)
+    }
+
+    /// Create an Env struct for contract execution
+    fn create_env(&self, contract_address: &str) -> Env {
+        Env {
+            block: BlockInfo {
+                height: 1,
+                time: Timestamp::from_seconds(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                ),
+                chain_id: "ergors-1".to_string(),
+            },
+            transaction: None, // TransactionInfo is non-exhaustive, use None for simplicity
+            contract: ContractInfo {
+                address: Addr::unchecked(contract_address),
+            },
+        }
+    }
+
+    /// Create a MessageInfo struct for contract execution
+    fn create_message_info(&self, sender: &str, funds: Vec<Coin>) -> MessageInfo {
+        MessageInfo {
+            sender: Addr::unchecked(sender),
+            funds,
+        }
     }
 
     /// Generate deterministic contract address with node isolation

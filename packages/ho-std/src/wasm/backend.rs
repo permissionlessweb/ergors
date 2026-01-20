@@ -15,7 +15,6 @@ use {
     cosmwasm_vm::{BackendApi, BackendError, BackendResult, GasInfo, Querier, Storage},
 };
 
-use crate::error::{HoError, HoResult};
 use cnidarium::{StateRead, StateWrite};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,15 +35,68 @@ pub struct WasmVmBackend;
 #[cfg(feature = "cw")]
 impl BackendApi for WasmVmBackend {
     fn addr_validate(&self, input: &str) -> BackendResult<()> {
-        todo!()
+        // Validate address format
+        // Allow ergors prefixed addresses and other valid contract addresses
+        if input.is_empty() {
+            return (
+                Err(BackendError::user_err("Address cannot be empty")),
+                GasInfo::free(),
+            );
+        }
+
+        if input.len() > 128 {
+            return (
+                Err(BackendError::user_err("Address too long (max 128 chars)")),
+                GasInfo::free(),
+            );
+        }
+
+        // Allow alphanumeric, underscore, and hyphen (common address chars)
+        if !input
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return (
+                Err(BackendError::user_err(
+                    "Address contains invalid characters",
+                )),
+                GasInfo::free(),
+            );
+        }
+
+        (Ok(()), GasInfo::free())
     }
 
     fn addr_canonicalize(&self, human: &str) -> BackendResult<Vec<u8>> {
-        todo!()
+        // Validate first
+        let (result, _) = self.addr_validate(human);
+        if let Err(e) = result {
+            return (Err(e), GasInfo::free());
+        }
+
+        // For ERGORS, canonical form is UTF-8 bytes of the human address
+        // This allows round-tripping without loss of information
+        (Ok(human.as_bytes().to_vec()), GasInfo::free())
     }
 
     fn addr_humanize(&self, canonical: &[u8]) -> BackendResult<String> {
-        todo!()
+        // Convert canonical bytes back to human-readable string
+        match String::from_utf8(canonical.to_vec()) {
+            Ok(human) => {
+                // Validate the result
+                let (result, _) = self.addr_validate(&human);
+                if let Err(e) = result {
+                    return (Err(e), GasInfo::free());
+                }
+                (Ok(human), GasInfo::free())
+            }
+            Err(_) => (
+                Err(BackendError::user_err(
+                    "Invalid canonical address: not valid UTF-8",
+                )),
+                GasInfo::free(),
+            ),
+        }
     }
 }
 
@@ -247,9 +299,69 @@ impl Storage for CnidariumStorage {
 }
 
 /// Querier for cross-contract queries
-#[derive(Clone)]
+///
+/// Handles query requests from within contract execution, supporting:
+/// - WasmQuery::Raw - Read contract state directly
+/// - WasmQuery::ContractInfo - Read contract metadata
+/// - WasmQuery::Smart - Execute query on another contract (returns error for now)
+/// - BankQuery - Query account balances (returns empty for now)
 #[cfg(feature = "cw")]
-pub struct CnidariumQuerier;
+pub struct CnidariumQuerier {
+    /// Snapshot of state for read-only queries
+    /// Using a channel-based approach to communicate with async context
+    state_reader: Option<std::sync::Arc<dyn QuerierStateReader>>,
+}
+
+/// Trait for state reading in querier context
+/// This allows the querier to access state without holding direct references
+#[cfg(feature = "cw")]
+pub trait QuerierStateReader: Send + Sync {
+    /// Get contract state value
+    fn get_contract_state(&self, contract_address: &str, key: &[u8]) -> Option<Vec<u8>>;
+
+    /// Get contract info
+    fn get_contract_info(&self, contract_address: &str) -> Option<ContractInfoResponse>;
+}
+
+/// Response type for contract info queries
+#[cfg(feature = "cw")]
+#[derive(Clone, Debug)]
+pub struct ContractInfoResponse {
+    pub code_id: u64,
+    pub creator: String,
+    pub admin: Option<String>,
+}
+
+#[cfg(feature = "cw")]
+impl Clone for CnidariumQuerier {
+    fn clone(&self) -> Self {
+        Self {
+            state_reader: self.state_reader.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "cw")]
+impl CnidariumQuerier {
+    /// Create a new querier without state access (for cache initialization)
+    pub fn new() -> Self {
+        Self { state_reader: None }
+    }
+
+    /// Create a querier with state reader for actual queries
+    pub fn with_state_reader(reader: std::sync::Arc<dyn QuerierStateReader>) -> Self {
+        Self {
+            state_reader: Some(reader),
+        }
+    }
+}
+
+#[cfg(feature = "cw")]
+impl Default for CnidariumQuerier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(feature = "cw")]
 impl Querier for CnidariumQuerier {
@@ -261,7 +373,166 @@ impl Querier for CnidariumQuerier {
         std::result::Result<SystemResult<ContractResult<cosmwasm_std::Binary>>, BackendError>,
         cosmwasm_vm::GasInfo,
     ) {
-        todo!()
+        use cosmwasm_std::{from_json, to_json_binary, Coin, QueryRequest, WasmQuery};
+
+        // Parse the query request
+        let query_request: QueryRequest<cosmwasm_std::Empty> = match from_json(request) {
+            Ok(req) => req,
+            Err(e) => {
+                return (
+                    Ok(SystemResult::Err(
+                        cosmwasm_std::SystemError::InvalidRequest {
+                            error: format!("Failed to parse query request: {}", e),
+                            request: Binary::from(request.to_vec()),
+                        },
+                    )),
+                    GasInfo::new(100, 100),
+                );
+            }
+        };
+
+        // Handle different query types
+        let result = match query_request {
+            QueryRequest::Wasm(wasm_query) => self.handle_wasm_query(wasm_query),
+
+            QueryRequest::Bank(_) => {
+                // Return empty balance response for bank queries
+                // Bank module not implemented - return empty response
+                #[derive(serde::Serialize)]
+                struct EmptyBalanceResp {
+                    amount: Vec<Coin>,
+                }
+                let response = EmptyBalanceResp { amount: vec![] };
+                match to_json_binary(&response) {
+                    Ok(binary) => Ok(SystemResult::Ok(ContractResult::Ok(binary))),
+                    Err(e) => Ok(SystemResult::Err(
+                        cosmwasm_std::SystemError::InvalidResponse {
+                            error: e.to_string(),
+                            response: Binary::default(),
+                        },
+                    )),
+                }
+            }
+
+            QueryRequest::Staking(_) => Ok(SystemResult::Err(
+                cosmwasm_std::SystemError::UnsupportedRequest {
+                    kind: "Staking queries not supported".to_string(),
+                },
+            )),
+
+            QueryRequest::Custom(_) => Ok(SystemResult::Err(
+                cosmwasm_std::SystemError::UnsupportedRequest {
+                    kind: "Custom queries not supported".to_string(),
+                },
+            )),
+
+            _ => Ok(SystemResult::Err(
+                cosmwasm_std::SystemError::UnsupportedRequest {
+                    kind: "Unknown query type".to_string(),
+                },
+            )),
+        };
+
+        (result, GasInfo::new(1000, 1000))
+    }
+}
+
+#[cfg(feature = "cw")]
+impl CnidariumQuerier {
+    fn handle_wasm_query(
+        &self,
+        wasm_query: cosmwasm_std::WasmQuery,
+    ) -> std::result::Result<SystemResult<ContractResult<Binary>>, BackendError> {
+        use cosmwasm_std::{to_json_binary, Addr, WasmQuery};
+
+        match wasm_query {
+            WasmQuery::Raw { contract_addr, key } => {
+                // Read raw contract state
+                match &self.state_reader {
+                    Some(reader) => {
+                        let value = reader.get_contract_state(&contract_addr, key.as_slice());
+                        let binary = Binary::from(value.unwrap_or_default());
+                        Ok(SystemResult::Ok(ContractResult::Ok(binary)))
+                    }
+                    None => Ok(SystemResult::Err(
+                        cosmwasm_std::SystemError::UnsupportedRequest {
+                            kind: "State reader not available".to_string(),
+                        },
+                    )),
+                }
+            }
+
+            WasmQuery::ContractInfo { contract_addr } => {
+                // Return contract info
+                match &self.state_reader {
+                    Some(reader) => {
+                        match reader.get_contract_info(&contract_addr) {
+                            Some(info) => {
+                                // Build response manually as ContractInfoResponse::new takes 6 args
+                                #[derive(serde::Serialize)]
+                                struct ContractInfoResp {
+                                    code_id: u64,
+                                    creator: String,
+                                    admin: Option<String>,
+                                    pinned: bool,
+                                    ibc_port: Option<String>,
+                                    ibc2_port: Option<String>,
+                                }
+                                let response = ContractInfoResp {
+                                    code_id: info.code_id,
+                                    creator: info.creator.clone(),
+                                    admin: info.admin.clone(),
+                                    pinned: false,
+                                    ibc_port: None,
+                                    ibc2_port: None,
+                                };
+                                match to_json_binary(&response) {
+                                    Ok(binary) => Ok(SystemResult::Ok(ContractResult::Ok(binary))),
+                                    Err(e) => Ok(SystemResult::Err(
+                                        cosmwasm_std::SystemError::InvalidResponse {
+                                            error: e.to_string(),
+                                            response: Binary::default(),
+                                        },
+                                    )),
+                                }
+                            }
+                            None => Ok(SystemResult::Err(
+                                cosmwasm_std::SystemError::NoSuchContract {
+                                    addr: contract_addr,
+                                },
+                            )),
+                        }
+                    }
+                    None => Ok(SystemResult::Err(
+                        cosmwasm_std::SystemError::UnsupportedRequest {
+                            kind: "State reader not available".to_string(),
+                        },
+                    )),
+                }
+            }
+
+            WasmQuery::Smart {
+                contract_addr,
+                msg: _,
+            } => {
+                // Smart queries require recursive VM execution
+                // For now, return an error indicating this is not yet supported
+                Ok(SystemResult::Err(
+                    cosmwasm_std::SystemError::UnsupportedRequest {
+                        kind: format!(
+                            "Cross-contract smart queries not yet supported (target: {})",
+                            contract_addr
+                        ),
+                    },
+                ))
+            }
+
+            _ => Ok(SystemResult::Err(
+                cosmwasm_std::SystemError::UnsupportedRequest {
+                    kind: "Unknown WASM query type".to_string(),
+                },
+            )),
+        }
     }
 }
 

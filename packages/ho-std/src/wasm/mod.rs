@@ -11,6 +11,11 @@ pub mod runtime;
 pub mod state_ext;
 pub mod state_keys;
 
+#[cfg(not(feature = "cw"))]
 pub use backend::WasmVmBackend;
+#[cfg(feature = "cw")]
+pub use backend::{
+    CnidariumQuerier, CnidariumStorage, ContractInfoResponse, QuerierStateReader, WasmVmBackend,
+};
 pub use runtime::WasmRuntime;
 pub use state_ext::{WasmVmCnidariumStateRead, WasmVmCnidariumStateWrite};
