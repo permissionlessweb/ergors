@@ -1,231 +1,328 @@
-# My first Ho: Guide for deploying your first helper-orchestrator
+# Getting Started with ERGORS
 
-We will walkthrough the entire workflow for using this engine to orchestrate a conversation between two llms on a specific topic. Our main ho will use an external llm api request, and our side ho will use a local llm request.
+This guide walks you through setting up ERGORS to proxy LLM requests from [OpenCode](https://github.com/sst/opencode), Claude Code, or similar CLI tools. ERGORS captures all prompts and responses for review while transparently forwarding to your configured LLM provider.
 
-- First we will test out orchestrating our main ho to make a request to an external llm.
-- Next we will test out orchestrating our main ho to make a request and retrieve it from the llm running that we have deployed via the side ergors.
-- Then we will test out orchestrating the main ho to make a request to the side ho to request from the main ho to make an external api request.
+## Prerequisites
 
-## GOALS
-
-- install hoe,create config files necessary(CREATING/USING CONFIG/API/SSH FILES):
-- route first prompt through a single hoe e (ACTUALLY USING CORE PRODUCT):
-- use ssh to connect to dev env and boostrap second hoe to network
-- route LLM chat request: (Ollama, embedding model, etc) from orchestrator node to another node in network,
-- create network snapshot folder for that deveoper session
-
-## Requirements
-
-- 1 LLM API (Private,ideally)
-- 2 Comnputers (both using linux instances)
-- ho-core source code
-
-## Step 1: Prepare Resources & Goals For Agentic Task
-
-First, we generate a default template with the following command:
-
-```sh
-# build node binary
-cargo build
-# initalize node config
-RUST_BACKTRACE=1 cargo run -- init 
-```
-
-```
-Next, we can start the main ho node to begin use:
-```sh
-RUST_BACKTRACE=1 cargo run --bin ergors -- start
-```
-
-Now, we can use the ho node to self-replicate, via the network command. Lets call the command to create an ssh client between the coordinator & the dev environment. This will install everything we need on linux as well:
-
-```sh
-cargo run -- orchestrate --task-type meta-prompt --prompt "Use the ssh client script to create a client between our agents"
-```
-
-We can see from the logs that the python script request has been triggered and saved to state, as well as the response.
-
-To query the state with our requests (just to check that it was saved to our nodes storage), use the following:
-
-```
-
-```
-
-Now we want to connect another node to our network. We can command our conductor node to SSH into the dev node, and configure our node so it is running an instance of ollama we can use to make api calls
-
-```sh
- cargo run -- orchestrate --task-type network  --prompt "Use the ssh client script to create a client between our agents" --dev-node conductor-1
-```
-
-## Step 2: Create Config File (Use LLM to help)
-
-Heres a prompt you can try to help you configure the config file:
-
-```
-We are going to run the my-first-ho example, and need to configure my local envrionment with the actual values of my config files we are using:
-``sh
-DEV_HELPER_IP=192.168.1.104
-DEV_HELPER_SSH_PORT=21212
-DEV_HELPER_HO_PORT=7100
-``
-create the folder and config/env variable format so i can add my api keys manually into the env variables, and show me the command to use to start the process. Ensure we specify the correct file path for the sample command.
-```
-
-### Single Node (Development/Testing)
+- Rust toolchain (1.75+)
+- [just](https://github.com/casey/just) task runner
+- An LLM API key (Anthropic, OpenAI, or others)
+- OpenCode CLI or Claude Code
 
 ```bash
-# Using single node config
-cargo run -- start --config config-example.toml --node-type development
-
-# Using fractal config with auto-detection
-cargo run -- start --config config-fractal.toml --node-type auto
-
-# Override ports
-cargo run -- start --config config-example.toml --port 8080 --p2p-port 9003
+# Install just (if not already installed)
+cargo install just
 ```
 
-<!-- Lets use our prompt-for-prompt generator to create the prompt to configure the config file for use:
-```
-```
- -->
+---
 
-### Single Node (Development/Testing)
+## Quick Start
 
 ```bash
-# Using single node config
-cargo run -- start --config config-example.toml --node-type development
+# Clone and build
+git clone https://github.com/permissionlessweb/ergors.git
+cd ergors
+just install                    # Builds + installs to ~/.cargo/bin
 
-# Using fractal config with auto-detection
-cargo run -- start --config config-fractal.toml --node-type auto
-
-# Override ports
-cargo run -- start --config config-example.toml --port 8080 --p2p-port 9003
+# Initialize and run
+ergors init                     # Create node identity and config
+ergors init llms                # Configure LLM API keys
+ergors start                    # Start the engine
 ```
 
-### Fractal Deployment (Full Tetrahedral Network)
-
-Start each node type in separate terminals:
+In another terminal, configure your CLI tool:
 
 ```bash
-# Terminal 1: Coordinator Node (Apex Consciousness)
-CW_HO_NODE_TYPE=coordinator cargo run -- start --config config-fractal.toml --node-type coordinator
-
-# Terminal 2: Executor Node (Processing Vertex) 
-CW_HO_NODE_TYPE=executor cargo run -- start --config config-fractal.toml --node-type executor
-
-# Terminal 3: Referee Node (Validation Vertex)
-CW_HO_NODE_TYPE=referee cargo run -- start --config config-fractal.toml --node-type referee
-
-# Terminal 4: Development Node (Innovation Vertex)
-CW_HO_NODE_TYPE=development cargo run -- start --config config-fractal.toml --node-type development
+export ANTHROPIC_BASE_URL="http://localhost:8080"
+opencode                        # Requests now route through ERGORS
 ```
 
-### Quick Demo Setup
+**Request flow:** `OpenCode → ERGORS (captures) → Anthropic API`
+
+---
+
+## Step-by-Step Setup
+
+### 1. Install ERGORS
 
 ```bash
-# 1. Start a single development node for testing
-cargo run -- start --config config-example.toml
+cd /path/to/ergors
 
-# 2. Test API endpoints
+# Build and install both binaries to PATH
+just install
+```
+
+This installs:
+
+- `ergors` — Node engine (HTTP API + gRPC management)
+- `ergors-cli` — CLI for managing the engine
+
+Verify installation:
+
+```bash
+just which
+# Output:
+#   ergors: /Users/you/.cargo/bin/ergors
+#   ergors-cli: /Users/you/.cargo/bin/ergors-cli
+```
+
+### 2. Initialize Node
+
+```bash
+ergors init
+```
+
+Creates:
+
+```
+~/.ergors/
+├── config.toml          # Main configuration
+├── node_identity.enc    # Encrypted node keypair
+└── data/                # Storage directory
+```
+
+### 3. Configure LLM Providers
+
+```bash
+ergors init llms
+```
+
+This launches an interactive prompt to configure your API keys. Keys are encrypted using your node identity.
+
+**Alternative:** Set environment variables:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENAI_API_KEY="sk-..."
+```
+
+### 4. Start the Engine
+
+```bash
+ergors start
+```
+
+### 5. Verify Health
+
+```bash
 curl http://localhost:8080/health
-curl http://localhost:8080/nodes
-
-# 3. Execute agent workflows
-cargo run -- orchestrate --task-type meta-prompt --prompt "Generate a creative story"
+# response should look similar to: {"status":"ok","version":"0.1.0","uptime_seconds":111,"storage_status":"healthy","network_status":"connected (1 peers)"}% 
 ```
 
-### Full Tetrahedral Demo
+---
+
+## Configure OpenCode UI
+
+OpenCode can be configured to route requests through ERGORS either via environment variables or its settings UI.
+
+### Option A: Environment Variables
 
 ```bash
-# 1. Start all four nodes using fractal config (separate terminals)
-# 2. Monitor network topology formation
-# 3. Execute distributed agent workflows
-cargo run -- orchestrate --task-type tetrahedral --prompt "Distributed creativity test"
+export BASE_URL="http://localhost:8080"
+opencode
 ```
 
-## 🔍 Troubleshooting
+### Option B: OpenCode Settings UI
 
-### Common Issues
+<!-- SCREENSHOT: OpenCode settings panel -->
+> **Screenshot placeholder:** OpenCode main settings panel
+>
+> ![OpenCode Settings](./screenshots/opencode-settings-panel.png)
 
-1. **Port Conflicts**: Ensure ports in fractal config don't conflict
-2. **Storage Permissions**: Verify write access to `data_dir`
-3. **Network Discovery**: Check firewall settings for P2P ports
-4. **Config Parsing**: Validate TOML syntax with `toml` command
+1. Open OpenCode
+2. Navigate to **Settings** (gear icon or `Cmd+,`)
+3. Find the **API Configuration** section
 
-### Debug Mode
+<!-- SCREENSHOT: API endpoint configuration -->
+> **Screenshot placeholder:** API endpoint configuration field
+>
+> ![API Endpoint Config](./screenshots/opencode-api-endpoint.png)
+
+1. Set the **Base URL** to `http://localhost:8080`
+2. Leave your API key as-is (ERGORS will use its own configured keys)
+
+<!-- SCREENSHOT: Configured state showing ERGORS URL -->
+> **Screenshot placeholder:** Configured state with ERGORS proxy URL
+>
+> ![Configured State](./screenshots/opencode-configured.png)
+
+1. Save and restart OpenCode
+
+### Option C: Claude Code
+
+For Claude Code CLI:
 
 ```bash
-cargo run -- start --config config-fractal.toml --log-level debug
+export ANTHROPIC_BASE_URL="http://localhost:8080"
+claude
 ```
 
-### Health Checks
+<!-- SCREENSHOT: Claude Code with proxy configured -->
+> **Screenshot placeholder:** Claude Code terminal showing proxy configuration
+>
+> ![Claude Code Config](./screenshots/claude-code-proxy.png)
+
+---
+
+## Verify Proxy is Working
+
+### Check Captured Sessions
+
+After running some prompts:
 
 ```bash
-# Check node health
-curl http://localhost:8000/health  # coordinator
-curl http://localhost:8001/health  # executor
-curl http://localhost:8002/health  # referee
-curl http://localhost:8003/health  # development
+curl "http://localhost:8080/api/proxy/sessions?limit=5"
 ```
 
-## 🧪 Testing Configuration
+### Session Data Includes
 
-### Validate Configuration
+- Full request payload (prompts, system messages)
+- Full response (assistant output)
+- Token counts (input/output)
+- Timing information
+- Client detection (OpenCode, Claude Code, curl, etc.)
+
+---
+
+## Development Workflow
+
+Use `just` for development tasks:
 
 ```bash
-# Test config loading
-cargo run -- init --output ./test-config
-cd test-config
-cargo run -- start --config config.toml --node-type development --dry-run
+# Run engine in dev mode (with RUST_BACKTRACE)
+just dev start
 
-# Test API key resolution
-cargo run -- status --endpoint http://localhost:8080
+# Run with custom args
+just dev init --home /custom/path
+
+# Watch for changes
+just watch
+
+# Quick syntax check
+just check
 ```
 
-### Debug API Key Loading
+---
+
+## Engine Management
+
+### CLI Commands
 
 ```bash
-# Enable debug logging
-RUST_LOG=debug cargo run -- start --config config.toml --node-type development
+ergors-cli status              # Check engine status
+ergors-cli node info           # View node identity
+ergors-cli provider list       # List LLM providers
+ergors-cli provider test anthropic  # Test connectivity
 ```
 
-## 🚨 Troubleshooting
+### Ports Reference
 
-### Common Issues
+| Port  | Protocol | Purpose |
+|-------|----------|---------|
+| 8080  | HTTP     | API server (proxy endpoints) |
+| 50051 | gRPC     | Management server |
+| 26969 | TCP      | P2P networking |
 
-#### 1. API Keys File Not Found
+---
 
-```
-Error: Failed to read API keys file: "./api-keys.json"
-```
+## Proxy Endpoints
 
-**Solution:** Ensure the file exists relative to your config file location.
+ERGORS exposes OpenAI and Anthropic-compatible endpoints:
 
-#### 2. Environment Variable Not Found
+| Endpoint | Format | Description |
+|----------|--------|-------------|
+| `/v1/messages` | Anthropic | Claude API |
+| `/v1/chat/completions` | OpenAI | Chat completions |
+| `/api/proxy/sessions` | ERGORS | Query captured sessions |
+| `/health` | ERGORS | Health check |
 
-```
-Warning: Environment variable 'OPENAI_API_KEY' not found
-```
-
-**Solution:** Set the environment variable or use a literal key in the JSON file.
-
-#### 3. Invalid JSON Format
-
-```
-Error: Failed to parse API keys JSON file
-```
-
-**Solution:** Validate JSON syntax with `jq . api-keys.json` or similar tool.
-
-### Debug Commands
+### Direct curl Example
 
 ```bash
-# Check config parsing
-cargo run -- init --output ./debug-test
-
-# Validate API keys file
-python3 -m json.tool api-keys.json
-
-# Test environment variables
-printenv | grep -E "(OPENAI|ANTHROPIC|AKASH|KIMI|GROK)"
+curl -X POST http://localhost:8080/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
 ```
+
+---
+
+## Troubleshooting
+
+### Engine Won't Start
+
+```bash
+# Check if already running
+lsof -i :8080
+
+# Check logs with debug level
+just dev start --log-level debug
+```
+
+### API Key Errors
+
+```bash
+# Re-configure API keys
+ergors init llms
+
+# Verify key is set
+echo $ANTHROPIC_API_KEY
+```
+
+### Proxy Not Forwarding
+
+Test direct upstream connectivity:
+
+```bash
+curl -X POST https://api.anthropic.com/v1/messages \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"claude-sonnet-4-20250514","max_tokens":10,"messages":[{"role":"user","content":"Hi"}]}'
+```
+
+---
+
+## Screenshots Directory
+
+To add the screenshots referenced above, create:
+
+```
+examples/
+└── screenshots/
+    ├── opencode-settings-panel.png
+    ├── opencode-api-endpoint.png
+    ├── opencode-configured.png
+    └── claude-code-proxy.png
+```
+
+Capture these from the respective applications with the proxy configured.
+
+---
+
+## Next Steps
+
+- **Review sessions**: Query `/api/proxy/sessions` to analyze captured prompts
+- **Multi-node**: Connect multiple ERGORS nodes for distributed orchestration
+- **Custom providers**: Add local Ollama or other LLM backends
+- **Secure keys**: Use password-encrypted custody (see [Custody & Auth](../docs/specs/custody-and-auth.md))
+
+---
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| Install | `just install` |
+| Initialize | `ergors init` |
+| Configure LLMs | `ergors init llms` |
+| Start | `ergors start` |
+| Status | `ergors-cli status` |
+| Dev mode | `just dev start` |
+| Check health | `curl localhost:8080/health` |
+| Query sessions | `curl localhost:8080/api/proxy/sessions` |

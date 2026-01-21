@@ -80,36 +80,100 @@ The first feature of this rust binary is a an network node for our agent develop
 
 ## Packages
 
-| Package | Default | Description |
-|----------|---------|-------------|
-| Ergo-Rs | Main Node Engine ||
-| Ho-Std | Standard Library ||
-| Ergors-Proto (Derive) | Proto Definitions & Derive Macros ||
+| Package | Binary | Description |
+|---------|--------|-------------|
+| [`ergors`](packages/cw-ho/) | `ergors` | Node engine - network, storage, orchestration |
+| [`ergors-cli`](packages/ergors-cli/) | `ergors-cli` | CLI client for node management |
+| [`ho-std`](packages/ho-std/) | — | Shared library - types, traits, custody |
+| [`ergors-proto`](./proto/) | — | Proto definitions & code generation |
 
-## QUICKSTART
+## Documentation
 
-First a node must be initialized:
+| Resource | Description |
+|----------|-------------|
+| [Specs](./docs/specs/) | Technical specifications |
+| [Custody & Auth](./docs/specs/custody-and-auth.md) | Security, key management, encryption |
+| [Network](./docs/specs/network.md) | P2P networking |
+| [Storage](./docs/specs/storage.md) | Cnidarium state management |
 
-```sh
-# creates a nodes home directory, identity keys, and default configuration:
-cargo run  --bin ergors init 
-```
+## Quickstart
 
-Then you will want to configure your inference providers api-keys:
-
-```sh
-# invokes an interactive portal to configure the api-keys
-cargo run  --bin ergors init llm-api-keys 
-```
-
-Now, you can start the engine:
+### Prerequisites
 
 ```sh
-# initialize the storage layer, transport layer, and any other services
-cargo run  --bin ergors start 
+cargo install just  # Task runner
 ```
 
- cargo run  --bin ergors init llm-api-keys
+### Install
+
+```sh
+just install  # Builds and installs ergors + ergors-cli to ~/.cargo/bin
+```
+
+### Initialize & Run
+
+```sh
+ergors init           # Create node identity, config, and data directories
+ergors init llms      # Configure LLM provider API keys
+ergors start          # Start the engine
+```
+
+## Development
+
+We use [just](https://github.com/casey/just) as our task runner. Run `just help` to see all available commands.
+
+### Common Workflows
+
+```sh
+# Development
+just dev init         # Run engine commands in dev mode
+just dev start        # Start engine with RUST_BACKTRACE=1
+just cli <args>       # Run CLI in dev mode
+just watch            # Rebuild on file changes (requires cargo-watch)
+
+# Building
+just build            # Debug build
+just build-release    # Release build
+just proto            # Regenerate proto types
+
+# Quality
+just check            # Quick syntax check (cargo chec)
+just clippy           # Lint with clippy
+just fmt              # Format code
+just test             # Run all tests
+
+# CI
+just ci               # Full pipeline: fmt, clippy, test, build
+just ci-quick         # Quick check without tests
+```
+
+### Installation Commands
+
+| Command | Description |
+|---------|-------------|
+| `just install` | Build release + install `ergors` and `ergors-cli` to PATH |
+| `just install-engine` | Install only the engine |
+| `just install-cli` | Install only the CLI |
+| `just uninstall` | Remove installed binaries |
+| `just which` | Show installed binary locations |
+
+### Package-Specific Commands
+
+```sh
+just build-pkg ergors         # Build specific package (debug)
+just build-pkg ergors release # Build specific package (release)
+just test-pkg ho-std          # Test specific package
+```
+
+### Utilities
+
+```sh
+just env              # Show environment info
+just version          # Show binary versions
+just clean            # Remove build artifacts
+just rebuild          # Clean + release build
+just doc-open         # Build and open documentation
+```
 
 ## Environment Variables
 
