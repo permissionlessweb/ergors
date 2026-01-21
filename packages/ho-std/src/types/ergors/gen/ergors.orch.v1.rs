@@ -13,6 +13,11 @@ pub struct HoConfig {
     pub llm: ::core::option::Option<LlmRouterConfig>,
     #[prost(string, tag = "5")]
     pub home: ::prost::alloc::string::String,
+    /// Custody configuration for node identity key management
+    #[prost(message, optional, tag = "6")]
+    pub custody: ::core::option::Option<
+        super::super::storage::v1::NodeIdentityCustodyConfig,
+    >,
 }
 impl ::prost::Name for HoConfig {
     const NAME: &'static str = "HoConfig";
@@ -136,6 +141,20 @@ pub struct PromptRequest {
     pub context: ::core::option::Option<PromptContext>,
     #[prost(message, optional, tag = "4")]
     pub llm_config: ::core::option::Option<LlmPromptConfig>,
+    /// AI SDK tool support
+    ///
+    /// Available tools
+    #[prost(message, repeated, tag = "5")]
+    pub tools: ::prost::alloc::vec::Vec<ToolDefinition>,
+    /// "auto", "none", "required", or specific tool name
+    #[prost(string, tag = "6")]
+    pub tool_choice: ::prost::alloc::string::String,
+    /// Enable streaming response
+    #[prost(bool, tag = "7")]
+    pub stream: bool,
+    /// System message (Anthropic style)
+    #[prost(string, tag = "8")]
+    pub system: ::prost::alloc::string::String,
 }
 impl ::prost::Name for PromptRequest {
     const NAME: &'static str = "PromptRequest";
@@ -180,12 +199,23 @@ impl ::prost::Name for PromptResponse {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PromptMessage {
     #[prost(string, tag = "1")]
     pub role: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub content: ::prost::alloc::string::String,
+    /// Tool call support (AI SDK compatible)
+    ///
+    /// For assistant messages with tool calls
+    #[prost(message, repeated, tag = "3")]
+    pub tool_calls: ::prost::alloc::vec::Vec<ToolUse>,
+    /// For tool role messages
+    #[prost(message, optional, tag = "4")]
+    pub tool_result: ::core::option::Option<ToolResult>,
+    /// Multi-part content (text + tool use)
+    #[prost(message, repeated, tag = "5")]
+    pub content_blocks: ::prost::alloc::vec::Vec<ContentBlock>,
 }
 impl ::prost::Name for PromptMessage {
     const NAME: &'static str = "PromptMessage";
@@ -195,6 +225,176 @@ impl ::prost::Name for PromptMessage {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.PromptMessage".into()
+    }
+}
+/// Tool definition for function calling (AI SDK format)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ToolDefinition {
+    /// "function" for function tools
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub function: ::core::option::Option<FunctionDefinition>,
+}
+impl ::prost::Name for ToolDefinition {
+    const NAME: &'static str = "ToolDefinition";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ToolDefinition".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ToolDefinition".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FunctionDefinition {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub description: ::prost::alloc::string::String,
+    /// JSON Schema for parameters
+    #[prost(message, optional, tag = "3")]
+    pub parameters: ::core::option::Option<::pbjson_types::Struct>,
+    /// Strict mode for structured outputs
+    #[prost(bool, tag = "4")]
+    pub strict: bool,
+}
+impl ::prost::Name for FunctionDefinition {
+    const NAME: &'static str = "FunctionDefinition";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.FunctionDefinition".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.FunctionDefinition".into()
+    }
+}
+/// Tool use/call in assistant message
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ToolUse {
+    /// Unique ID for this tool call
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// "function"
+    #[prost(string, tag = "2")]
+    pub r#type: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub function: ::core::option::Option<FunctionCall>,
+}
+impl ::prost::Name for ToolUse {
+    const NAME: &'static str = "ToolUse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ToolUse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ToolUse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FunctionCall {
+    /// Function name
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// JSON string of arguments
+    #[prost(string, tag = "2")]
+    pub arguments: ::prost::alloc::string::String,
+}
+impl ::prost::Name for FunctionCall {
+    const NAME: &'static str = "FunctionCall";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.FunctionCall".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.FunctionCall".into()
+    }
+}
+/// Tool result from user/tool role
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ToolResult {
+    /// References ToolUse.id
+    #[prost(string, tag = "1")]
+    pub tool_call_id: ::prost::alloc::string::String,
+    /// Result content (text)
+    #[prost(string, tag = "2")]
+    pub content: ::prost::alloc::string::String,
+    /// Whether this is an error result
+    #[prost(bool, tag = "3")]
+    pub is_error: bool,
+}
+impl ::prost::Name for ToolResult {
+    const NAME: &'static str = "ToolResult";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ToolResult".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ToolResult".into()
+    }
+}
+/// Content block for multi-part messages
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ContentBlock {
+    /// "text", "tool_use", "tool_result", "image"
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    #[prost(oneof = "content_block::Block", tags = "2, 3, 4, 5")]
+    pub block: ::core::option::Option<content_block::Block>,
+}
+/// Nested message and enum types in `ContentBlock`.
+pub mod content_block {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Block {
+        #[prost(string, tag = "2")]
+        Text(::prost::alloc::string::String),
+        #[prost(message, tag = "3")]
+        ToolUse(super::ToolUse),
+        #[prost(message, tag = "4")]
+        ToolResult(super::ToolResult),
+        #[prost(message, tag = "5")]
+        Image(super::ImageContent),
+    }
+}
+impl ::prost::Name for ContentBlock {
+    const NAME: &'static str = "ContentBlock";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ContentBlock".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ContentBlock".into()
+    }
+}
+/// Image content for vision models
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ImageContent {
+    /// "base64" or "url"
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    /// "image/png", "image/jpeg", etc.
+    #[prost(string, tag = "2")]
+    pub media_type: ::prost::alloc::string::String,
+    /// Base64 data or URL
+    #[prost(string, tag = "3")]
+    pub data: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ImageContent {
+    const NAME: &'static str = "ImageContent";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ImageContent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ImageContent".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -312,6 +512,22 @@ pub struct OpenAiRequest {
     pub temperature: u32,
     #[prost(uint32, tag = "4")]
     pub max_tokens: u32,
+    /// AI SDK tool support
+    #[prost(message, repeated, tag = "5")]
+    pub tools: ::prost::alloc::vec::Vec<ToolDefinition>,
+    /// "auto", "none", "required"
+    #[prost(string, tag = "6")]
+    pub tool_choice: ::prost::alloc::string::String,
+    #[prost(bool, tag = "7")]
+    pub stream: bool,
+    #[prost(double, tag = "8")]
+    pub top_p: f64,
+    #[prost(double, tag = "9")]
+    pub frequency_penalty: f64,
+    #[prost(double, tag = "10")]
+    pub presence_penalty: f64,
+    #[prost(string, repeated, tag = "11")]
+    pub stop: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 impl ::prost::Name for OpenAiRequest {
     const NAME: &'static str = "OpenAiRequest";
@@ -344,12 +560,23 @@ impl ::prost::Name for OpenAiUsage {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpenAiMessage {
     #[prost(string, tag = "1")]
     pub role: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub content: ::prost::alloc::string::String,
+    /// Tool call support
+    ///
+    /// For assistant messages
+    #[prost(message, repeated, tag = "3")]
+    pub tool_calls: ::prost::alloc::vec::Vec<ToolUse>,
+    /// For tool role messages
+    #[prost(string, tag = "4")]
+    pub tool_call_id: ::prost::alloc::string::String,
+    /// Function name (for function role, deprecated)
+    #[prost(string, tag = "5")]
+    pub name: ::prost::alloc::string::String,
 }
 impl ::prost::Name for OpenAiMessage {
     const NAME: &'static str = "OpenAiMessage";
@@ -364,10 +591,21 @@ impl ::prost::Name for OpenAiMessage {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpenAiResponse {
-    #[prost(message, repeated, tag = "1")]
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// "chat.completion" or "chat.completion.chunk"
+    #[prost(string, tag = "2")]
+    pub object: ::prost::alloc::string::String,
+    #[prost(int64, tag = "3")]
+    pub created: i64,
+    #[prost(string, tag = "4")]
+    pub model: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "5")]
     pub choices: ::prost::alloc::vec::Vec<OpenAiChoice>,
-    #[prost(message, optional, tag = "2")]
+    #[prost(message, optional, tag = "6")]
     pub usage: ::core::option::Option<OpenAiUsage>,
+    #[prost(string, tag = "7")]
+    pub system_fingerprint: ::prost::alloc::string::String,
 }
 impl ::prost::Name for OpenAiResponse {
     const NAME: &'static str = "OpenAiResponse";
@@ -380,10 +618,18 @@ impl ::prost::Name for OpenAiResponse {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpenAiChoice {
-    #[prost(message, optional, tag = "1")]
+    #[prost(uint32, tag = "1")]
+    pub index: u32,
+    #[prost(message, optional, tag = "2")]
     pub message: ::core::option::Option<OpenAiMessage>,
+    /// For streaming
+    #[prost(message, optional, tag = "3")]
+    pub delta: ::core::option::Option<OpenAiDelta>,
+    /// "stop", "tool_calls", "length", etc.
+    #[prost(string, tag = "4")]
+    pub finish_reason: ::prost::alloc::string::String,
 }
 impl ::prost::Name for OpenAiChoice {
     const NAME: &'static str = "OpenAiChoice";
@@ -393,6 +639,336 @@ impl ::prost::Name for OpenAiChoice {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.OpenAiChoice".into()
+    }
+}
+/// Delta for streaming responses
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OpenAiDelta {
+    #[prost(string, tag = "1")]
+    pub role: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub content: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
+    pub tool_calls: ::prost::alloc::vec::Vec<ToolUse>,
+}
+impl ::prost::Name for OpenAiDelta {
+    const NAME: &'static str = "OpenAiDelta";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.OpenAiDelta".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.OpenAiDelta".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnthropicRequest {
+    #[prost(string, tag = "1")]
+    pub model: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub messages: ::prost::alloc::vec::Vec<AnthropicMessage>,
+    #[prost(uint32, tag = "3")]
+    pub max_tokens: u32,
+    /// System prompt (separate from messages)
+    #[prost(string, tag = "4")]
+    pub system: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "5")]
+    pub tools: ::prost::alloc::vec::Vec<AnthropicTool>,
+    #[prost(message, optional, tag = "6")]
+    pub tool_choice: ::core::option::Option<AnthropicToolChoice>,
+    #[prost(bool, tag = "7")]
+    pub stream: bool,
+    #[prost(double, tag = "8")]
+    pub temperature: f64,
+    #[prost(double, tag = "9")]
+    pub top_p: f64,
+    #[prost(uint32, tag = "10")]
+    pub top_k: u32,
+    #[prost(string, repeated, tag = "11")]
+    pub stop_sequences: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "12")]
+    pub metadata: ::core::option::Option<AnthropicMetadata>,
+}
+impl ::prost::Name for AnthropicRequest {
+    const NAME: &'static str = "AnthropicRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnthropicMessage {
+    /// "user" or "assistant"
+    #[prost(string, tag = "1")]
+    pub role: ::prost::alloc::string::String,
+    #[prost(oneof = "anthropic_message::Content", tags = "2, 3")]
+    pub content: ::core::option::Option<anthropic_message::Content>,
+}
+/// Nested message and enum types in `AnthropicMessage`.
+pub mod anthropic_message {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Content {
+        /// Simple text content
+        #[prost(string, tag = "2")]
+        Text(::prost::alloc::string::String),
+        /// Multi-part content
+        #[prost(message, tag = "3")]
+        Blocks(super::AnthropicContentList),
+    }
+}
+impl ::prost::Name for AnthropicMessage {
+    const NAME: &'static str = "AnthropicMessage";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicMessage".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicMessage".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnthropicContentList {
+    #[prost(message, repeated, tag = "1")]
+    pub blocks: ::prost::alloc::vec::Vec<AnthropicContentBlock>,
+}
+impl ::prost::Name for AnthropicContentList {
+    const NAME: &'static str = "AnthropicContentList";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicContentList".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicContentList".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnthropicContentBlock {
+    /// "text", "tool_use", "tool_result", "image"
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    /// For type="text"
+    #[prost(string, tag = "2")]
+    pub text: ::prost::alloc::string::String,
+    /// For type="tool_use"
+    #[prost(string, tag = "3")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "5")]
+    pub input: ::core::option::Option<::pbjson_types::Struct>,
+    /// For type="tool_result"
+    #[prost(string, tag = "6")]
+    pub tool_use_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "7")]
+    pub is_error: bool,
+    /// For type="image"
+    #[prost(message, optional, tag = "8")]
+    pub source: ::core::option::Option<AnthropicImageSource>,
+}
+impl ::prost::Name for AnthropicContentBlock {
+    const NAME: &'static str = "AnthropicContentBlock";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicContentBlock".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicContentBlock".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AnthropicImageSource {
+    /// "base64" or "url"
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub media_type: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub data: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AnthropicImageSource {
+    const NAME: &'static str = "AnthropicImageSource";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicImageSource".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicImageSource".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnthropicTool {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub input_schema: ::core::option::Option<::pbjson_types::Struct>,
+}
+impl ::prost::Name for AnthropicTool {
+    const NAME: &'static str = "AnthropicTool";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicTool".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicTool".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AnthropicToolChoice {
+    /// "auto", "any", "tool"
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    /// Required if type="tool"
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AnthropicToolChoice {
+    const NAME: &'static str = "AnthropicToolChoice";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicToolChoice".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicToolChoice".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AnthropicMetadata {
+    #[prost(string, tag = "1")]
+    pub user_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AnthropicMetadata {
+    const NAME: &'static str = "AnthropicMetadata";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicMetadata".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicMetadata".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnthropicResponse {
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// "message"
+    #[prost(string, tag = "2")]
+    pub r#type: ::prost::alloc::string::String,
+    /// "assistant"
+    #[prost(string, tag = "3")]
+    pub role: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "4")]
+    pub content: ::prost::alloc::vec::Vec<AnthropicContentBlock>,
+    #[prost(string, tag = "5")]
+    pub model: ::prost::alloc::string::String,
+    /// "end_turn", "tool_use", "max_tokens", "stop_sequence"
+    #[prost(string, tag = "6")]
+    pub stop_reason: ::prost::alloc::string::String,
+    #[prost(string, tag = "7")]
+    pub stop_sequence: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "8")]
+    pub usage: ::core::option::Option<AnthropicUsage>,
+}
+impl ::prost::Name for AnthropicResponse {
+    const NAME: &'static str = "AnthropicResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AnthropicUsage {
+    #[prost(uint32, tag = "1")]
+    pub input_tokens: u32,
+    #[prost(uint32, tag = "2")]
+    pub output_tokens: u32,
+    #[prost(uint32, tag = "3")]
+    pub cache_creation_input_tokens: u32,
+    #[prost(uint32, tag = "4")]
+    pub cache_read_input_tokens: u32,
+}
+impl ::prost::Name for AnthropicUsage {
+    const NAME: &'static str = "AnthropicUsage";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicUsage".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicUsage".into()
+    }
+}
+/// Anthropic streaming event types
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnthropicStreamEvent {
+    /// message_start, content_block_start, content_block_delta, etc.
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    /// For message_start
+    #[prost(message, optional, tag = "2")]
+    pub message: ::core::option::Option<AnthropicResponse>,
+    /// For content_block\_\*
+    #[prost(uint32, tag = "3")]
+    pub index: u32,
+    #[prost(message, optional, tag = "4")]
+    pub content_block: ::core::option::Option<AnthropicContentBlock>,
+    #[prost(message, optional, tag = "5")]
+    pub delta: ::core::option::Option<AnthropicDelta>,
+    #[prost(message, optional, tag = "6")]
+    pub usage: ::core::option::Option<AnthropicUsage>,
+}
+impl ::prost::Name for AnthropicStreamEvent {
+    const NAME: &'static str = "AnthropicStreamEvent";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicStreamEvent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicStreamEvent".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AnthropicDelta {
+    /// "text_delta", "input_json_delta"
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub text: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub partial_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub stop_reason: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub stop_sequence: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AnthropicDelta {
+    const NAME: &'static str = "AnthropicDelta";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AnthropicDelta".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AnthropicDelta".into()
     }
 }
 /// Llm config is the global configuration of all llm models available, and their subconfigurations.

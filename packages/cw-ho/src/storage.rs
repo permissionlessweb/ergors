@@ -5,7 +5,14 @@ use futures::StreamExt;
 use ho_std::error::error_json;
 use ho_std::llm::{HoError, HoResult};
 use ho_std::traits::MessageExt;
-use ho_std::types::ergors::{orch::v1::*, proxy::v1::*, storage::v1::*};
+use ho_std::types::ergors::{
+    management::v1::{
+        FractalSession, QuerySessionsRequest, SessionStateSnapshot, SessionStatus, SessionType,
+    },
+    orch::v1::*,
+    proxy::v1::*,
+    storage::v1::*,
+};
 use std::path::Path;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -16,9 +23,27 @@ const USER_INDEX_PREFIX: &str = "users/";
 const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
 const OP_PREFIX: &str = "operations/";
 const API_KEY_PREFIX: &str = "custody/api_keys/";
-const HEADSTASH: &str = "headstash/";
+// const HEADSTASH: &str = "headstash/";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions/";
 const PROXY_CLIENT_INDEX_PREFIX: &str = "proxy_sessions_by_client/";
+
+// Git Workspace Storage Prefixes
+pub const WORKSPACE_PREFIX: &str = "workspaces/";
+pub const TASK_WORKTREE_PREFIX: &str = "task_worktrees/";
+pub const WORKTREE_BY_WORKSPACE_PREFIX: &str = "worktrees_by_workspace/";
+pub const WORKTREE_BY_NODE_PREFIX: &str = "worktrees_by_node/";
+
+// Fractal Session Storage Prefixes
+const FRACTAL_SESSION_PREFIX: &str = "fractal_sessions/";
+const SESSION_BY_PARENT_PREFIX: &str = "sessions_by_parent/";
+const SESSION_BY_ROOT_PREFIX: &str = "sessions_by_root/";
+const SESSION_BY_OWNER_PREFIX: &str = "sessions_by_owner/";
+const SESSION_BY_STATUS_PREFIX: &str = "sessions_by_status/";
+const SESSION_BY_TYPE_PREFIX: &str = "sessions_by_type/";
+const SESSION_BY_LABEL_PREFIX: &str = "sessions_by_label/";
+const SESSION_BY_TAG_PREFIX: &str = "sessions_by_tag/";
+const SESSION_STATE_PREFIX: &str = "session_states/";
+const SESSION_LOCK_PREFIX: &str = "session_locks/";
 
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
@@ -27,9 +52,9 @@ pub struct ErgorsStorage {
 
 impl ErgorsStorage {
     pub async fn new<P: AsRef<Path>>(data_dir: P, prefixes: Vec<String>) -> HoResult<Self> {
+        info!("📂 Initializing Cnidarium storage");
         let path = data_dir.as_ref();
         std::fs::create_dir_all(path)?;
-        info!("📂 Initializing Cnidarium storage at: {}", path.display());
         Ok(Self {
             cs: CnidariumStorage::load(path.to_path_buf(), prefixes).await?,
         })
@@ -315,10 +340,8 @@ impl ErgorsStorage {
             session_id,
         };
 
-        delta.put_raw(
-            op_key.clone(),
-            operation.to_bytes().map_err(HoError::EncodeError)?,
-        );
+        let operation_data = serde_json::to_vec(&operation)?;
+        delta.put_raw(op_key.clone(), operation_data);
 
         // Create timestamp index
         let timestamp_key = format!(
@@ -702,6 +725,566 @@ impl ErgorsStorage {
         self.cs.commit(delta).await?;
         info!("🗑️  Deleted proxy session: {}", session_id);
         Ok(())
+    }
+
+    // ========================================
+    // Fractal Session Storage Methods
+    // ========================================
+
+    /// Store a fractal session with all indices.
+    pub async fn put_fractal_session(&self, session: &FractalSession) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        // Main session record
+        let session_key = format!("{}{}", FRACTAL_SESSION_PREFIX, session.session_id);
+        let session_data = serde_json::to_vec(session)?;
+        delta.put_raw(session_key.clone(), session_data);
+
+        // Index by parent (for hierarchy traversal)
+        if !session.parent_session_id.is_empty() {
+            let parent_index_key = format!(
+                "{}{}:{}",
+                SESSION_BY_PARENT_PREFIX, session.parent_session_id, session.session_id
+            );
+            delta.put_raw(parent_index_key, session.session_id.as_bytes().to_vec());
+        }
+
+        // Index by root (for full hierarchy queries)
+        if !session.root_session_id.is_empty() {
+            let root_index_key = format!(
+                "{}{}:{:04}:{}",
+                SESSION_BY_ROOT_PREFIX,
+                session.root_session_id,
+                session.fractal_depth,
+                session.session_id
+            );
+            delta.put_raw(root_index_key, session.session_id.as_bytes().to_vec());
+        }
+
+        // Index by owner node
+        if !session.owner_node_id.is_empty() {
+            let owner_index_key = format!(
+                "{}{}:{}",
+                SESSION_BY_OWNER_PREFIX, session.owner_node_id, session.session_id
+            );
+            delta.put_raw(owner_index_key, session.session_id.as_bytes().to_vec());
+        }
+
+        // Index by status
+        let status_name = match SessionStatus::try_from(session.status) {
+            Ok(s) => format!("{:?}", s).to_lowercase(),
+            Err(_) => "unknown".to_string(),
+        };
+        let status_index_key = format!(
+            "{}{}:{}",
+            SESSION_BY_STATUS_PREFIX, status_name, session.session_id
+        );
+        delta.put_raw(status_index_key, session.session_id.as_bytes().to_vec());
+
+        // Index by type
+        let type_name = match SessionType::try_from(session.session_type) {
+            Ok(t) => format!("{:?}", t).to_lowercase(),
+            Err(_) => "unknown".to_string(),
+        };
+        let type_index_key = format!(
+            "{}{}:{}",
+            SESSION_BY_TYPE_PREFIX, type_name, session.session_id
+        );
+        delta.put_raw(type_index_key, session.session_id.as_bytes().to_vec());
+
+        // Index by labels
+        for (key, value) in &session.labels {
+            let label_index_key = format!(
+                "{}{}:{}:{}",
+                SESSION_BY_LABEL_PREFIX, key, value, session.session_id
+            );
+            delta.put_raw(label_index_key, session.session_id.as_bytes().to_vec());
+        }
+
+        // Index by tags
+        for tag in &session.tags {
+            let tag_index_key = format!("{}{}:{}", SESSION_BY_TAG_PREFIX, tag, session.session_id);
+            delta.put_raw(tag_index_key, session.session_id.as_bytes().to_vec());
+        }
+
+        // Index by timestamp
+        if let Some(ref ts) = session.created_at {
+            let ts_index_key = format!(
+                "fractal_sessions_by_time/{:020}:{}",
+                ts.seconds, session.session_id
+            );
+            delta.put_raw(ts_index_key, session.session_id.as_bytes().to_vec());
+        }
+
+        self.cs.commit(delta).await?;
+
+        info!(
+            "💾 Stored fractal session: {} (type: {}, depth: {}, parent: {})",
+            session.session_id,
+            type_name,
+            session.fractal_depth,
+            if session.parent_session_id.is_empty() {
+                "none (root)"
+            } else {
+                &session.parent_session_id
+            }
+        );
+
+        Ok(())
+    }
+
+    /// Get a fractal session by ID.
+    pub async fn get_fractal_session(&self, session_id: &str) -> HoResult<Option<FractalSession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let session_key = format!("{}{}", FRACTAL_SESSION_PREFIX, session_id);
+
+        match snapshot.get_raw(&session_key).await {
+            Ok(Some(data)) => {
+                let session: FractalSession = serde_json::from_slice(&data)?;
+                Ok(Some(session))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get fractal session {}: {}", session_id, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Get sessions by parent ID (direct children only).
+    pub async fn get_sessions_by_parent(&self, parent_id: &str) -> HoResult<Vec<FractalSession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = format!("{}{}:", SESSION_BY_PARENT_PREFIX, parent_id);
+        let mut results = Vec::new();
+
+        let mut stream = snapshot.prefix_raw(&prefix);
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, value)) => {
+                    let session_id = String::from_utf8_lossy(&value);
+                    if let Some(session) = self.get_fractal_session(&session_id).await? {
+                        results.push(session);
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading session by parent stream: {}", e);
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Get all sessions in a hierarchy by root ID.
+    pub async fn get_sessions_by_root(&self, root_id: &str) -> HoResult<Vec<FractalSession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = format!("{}{}:", SESSION_BY_ROOT_PREFIX, root_id);
+        let mut results = Vec::new();
+
+        let mut stream = snapshot.prefix_raw(&prefix);
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, value)) => {
+                    let session_id = String::from_utf8_lossy(&value);
+                    if let Some(session) = self.get_fractal_session(&session_id).await? {
+                        results.push(session);
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading session by root stream: {}", e);
+                }
+            }
+        }
+
+        // Sort by depth (ascending) for BFS order
+        results.sort_by_key(|s| s.fractal_depth);
+        Ok(results)
+    }
+
+    /// Get sessions owned by a node.
+    pub async fn get_sessions_by_owner(
+        &self,
+        owner_node_id: &str,
+    ) -> HoResult<Vec<FractalSession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = format!("{}{}:", SESSION_BY_OWNER_PREFIX, owner_node_id);
+        let mut results = Vec::new();
+
+        let mut stream = snapshot.prefix_raw(&prefix);
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, value)) => {
+                    let session_id = String::from_utf8_lossy(&value);
+                    if let Some(session) = self.get_fractal_session(&session_id).await? {
+                        results.push(session);
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading session by owner stream: {}", e);
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Get sessions by status.
+    pub async fn get_sessions_by_status(
+        &self,
+        status: SessionStatus,
+    ) -> HoResult<Vec<FractalSession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let status_name = format!("{:?}", status).to_lowercase();
+        let prefix = format!("{}{}:", SESSION_BY_STATUS_PREFIX, status_name);
+        let mut results = Vec::new();
+
+        let mut stream = snapshot.prefix_raw(&prefix);
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, value)) => {
+                    let session_id = String::from_utf8_lossy(&value);
+                    if let Some(session) = self.get_fractal_session(&session_id).await? {
+                        results.push(session);
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading session by status stream: {}", e);
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Get sessions by label key-value pair.
+    pub async fn get_sessions_by_label(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> HoResult<Vec<FractalSession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = format!("{}{}:{}:", SESSION_BY_LABEL_PREFIX, key, value);
+        let mut results = Vec::new();
+
+        let mut stream = snapshot.prefix_raw(&prefix);
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, idx_value)) => {
+                    let session_id = String::from_utf8_lossy(&idx_value);
+                    if let Some(session) = self.get_fractal_session(&session_id).await? {
+                        results.push(session);
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading session by label stream: {}", e);
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Get sessions by tag.
+    pub async fn get_sessions_by_tag(&self, tag: &str) -> HoResult<Vec<FractalSession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = format!("{}{}:", SESSION_BY_TAG_PREFIX, tag);
+        let mut results = Vec::new();
+
+        let mut stream = snapshot.prefix_raw(&prefix);
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, value)) => {
+                    let session_id = String::from_utf8_lossy(&value);
+                    if let Some(session) = self.get_fractal_session(&session_id).await? {
+                        results.push(session);
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading session by tag stream: {}", e);
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Query fractal sessions with filters.
+    pub async fn query_fractal_sessions(
+        &self,
+        query: &QuerySessionsRequest,
+    ) -> HoResult<Vec<FractalSession>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut results = Vec::new();
+        let limit = if query.limit == 0 {
+            100
+        } else {
+            query.limit.min(1000)
+        } as usize;
+
+        info!(
+            "🔍 Querying fractal sessions with limit: {}, offset: {}",
+            limit, query.offset
+        );
+
+        let mut stream = snapshot.prefix_raw(FRACTAL_SESSION_PREFIX);
+        let mut count = 0;
+        let mut skipped = 0;
+
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, value)) => {
+                    match serde_json::from_slice::<FractalSession>(&value) {
+                        Ok(session) => {
+                            // Apply filters
+                            if query.session_type != 0 && session.session_type != query.session_type
+                            {
+                                continue;
+                            }
+                            if query.status != 0 && session.status != query.status {
+                                continue;
+                            }
+                            if !query.owner_node_id.is_empty()
+                                && session.owner_node_id != query.owner_node_id
+                            {
+                                continue;
+                            }
+                            if !query.parent_session_id.is_empty()
+                                && session.parent_session_id != query.parent_session_id
+                            {
+                                continue;
+                            }
+                            if !query.root_session_id.is_empty()
+                                && session.root_session_id != query.root_session_id
+                            {
+                                continue;
+                            }
+                            if query.min_depth > 0 && session.fractal_depth < query.min_depth {
+                                continue;
+                            }
+                            if query.max_depth > 0 && session.fractal_depth > query.max_depth {
+                                continue;
+                            }
+
+                            // Apply label filters (AND logic)
+                            let mut labels_match = true;
+                            for (key, value) in &query.label_filters {
+                                if session.labels.get(key) != Some(value) {
+                                    labels_match = false;
+                                    break;
+                                }
+                            }
+                            if !labels_match {
+                                continue;
+                            }
+
+                            // Apply tag filters (OR logic)
+                            if !query.tag_filters.is_empty() {
+                                let has_any_tag = query
+                                    .tag_filters
+                                    .iter()
+                                    .any(|tag| session.tags.contains(tag));
+                                if !has_any_tag {
+                                    continue;
+                                }
+                            }
+
+                            // Apply offset
+                            if skipped < query.offset as usize {
+                                skipped += 1;
+                                continue;
+                            }
+
+                            // Apply limit
+                            if count >= limit {
+                                break;
+                            }
+
+                            results.push(session);
+                            count += 1;
+                        }
+                        Err(e) => {
+                            warn!("Failed to deserialize fractal session: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading fractal session stream: {}", e);
+                }
+            }
+        }
+
+        // Sort by created_at (most recent first) by default
+        results.sort_by(|a, b| {
+            let b_ts = b.created_at.as_ref().map(|t| t.seconds).unwrap_or(0);
+            let a_ts = a.created_at.as_ref().map(|t| t.seconds).unwrap_or(0);
+            if query.descending {
+                b_ts.cmp(&a_ts)
+            } else {
+                a_ts.cmp(&b_ts)
+            }
+        });
+
+        info!("🔍 Query returned {} fractal sessions", results.len());
+        Ok(results)
+    }
+
+    /// Delete a fractal session and its indices.
+    pub async fn delete_fractal_session(&self, session_id: &str) -> HoResult<()> {
+        // First get the session to know what indices to delete
+        let session = match self.get_fractal_session(session_id).await? {
+            Some(s) => s,
+            None => return Ok(()), // Already deleted
+        };
+
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        // Delete main record
+        let session_key = format!("{}{}", FRACTAL_SESSION_PREFIX, session_id);
+        delta.delete(session_key);
+
+        // Delete parent index
+        if !session.parent_session_id.is_empty() {
+            let parent_index_key = format!(
+                "{}{}:{}",
+                SESSION_BY_PARENT_PREFIX, session.parent_session_id, session_id
+            );
+            delta.delete(parent_index_key);
+        }
+
+        // Delete root index
+        if !session.root_session_id.is_empty() {
+            let root_index_key = format!(
+                "{}{}:{:04}:{}",
+                SESSION_BY_ROOT_PREFIX, session.root_session_id, session.fractal_depth, session_id
+            );
+            delta.delete(root_index_key);
+        }
+
+        // Delete owner index
+        if !session.owner_node_id.is_empty() {
+            let owner_index_key = format!(
+                "{}{}:{}",
+                SESSION_BY_OWNER_PREFIX, session.owner_node_id, session_id
+            );
+            delta.delete(owner_index_key);
+        }
+
+        // Delete status index
+        let status_name = match SessionStatus::try_from(session.status) {
+            Ok(s) => format!("{:?}", s).to_lowercase(),
+            Err(_) => "unknown".to_string(),
+        };
+        let status_index_key =
+            format!("{}{}:{}", SESSION_BY_STATUS_PREFIX, status_name, session_id);
+        delta.delete(status_index_key);
+
+        // Delete type index
+        let type_name = match SessionType::try_from(session.session_type) {
+            Ok(t) => format!("{:?}", t).to_lowercase(),
+            Err(_) => "unknown".to_string(),
+        };
+        let type_index_key = format!("{}{}:{}", SESSION_BY_TYPE_PREFIX, type_name, session_id);
+        delta.delete(type_index_key);
+
+        // Delete label indices
+        for (key, value) in &session.labels {
+            let label_index_key = format!(
+                "{}{}:{}:{}",
+                SESSION_BY_LABEL_PREFIX, key, value, session_id
+            );
+            delta.delete(label_index_key);
+        }
+
+        // Delete tag indices
+        for tag in &session.tags {
+            let tag_index_key = format!("{}{}:{}", SESSION_BY_TAG_PREFIX, tag, session_id);
+            delta.delete(tag_index_key);
+        }
+
+        self.cs.commit(delta).await?;
+        info!("🗑️  Deleted fractal session: {}", session_id);
+        Ok(())
+    }
+
+    /// Store a session state snapshot.
+    pub async fn put_session_state_snapshot(
+        &self,
+        session_id: &str,
+        snapshot: &SessionStateSnapshot,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        let key = format!(
+            "{}{}:{}",
+            SESSION_STATE_PREFIX, session_id, snapshot.state_version
+        );
+        let data = serde_json::to_vec(snapshot)?;
+        delta.put_raw(key.clone(), data);
+
+        // Also store as "latest" for quick access
+        let latest_key = format!("{}{}:latest", SESSION_STATE_PREFIX, session_id);
+        let latest_data = serde_json::to_vec(snapshot)?;
+        delta.put_raw(latest_key, latest_data);
+
+        self.cs.commit(delta).await?;
+        info!(
+            "📸 Stored session state snapshot: {} (version: {})",
+            session_id, snapshot.state_version
+        );
+        Ok(())
+    }
+
+    /// Get the latest session state snapshot.
+    pub async fn get_session_state_snapshot(
+        &self,
+        session_id: &str,
+    ) -> HoResult<Option<SessionStateSnapshot>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}{}:latest", SESSION_STATE_PREFIX, session_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let state: SessionStateSnapshot = serde_json::from_slice(&data)?;
+                Ok(Some(state))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get session state snapshot {}: {}", session_id, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Get a specific version of session state snapshot.
+    pub async fn get_session_state_snapshot_version(
+        &self,
+        session_id: &str,
+        version: u64,
+    ) -> HoResult<Option<SessionStateSnapshot>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}{}:{}", SESSION_STATE_PREFIX, session_id, version);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let state: SessionStateSnapshot = serde_json::from_slice(&data)?;
+                Ok(Some(state))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!(
+                    "Failed to get session state snapshot {}:{}: {}",
+                    session_id, version, e
+                );
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Count fractal sessions matching query.
+    pub async fn count_fractal_sessions(&self, query: &QuerySessionsRequest) -> HoResult<u64> {
+        // For now, just query and count. Could be optimized with separate count indices.
+        let sessions = self.query_fractal_sessions(query).await?;
+        Ok(sessions.len() as u64)
     }
 }
 

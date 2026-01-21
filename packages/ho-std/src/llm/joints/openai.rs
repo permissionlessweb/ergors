@@ -35,6 +35,9 @@ impl ApiJoint for OpenAiJoint {
                 .map(|p| OpenAiMessage {
                     role: p.role.to_string(),
                     content: p.content.to_string(),
+                    tool_calls: vec![],
+                    tool_call_id: String::new(),
+                    name: String::new(),
                 })
                 .collect(),
             temperature: req
@@ -48,6 +51,14 @@ impl ApiJoint for OpenAiJoint {
                 .as_ref()
                 .and_then(|c| Some(c.max_tokens))
                 .unwrap_or_default(),
+            // New AI SDK fields - use defaults for now
+            tools: vec![],
+            tool_choice: String::new(),
+            stream: false,
+            top_p: 0.0,
+            frequency_penalty: 0.0,
+            presence_penalty: 0.0,
+            stop: vec![],
         };
 
         let start = std::time::Instant::now();

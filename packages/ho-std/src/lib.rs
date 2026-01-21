@@ -18,6 +18,7 @@ pub use prost::{Message, Name};
 pub mod config;
 pub mod constants;
 pub mod error;
+pub mod git;
 pub mod languages;
 pub mod llm;
 pub mod network;

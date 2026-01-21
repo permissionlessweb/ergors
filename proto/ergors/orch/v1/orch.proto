@@ -89,6 +89,11 @@ message PromptRequest {
   string model = 2;
   PromptContext context = 3;
   LlmPromptConfig llm_config = 4;
+  // AI SDK tool support
+  repeated ToolDefinition tools = 5;    // Available tools
+  string tool_choice = 6;               // "auto", "none", "required", or specific tool name
+  bool stream = 7;                      // Enable streaming response
+  string system = 8;                    // System message (Anthropic style)
 }
 
 message PromptResponse {
@@ -106,6 +111,64 @@ message PromptResponse {
 message PromptMessage {
   string role = 1;
   string content = 2;
+  // Tool call support (AI SDK compatible)
+  repeated ToolUse tool_calls = 3;      // For assistant messages with tool calls
+  ToolResult tool_result = 4;           // For tool role messages
+  repeated ContentBlock content_blocks = 5; // Multi-part content (text + tool use)
+}
+
+// ==============================================
+// AI SDK Compatible Tool Types
+// ==============================================
+
+// Tool definition for function calling (AI SDK format)
+message ToolDefinition {
+  string type = 1;              // "function" for function tools
+  FunctionDefinition function = 2;
+}
+
+message FunctionDefinition {
+  string name = 1;
+  string description = 2;
+  google.protobuf.Struct parameters = 3;  // JSON Schema for parameters
+  bool strict = 4;              // Strict mode for structured outputs
+}
+
+// Tool use/call in assistant message
+message ToolUse {
+  string id = 1;                // Unique ID for this tool call
+  string type = 2;              // "function"
+  FunctionCall function = 3;
+}
+
+message FunctionCall {
+  string name = 1;              // Function name
+  string arguments = 2;         // JSON string of arguments
+}
+
+// Tool result from user/tool role
+message ToolResult {
+  string tool_call_id = 1;      // References ToolUse.id
+  string content = 2;           // Result content (text)
+  bool is_error = 3;            // Whether this is an error result
+}
+
+// Content block for multi-part messages
+message ContentBlock {
+  string type = 1;              // "text", "tool_use", "tool_result", "image"
+  oneof block {
+    string text = 2;
+    ToolUse tool_use = 3;
+    ToolResult tool_result = 4;
+    ImageContent image = 5;
+  }
+}
+
+// Image content for vision models
+message ImageContent {
+  string type = 1;              // "base64" or "url"
+  string media_type = 2;        // "image/png", "image/jpeg", etc.
+  string data = 3;              // Base64 data or URL
 }
 
 message PromptContext {
@@ -156,6 +219,14 @@ message OpenAiRequest {
   repeated OpenAiMessage messages = 2;
   uint32 temperature = 3;
   uint32 max_tokens = 4;
+  // AI SDK tool support
+  repeated ToolDefinition tools = 5;
+  string tool_choice = 6;               // "auto", "none", "required"
+  bool stream = 7;
+  double top_p = 8;
+  double frequency_penalty = 9;
+  double presence_penalty = 10;
+  repeated string stop = 11;
 }
 
 message OpenAiUsage {
@@ -163,22 +234,142 @@ message OpenAiUsage {
   uint32 completion_tokens = 2;
   uint32 total_tokens = 3;
 }
- 
+
 message OpenAiMessage {
   string role = 1;
   string content = 2;
+  // Tool call support
+  repeated ToolUse tool_calls = 3;      // For assistant messages
+  string tool_call_id = 4;              // For tool role messages
+  string name = 5;                      // Function name (for function role, deprecated)
 }
 
 message OpenAiResponse {
-  repeated OpenAiChoice choices = 1;
-  OpenAiUsage usage  = 2;
+  string id = 1;
+  string object = 2;                    // "chat.completion" or "chat.completion.chunk"
+  int64 created = 3;
+  string model = 4;
+  repeated OpenAiChoice choices = 5;
+  OpenAiUsage usage = 6;
+  string system_fingerprint = 7;
 }
-
 
 message OpenAiChoice {
-  OpenAiMessage message  = 1;
+  uint32 index = 1;
+  OpenAiMessage message = 2;
+  OpenAiDelta delta = 3;                // For streaming
+  string finish_reason = 4;             // "stop", "tool_calls", "length", etc.
 }
- 
+
+// Delta for streaming responses
+message OpenAiDelta {
+  string role = 1;
+  string content = 2;
+  repeated ToolUse tool_calls = 3;
+}
+
+// ==============================================
+// Anthropic API Types (Claude)
+// ==============================================
+
+message AnthropicRequest {
+  string model = 1;
+  repeated AnthropicMessage messages = 2;
+  uint32 max_tokens = 3;
+  string system = 4;                    // System prompt (separate from messages)
+  repeated AnthropicTool tools = 5;
+  AnthropicToolChoice tool_choice = 6;
+  bool stream = 7;
+  double temperature = 8;
+  double top_p = 9;
+  uint32 top_k = 10;
+  repeated string stop_sequences = 11;
+  AnthropicMetadata metadata = 12;
+}
+
+message AnthropicMessage {
+  string role = 1;                      // "user" or "assistant"
+  oneof content {
+    string text = 2;                    // Simple text content
+    AnthropicContentList blocks = 3;    // Multi-part content
+  }
+}
+
+message AnthropicContentList {
+  repeated AnthropicContentBlock blocks = 1;
+}
+
+message AnthropicContentBlock {
+  string type = 1;                      // "text", "tool_use", "tool_result", "image"
+  // For type="text"
+  string text = 2;
+  // For type="tool_use"
+  string id = 3;
+  string name = 4;
+  google.protobuf.Struct input = 5;
+  // For type="tool_result"
+  string tool_use_id = 6;
+  bool is_error = 7;
+  // For type="image"
+  AnthropicImageSource source = 8;
+}
+
+message AnthropicImageSource {
+  string type = 1;                      // "base64" or "url"
+  string media_type = 2;
+  string data = 3;
+}
+
+message AnthropicTool {
+  string name = 1;
+  string description = 2;
+  google.protobuf.Struct input_schema = 3;
+}
+
+message AnthropicToolChoice {
+  string type = 1;                      // "auto", "any", "tool"
+  string name = 2;                      // Required if type="tool"
+}
+
+message AnthropicMetadata {
+  string user_id = 1;
+}
+
+message AnthropicResponse {
+  string id = 1;
+  string type = 2;                      // "message"
+  string role = 3;                      // "assistant"
+  repeated AnthropicContentBlock content = 4;
+  string model = 5;
+  string stop_reason = 6;               // "end_turn", "tool_use", "max_tokens", "stop_sequence"
+  string stop_sequence = 7;
+  AnthropicUsage usage = 8;
+}
+
+message AnthropicUsage {
+  uint32 input_tokens = 1;
+  uint32 output_tokens = 2;
+  uint32 cache_creation_input_tokens = 3;
+  uint32 cache_read_input_tokens = 4;
+}
+
+// Anthropic streaming event types
+message AnthropicStreamEvent {
+  string type = 1;                      // message_start, content_block_start, content_block_delta, etc.
+  AnthropicResponse message = 2;        // For message_start
+  uint32 index = 3;                     // For content_block_*
+  AnthropicContentBlock content_block = 4;
+  AnthropicDelta delta = 5;
+  AnthropicUsage usage = 6;
+}
+
+message AnthropicDelta {
+  string type = 1;                      // "text_delta", "input_json_delta"
+  string text = 2;
+  string partial_json = 3;
+  string stop_reason = 4;
+  string stop_sequence = 5;
+}
 
 enum ModelSelectionStrategy {
   MODEL_SELECTION_STRATEGY_UNSPECIFIED = 0;

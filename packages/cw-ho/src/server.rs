@@ -5,10 +5,10 @@ use axum::{
     extract::{Query, State},
     middleware, Json, Router,
 };
-use commonware_cryptography::{blake3, Hasher};
+
 use commonware_runtime::tokio::Context;
 use ho_std::llm::HoError;
-use ho_std::{error::error_json, network::AuthLayer};
+use ho_std::network::AuthLayer;
 use ho_std::{
     error::{error_json_detailed, HoResult},
     traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityTrait},
@@ -17,11 +17,17 @@ use ho_std::{
 use std::{ops::Deref, sync::Arc, time::Instant};
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::{error, info};
-use uuid::Uuid;
+use tracing::error;
 
 pub struct Server {
     state: ErgorsAppState,
+}
+
+impl Server {
+    /// Get a clone of the app state (for sharing with gRPC service)
+    pub fn state(&self) -> ErgorsAppState {
+        self.state.clone()
+    }
 }
 
 impl Server {
@@ -46,7 +52,7 @@ impl Server {
             protected_routes: [
                 { path: "/api/prompts", method: get, handler: handle_query },
                 { path: "/api/proxy/sessions", method: get, handler: crate::proxy::handle_query_sessions },
-                { path: "/api/proxy/sessions/:id", method: get, handler: crate::proxy::handle_get_session },
+                { path: "/api/proxy/sessions/{id}", method: get, handler: crate::proxy::handle_get_session },
                 { path: "/orchestrate/fractal", method: post, handler: crate::orchestrator::handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: crate::storage::handle_prune },
                 ]
@@ -328,10 +334,6 @@ async fn handle_query(
             Json(error_json_detailed(&e))
         }
     }
-}
-
-async fn handle_auth(State(state): State<ErgorsAppState>) -> Json<()> {
-    Json(())
 }
 
 async fn handle_health(State(state): State<ErgorsAppState>) -> Json<HealthResponse> {
