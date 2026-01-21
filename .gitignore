@@ -1,14 +1,12 @@
 # hide sub-modules
 target
 sub-modules
+node_modules
 data
-
-
-## configuration files
-.ho
 
 ## private data 
 logs
+.ho
 priv
 .env
 api-keys.json

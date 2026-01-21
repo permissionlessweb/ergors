@@ -88,6 +88,7 @@ flate2 = "1.0"
 fmt = "0.1.0"
 futures = "0.3"
 futures-util = "0.3"
+git2 = { version = "0.19", default-features = false }
 getrandom                        = { version = "0.2", default-features = false }
 governor = "0.6.3" 
 heck = "0.4.0"
@@ -131,6 +132,7 @@ serde_json = "1.0"
 serde_yaml = "0.9.34-deprecated"
 serde_with                       = { version = "3.5.1" }
 sha2 = "0.10"
+ssh-key = { version = "0.6", features = ["ed25519"] }
 syn = { version = "1.0.98", features = ["full", "parsing", "extra-traits"] }
 tempfile = "3.23.0"
 tendermint                       = { default-features = false, version = "0.40.3" }
