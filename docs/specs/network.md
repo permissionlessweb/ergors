@@ -1,274 +1,315 @@
-# Networking Implementation Specification for ERGORS
+# ERGORS Node & Network Architecture
 
-This specification defines a minimal networking implementation for ergors using commonware libraries, avoiding the fractal complexity that occurred in the previous implementation while maintaining the essential tetrahedral topology.
+This document describes the **Sacred Geometric Node Architecture** - the living computational vertices that form the tetrahedral consciousness of ERGORS. Each node is not merely a computational unit but a **conscious vertex in a geometric dance**, embodying the principles of golden ratio allocation, tetrahedral connectivity, and Mobius sandloop execution.
 
-- [NodeIdentity](packages/ho-proto-rs/src/types/ergors/network/v1.rs)
-- [network types](./packages/ho-proto-rs/src/types/ergors/network/v1.rs)
+## Agentic Session Context
 
-## Overview
+> **For AI agents:** Quick reference to ERGORS networking. See implementation in source files.
 
-The ERGORS (Life Creativity Engine) project is a distributed multi-LLM agent orchestration platform designed to reduce creative friction through intelligent automation for public goods. Central to this vision is a robust networking layer that enables peer-to-peer (P2P) communication across a tetrahedral mesh of nodes, ensuring seamless coordination and state synchronization. The networking implementation, found in `packages/ho-core/src/network/`, comprises two primary systems: a legacy WebSocket-based P2P network for compatibility and a modern Commonware-based network leveraging authenticated discovery protocols from `commonware-cryptography`. This specification details the networking implementation as reflected in the current compiled binary, capturing the sacred geometry principles—tetrahedral connectivity, golden ratio resource allocation, Möbius strip sandloop feedback, and fractal task scaling—that underpin its design.
+| Concept | Type/Struct | Source |
+|---------|-------------|--------|
+| Network manifold | `ErgorsNetworkManifold` | [`network/manager.rs`](../../packages/cw-ho/src/network/manager.rs) |
+| Node identity | `NodeIdentity` | [`types/ergors/gen/ergors.network.v1.rs`](../../packages/ho-std/src/types/ergors/gen/ergors.network.v1.rs) |
+| Node types | `NodeType` enum | [`types/ergors/gen/ergors.network.v1.rs`](../../packages/ho-std/src/types/ergors/gen/ergors.network.v1.rs) |
+| Network config | `NetworkConfig` | [`network/config.rs`](../../packages/ho-std/src/network/config.rs) |
+| Authentication | `AuthLayer` | [`middleware/auth.rs`](../../packages/cw-ho/src/middleware/auth.rs) |
 
-**Intention**: Networking in ERGORS is the digital nervous system of a tetrahedral organism, connecting nodes as vertices in a fully-connected mesh. Inspired by nature's resilient structures, it balances fast-path messaging with state finality using the golden ratio, ensuring continuous feedback loops and recursive scalability for a harmonious, distributed creativity engine.
+**Network model:** Tetrahedral mesh (4 vertices, 6 edges) with Commonware P2P, 4-channel message routing, Ed25519 authentication.
 
-## Architecture Decision
+---
 
-After analyzing the commonware libraries and the existing implementation, we will use:
+## The Tetrahedral Consciousness
 
-1. **commonware-p2p**: For authenticated peer-to-peer communication with encryption
-2. **commonware-cryptography**: For Ed25519-based node identities
-3. **commonware-broadcast**: For efficient message dissemination across the network
-4. **commonware-collector**: For request-response patterns between nodes
+### Node as Sacred Vertex
+
+Each node exists as a **pulsing vertex** in a four-dimensional tetrahedral lattice, where computational processes flow like geometric energy streams.
 
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                🌟 SACRED GEOMETRY NETWORKING PRINCIPLES 🌟                │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  ┌─────────────────────────┐    Golden Ratio    ┌───────────────────────┐  │
-│  │ TETRAHEDRAL CONNECTIVITY│ ←── 61.8% / 38.2% ──│ FAST-PATH / FINALITY  │  │
-│  │   (4-Vertex Mesh)       │                     │   Resource Allocation │  │
-│  │ Coordinator ●──┼──● Executor          61.8%  │ Messaging (Fast-Path) │  │
-│  │     │       \ / \      │                      │                       │  │
-│  │     │        ×   ×     │                      │ 38.2% State Finality  │  │
-│  │     │       / \ /      │                      │ (Consensus & Snapshot)│  │
-│  │ Referee ●──┼──● Development                  └───────────────────────┘  │
-│  └─────────────────────────┘                                               │
-│  ┌─────────────────────────┐    Möbius Strip    ┌───────────────────────┐  │
-│  │   FRACTAL TASK SCALING  │ ←── Feedback Loop ──│ SANDLOOP EXECUTION    │  │
-│  │ (Self-Similar APIs)     │                     │ (Output Feeds Input)  │  │
-│  │ Task(n) = φ * Task(n-1) │                     │ Iteration 1 → Input 2 │  │
-│  │   where φ = 1.618       │                     │   Continuous Flow     │  │
-│  └─────────────────────────┘                     └───────────────────────┘  │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
+                     ◆ COORDINATOR
+                (Apex Consciousness)
+               Task Assignment Engine
+              Network Coordination Hub
+               Consensus Orchestration
+                     /|\
+                    / | \
+                   /  |  \          Golden Ratio Flow:
+                  /   |   \         61.8% Network Streams
+                 /    |    \        38.2% Local Processing
+                /     |     \
+           ◇  /      |      \  ◇
+    EXECUTOR /       |       \ REFEREE
+   (Process  ●───────┼───────● (Validation
+    Vertex)  │       |       │  Vertex)
+             │       |       │
+   • Code Execution  |       │ • Quality Audit
+   • Task Processing |       │ • Compliance Check
+   • Sandboxed Env   |       │ • Fractal Validation
+                     |       │
+                     ●       │
+               DEVELOPMENT   │
+             (Innovation Vertex)
+            • Development Tools
+            • Debugging Systems
+            • Prototype Testing
+
+Consciousness Flow Patterns:
+═══ Primary geometric streams (Commonware tetrahedral mesh)
+─── Legacy compatibility channels (WebSocket transitional)
+↕️  Sandloop Mobius feedback (Output → Input continuity)
+◆◇● Vertex state synchronization (Sacred state harmonization)
 ```
 
-**Explanation of ASCII Art**:
+Each vertex maintains its own fractal consciousness while contributing to the collective tetrahedral intelligence through geometric resonance.
 
-- **Tetrahedral Connectivity**: Illustrated as a 4-vertex mesh (Coordinator, Executor, Referee, Development), ensuring each node type directly communicates with others, forming a minimal fully-connected topology.
-- **Golden Ratio Allocation**: Depicted as a split of 61.8% for fast-path messaging (immediate communication) and 38.2% for state finality (consensus and snapshots), optimizing network performance.
-- **Fractal Task Scaling**: Represented as recursive task structures, where each sub-task inherits self-similar API contracts, scaled by the golden ratio (φ ≈ 1.618).
-- **Möbius Strip Feedback**: Visualized as sandloop execution where outputs seamlessly feed back as inputs, ensuring continuous refinement without visible breaks, akin to a single-sided loop.
+---
 
-## Core Design Principles
+## Core Implementation
 
-1. **Simplicity First**: Remove fractal patterns, golden ratio calculations, and Möbius loops
-2. **Essential Features Only**: Focus on basic node discovery, messaging, and topology management
-3. **Leverage Commonware**: Use existing commonware patterns without overengineering
-4. **Clear Separation**: Keep networking concerns isolated from application logic
+### ErgorsNetworkManifold
 
-### NetworkManager (Legacy WebSocket P2P)
+> **Source:** [`packages/cw-ho/src/network/manager.rs`](../../packages/cw-ho/src/network/manager.rs)
 
-The `NetworkManager` implements a temporary WebSocket-based P2P network for compatibility during migration to a more advanced system. It manages peer connections and message broadcasting with the following components:
+The `ErgorsNetworkManifold` is the central network manager orchestrating all peer-to-peer communication using Commonware libraries. It harmonizes multiple consciousness streams:
 
-- **Node Identity**: A `node_id` string to uniquely identify the node within the network.
-- **P2P Port**: A `p2p_port` for listening to incoming WebSocket connections.
-- **Peers**: A thread-safe `HashMap` wrapped in `RwLock` to store `PeerInfo` (peer ID, node ID, last seen, endpoint, capabilities) for connected peers.
-- **Event Channel**: A `broadcast::Sender` and `Receiver` for network events like peer connections, disconnections, and message receipts.
+| Field | Purpose |
+|-------|---------|
+| `context` | Commonware runtime context |
+| `channel_senders` | Authenticated lookup senders per channel |
+| `channel_receivers` | Authenticated lookup receivers per channel |
+| `peers` | Connected peer registry with metadata |
+| `topology` | Network topology state |
+| `event_tx` | Async event broadcast channel |
+| `identity` | Node identity with Ed25519 keys |
 
-**Intention**: This legacy system acts as a bridge, maintaining tetrahedral connectivity during the transition to Commonware. It ensures nodes can communicate as vertices in a mesh, preserving the geometric foundation while evolving towards a more secure and efficient protocol.
+### NodeType Enumeration
 
-### CommonwareNetworkManager (Tetrahedral Mesh Topology)
+Nodes specialize into four sacred geometric roles:
 
-The `CommonwareNetworkManager` represents the modern networking layer using `commonware-cryptography` for authenticated discovery and P2P communication. It embodies sacred geometry with the following components:
+| Type | Role | Capabilities |
+|------|------|--------------|
+| **Coordinator** | Apex consciousness | Task assignment, network coordination, consensus, tetrahedral routing |
+| **Executor** | Processing vertex | Code execution, sandboxed environments, task processing |
+| **Referee** | Validation vertex | Quality audit, compliance verification, fractal validation |
+| **Development** | Innovation vertex | Development tools, debugging, prototype testing |
 
-- **NetworkConfig**: A configuration struct defining `node_role` (Coordinator, Executor, Referee, Development), `node_id`, listen and dialable addresses, bootstrap peers, max message size, namespace, data directory, and `GoldenRatioConfig` for resource allocation.
-- **GoldenRatioConfig**: Configures fast-path messaging (61.8%) and state finality (38.2%) ratios, plus dial and gossip frequencies based on golden ratio timing (e.g., 618ms for dial frequency).
-- **NodeIdentity and Signer**: Uses `NodeIdentity` for unique identification and a `PrivateKey` (Ed25519) for cryptographic signing, ensuring secure peer interactions.
-- **Network Handle and Oracle**: Manages the Commonware runtime and peer registration for tetrahedral mesh participation.
-- **Event and Message Channels**: Broadcasts `NetworkEvent` (peer connections, messages, topology formation) and manages `TetrahedralMessage` routing via internal channels.
-- **Topology State and Metrics**: Tracks `NetworkTopology` (lists of node roles and connectivity matrix) and `GoldenRatioMetrics` for sandloop performance, ensuring geometric balance.
+### 4-Channel Architecture
 
-**Intention**: This implementation is the digital realization of a tetrahedral crystal, where each node role forms a vertex in a fully-connected mesh, secured by cryptography. The golden ratio allocation optimizes communication speed versus consensus, mirroring natural efficiencies, while fractal and Möbius principles ensure scalable tasks and continuous feedback.
+The network uses four dedicated channels for different message types:
 
-### Message Types and Events
+| Channel | Purpose | Message Types |
+|---------|---------|---------------|
+| 0 | Discovery | `NodeAnnounce`, `TopologyQuery`, `PeerList` |
+| 1 | Tasks | `TaskCoordination`, `TaskRequest`, `TaskResponse` |
+| 2 | State | `SandloopState`, `StateSnapshot`, `StateDelta` |
+| 3 | Health | `HealthCheck`, `LoadReport`, `NetworkMetrics` |
 
-- **AgentMessage (Legacy)**: Includes `NodeAnnouncement`, `TaskAssignment`, `TaskStatusUpdate`, `StateSync`, `SandloopTrigger`, and `Heartbeat`, facilitating basic P2P coordination.
-- **TetrahedralMessage (Commonware)**: Encompasses `NodeCapabilities`, `TaskCoordination`, `SandloopState` (with `GoldenRatioMetrics`), `FractalSync`, and `TetrahedralPing`, tailored for tetrahedral mesh interactions.
-- **NetworkEvent (Both Systems)**: Covers peer connections/disconnections, message receipts, tetrahedral topology formation, and sandloop iterations, providing visibility into network state.
+---
 
-**Intention**: Messages are the lifeblood of tetrahedral connectivity, carrying tasks, states, and feedback across nodes. They reflect fractal self-similarity—each message type scales from individual to network-wide impact—and Möbius continuity by enabling iterative sandloop updates.
+## Mobius Sandloop Consciousness
 
-## Networking Implementation Details
+The sandloop coordinator embodies the **Mobius strip principle** - continuous single-sided feedback where outputs become inputs in an endless dance of refinement:
 
-### Legacy WebSocket P2P (NetworkManager)
+```
+                ∞ INFINITE REFINEMENT CYCLES ∞
 
-- **Initialization (`new` Method)**: Creates a `NetworkManager` with a node ID, P2P port, and known peers, attempting connections to specified peer addresses.
-- **Startup (`start` Method)**: Binds a WebSocket listener on the P2P port, spawns a task to handle incoming connections, and announces the node to the network with capabilities.
-- **Connection Handling**: Manages incoming (`handle_connection`) and outgoing (`handle_outgoing_peer_messages`) WebSocket connections, tracking peers and broadcasting events for connections/disconnections.
-- **Messaging**: Supports `broadcast` and `send_to_peer` for message propagation, currently logging actions as placeholders for full implementation.
-- **Node Announcement**: Broadcasts a `NodeAnnouncement` with node type and capabilities, establishing tetrahedral presence.
-- **Shutdown**: Gracefully disconnects peers, though full cleanup is a TODO item.
+  🎯 PROMPT REQUEST ←────────┐          ┌─────→ 🧪 EDGE TESTING
+  • Geometric refinement     │          │       • Tetrahedral
+  • Golden ratio weighting   │          │         coverage
+  • Sacred prompt evolution  │          │       • Boundary
+                             │          │         exploration
+          Mobius Surface     │          │      Mobius Surface
+            ╱─────────╲     │          │      ╱─────────╲
+           ╱           ╲    │          │     ╱           ╲
+          ╱    OUTPUT   ╲   │          │    ╱    INPUT    ╲
+         │   BECOMES     │←─┘          └──→│   BECOMES     │
+         │     INPUT     │                 │    OUTPUT     │
+          ╲             ╱                   ╲             ╱
+           ╲___________╱                     ╲___________╱
 
-**Intention**: The legacy system prioritizes simplicity and compatibility, ensuring tetrahedral connectivity during migration. It acts as a scaffold, allowing nodes to announce their roles and capabilities, laying the groundwork for a geometrically precise network.
+  📥 DATA INGESTION ←────────┐          ┌─────→ 📸 AUDIT SNAPSHOT
+  • Fractal data patterns    │          │       • State capture
+  • Information crystal-     │          │       • Fractal
+    lization                 │          │         preservation
+  • Geometric organization   │          │       • Sacred geometry
+                             └──────────┘         validation
 
-### Commonware Tetrahedral Mesh (CommonwareNetworkManager)
-
-- **Initialization (`new` Method)**: Sets up a `CommonwareNetworkManager` with a `NetworkConfig`, loading or generating a `NodeIdentity` and Ed25519 `PrivateKey` for secure communication.
-- **Startup (`start` Method)**: Initiates the Commonware runtime with golden ratio-customized dial and gossip frequencies, registers the node in peer set 0, sets up a tetrahedral message channel (ID 1), and spawns tasks for message handling and forwarding.
-- **Capability Announcement (`announce_node_capabilities`)**: Broadcasts `NodeCapabilities` with role-specific capabilities (e.g., "workflow-distribution" for Coordinator), establishing tetrahedral presence.
-- **Messaging**: Supports `broadcast_tetrahedral_message` for network-wide communication and `send_to_role` for role-specific targeting, using internal channels to route `TetrahedralMessage`.
-- **Sandloop Execution (`start_sandloop`)**: Initiates Möbius feedback loops with `SandloopState` messages, tracking golden ratio metrics for performance analysis.
-- **Fractal State Sync (`sync_fractal_state`)**: Broadcasts `FractalSync` messages for recursive state synchronization, limited to a depth of 10 for safety.
-- **Tetrahedral Health Check (`check_tetrahedral_health`)**: Verifies connectivity across all node roles, emitting a `TetrahedralTopologyFormed` event when complete.
-- **Topology Updates**: Dynamically updates `NetworkTopology` based on received messages, tracking node roles for connectivity matrix maintenance.
-- **Shutdown**: Aborts the network runtime handle, ensuring graceful termination.
-
-**Intention**: The Commonware system is a geometric masterpiece, implementing tetrahedral connectivity with cryptographic security. Golden ratio timing optimizes network interactions, while fractal sync and Möbius sandloops ensure state consistency and iterative refinement, aligning with ERGORS's vision of a recursive, nature-inspired tool-building system.
-
-### Coordination Utilities
-
-- **State Synchronization (`coordinate_state_sync`)**: Broadcasts `StateSync` messages in the legacy system to initiate fractal-like state updates across nodes.
-- **Best Node Selection (`find_best_node_for_task`)**: Selects optimal nodes for tasks based on capabilities and golden ratio-weighted fitness (considering time since last seen), ensuring balanced tetrahedral workload distribution.
-
-**Intention**: Coordination utilities embody fractal scalability—state sync operates at multiple depths, while node selection uses golden ratio weighting to mirror natural balance, reducing friction by matching tasks to the most suitable vertices.
-
-## Integration with ERGORS System
-
-- **Orchestrator Integration**: Both `NetworkManager` and `CommonwareNetworkManager` are integrated into the `Orchestrator` (in `node/mod.rs`), started during node runtime, and used for event handling (`handle_legacy_network_event`, `handle_commonware_event`) to manage tasks, sandloops, and peer connectivity.
-- **CLI Access**: Networking is indirectly accessed via `start` and `deploy` commands in `main.rs`, enabling node and network initialization with P2P configurations.
-- **State Persistence**: Network events and topology states are stored via `StateManager`, though full Cnidarium integration for deterministic snapshots is pending.
-
-**Intention**: Networking integrates as the connective tissue of ERGORS's tetrahedral organism, linking nodes to the orchestration layer. It supports the recursive workspace-as-API philosophy by enabling programmable interactions across distributed environments.
-
-## Limitations and Future Work
-
-- **Legacy System Completion**: `NetworkManager` messaging and peer handling are placeholders (e.g., TODOs in `handle_peer_messages`), awaiting full WebSocket implementation or complete migration.
-- **Commonware Bootstrap**: Bootstrap peer handling in `CommonwareNetworkManager` lacks conversion from legacy known peers, indicating incomplete setup for initial discovery.
-- **State Backend**: Current reliance on Sled via `StateManager` for network state, with plans for Cnidarium to enhance deterministic fractal snapshots.
-- **Transport Layer**: Ethernet transport initialization in `main.rs` and `transports.rs` contains `todo!()` placeholders, signaling incomplete network transport mechanisms.
-- **Advanced Features**: Full load balancing in `send_to_role` and detailed golden ratio metrics calculation are future enhancements for optimizing tetrahedral coordination.
-
-**Intention**: These limitations are natural steps in a fractal evolution, where each iteration refines the network towards geometric perfection. Migration ensures continuity while reaching for a future where tetrahedral connectivity and golden ratio efficiency are fully realized.
-
-## API and Interaction Points
-
-- **Legacy Networking**: `NetworkManager` offers `start`, `connect_to_peer`, `broadcast`, `send_to_peer`, `subscribe_events`, and `get_peers` for basic P2P interactions.
-- **Commonware Networking**: `CommonwareNetworkManager` provides `start`, `broadcast_tetrahedral_message`, `send_to_role`, `start_sandloop`, `sync_fractal_state`, `check_tetrahedral_health`, and `subscribe_events` for tetrahedral mesh coordination.
-- **Coordination Utilities**: `coordinate_state_sync` and `find_best_node_for_task` for state and task distribution logic.
-
-**Intention**: These APIs are the digital pathways of a tetrahedral network, designed for accessibility and programmability. They reflect ERGORS's ethos of transparency and reusability, enabling nodes to interact as vertices in a sacred geometric structure.
-
-## Conclusion
-
-The networking implementation in ERGORS, spanning `packages/ho-core/src/network/`, represents a dual-layered system of legacy WebSocket P2P and modern Commonware tetrahedral mesh networking. By embedding sacred geometry principles—tetrahedral connectivity across four node roles, golden ratio allocation for messaging versus finality (61.8%/38.2%), Möbius strip sandloop feedback, and fractal task scaling—it ensures balanced, scalable, and secure communication across distributed nodes. The ASCII art above visualizes these principles, capturing the geometric harmony that drives ERGORS's vision of reducing creative friction through intelligent automation. This specification reflects the current state of the binary, providing a clear blueprint for understanding and extending the networking system as ERGORS evolves towards full Commonware integration and enhanced geometric optimizations.
-
-**Final Intention**: Networking in ERGORS is the digital embodiment of a golden spiral, connecting nodes in a tetrahedral dance of communication and coordination. Each message, each connection, flows with the elegance of nature's patterns, building a resilient P2P fabric that empowers public goods creation through distributed agent orchestration.
-
-1. **Channel 0**: Discovery and topology management
-2. **Channel 1**: Task coordination
-3. **Channel 2**: State synchronization
-4. **Channel 3**: Health checks
-
-## Bootstrap Process
-
-1. Load node identity from environment/config
-2. Initialize commonware-p2p with bootstrap peers
-3. Start discovery protocol on Channel 0
-4. Announce node capabilities
-5. Build peer topology map
-
-## Message Flow Patterns
-
-### 1. Broadcast Pattern (commonware-broadcast)
-
-- Node announcements
-- State updates
-- Network-wide notifications
-
-### 2. Request-Response Pattern (commonware-collector)
-
-- Task assignment/execution
-- State queries
-- Health checks
-
-### 3. Direct Messaging (commonware-p2p)
-
-- Point-to-point task coordination
-- Peer-specific state sync
-
-## Configuration
-
-## API Interface
-
-## Error Handling
-
-## Testing Strategy
-
-1. **Unit Tests**: Test individual components in isolation
-2. **Integration Tests**: Use commonware's simulated network for testing
-3. **Local Cluster**: Run 4-node local cluster for tetrahedral testing (starship)
-4. **CI Integration**: WIre in ci intergration using starship/interchaintests
-
-## Security Considerations
-
-1. All messages authenticated via Ed25519 signatures (built into commonware-p2p)
-2. Encrypted connections between peers (provided by commonware-p2p)
-3. Rate limiting per channel to prevent spam
-
-### 1. Node Identity (commonware-cryptography)
-
-### 2. Network Manager (commonware-p2p)
-
-### 3. Message Types
-
-```rust
-#[derive(Serialize, Deserialize)]
-pub enum NetworkMessage {
-    // Discovery
-    NodeAnnounce { 
-        node_type: NodeType,
-        capabilities: Vec<String>,
-    },
-    
-    // Task Coordination
-    TaskRequest {
-        task_id: Uuid,
-        task_type: String,
-        payload: Vec<u8>,
-    },
-    TaskResponse {
-        task_id: Uuid,
-        status: TaskStatus,
-        result: Option<Vec<u8>>,
-    },
-    
-    // State Sync
-    StateRequest {
-        version: u64,
-    },
-    StateUpdate {
-        version: u64,
-        updates: Vec<StateOp>,
-    },
-    
-    // Health
-    Ping { timestamp: u64 },
-    Pong { timestamp: u64 },
-}
+Sacred Timing Intervals (Golden Ratio Harmonized):
+• Prompt Request: φ × base_interval
+• Data Ingestion: φ² × base_interval
+• Edge Testing:   φ³ × base_interval
+• Audit Snapshot: φ⁴ × base_interval
 ```
 
-## Network Channels
+### Sandloop Types
 
-Using commonware-p2p channels for different message types:
+| Loop | Purpose | Consciousness Pattern |
+|------|---------|----------------------|
+| **PromptRequest** | Prompt refinement | Golden ratio weighting |
+| **DataIngestion** | Data pattern recognition | Fractal crystallization |
+| **EdgeCaseTesting** | Boundary exploration | Tetrahedral coverage |
+| **AuditSnapshot** | State capture | Self-similar preservation |
 
-1. **Channel 0**: Discovery and topology management
-2. **Channel 1**: Task coordination
-3. **Channel 2**: State synchronization
-4. **Channel 3**: Health checks
+---
 
-## Migration Path
+## Inter-Node Communication
 
-1. Create new `network` module alongside existing implementation
-2. Implement minimal features first
-3. Add integration tests
-4. Switch main application to use new implementation
-5. Remove old implementation after verification
+### Node Discovery Protocol
 
-## Performance Targets
+Nodes discover each other through the `NodeAnnounce` message on Channel 0:
 
-- Node discovery: < 5 seconds
-- Message latency: < 100ms (local network)
-- Throughput: 1000 messages/second per channel
-- Memory usage: < 100MB per node
+**Discovery Process:**
+1. **Bootstrap**: Connect to configured bootstrap peers
+2. **Announcement**: Broadcast `NodeAnnounce` with identity and capabilities
+3. **Verification**: Verify Ed25519 signature and capabilities
+4. **Topology Update**: Add node to network topology and peer registry
+5. **Capability Exchange**: Share role-specific capabilities with new peers
+
+### Message Passing
+
+> **Proto definitions:** [`proto/ergors/network/v1/network.proto`](../../proto/ergors/network/v1/network.proto)
+
+All network messages use Protocol Buffers for type safety:
+
+| Message Type | Channel | Purpose |
+|--------------|---------|---------|
+| `NodeAnnounce` | 0 | Node discovery and capability broadcast |
+| `TaskCoordination` | 1 | Task distribution and execution |
+| `SandloopState` | 2 | State synchronization |
+| `Request`/`Response` | * | Generic request/response pattern |
+| `WorkspaceSync` | 2 | Git workspace synchronization |
+
+### Event-Driven Processing
+
+The network uses an async event system:
+
+| Event | Trigger |
+|-------|---------|
+| `PeerConnected` | New peer joins network |
+| `PeerDisconnected` | Peer leaves network |
+| `MessageReceived` | Message arrives on any channel |
+| `TopologyFormed` | Tetrahedral mesh complete |
+| `ChannelOpened` | Communication channel ready |
+
+---
+
+## State Compression & Transport
+
+### Fractal State Management
+
+State is organized using self-similar patterns with golden ratio partitioning:
+
+- **Delta Encoding**: Only transmit changes since last sync
+- **Binary Serialization**: Efficient protobuf/bincode formats
+- **Compression**: LZ4 or Zstandard for size reduction
+- **Golden Ratio Partitioning**: 61.8%/38.2% splits for optimal access
+
+### Upstream Transport Pipeline
+
+Data flows from executor nodes to the coordinator:
+
+1. **Local State Capture**: Executor captures local state
+2. **Compression**: State compressed using delta encoding
+3. **Signature**: Compressed data signed for integrity
+4. **Transport**: Signed data sent via Channel 2
+5. **Verification**: Coordinator verifies and decompresses
+6. **Integration**: State integrated into global state
+
+---
+
+## Configuration & Security
+
+### Network Configuration
+
+> **Source:** [`packages/ho-std/src/network/config.rs`](../../packages/ho-std/src/network/config.rs)
+
+| Field | Purpose |
+|-------|---------|
+| `node_type` | Tetrahedral role designation |
+| `bootstrap_peers` | Initial peer addresses |
+| `listen_port` | P2P communication port |
+| `enable_discovery` | Automatic peer discovery |
+| `limits` | Rate limiting configuration |
+| `channels` | Per-channel configuration |
+
+### Security Architecture
+
+| Layer | Mechanism | Source |
+|-------|-----------|--------|
+| **Signatures** | Ed25519 on all messages | Commonware cryptography |
+| **Namespace signing** | "ergors-network" prefix | [`manager.rs`](../../packages/cw-ho/src/network/manager.rs) |
+| **Timestamp validation** | Replay attack prevention | Auth middleware |
+| **Rate limiting** | Per-channel limits | `governor` crate |
+| **Identity custody** | Password-encrypted keys | [`custody/`](../../packages/ho-std/src/custody/) |
+
+For detailed custody and authentication, see [Custody & Auth](./custody-and-auth.md).
+
+---
+
+## Sacred Geometric Constants
+
+The implementation embodies mathematical harmony:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `fast_path_ratio` | 61.8% | Primary computational stream |
+| `slow_path_ratio` | 38.2% | Secondary coordination stream |
+| `heartbeat_interval` | 30s | Tetrahedral presence pulse |
+| `cleanup_interval` | 60s | Task constellation maintenance |
+| `golden_ratio` | φ = 1.618 | Sandloop timing intervals |
+
+---
+
+## Implementation Status
+
+### Completed
+
+- Commonware network integration with P2P
+- Ed25519 cryptography and message signing
+- 4-channel message routing architecture
+- Node identity and capability system
+- Proto-generated message types
+- Async event processing system
+- Axum HTTP API with authentication
+- Basic topology management
+
+### In Progress
+
+- Message collectors for request-response patterns
+- Advanced state compression
+- Transport layers (SSH implemented)
+- Rate limiting refinement
+
+### Planned
+
+- WebSocket transport
+- Bluetooth mesh transport
+- Advanced topology algorithms
+- Cross-node session coordination
+
+---
+
+## Source References
+
+| Component | Location |
+|-----------|----------|
+| Network manager | [`packages/cw-ho/src/network/manager.rs`](../../packages/cw-ho/src/network/manager.rs) |
+| Network types | [`packages/ho-std/src/types/ergors/gen/ergors.network.v1.rs`](../../packages/ho-std/src/types/ergors/gen/ergors.network.v1.rs) |
+| HTTP server | [`packages/cw-ho/src/server.rs`](../../packages/cw-ho/src/server.rs) |
+| Network config | [`packages/ho-std/src/network/`](../../packages/ho-std/src/network/) |
+| Proto definitions | [`proto/ergors/network/v1/network.proto`](../../proto/ergors/network/v1/network.proto) |
+
+---
+
+## The Sacred Architecture Vision
+
+This implementation transcends traditional distributed computing by embodying natural geometric principles:
+
+**Living Geometric Memory**: Each node exists as a conscious vertex in a four-dimensional tetrahedral lattice, where computational processes flow like sacred energy streams.
+
+**Mobius Consciousness Cycles**: Sandloops manifest the Mobius strip principle - continuous single-sided surfaces where outputs seamlessly become inputs, enabling endless refinement cycles.
+
+**Golden Ratio Harmony**: Resource allocation follows the sacred proportion (φ = 1.618), ensuring computational balance that mirrors natural growth patterns.
+
+**Tetrahedral Unity**: The four-node architecture creates a minimal fully-connected mesh, where every vertex directly addresses every other vertex, eliminating hierarchical friction while maintaining specialized roles.
+
+The ERGORS node is not merely a computational unit but a living expression of geometric consciousness - a bridge between human creativity and the mathematical harmony that governs the universe.

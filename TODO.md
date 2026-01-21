@@ -1,12 +1,11 @@
 # PRIORITIZE SOVEREIGN MODEL USE
 
-- SAVE NEW SESSIONS
 - LOAD STATUS AND NETWORK
-- BETTER CLIENT USE
 - cli chat,tips and query examples,
 - DEEP WIKI
-
 - SESSION SNAPSHOT AND STORAGE WORKFLOW TESTS
+
+- CONSENSUS CONFIRMS COMMITMENTS TO UNIQUE NODE STATES
 
 - RECIPIES: EMBEDDING STORAGE: Ability to store embeddings for reuse of known/familiar/common code for agentic workflows. correct storage mapping and data routing.
   - create new session with details about the task we are performing. Saves session information in organized storage structures. Used for creating accurate traiding data for fine tuning.
@@ -22,8 +21,7 @@
 - protobuf & swagger api definitions:
 - HIFI PROMPT DEFINITION TEMPLATES:
   - Dense.high frequency, prompt generation with recursive refinement: Prompt templates for each prefix/postfix of agent action. reusable, includes context & schema for specific agent workflow.
-- FIRST PRINCIPLE INITIALIZATION SCRIPTS:
-  - ensure reusable, multi-environment compatiblility/ guided deployment steps
+
 - MULTI-AGEBNT: Multi‑LLM routing system with prompt‑refinement loops
 - FUN: Web interface & API with referee service integration (chat interface, network visualizer, infrence visualizer)
   - data vis
@@ -74,14 +72,6 @@
 - save non sensitive config values into storage layer
 - embedding layer: local agest task embedding, project specific embeddings shared throughout network for access a nd proof verification
 
-#### TODOS
-
-- document each layers types & traits:
-  - configuration
-  - storage
-  - network
-  - tools
-
 ### CONFIG
 
 - Capabilities: Description of the resources for the local environment this nodes engine is running on.
@@ -120,7 +110,8 @@ refactor mesage to derive openapi defintion structure from our api messages.
 
 ### CLAUDE TOOLS
 
-- ergo-rs cli hooks: 
+- ergo-rs cli hooks:
+
 ### KIMI TOOLS
 
 <https://github.com/MoonshotAI/kosong>
@@ -149,3 +140,7 @@ refactor mesage to derive openapi defintion structure from our api messages.
 <https://medium.com/@farissyariati/ask-your-codebase-anything-using-ollama-embeddings-and-rag-c65081a5ef20>
 <https://github.com/AsyncFuncAI/deepwiki-open>
 <https://medium.com/@sjng/deepwiki-why-i-open-sourced-an-ai-powered-wiki-generator-b67b624e4679>
+
+## COMPLETE
+
+- ~~FIRST PRINCIPLE INITIALIZATION SCRIPTS: ensure reusable, multi-environment compatiblility/ guided deployment steps~~ my-first-ho.md.
