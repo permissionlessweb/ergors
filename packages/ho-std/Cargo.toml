@@ -11,10 +11,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["grpc-transport", "cw"]
+default = ["grpc-transport", "cw", "rpc"]
 std = ["prost/std"]
 cw = ["cosmwasm-vm","wasmer","wasmer-middlewares","wasmer-types"] # cosmwasm vm features
-# cw = []
 rpc = []
 grpc = ["std", "tonic", "tonic-prost"]
 grpc-transport = ["grpc", "tonic/transport"]

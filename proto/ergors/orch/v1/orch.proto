@@ -17,6 +17,93 @@ message HoConfig {
   string home = 5;
   // Custody configuration for node identity key management
   storage.v1.NodeIdentityCustodyConfig custody = 6;
+  // CosmWasm VM configuration
+  CosmwasmConfig cosmwasm = 7;
+}
+
+// ==============================================
+// CosmWasm VM Configuration
+// ==============================================
+
+// Configuration for the CosmWasm VM and initial contract deployment
+message CosmwasmConfig {
+  // Enable CosmWasm VM
+  bool enabled = 1;
+
+  // Directory for WASM module cache
+  string cache_dir = 2;
+
+  // Memory limit for WASM execution (bytes)
+  uint64 memory_limit = 3;
+
+  // Gas limits for different operation types
+  CosmwasmGasLimits gas_limits = 4;
+
+  // Contracts to deploy on coordinator startup
+  repeated ContractDeployment initial_contracts = 5;
+}
+
+// Gas limits for CosmWasm operations
+message CosmwasmGasLimits {
+  // Gas limit for contract instantiation
+  uint64 instantiate = 1;
+  // Gas limit for contract execution
+  uint64 execute = 2;
+  // Gas limit for contract queries
+  uint64 query = 3;
+  // Gas limit for contract migration
+  uint64 migrate = 4;
+}
+
+// Contract deployment specification for startup initialization
+message ContractDeployment {
+  // Unique name for this contract (used for resolution)
+  string name = 1;
+
+  // Path to the WASM binary file (absolute or relative to home)
+  string wasm_path = 2;
+
+  // Alternative: embedded WASM bytes (base64 encoded)
+  bytes wasm_bytes = 3;
+
+  // Label for the contract instance
+  string label = 4;
+
+  // JSON-encoded instantiation message
+  string init_msg = 5;
+
+  // Admin address (optional - coordinator pubkey if empty)
+  string admin = 6;
+
+  // Whether this contract is required (fail startup if deployment fails)
+  bool required = 7;
+
+  // Node types that should deploy this contract
+  // Empty means all coordinators deploy it
+  repeated string deploy_on_node_types = 8;
+
+  // Contract-specific configuration
+  ContractConfig config = 9;
+}
+
+// Additional contract-specific configuration
+message ContractConfig {
+  // Whether to skip deployment if contract already exists
+  bool skip_if_exists = 1;
+
+  // Migration configuration (for upgrades)
+  ContractMigration migration = 2;
+
+  // Custom metadata
+  map<string, string> metadata = 3;
+}
+
+// Contract migration configuration
+message ContractMigration {
+  // Enable automatic migration on startup
+  bool auto_migrate = 1;
+  // JSON-encoded migration message
+  string migrate_msg = 2;
 }
 
 
@@ -443,8 +530,14 @@ message QueryPromptsResponse {
 message BootstrapRequest {
   // bootstrap method
   BootstrapMethod bootstrap_method = 1;
-  // node-identity 
+  // node-identity
   network.v1.NodeIdentity identity = 2;
+  // Key sharing: signed challenge proving identity ownership
+  network.v1.IdentityChallengeResponse challenge_response = 3;
+  // Key sharing: which providers the node wants access to
+  repeated string requested_providers = 4;
+  // Key sharing: preferred mode (DIRECT or SHAMIR)
+  network.v1.KeySharingMode preferred_mode = 5;
 }
 
 message BootstrapMethod {
@@ -523,6 +616,12 @@ message BootstrapResponse {
   string summary = 4;
   google.protobuf.Timestamp timestamp = 5;
   uint64 duration_ms = 6;
+  // Key sharing: address of identity registry contract
+  string identity_contract_address = 7;
+  // Key sharing: secret shares for requested providers
+  repeated network.v1.SecretShare secret_shares = 8;
+  // Key sharing: next challenge for heartbeat/refresh
+  network.v1.IdentityChallenge next_challenge = 9;
 }
 
 // Bootstrap endpoint
@@ -825,4 +924,12 @@ message UpdateDeploymentResponse {
   bool success = 2;
   string message = 3;
 }
+
+// ========================================
+// Key Sharing Types (defined in network/v1/network.proto)
+// ========================================
+// The following types are imported from network.v1:
+// - KeySharingMode, SecretSharingConfig, SecretShare
+// - IdentityChallenge, IdentityChallengeResponse
+// - ProviderOwnership, ProviderSharingConfig
 

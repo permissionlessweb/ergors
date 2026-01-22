@@ -6,18 +6,26 @@ use axum::{
     middleware, Json, Router,
 };
 
+use camino::Utf8PathBuf;
 use commonware_runtime::tokio::Context;
-use ho_std::llm::HoError;
+use ho_std::constants::ENCRYPTED_API_KEYS_FILE;
+use ho_std::custody::{PasswordEncryptedCustody, PlaintextCustody};
+use ho_std::keys::commonware::NodePrivKey;
+use ho_std::llm::{EncryptedApiKeyManager, HoError};
 use ho_std::network::AuthLayer;
+use ho_std::storage::identity::EncryptedIdentityBuilder;
+use ho_std::traits::NodeIdentityCustody;
 use ho_std::{
     error::{error_json_detailed, HoResult},
-    traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityTrait},
+    traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityCustodyBackend, NodeIdentityTrait},
     types::ergors::{orch::v1::*, storage::v1::*},
 };
+use std::collections::HashMap;
+use std::io::{IsTerminal as _, Read};
 use std::{ops::Deref, sync::Arc, time::Instant};
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::error;
+use tracing::{error, info, warn};
 
 pub struct Server {
     state: ErgorsAppState,
@@ -94,7 +102,14 @@ impl Server {
             ],
         )
         .await?;
-        nm.start_network(c.network()).await?;
+
+        // Start network using custody-backed identity (returns password for API key decryption)
+        let custody_password = Self::start_network_with_custody(&mut nm, &c).await?;
+
+        // Load encrypted API keys and import to Cnidarium storage
+        if let Some(password) = &custody_password {
+            Self::load_and_store_encrypted_api_keys(&c, &s, password).await?;
+        }
 
         // Initialize CosmWasm VM runtime
         #[cfg(feature = "cw")]
@@ -105,9 +120,6 @@ impl Server {
             let cache_dir = PathBuf::from(&c.storage().data_dir).join("wasm_cache");
             Arc::new(WasmRuntime::new(cache_dir)?)
         };
-
-        // Encrypt and store API keys on server startup
-        // Self::encrypt_and_store_api_keys(&c, &s).await?;
 
         Ok(Self {
             state: ErgorsAppState::new(
@@ -128,12 +140,304 @@ impl Server {
         })
     }
 
+    /// Start network using custody-backed identity
+    ///
+    /// This method:
+    /// 1. Determines the custody backend from config
+    /// 2. Handles password prompts for encrypted custody
+    /// 3. Migrates plaintext keys to encrypted custody if needed
+    /// 4. Starts the network with the custody-backed identity
+    /// 5. Returns the custody password for reuse (API key decryption)
+    async fn start_network_with_custody(
+        nm: &mut ErgorsNetworkManifold,
+        c: &ErgorsConfig,
+    ) -> HoResult<Option<String>> {
+        let custody_backend = c.custody_backend();
+        let identity_path = c.identity_path();
+
+        match custody_backend {
+            NodeIdentityCustodyBackend::PasswordEncrypted => {
+                let custody = c.create_password_custody();
+
+                // Check if encrypted identity exists
+                if custody.exists() {
+                    // Unlock with password
+                    let password = Self::get_custody_password()?;
+                    custody
+                        .unlock(&password)
+                        .await
+                        .map_err(|e| HoError::Cfg(format!("Failed to unlock custody: {}", e)))?;
+
+                    info!("🔓 Unlocked encrypted node identity");
+                    nm.start_network_with_custody(c.network(), &custody).await?;
+                    Ok(Some(password))
+                } else {
+                    // No identity exists - need to create one
+                    info!("🆕 Creating new encrypted node identity...");
+                    let password = Self::create_custody_password()?;
+
+                    let metadata = EncryptedIdentityBuilder::new()
+                        .user(c.identity().user.clone())
+                        .host(c.identity().host.clone())
+                        .p2p_port(c.identity().p2p_port)
+                        .api_port(c.identity().api_port)
+                        .node_type(c.identity().node_type.clone())
+                        .build();
+
+                    custody
+                        .create_identity(&password, Some(metadata))
+                        .map_err(|e| {
+                            HoError::Cfg(format!("Failed to create encrypted identity: {}", e))
+                        })?;
+
+                    custody
+                        .unlock(&password)
+                        .await
+                        .map_err(|e| HoError::Cfg(format!("Failed to unlock custody: {}", e)))?;
+
+                    info!("✅ Created encrypted node identity at: {}", identity_path);
+                    nm.start_network_with_custody(c.network(), &custody).await?;
+                    Ok(Some(password))
+                }
+            }
+            NodeIdentityCustodyBackend::Plaintext => {
+                // Legacy: use plaintext custody (for testing/development only)
+                warn!("⚠️ Using plaintext custody - NOT RECOMMENDED FOR PRODUCTION");
+                let custody = PlaintextCustody::generate();
+                nm.start_network_with_custody(c.network(), &custody).await?;
+                Ok(None)
+            }
+            NodeIdentityCustodyBackend::NodeKeyEncrypted => {
+                // Future: node-key encrypted
+                return Err(HoError::Cfg(
+                    "NodeKeyEncrypted custody backend not yet implemented".to_string(),
+                ));
+            }
+            NodeIdentityCustodyBackend::Threshold => {
+                // Future: threshold custody
+                return Err(HoError::Cfg(
+                    "Threshold custody backend not yet implemented".to_string(),
+                ));
+            }
+            NodeIdentityCustodyBackend::RemoteCustody(endpoint) => {
+                // Future: remote custody
+                return Err(HoError::Cfg(format!(
+                    "RemoteCustody ({}) not yet implemented",
+                    endpoint
+                )));
+            }
+        }
+    }
+
+    /// Get custody password from environment or interactive prompt
+    fn get_custody_password() -> HoResult<String> {
+        // First check environment variable for non-interactive use
+        if let Ok(password) = std::env::var("ERGORS_CUSTODY_PASSWORD") {
+            if !password.is_empty() {
+                return Ok(password);
+            }
+        }
+
+        // Interactive password prompt
+        Self::prompt_for_password("Enter custody password: ")
+    }
+
+    /// Create a new custody password with confirmation
+    fn create_custody_password() -> HoResult<String> {
+        // Check environment variable first
+        if let Ok(password) = std::env::var("ERGORS_CUSTODY_PASSWORD") {
+            if !password.is_empty() {
+                return Ok(password);
+            }
+        }
+
+        // Interactive prompts
+        let password = Self::prompt_for_password("Create custody password: ")?;
+        let confirm = Self::prompt_for_password("Confirm custody password: ")?;
+
+        if password != confirm {
+            return Err(HoError::Cfg("Passwords do not match".to_string()));
+        }
+
+        if password.len() < 8 {
+            return Err(HoError::Cfg(
+                "Password must be at least 8 characters".to_string(),
+            ));
+        }
+
+        Ok(password)
+    }
+
+    /// Prompt for password (interactive or from stdin)
+    fn prompt_for_password(msg: &str) -> HoResult<String> {
+        let mut password = String::new();
+        if std::io::stdin().is_terminal() {
+            password = rpassword::prompt_password(msg)
+                .map_err(|e| HoError::Cfg(format!("Failed to read password: {}", e)))?;
+        } else {
+            while let Ok(n_bytes) = std::io::stdin().lock().read_to_string(&mut password) {
+                if n_bytes == 0 {
+                    break;
+                }
+                password = password.trim().to_string();
+            }
+        }
+        Ok(password)
+    }
+
+    /// Import an existing private key to encrypted custody
+    ///
+    /// Used when migrating from external key sources or restoring from backup.
+    #[allow(dead_code)]
+    async fn import_to_encrypted_custody(
+        c: &ErgorsConfig,
+        custody: &PasswordEncryptedCustody,
+        private_key: &NodePrivKey,
+    ) -> HoResult<()> {
+        // Create password for new encrypted storage
+        info!("🔐 Importing key to encrypted custody...");
+        let password = Self::create_custody_password()?;
+
+        let metadata = EncryptedIdentityBuilder::new()
+            .user(c.identity().user.clone())
+            .host(c.identity().host.clone())
+            .p2p_port(c.identity().p2p_port)
+            .api_port(c.identity().api_port)
+            .node_type(c.identity().node_type.clone())
+            .build();
+
+        custody
+            .import_identity(private_key, &password, Some(metadata))
+            .map_err(|e| HoError::Cfg(format!("Failed to import identity to custody: {}", e)))?;
+
+        info!("✅ Successfully imported key to encrypted custody");
+
+        Ok(())
+    }
+
+    /// Load encrypted API keys from file and store in Cnidarium
+    ///
+    /// This method:
+    /// 1. Checks if encrypted API keys already exist in Cnidarium storage
+    /// 2. If not, loads from `api-keys.enc` file in the data directory
+    /// 3. Imports the encrypted store into Cnidarium for network consensus
+    /// 4. Decrypts keys and sets them as environment variables for LLM router
+    async fn load_and_store_encrypted_api_keys(
+        c: &ErgorsConfig,
+        s: &ErgorsStorage,
+        password: &str,
+    ) -> HoResult<()> {
+        use cnidarium::StateWrite as _;
+        use ho_std::llm::state_ext::{state_key, StateReadExt};
+        use ho_std::Message as _;
+
+        let data_dir = Utf8PathBuf::from(&c.storage().data_dir);
+        let encrypted_file = data_dir.join(ENCRYPTED_API_KEYS_FILE);
+
+        // Check if we already have encrypted keys in Cnidarium storage
+        let snapshot = s.cs.latest_snapshot();
+        let existing_store = snapshot.get_encrypted_api_key_store().await?;
+
+        if existing_store.is_some() {
+            info!("🔐 Encrypted API keys found in Cnidarium storage");
+
+            // Decrypt and set environment variables for LLM router
+            let decrypted_keys = snapshot.load_and_decrypt_api_keys(password).await?;
+            Self::set_api_keys_env(&decrypted_keys);
+
+            return Ok(());
+        }
+
+        // No keys in Cnidarium - check for file
+        if !encrypted_file.exists() {
+            info!(
+                "📋 No encrypted API keys file at {} - skipping",
+                encrypted_file
+            );
+            return Ok(());
+        }
+
+        // Load encrypted store from file
+        info!("🔐 Loading encrypted API keys from {}", encrypted_file);
+        let encrypted_bytes = std::fs::read(&encrypted_file).map_err(|e| {
+            HoError::Storage(format!("Failed to read encrypted API keys file: {}", e))
+        })?;
+
+        let store = EncryptedApiKeyManager::deserialize_store(&encrypted_bytes).map_err(|e| {
+            HoError::DeSerialization(format!("Failed to deserialize encrypted API keys: {}", e))
+        })?;
+
+        // Import to Cnidarium storage using direct put_raw
+        let mut delta = cnidarium::StateDelta::new(s.cs.latest_snapshot());
+        let key = state_key::encrypted_api_keys().to_string();
+        let data = store.encode_to_vec();
+        delta.put_raw(key, data);
+        s.cs.commit(delta)
+            .await
+            .map_err(|e| HoError::Storage(format!("Failed to commit encrypted API keys: {}", e)))?;
+
+        info!(
+            "✅ Imported {} encrypted API keys to Cnidarium storage",
+            store.keys.len()
+        );
+
+        // Decrypt and set environment variables for LLM router
+        let mut manager = EncryptedApiKeyManager::from_store(&store);
+        manager.unlock(password).map_err(|e| {
+            HoError::Crypto(format!("Failed to unlock API key manager: {}", e))
+        })?;
+
+        let decrypted_keys = manager.load_store(&store).map_err(|e| {
+            HoError::Crypto(format!("Failed to decrypt API keys: {}", e))
+        })?;
+
+        Self::set_api_keys_env(&decrypted_keys);
+
+        Ok(())
+    }
+
+    /// Set decrypted API keys as environment variables for LLM router
+    fn set_api_keys_env(keys: &HashMap<String, String>) {
+        use ho_std::constants::*;
+
+        for (provider, api_key) in keys {
+            let env_var = match provider.as_str() {
+                "anthropic" => ANTHROPIC_API_KEY,
+                "openai" => OPENAI_API_KEY,
+                "grok" => GROK_API_KEY,
+                "akashml" => AKASHML_KEY,
+                "kimi" => KIMI_API_KEY,
+                _ => {
+                    // Use provider name uppercased with _API_KEY suffix
+                    let env_name = format!("{}_API_KEY", provider.to_uppercase());
+                    std::env::set_var(&env_name, api_key);
+                    info!("🔑 Set {} from encrypted storage", env_name);
+                    continue;
+                }
+            };
+
+            std::env::set_var(env_var, api_key);
+            info!("🔑 Set {} from encrypted storage", env_var);
+        }
+    }
+
     /// Validate that all enabled LLM providers have API keys configured
     ///
     /// This prevents the server from starting if required API keys are missing.
+    /// If api-keys.json doesn't exist, validation is skipped (no LLM providers configured).
     fn validate_llm_api_keys(c: &ErgorsConfig) -> HoResult<()> {
         use std::env;
         let api_keys_path = &c.llm().api_keys_file;
+
+        // Check if api-keys.json exists
+        if !std::path::Path::new(api_keys_path).exists() {
+            info!(
+                "📋 No api-keys.json found at {} - LLM providers not configured",
+                api_keys_path
+            );
+            info!("   Run 'ergors init llms' to configure LLM providers");
+            return Ok(());
+        }
 
         // Load api-keys.json
         let config = ApiKeysJson::load(&api_keys_path.into())

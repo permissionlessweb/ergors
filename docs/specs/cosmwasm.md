@@ -309,6 +309,154 @@ wasm/
 - State persistence across restarts
 - Concurrent execution safety
 
+## Contract Lifecycle & Deployment
+
+### Initial Contract Upload
+
+Contracts are deployed via the **ContractManager** (`packages/cw-ho/src/contracts/manager.rs`), which provides:
+
+- **Named contract resolution** - Contracts are referenced by name (e.g., `"identity_registry"`)
+- **Automatic coordinator deployment** - Required contracts deployed on coordinator startup
+- **Existence checks** - Skip deployment if contract already exists
+
+#### Startup Deployment Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Coordinator Node Startup                      │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+                   ┌─────────────────────┐
+                   │ Check node_type ==  │
+                   │   "coordinator"     │
+                   └──────────┬──────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │ No                │ Yes
+                    ▼                   ▼
+            ┌───────────────┐  ┌───────────────────┐
+            │ Skip deploy   │  │ Check contract    │
+            │ (regular node)│  │ already exists?   │
+            └───────────────┘  └─────────┬─────────┘
+                                         │
+                               ┌─────────┴─────────┐
+                               │ Yes               │ No
+                               ▼                   ▼
+                       ┌─────────────────┐  ┌─────────────────┐
+                       │ Skip (already   │  │ Upload WASM +   │
+                       │ deployed)       │  │ Instantiate     │
+                       └─────────────────┘  └─────────────────┘
+```
+
+#### Code Example: Deploying a Contract
+
+```rust
+use crate::contracts::{ContractManager, ProviderConfig};
+
+// Create manager with storage and runtime
+let manager = ContractManager::new(storage, wasm_runtime, node_id);
+
+// Check if already deployed
+if !manager.contract_exists("identity_registry").await? {
+    // Upload WASM bytecode
+    let code_id = manager.upload_contract(&wasm_bytes, "identity_registry").await?;
+
+    // Instantiate with init message
+    let init_msg = IdentityRegistryInstantiateMsg {
+        coordinator: coordinator_pubkey,
+        providers: vec![
+            ProviderConfig {
+                name: "anthropic".to_string(),
+                ownership: "shared".to_string(),
+                threshold: Some(2),
+                total_shares: Some(3),
+            },
+        ],
+    };
+
+    let address = manager.instantiate_contract(code_id, "identity_registry", &init_msg).await?;
+}
+```
+
+#### Default Contracts
+
+| Contract | Purpose | Deployed By |
+|----------|---------|-------------|
+| `identity_registry` | Node identity verification, key share tracking | Coordinator on fresh DB |
+
+### Cross-Node Contract Communication
+
+Nodes can query and execute contracts on **other nodes** via P2P network messages:
+
+#### Network Channel 4: Contract Operations
+
+```
+┌──────────────┐          Channel 4          ┌──────────────┐
+│   Node A     │ ─────────────────────────► │   Node B     │
+│              │     ContractQuery           │              │
+│  Query B's   │                             │  Execute on  │
+│  contract    │ ◄───────────────────────── │  local VM    │
+│              │     QueryResponse           │              │
+└──────────────┘                             └──────────────┘
+```
+
+#### Message Types
+
+```protobuf
+message ContractQuery {
+  string target_node_id = 1;      // Node hosting the contract
+  string contract_name = 2;        // Named contract reference
+  bytes query_msg = 3;             // JSON-encoded query
+  bytes sender_pubkey = 4;         // For access control
+}
+
+message ContractExecute {
+  string target_node_id = 1;
+  string contract_name = 2;
+  bytes execute_msg = 3;
+  bytes sender_pubkey = 4;
+  bytes signature = 5;             // Proves sender identity
+}
+```
+
+#### Query Flow
+
+```rust
+// Node A queries Node B's contract
+let response = network.query_remote_contract(
+    target_node: "node_b",
+    contract: "identity_registry",
+    msg: QueryMsg::GetNodeInfo { node_id: "node_c" },
+).await?;
+```
+
+#### Permission Model
+
+Cross-node contract calls follow these rules:
+
+1. **Queries** - Read-only, allowed by default
+2. **Executions** - Require signature verification
+3. **Admin operations** - Only allowed for contract admin
+
+```rust
+// Verify sender has permission
+fn verify_cross_node_execute(
+    sender_pubkey: &[u8],
+    contract_admin: &[u8],
+    msg: &ExecuteMsg,
+) -> bool {
+    match msg {
+        // Admin-only operations
+        ExecuteMsg::UpdateConfig { .. } => sender_pubkey == contract_admin,
+        // Public operations with rate limiting
+        ExecuteMsg::RegisterNode { .. } => true,
+        // Restricted by contract logic
+        _ => verify_in_contract(sender_pubkey, msg),
+    }
+}
+```
+
 ## Configuration
 
 ### Environment Variables

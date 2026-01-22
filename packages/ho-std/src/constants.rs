@@ -8,6 +8,7 @@ use {
 //
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 pub const LLM_API_KEYS_FILE: &str = "api-keys.json";
+pub const ENCRYPTED_API_KEYS_FILE: &str = "api-keys.enc";
 pub const ENV_VARIABLES_FILE: &str = ".env";
 pub const DATA_FOLDER_NAME: &str = "memories";
 

@@ -10,7 +10,6 @@ use crate::types::ergors::network::v1::*;
 use commonware_codec::{DecodeExt, Encode, FixedSize};
 use commonware_cryptography::{ed25519, PrivateKeyExt, Signer, Verifier};
 use rand::{CryptoRng, RngCore};
-use rand_core::OsRng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 // Use proto types
@@ -21,36 +20,31 @@ impl NodeIdentityTrait for NodeIdentity {
     type PrivateKey = NodePrivKey;
     type PublicKey = NodePubkey;
 
-    /// Create a new node identitNodeIdentity
+    /// Create a new node identity with default metadata.
+    ///
+    /// NOTE: This does NOT generate keys. Keys are managed by the custody system.
+    /// Use `PasswordEncryptedCustody::create_identity()` to create keys.
     fn new() -> NodeIdentity {
         let mut ego = Self::default();
         ego.user = "ergors".into();
-        ego.generate_keypair(&mut OsRng).expect("rand err");
         ego.api_port = 8080;
         ego.p2p_port = 26969;
         ego.ssh_port = 22;
         ego.node_type = NodeType::Unspecified.as_str_name().into();
         ego.os = HostOs::Unspecified.into();
         ego.host = "127.0.0.1".into();
-        tracing::debug!("NodeIdentity: {:#?}", ego);
+        // Keys are NOT generated here - they are managed by custody
+        // Use custody.create_identity() or custody.public_key() to get keys
+        tracing::debug!("NodeIdentity (no keys): {:#?}", ego);
         ego
     }
 
-    /// Generate a fresh, random keypair.
-    /// TODO: wire into ho-std-keys custodyClient
-    /// The function pulls randomness from the supplied `rng`.
-    fn generate_keypair<R: RngCore + CryptoRng>(&mut self, rng: &mut R) -> crate::HoResult<()> {
-        let private_key = NodePrivKey::new(rng);
-        self.set_keypair(private_key);
-        Ok(())
-    }
-
-    /// Set keypair from existing keys
-    /// TODO: wire into ho-std-keys custodyClient
-    fn set_keypair(&mut self, private_key: Self::PrivateKey) {
-        let npk = &private_key;
-        self.public_key = Some(private_key.id().0.to_vec());
-        self.private_key = Some(npk.private.to_vec());
+    /// Set only the public key (private key managed by custody).
+    ///
+    /// Use this when loading public key from custody for display/network purposes
+    /// without exposing the private key in the config.
+    fn set_public_key(&mut self, public_key: &Self::PublicKey) {
+        self.public_key = Some(public_key.0.to_vec());
     }
 
     /// Get the P2P identity address,  

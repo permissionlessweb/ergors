@@ -243,46 +243,45 @@ impl ProxyRouter {
 /// - "*" matches any sequence of characters
 /// - "?" matches any single character
 fn glob_match(pattern: &str, text: &str) -> bool {
-    let mut pattern_chars = pattern.chars().peekable();
-    let mut text_chars = text.chars().peekable();
+    let pattern_bytes: Vec<char> = pattern.chars().collect();
+    let text_bytes: Vec<char> = text.chars().collect();
 
-    while let Some(p) = pattern_chars.next() {
-        match p {
-            '*' => {
-                // Match zero or more characters
-                if pattern_chars.peek().is_none() {
-                    return true; // Trailing * matches everything
+    fn match_helper(pattern: &[char], text: &[char]) -> bool {
+        match (pattern.first(), text.first()) {
+            // Both consumed = match
+            (None, None) => true,
+            // Pattern consumed but text remains = no match
+            (None, Some(_)) => false,
+            // Pattern has *, try matching zero or more chars
+            (Some('*'), _) => {
+                let rest_pattern = &pattern[1..];
+                // Try matching * with zero chars
+                if match_helper(rest_pattern, text) {
+                    return true;
                 }
-                // Try matching rest of pattern at each position
-                let rest_pattern: String = pattern_chars.collect();
-                let mut remaining = String::new();
-                while text_chars.peek().is_some() {
-                    if glob_match(&rest_pattern, &remaining) {
-                        return true;
-                    }
-                    remaining.push(text_chars.next().unwrap());
+                // Try matching * with one or more chars
+                if !text.is_empty() && match_helper(pattern, &text[1..]) {
+                    return true;
                 }
-                // Try matching at end
-                return glob_match(&rest_pattern, &remaining);
+                false
             }
-            '?' => {
-                // Match any single character
-                if text_chars.next().is_none() {
-                    return false;
-                }
-            }
-            c => {
-                // Match literal character (case-insensitive)
-                match text_chars.next() {
-                    Some(t) if t.to_lowercase().next() == c.to_lowercase().next() => {}
-                    _ => return false,
+            // Pattern has ? which matches any single char
+            (Some('?'), Some(_)) => match_helper(&pattern[1..], &text[1..]),
+            (Some('?'), None) => false,
+            // Literal character match (case-insensitive)
+            (Some(p), Some(t)) => {
+                if p.to_lowercase().next() == t.to_lowercase().next() {
+                    match_helper(&pattern[1..], &text[1..])
+                } else {
+                    false
                 }
             }
+            // Pattern has literal but text is empty
+            (Some(_), None) => false,
         }
     }
 
-    // Pattern consumed, text should also be consumed
-    text_chars.peek().is_none()
+    match_helper(&pattern_bytes, &text_bytes)
 }
 
 /// Infer provider type from URL

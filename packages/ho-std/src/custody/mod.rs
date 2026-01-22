@@ -14,21 +14,22 @@
 // #[macro_use]
 // extern crate serde_with;
 
+#[cfg(feature = "rpc")]
 mod client;
 pub mod encrypted;
 pub mod node_identity;
+#[cfg(feature = "rpc")]
 pub mod null_kms;
 pub mod policy;
 mod pre_auth;
 mod request;
+#[cfg(feature = "rpc")]
 pub mod soft_kms;
 // pub mod threshold;
 mod terminal;
 
+#[cfg(feature = "rpc")]
 pub use client::CustodyClient;
 pub use node_identity::{PasswordEncryptedCustody, PlaintextCustody};
 pub use pre_auth::PreAuthorization;
-pub use request::{
-    AuthorizeRequest,
-    //  AuthorizeValidatorDefinitionRequest, AuthorizeValidatorVoteRequest,
-};
+pub use request::AuthorizeRequest;

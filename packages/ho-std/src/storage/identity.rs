@@ -131,27 +131,22 @@ impl IdentityStorage {
         // Encrypt the private key using password-based encryption
         let encrypted_private_key = encrypt(
             &mut OsRng,
-            password.try_into().map_err(|e: anyhow::Error| {
-                HoError::Cfg(format!("Invalid password: {}", e))
-            })?,
+            password
+                .try_into()
+                .map_err(|e: anyhow::Error| HoError::Cfg(format!("Invalid password: {}", e)))?,
             &private_key_bytes,
         );
-
-        let now = pbjson_types::Timestamp {
-            seconds: chrono::Utc::now().timestamp(),
-            nanos: 0,
-        };
 
         let encrypted_identity = EncryptedNodeIdentity {
             public_key: public_key.0.to_vec(),
             encrypted_private_key,
-            encrypted_at: Some(now.clone()),
+            encrypted_at: None,
             encryption_method: ENCRYPTION_METHOD_V1.to_string(),
             // Salt is embedded in the encrypted blob for our current encryption scheme
             kdf_salt: vec![],
             kdf_params: r#"{"memory_cost":2097152,"time_cost":1,"parallelism":4}"#.to_string(),
             version: 1,
-            metadata,
+            metadata: None,
         };
 
         // Ensure parent directory exists
@@ -199,9 +194,8 @@ impl IdentityStorage {
     /// Get the public key without decryption
     pub fn get_public_key(&self) -> HoResult<NodePubkey> {
         let encrypted = self.load_encrypted()?;
-        NodePubkey::from_bytes(&encrypted.public_key).ok_or_else(|| {
-            HoError::Cfg("Invalid public key in encrypted identity".to_string())
-        })
+        NodePubkey::from_bytes(&encrypted.public_key)
+            .ok_or_else(|| HoError::Cfg("Invalid public key in encrypted identity".to_string()))
     }
 
     /// Decrypt and retrieve the private key
@@ -246,9 +240,9 @@ impl IdentityStorage {
         password: &str,
     ) -> HoResult<NodePrivKey> {
         let decrypted_bytes = decrypt(
-            password.try_into().map_err(|e: anyhow::Error| {
-                HoError::Cfg(format!("Invalid password: {}", e))
-            })?,
+            password
+                .try_into()
+                .map_err(|e: anyhow::Error| HoError::Cfg(format!("Invalid password: {}", e)))?,
             &encrypted.encrypted_private_key,
         )
         .map_err(|e| HoError::Cfg(format!("Failed to decrypt private key: {}", e)))?;
@@ -262,8 +256,7 @@ impl IdentityStorage {
     pub async fn is_unlocked(&self) -> bool {
         let cache = self.cached_key.read().await;
         if let Some(ref cached) = *cache {
-            self.cache_ttl_secs == 0
-                || cached.cached_at.elapsed().as_secs() < self.cache_ttl_secs
+            self.cache_ttl_secs == 0 || cached.cached_at.elapsed().as_secs() < self.cache_ttl_secs
         } else {
             false
         }
@@ -407,9 +400,8 @@ mod tests {
 
     fn setup_temp_storage() -> (TempDir, IdentityStorage) {
         let temp_dir = TempDir::new().unwrap();
-        let identity_path = Utf8PathBuf::from_path_buf(
-            temp_dir.path().join("test_identity.enc")
-        ).unwrap();
+        let identity_path =
+            Utf8PathBuf::from_path_buf(temp_dir.path().join("test_identity.enc")).unwrap();
         let storage = IdentityStorage::new(&identity_path);
         (temp_dir, storage)
     }
@@ -493,7 +485,10 @@ mod tests {
         let original_pubkey = storage.get_public_key().unwrap();
 
         // Change password
-        storage.change_password(old_password, new_password).await.unwrap();
+        storage
+            .change_password(old_password, new_password)
+            .await
+            .unwrap();
 
         // Old password should fail
         assert!(!storage.verify_password(old_password).unwrap());

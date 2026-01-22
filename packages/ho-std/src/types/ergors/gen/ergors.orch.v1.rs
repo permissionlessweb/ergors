@@ -18,6 +18,9 @@ pub struct HoConfig {
     pub custody: ::core::option::Option<
         super::super::storage::v1::NodeIdentityCustodyConfig,
     >,
+    /// CosmWasm VM configuration
+    #[prost(message, optional, tag = "7")]
+    pub cosmwasm: ::core::option::Option<CosmwasmConfig>,
 }
 impl ::prost::Name for HoConfig {
     const NAME: &'static str = "HoConfig";
@@ -27,6 +30,154 @@ impl ::prost::Name for HoConfig {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.HoConfig".into()
+    }
+}
+/// Configuration for the CosmWasm VM and initial contract deployment
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CosmwasmConfig {
+    /// Enable CosmWasm VM
+    #[prost(bool, tag = "1")]
+    pub enabled: bool,
+    /// Directory for WASM module cache
+    #[prost(string, tag = "2")]
+    pub cache_dir: ::prost::alloc::string::String,
+    /// Memory limit for WASM execution (bytes)
+    #[prost(uint64, tag = "3")]
+    pub memory_limit: u64,
+    /// Gas limits for different operation types
+    #[prost(message, optional, tag = "4")]
+    pub gas_limits: ::core::option::Option<CosmwasmGasLimits>,
+    /// Contracts to deploy on coordinator startup
+    #[prost(message, repeated, tag = "5")]
+    pub initial_contracts: ::prost::alloc::vec::Vec<ContractDeployment>,
+}
+impl ::prost::Name for CosmwasmConfig {
+    const NAME: &'static str = "CosmwasmConfig";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.CosmwasmConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.CosmwasmConfig".into()
+    }
+}
+/// Gas limits for CosmWasm operations
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CosmwasmGasLimits {
+    /// Gas limit for contract instantiation
+    #[prost(uint64, tag = "1")]
+    pub instantiate: u64,
+    /// Gas limit for contract execution
+    #[prost(uint64, tag = "2")]
+    pub execute: u64,
+    /// Gas limit for contract queries
+    #[prost(uint64, tag = "3")]
+    pub query: u64,
+    /// Gas limit for contract migration
+    #[prost(uint64, tag = "4")]
+    pub migrate: u64,
+}
+impl ::prost::Name for CosmwasmGasLimits {
+    const NAME: &'static str = "CosmwasmGasLimits";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.CosmwasmGasLimits".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.CosmwasmGasLimits".into()
+    }
+}
+/// Contract deployment specification for startup initialization
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContractDeployment {
+    /// Unique name for this contract (used for resolution)
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// Path to the WASM binary file (absolute or relative to home)
+    #[prost(string, tag = "2")]
+    pub wasm_path: ::prost::alloc::string::String,
+    /// Alternative: embedded WASM bytes (base64 encoded)
+    #[prost(bytes = "vec", tag = "3")]
+    pub wasm_bytes: ::prost::alloc::vec::Vec<u8>,
+    /// Label for the contract instance
+    #[prost(string, tag = "4")]
+    pub label: ::prost::alloc::string::String,
+    /// JSON-encoded instantiation message
+    #[prost(string, tag = "5")]
+    pub init_msg: ::prost::alloc::string::String,
+    /// Admin address (optional - coordinator pubkey if empty)
+    #[prost(string, tag = "6")]
+    pub admin: ::prost::alloc::string::String,
+    /// Whether this contract is required (fail startup if deployment fails)
+    #[prost(bool, tag = "7")]
+    pub required: bool,
+    /// Node types that should deploy this contract
+    /// Empty means all coordinators deploy it
+    #[prost(string, repeated, tag = "8")]
+    pub deploy_on_node_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Contract-specific configuration
+    #[prost(message, optional, tag = "9")]
+    pub config: ::core::option::Option<ContractConfig>,
+}
+impl ::prost::Name for ContractDeployment {
+    const NAME: &'static str = "ContractDeployment";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ContractDeployment".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ContractDeployment".into()
+    }
+}
+/// Additional contract-specific configuration
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContractConfig {
+    /// Whether to skip deployment if contract already exists
+    #[prost(bool, tag = "1")]
+    pub skip_if_exists: bool,
+    /// Migration configuration (for upgrades)
+    #[prost(message, optional, tag = "2")]
+    pub migration: ::core::option::Option<ContractMigration>,
+    /// Custom metadata
+    #[prost(map = "string, string", tag = "3")]
+    pub metadata: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for ContractConfig {
+    const NAME: &'static str = "ContractConfig";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ContractConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ContractConfig".into()
+    }
+}
+/// Contract migration configuration
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ContractMigration {
+    /// Enable automatic migration on startup
+    #[prost(bool, tag = "1")]
+    pub auto_migrate: bool,
+    /// JSON-encoded migration message
+    #[prost(string, tag = "2")]
+    pub migrate_msg: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ContractMigration {
+    const NAME: &'static str = "ContractMigration";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ContractMigration".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ContractMigration".into()
     }
 }
 /// Cosmic Orchestration Types
@@ -1140,6 +1291,17 @@ pub struct BootstrapRequest {
     /// node-identity
     #[prost(message, optional, tag = "2")]
     pub identity: ::core::option::Option<super::super::network::v1::NodeIdentity>,
+    /// Key sharing: signed challenge proving identity ownership
+    #[prost(message, optional, tag = "3")]
+    pub challenge_response: ::core::option::Option<
+        super::super::network::v1::IdentityChallengeResponse,
+    >,
+    /// Key sharing: which providers the node wants access to
+    #[prost(string, repeated, tag = "4")]
+    pub requested_providers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Key sharing: preferred mode (DIRECT or SHAMIR)
+    #[prost(enumeration = "super::super::network::v1::KeySharingMode", tag = "5")]
+    pub preferred_mode: i32,
 }
 impl ::prost::Name for BootstrapRequest {
     const NAME: &'static str = "BootstrapRequest";
@@ -1397,7 +1559,7 @@ impl ::prost::Name for Ec2 {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BootstrapResponse {
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
@@ -1411,6 +1573,17 @@ pub struct BootstrapResponse {
     pub timestamp: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(uint64, tag = "6")]
     pub duration_ms: u64,
+    /// Key sharing: address of identity registry contract
+    #[prost(string, tag = "7")]
+    pub identity_contract_address: ::prost::alloc::string::String,
+    /// Key sharing: secret shares for requested providers
+    #[prost(message, repeated, tag = "8")]
+    pub secret_shares: ::prost::alloc::vec::Vec<super::super::network::v1::SecretShare>,
+    /// Key sharing: next challenge for heartbeat/refresh
+    #[prost(message, optional, tag = "9")]
+    pub next_challenge: ::core::option::Option<
+        super::super::network::v1::IdentityChallenge,
+    >,
 }
 impl ::prost::Name for BootstrapResponse {
     const NAME: &'static str = "BootstrapResponse";

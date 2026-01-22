@@ -19,7 +19,9 @@ impl ::prost::Name for SctParameters {
     }
 }
 /// Sct-specific genesis content.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(
+    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, ::prost::Message,
+)]
 pub struct GenesisContent {
     /// The SctParameters present at genesis.
     #[prost(message, optional, tag = "1")]

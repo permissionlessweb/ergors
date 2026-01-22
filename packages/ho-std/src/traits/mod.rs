@@ -58,12 +58,8 @@ pub trait NodeIdentityTrait {
     where
         Self: Sized;
 
-    /// Generate a fresh keypair
-    fn generate_keypair<R: rand::RngCore + rand::CryptoRng>(&mut self, rng: &mut R)
-        -> HoResult<()>;
-
-    /// Set keypair from existing keys
-    fn set_keypair(&mut self, private_key: Self::PrivateKey);
+    /// Set only the public key (private key managed by custody)
+    fn set_public_key(&mut self, public_key: &Self::PublicKey);
 
     /// Get P2P identity address
     fn p2p_identity(&self) -> String;

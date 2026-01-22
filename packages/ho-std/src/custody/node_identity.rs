@@ -80,7 +80,8 @@ impl PasswordEncryptedCustody {
         password: &str,
         metadata: Option<NodeIdentityMetadata>,
     ) -> HoResult<()> {
-        self.storage.store_identity(private_key, password, metadata)?;
+        self.storage
+            .store_identity(private_key, password, metadata)?;
         Ok(())
     }
 
@@ -110,7 +111,9 @@ impl PasswordEncryptedCustody {
         current_password: &str,
         new_password: &str,
     ) -> HoResult<()> {
-        self.storage.change_password(current_password, new_password).await?;
+        self.storage
+            .change_password(current_password, new_password)
+            .await?;
 
         // Update cached password
         let mut pw = self.password.write().await;
@@ -176,10 +179,7 @@ impl NodeIdentityCustody for PasswordEncryptedCustody {
         let openssh_public = format_openssh_public_key(&public_key, "ergors-node");
         fs::write(&public_key_path, openssh_public)?;
 
-        info!(
-            "📤 Exported SSH keys to: {}",
-            ssh_dir.display()
-        );
+        info!("📤 Exported SSH keys to: {}", ssh_dir.display());
         Ok(())
     }
 
@@ -217,20 +217,6 @@ impl PlaintextCustody {
     /// Create a new plaintext custody with the given private key
     pub fn new(private_key: NodePrivKey) -> Self {
         Self { private_key }
-    }
-
-    /// Create from a NodeIdentity (legacy compatibility)
-    pub fn from_node_identity(identity: &NodeIdentity) -> HoResult<Self> {
-        let private_key_bytes = identity
-            .private_key
-            .as_ref()
-            .ok_or_else(|| HoError::Cfg("NodeIdentity has no private key".to_string()))?;
-
-        let private_key = NodePrivKey::from_bytes(private_key_bytes).ok_or_else(|| {
-            HoError::Cfg("Invalid private key bytes in NodeIdentity".to_string())
-        })?;
-
-        Ok(Self { private_key })
     }
 
     /// Generate a new random identity
@@ -287,10 +273,7 @@ impl NodeIdentityCustody for PlaintextCustody {
         let openssh_public = format_openssh_public_key(&public_key, "ergors-node");
         fs::write(&public_key_path, openssh_public)?;
 
-        info!(
-            "📤 Exported SSH keys to: {}",
-            ssh_dir.display()
-        );
+        info!("📤 Exported SSH keys to: {}", ssh_dir.display());
         Ok(())
     }
 
@@ -417,9 +400,8 @@ mod tests {
     #[tokio::test]
     async fn test_password_encrypted_custody() {
         let temp_dir = TempDir::new().unwrap();
-        let identity_path = Utf8PathBuf::from_path_buf(
-            temp_dir.path().join("test_identity.enc")
-        ).unwrap();
+        let identity_path =
+            Utf8PathBuf::from_path_buf(temp_dir.path().join("test_identity.enc")).unwrap();
 
         let custody = PasswordEncryptedCustody::new(&identity_path);
         let password = "test_password_123";

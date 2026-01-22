@@ -6,6 +6,9 @@ use ho_std::custody::{PasswordEncryptedCustody, PlaintextCustody};
 use ho_std::llm::{HoError, HoResult};
 use ho_std::traits::{NodeIdentityCustody, NodeIdentityCustodyBackend};
 use ho_std::types::ergors::{network::v1::*, orch::v1::*, storage::v1::*};
+pub use ho_std::types::ergors::orch::v1::{
+    ContractConfig, ContractDeployment, ContractMigration, CosmwasmConfig, CosmwasmGasLimits,
+};
 
 use ho_std::traits::file_ops::ConfigLoaderTrait;
 use ho_std::traits::{HoConfigTrait, LLMRouterConfigTrait, NetworkConfigTrait, NodeIdentityTrait};
@@ -29,6 +32,7 @@ impl HoConfigTrait for ErgorsConfig {
             llm: Some(LlmRouterConfig::new(home)),
             home: home.as_str().into(),
             custody: None, // Custody config is managed separately
+            cosmwasm: None, // CosmWasm config is optional
         })
     }
 
@@ -165,14 +169,6 @@ impl ErgorsConfig {
         PasswordEncryptedCustody::with_cache_ttl(identity_path, custody_config.cache_ttl_secs)
     }
 
-    /// Create a plaintext custody backend from the identity in config
-    ///
-    /// WARNING: This uses plaintext key storage and should only be used for
-    /// development/testing. For production, use `create_password_custody()`.
-    pub fn create_plaintext_custody(&self) -> HoResult<PlaintextCustody> {
-        PlaintextCustody::from_node_identity(self.identity())
-    }
-
     /// Create default custody config for new installations
     pub fn default_custody_config() -> NodeIdentityCustodyConfig {
         NodeIdentityCustodyConfig {
@@ -181,6 +177,69 @@ impl ErgorsConfig {
             cache_ttl_secs: 300,          // 5 minutes
             identity_path: String::new(), // Will use default
             remote_endpoint: String::new(),
+        }
+    }
+
+    /// Get CosmWasm configuration (returns default if not configured)
+    pub fn cosmwasm(&self) -> CosmwasmConfig {
+        self.0.cosmwasm.clone().unwrap_or_else(Self::default_cosmwasm_config)
+    }
+
+    /// Set CosmWasm configuration
+    pub fn set_cosmwasm(&mut self, config: CosmwasmConfig) {
+        self.0.cosmwasm = Some(config);
+    }
+
+    /// Get the WASM cache directory
+    pub fn wasm_cache_dir(&self) -> Utf8PathBuf {
+        let cosmwasm = self.cosmwasm();
+        if cosmwasm.cache_dir.is_empty() {
+            Utf8PathBuf::from(&self.0.home).join("data").join("wasm_cache")
+        } else {
+            Utf8PathBuf::from(&cosmwasm.cache_dir)
+        }
+    }
+
+    /// Check if CosmWasm is enabled
+    pub fn cosmwasm_enabled(&self) -> bool {
+        self.0.cosmwasm.as_ref().map(|c| c.enabled).unwrap_or(false)
+    }
+
+    /// Get initial contracts to deploy
+    pub fn initial_contracts(&self) -> Vec<ContractDeployment> {
+        self.0.cosmwasm.as_ref()
+            .map(|c| c.initial_contracts.clone())
+            .unwrap_or_default()
+    }
+
+    /// Create default CosmWasm config
+    pub fn default_cosmwasm_config() -> CosmwasmConfig {
+        CosmwasmConfig {
+            enabled: false,
+            cache_dir: String::new(),    // Will use default
+            memory_limit: 33_554_432,    // 32MB
+            gas_limits: Some(Self::default_gas_limits()),
+            initial_contracts: vec![],
+        }
+    }
+
+    /// Create default gas limits
+    pub fn default_gas_limits() -> CosmwasmGasLimits {
+        CosmwasmGasLimits {
+            instantiate: 100_000_000,
+            execute: 50_000_000,
+            query: 10_000_000,
+            migrate: 75_000_000,
+        }
+    }
+
+    /// Resolve WASM path (handles relative paths)
+    pub fn resolve_wasm_path(&self, wasm_path: &str) -> Utf8PathBuf {
+        let path = Utf8PathBuf::from(wasm_path);
+        if path.is_absolute() {
+            path
+        } else {
+            Utf8PathBuf::from(&self.0.home).join(wasm_path)
         }
     }
 }
@@ -229,7 +288,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Configuration for the LLM proxy service
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProxyConfig {
     /// Enable proxy endpoints
     #[serde(default = "default_true")]
@@ -246,6 +305,17 @@ pub struct ProxyConfig {
     /// Capture settings
     #[serde(default)]
     pub capture: CaptureConfig,
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            bind_addr: default_proxy_addr(),
+            router: ProxyRouterConfig::default(),
+            capture: CaptureConfig::default(),
+        }
+    }
 }
 
 /// Configuration for request/response capture

@@ -77,23 +77,18 @@ impl ErgorsNetworkManifold {
     }
 
     /// Start the network using commonware runtime pattern
-    pub async fn start_network(&mut self, config: &NetworkConfig) -> HoResult<()> {
-        // Get the private key
-        let private_key = self
-            .identity
-            .private_key
-            .as_ref()
-            .ok_or_else(|| HoError::NotInitialized)?
-            .clone();
-
+    ///
+    /// The private key should be obtained from custody before calling this method.
+    pub async fn start_network(
+        &mut self,
+        config: &NetworkConfig,
+        private_key: &NodePrivKey,
+    ) -> HoResult<()> {
         // Parse listen address
         let listen_addr = self.identity.p2p_address();
 
         // Create commonware config using the signer from private key
-        // First convert Vec<u8> to PrivateKey
-        let private_key_bytes: &[u8] = private_key.as_slice();
-        let ed25519_private_key = ed25519::PrivateKey::decode(private_key_bytes)
-            .map_err(|_| HoError::NodePrivKeyNotFound)?;
+        let ed25519_private_key = private_key.private_key();
         let public_key = ed25519_private_key.public_key();
         let namespace = b"ergors-network";
 
@@ -133,6 +128,11 @@ impl ErgorsNetworkManifold {
         // Channel 3: Health
         let (_health_sender, _health_receiver) =
             network.register(3, rate_quota, channels.health_buffer.try_into().unwrap());
+
+        // Channel 4: Key Sharing (rate-limited to 10/sec for security)
+        let key_sharing_quota = Quota::per_second(NonZeroU32::new(10).unwrap());
+        let (_key_sharing_sender, _key_sharing_receiver) =
+            network.register(4, key_sharing_quota, channels.key_sharing_buffer.try_into().unwrap());
 
         // Start the network
         let network_handle = network.start();
@@ -228,6 +228,11 @@ impl ErgorsNetworkManifold {
             network.register(2, rate_quota, channels.state_buffer.try_into().unwrap());
         let (_health_sender, _health_receiver) =
             network.register(3, rate_quota, channels.health_buffer.try_into().unwrap());
+
+        // Channel 4: Key Sharing (rate-limited to 10/sec for security)
+        let key_sharing_quota = governor::Quota::per_second(std::num::NonZeroU32::new(10).expect("10 > 0"));
+        let (_key_sharing_sender, _key_sharing_receiver) =
+            network.register(4, key_sharing_quota, channels.key_sharing_buffer.try_into().unwrap());
 
         // Start the network
         let network_handle = network.start();

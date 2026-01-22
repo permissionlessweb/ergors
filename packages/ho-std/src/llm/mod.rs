@@ -1,5 +1,6 @@
 mod api_keys;
 mod cost;
+mod encrypted_keys;
 mod joints;
 mod macros;
 mod prompt;
@@ -11,6 +12,7 @@ use anyhow::Result;
 // pub use macros::{find_entity, registered_entities, LlmEntityDescriptor};
 pub use api_keys::*;
 pub use cost::*;
+pub use encrypted_keys::*;
 pub use joints::*;
 pub use prompt::*;
 pub use providers::*;

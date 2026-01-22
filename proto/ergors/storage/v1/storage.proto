@@ -7,11 +7,28 @@ package ergors.storage.v1;
 
 import "google/protobuf/timestamp.proto";
 
+// Single encrypted API key for a provider
 message EncryptedApiKey {
   string provider_name = 1;
-  bytes encrypted_key = 2;  // Encrypted with node identity key
+  bytes encrypted_key = 2;  // Encrypted with custody password-derived key
   google.protobuf.Timestamp encrypted_at = 3;
-  string encryption_method = 4;  // e.g., "ed25519-xchacha20poly1305"
+  string encryption_method = 4;  // e.g., "argon2id-chacha20poly1305-v1"
+  bytes nonce = 5;  // Encryption nonce
+}
+
+// Collection of encrypted API keys (stored in Cnidarium)
+message EncryptedApiKeyStore {
+  // Version for migration support
+  uint32 version = 1;
+  // All encrypted provider API keys
+  repeated EncryptedApiKey keys = 2;
+  // Metadata
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  // KDF salt (shared for all keys in this store)
+  bytes kdf_salt = 5;
+  // KDF params (JSON encoded)
+  string kdf_params = 6;
 }
 
 // Encrypted node identity for secure private key storage

@@ -271,7 +271,6 @@ impl ManagementService for ManagementServiceImpl {
             ssh_port: identity.ssh_port,
             node_type: identity.node_type.clone(),
             public_key: identity.public_key.clone(),
-            private_key: None,
         }))
     }
 

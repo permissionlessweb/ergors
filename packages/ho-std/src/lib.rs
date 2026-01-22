@@ -39,7 +39,9 @@ pub mod types;
 // pub mod action;
 // pub mod view;
 pub mod custody;
+pub mod ephemeral;
 pub mod keys;
+pub mod secret_sharing;
 // pub mod wallet;
 // pub mod txhash;
 

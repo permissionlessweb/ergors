@@ -90,6 +90,7 @@ impl ChannelConfig {
             task_buffer: 1000,
             state_buffer: 500,
             health_buffer: 50,
+            key_sharing_buffer: 100, // Channel 4: Key sharing protocol
         }
     }
 }

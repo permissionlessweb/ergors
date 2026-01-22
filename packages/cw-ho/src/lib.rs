@@ -1,8 +1,12 @@
 pub mod auth;
+pub mod bootstrap;
 pub mod call;
 pub mod config;
+#[cfg(feature = "cw")]
+pub mod contracts;
 pub mod daemon;
 pub mod deploy;
+pub mod distribution;
 pub mod git;
 pub mod grpc;
 pub mod headstash;

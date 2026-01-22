@@ -3,6 +3,7 @@ syntax = "proto3";
 package ergors.network.v1;
 
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
 import "git/v1/git.proto";
 
 message Request {
@@ -43,7 +44,6 @@ message NodeIdentity {
   uint32 ssh_port = 6;
   string node_type = 7;
   optional bytes public_key = 8;
-  optional bytes private_key = 9; // Only included when needed, should be handled carefully
 }
 
 
@@ -57,6 +57,8 @@ message NetworkMessage {
     Request request = 6;
     Response response = 7;
     ergors.git.v1.WorkspaceSync workspace_sync = 8;
+    // Key sharing protocol messages (Channel 4)
+    KeySharingMessage key_sharing = 9;
   }
 }
 
@@ -65,6 +67,8 @@ message ChannelConfig {
   uint32 task_buffer = 2;
   uint32 state_buffer = 3;
   uint32 health_buffer = 4;
+  // Channel 4: Key sharing protocol buffer
+  uint32 key_sharing_buffer = 5;
 }
 
 message NodeInfo {
@@ -170,4 +174,148 @@ enum NodeType {
   NODE_TYPE_EXECUTOR = 2;
   NODE_TYPE_REFEREE = 3;
   NODE_TYPE_DEVELOPMENT = 4;
+}
+
+// ========================================
+// Key Sharing & Secret Distribution Types
+// ========================================
+
+// Secret sharing mode selection
+enum KeySharingMode {
+  KEY_SHARING_MODE_UNSPECIFIED = 0;
+  KEY_SHARING_MODE_DIRECT = 1;     // 1-to-1 encrypted sharing (ECDH + ChaCha20Poly1305)
+  KEY_SHARING_MODE_SHAMIR = 2;     // n-of-m threshold sharing (Shamir Secret Sharing)
+}
+
+// Configuration for secret sharing
+message SecretSharingConfig {
+  KeySharingMode mode = 1;
+  // For SHAMIR mode: minimum shares needed to reconstruct
+  uint32 threshold = 2;
+  // For SHAMIR mode: total shares to generate
+  uint32 total_shares = 3;
+  // For DIRECT mode: threshold=1, total_shares=1 (implied)
+}
+
+// A secret share (works for both Direct and Shamir modes)
+message SecretShare {
+  // Unique identifier for this share
+  string share_id = 1;
+  // Share index (1 for direct mode, 1..n for Shamir)
+  uint32 index = 2;
+  // Encrypted share value (encrypted for recipient's public key)
+  bytes encrypted_value = 3;
+  // Public key of the intended recipient
+  bytes recipient_pubkey = 4;
+  // Which API key provider this share is for
+  string provider = 5;
+  // When this share expires
+  google.protobuf.Timestamp expires_at = 6;
+  // Which sharing mode was used
+  KeySharingMode mode = 7;
+  // Feldman VSS commitment (Shamir only, for verification)
+  bytes commitment = 8;
+  // Sharing config for reconstruction
+  SecretSharingConfig config = 9;
+}
+
+// Identity challenge for verification (challenge-response authentication)
+message IdentityChallenge {
+  // Unique challenge identifier
+  string challenge_id = 1;
+  // Random nonce to be signed
+  bytes nonce = 2;
+  // Public key being challenged
+  bytes challenged_pubkey = 3;
+  // When this challenge expires
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+// Response to an identity challenge
+message IdentityChallengeResponse {
+  // The challenge being responded to
+  string challenge_id = 1;
+  // Ed25519 signature over (nonce || timestamp || pubkey)
+  bytes signature = 2;
+  // Public key that created the signature
+  bytes public_key = 3;
+}
+
+// Provider ownership configuration
+enum ProviderOwnership {
+  PROVIDER_OWNERSHIP_UNSPECIFIED = 0;
+  PROVIDER_OWNERSHIP_SHARED = 1;   // Distributed via secret sharing from coordinator
+  PROVIDER_OWNERSHIP_LOCAL = 2;    // Per-node only, not distributed
+}
+
+// Configuration for a provider's key sharing behavior
+message ProviderSharingConfig {
+  // Provider name (e.g., "anthropic", "openai", "ollama")
+  string name = 1;
+  // Ownership type (shared or local)
+  ProviderOwnership ownership = 2;
+  // Secret sharing configuration (for SHARED providers)
+  SecretSharingConfig sharing_config = 3;
+}
+
+// ========================================
+// Key Sharing Protocol Messages (Channel 4)
+// ========================================
+
+// Key sharing protocol message envelope
+message KeySharingMessage {
+  oneof message_type {
+    KeyShareRequest request = 1;
+    KeyShareResponse response = 2;
+    KeyRevocation revocation = 3;
+    KeyHeartbeat heartbeat = 4;
+  }
+}
+
+// Request for API key shares from coordinator
+message KeyShareRequest {
+  // Requester's public key
+  bytes requester_pubkey = 1;
+  // Which providers are being requested
+  repeated string providers = 2;
+  // Signed challenge response proving identity
+  IdentityChallengeResponse challenge_response = 3;
+  // Preferred sharing mode
+  KeySharingMode preferred_mode = 4;
+}
+
+// Response with secret shares
+message KeyShareResponse {
+  // Whether the request was approved
+  bool approved = 1;
+  // Rejection reason if not approved
+  string rejection_reason = 2;
+  // Secret shares for approved providers
+  repeated SecretShare shares = 3;
+  // Next challenge for heartbeat/refresh
+  IdentityChallenge next_challenge = 4;
+}
+
+// Key revocation message (broadcast from coordinator)
+message KeyRevocation {
+  // Provider being revoked
+  string provider = 1;
+  // Node being revoked (empty = all nodes)
+  bytes revoked_pubkey = 2;
+  // Reason for revocation
+  string reason = 3;
+  // Coordinator's signature
+  bytes coordinator_signature = 4;
+  // When revocation takes effect
+  google.protobuf.Timestamp effective_at = 5;
+}
+
+// Heartbeat to maintain key access
+message KeyHeartbeat {
+  // Node's public key
+  bytes public_key = 1;
+  // Signed challenge response
+  IdentityChallengeResponse challenge_response = 2;
+  // Currently held key IDs (for tracking)
+  repeated string active_key_ids = 3;
 }

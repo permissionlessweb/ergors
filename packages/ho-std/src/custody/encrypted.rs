@@ -2,11 +2,15 @@ use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 // use serde_with::{formats::Uppercase, hex::Hex};
+#[cfg(feature = "rpc")]
 use crate::custody::{soft_kms, terminal::Terminal};
+#[cfg(feature = "rpc")]
 use crate::types::ergors::custody::v1::{self as pb, AuthorizeResponse};
 use serde_with::formats::Uppercase;
 use serde_with::hex::Hex;
+#[cfg(feature = "rpc")]
 use tokio::sync::OnceCell;
+#[cfg(feature = "rpc")]
 use tonic::{async_trait, Request, Response, Status};
 
 mod encryption {
@@ -46,13 +50,22 @@ mod encryption {
         let mut key = [0u8; KEY_SIZE];
         // The only reason this function should fail is because of incorrect static parameters
         // we've chosen, since we've validated the length of the password.
+
+        // Use lighter parameters for tests to avoid slow test runs
+        #[cfg(test)]
+        let params = argon2::Params::new(1 << 10, 1, 1, Some(KEY_SIZE))
+            .expect("the parameters should be valid");
+
+        // Production parameters following https://datatracker.ietf.org/doc/html/rfc9106
+        #[cfg(not(test))]
+        let params = argon2::Params::new(1 << 21, 1, 4, Some(KEY_SIZE))
+            .expect("the parameters should be valid");
+
         argon2::Argon2::hash_password_into(
-            // Default from the crate, but hardcoded so it doesn't change under us, and following https://datatracker.ietf.org/doc/html/rfc9106.
             &argon2::Argon2::new(
                 argon2::Algorithm::Argon2id,
                 argon2::Version::V0x13,
-                argon2::Params::new(1 << 21, 1, 4, Some(KEY_SIZE))
-                    .expect("the parameters should be valid"),
+                params,
             ),
             password.0.as_bytes(),
             salt,
@@ -215,11 +228,13 @@ mod encryption {
 pub use encryption::{decrypt, decrypt_with_node_key, encrypt, encrypt_with_node_key};
 
 /// The actual inner configuration used for an encrypted configuration.
+#[cfg(feature = "rpc")]
 #[derive(Serialize, Deserialize)]
 pub enum InnerConfig {
     SoftKms(soft_kms::Config),
 }
 
+#[cfg(feature = "rpc")]
 impl InnerConfig {
     pub fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
         Ok(serde_json::from_slice(data)?)
@@ -233,6 +248,7 @@ impl InnerConfig {
 /// The configuration for the encrypted custody backend.
 ///
 /// This holds a blob of encrypted data that needs to be further deserialized into another config.
+#[cfg(feature = "rpc")]
 #[serde_as]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Config {
@@ -240,6 +256,7 @@ pub struct Config {
     data: Vec<u8>,
 }
 
+#[cfg(feature = "rpc")]
 impl Config {
     /// Create a config from an inner config, with the actual params, and an encryption password.
     pub fn create(password: &str, inner: InnerConfig) -> anyhow::Result<Self> {
@@ -258,12 +275,14 @@ impl Config {
 /// Represents a custody service that uses an encrypted configuration.
 ///
 /// This service wraps either the threshold or solo custody service.
+#[cfg(feature = "rpc")]
 pub struct Encrypted<T> {
     config: Config,
     terminal: T,
     inner: OnceCell<anyhow::Result<Box<dyn pb::custody_service_server::CustodyService>>>,
 }
 
+#[cfg(feature = "rpc")]
 impl<T: Terminal + Clone + Send + Sync + 'static> Encrypted<T> {
     /// Create a new encrypted config, using the terminal to ask for a password
     pub fn new(config: Config, terminal: T) -> Self {
@@ -293,6 +312,7 @@ impl<T: Terminal + Clone + Send + Sync + 'static> Encrypted<T> {
     }
 }
 
+#[cfg(feature = "rpc")]
 #[async_trait]
 impl<T: Terminal + Clone + Send + Sync + 'static> pb::custody_service_server::CustodyService
     for Encrypted<T>

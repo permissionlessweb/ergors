@@ -47,6 +47,11 @@ pub mod state_key {
     pub fn model_provider(model: &str) -> String {
         format!("llm/models/{}", model)
     }
+
+    /// State key for encrypted API key store
+    pub fn encrypted_api_keys() -> &'static str {
+        "custody/api_keys_store"
+    }
 }
 
 /// Extension trait for reading LLM configurations from verifiable storage
@@ -142,7 +147,59 @@ pub trait StateReadExt: StateRead {
         }
     }
 
-    /// Get encrypted API key for a provider
+    /// Get encrypted API key store from storage
+    async fn get_encrypted_api_key_store(
+        &self,
+    ) -> HoResult<Option<crate::types::ergors::storage::v1::EncryptedApiKeyStore>> {
+        use crate::types::ergors::storage::v1::EncryptedApiKeyStore;
+        use prost::Message;
+
+        let key = state_key::encrypted_api_keys();
+        match self.get_raw(key).await {
+            Ok(Some(data)) => {
+                let store = EncryptedApiKeyStore::decode(data.as_slice()).map_err(|e| {
+                    HoError::DeSerialization(format!("Failed to decode encrypted API key store: {}", e))
+                })?;
+                Ok(Some(store))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(HoError::Storage(format!(
+                "Failed to read encrypted API key store: {}",
+                e
+            ))),
+        }
+    }
+
+    /// Load and decrypt all API keys from storage using the custody password
+    ///
+    /// Returns a HashMap of provider_name -> decrypted_api_key
+    async fn load_and_decrypt_api_keys(
+        &self,
+        password: &str,
+    ) -> HoResult<std::collections::HashMap<String, String>> {
+        use crate::llm::EncryptedApiKeyManager;
+        use std::collections::HashMap;
+
+        // Get the encrypted store
+        let store = match self.get_encrypted_api_key_store().await? {
+            Some(s) => s,
+            None => return Ok(HashMap::new()),
+        };
+
+        // Create manager and unlock with password
+        let mut manager = EncryptedApiKeyManager::from_store(&store);
+        manager.unlock(password).map_err(|e| {
+            HoError::Crypto(format!("Failed to unlock API key store: {}", e))
+        })?;
+
+        // Decrypt all keys
+        manager.load_store(&store).map_err(|e| {
+            HoError::Crypto(format!("Failed to decrypt API keys: {}", e))
+        })
+    }
+
+    /// Get encrypted API key for a provider (legacy - for backwards compatibility)
+    #[deprecated(note = "Use get_encrypted_api_key_store instead")]
     async fn get_encrypted_api_key(&self, provider: &str) -> HoResult<Option<Vec<u8>>> {
         let key = format!("custody/api_keys/{}", provider);
         match self.get_raw(&key).await {
@@ -152,51 +209,6 @@ pub trait StateReadExt: StateRead {
                 provider, e
             ))),
         }
-    }
-
-    /// Load all encrypted API keys from storage and decrypt them
-    ///
-    /// This is the single function used to populate custody config with API keys.
-    /// Returns a HashMap of provider_name -> decrypted_api_key
-    async fn load_and_decrypt_api_keys(
-        &self,
-        node_key_bytes: &[u8; 32],
-    ) -> HoResult<std::collections::HashMap<String, String>> {
-        use crate::custody::encrypted::decrypt_with_node_key;
-        use futures::{pin_mut, StreamExt};
-        use std::collections::HashMap;
-
-        let mut api_keys = HashMap::new();
-        let stream = self.prefix_raw("custody/api_keys/");
-
-        // Pin the stream for async iteration
-        pin_mut!(stream);
-
-        while let Some(result) = stream.next().await {
-            if let Ok((key, encrypted_data)) = result {
-                // Extract provider name from key "custody/api_keys/{provider}"
-                if let Some(provider_name) =
-                    String::from_utf8_lossy(&key.as_bytes()).strip_prefix("custody/api_keys/")
-                {
-                    // Decrypt the API key
-                    match decrypt_with_node_key(node_key_bytes, &encrypted_data) {
-                        Ok(decrypted) => match String::from_utf8(decrypted) {
-                            Ok(api_key) => {
-                                api_keys.insert(provider_name.to_string(), api_key);
-                            }
-                            Err(_) => {
-                                tracing::warn!("Invalid UTF-8 for provider: {}", provider_name);
-                            }
-                        },
-                        Err(e) => {
-                            tracing::warn!("Failed to decrypt key for {}: {}", provider_name, e);
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(api_keys)
     }
 }
 
@@ -244,7 +256,20 @@ pub trait StateWriteExt: StateWrite {
         self.delete(key);
     }
 
-    /// Store encrypted API key for a provider
+    /// Store encrypted API key store
+    fn put_encrypted_api_key_store(
+        &mut self,
+        store: &crate::types::ergors::storage::v1::EncryptedApiKeyStore,
+    ) {
+        use prost::Message;
+
+        let key = state_key::encrypted_api_keys().to_string();
+        let data = store.encode_to_vec();
+        self.put_raw(key, data);
+    }
+
+    /// Store encrypted API key for a provider (legacy - for backwards compatibility)
+    #[deprecated(note = "Use put_encrypted_api_key_store instead")]
     fn put_encrypted_api_key(&mut self, provider: &str, encrypted_data: Vec<u8>) {
         let key = format!("custody/api_keys/{}", provider);
         self.put_raw(key, encrypted_data);

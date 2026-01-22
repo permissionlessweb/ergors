@@ -104,9 +104,6 @@ pub struct NodeIdentity {
     pub node_type: ::prost::alloc::string::String,
     #[prost(bytes = "vec", optional, tag = "8")]
     pub public_key: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-    /// Only included when needed, should be handled carefully
-    #[prost(bytes = "vec", optional, tag = "9")]
-    pub private_key: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 impl ::prost::Name for NodeIdentity {
     const NAME: &'static str = "NodeIdentity";
@@ -122,7 +119,7 @@ impl ::prost::Name for NodeIdentity {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NetworkMessage {
-    #[prost(oneof = "network_message::MessageType", tags = "1, 2, 3, 6, 7, 8")]
+    #[prost(oneof = "network_message::MessageType", tags = "1, 2, 3, 6, 7, 8, 9")]
     pub message_type: ::core::option::Option<network_message::MessageType>,
 }
 /// Nested message and enum types in `NetworkMessage`.
@@ -142,6 +139,9 @@ pub mod network_message {
         Response(super::Response),
         #[prost(message, tag = "8")]
         WorkspaceSync(super::super::super::git::v1::WorkspaceSync),
+        /// Key sharing protocol messages (Channel 4)
+        #[prost(message, tag = "9")]
+        KeySharing(super::KeySharingMessage),
     }
 }
 impl ::prost::Name for NetworkMessage {
@@ -165,6 +165,9 @@ pub struct ChannelConfig {
     pub state_buffer: u32,
     #[prost(uint32, tag = "4")]
     pub health_buffer: u32,
+    /// Channel 4: Key sharing protocol buffer
+    #[prost(uint32, tag = "5")]
+    pub key_sharing_buffer: u32,
 }
 impl ::prost::Name for ChannelConfig {
     const NAME: &'static str = "ChannelConfig";
@@ -452,6 +455,288 @@ impl ::prost::Name for Connection {
         "/ergors.network.v1.Connection".into()
     }
 }
+/// Configuration for secret sharing
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SecretSharingConfig {
+    #[prost(enumeration = "KeySharingMode", tag = "1")]
+    pub mode: i32,
+    /// For SHAMIR mode: minimum shares needed to reconstruct
+    #[prost(uint32, tag = "2")]
+    pub threshold: u32,
+    /// For SHAMIR mode: total shares to generate
+    ///
+    /// For DIRECT mode: threshold=1, total_shares=1 (implied)
+    #[prost(uint32, tag = "3")]
+    pub total_shares: u32,
+}
+impl ::prost::Name for SecretSharingConfig {
+    const NAME: &'static str = "SecretSharingConfig";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.SecretSharingConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.SecretSharingConfig".into()
+    }
+}
+/// A secret share (works for both Direct and Shamir modes)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SecretShare {
+    /// Unique identifier for this share
+    #[prost(string, tag = "1")]
+    pub share_id: ::prost::alloc::string::String,
+    /// Share index (1 for direct mode, 1..n for Shamir)
+    #[prost(uint32, tag = "2")]
+    pub index: u32,
+    /// Encrypted share value (encrypted for recipient's public key)
+    #[prost(bytes = "vec", tag = "3")]
+    pub encrypted_value: ::prost::alloc::vec::Vec<u8>,
+    /// Public key of the intended recipient
+    #[prost(bytes = "vec", tag = "4")]
+    pub recipient_pubkey: ::prost::alloc::vec::Vec<u8>,
+    /// Which API key provider this share is for
+    #[prost(string, tag = "5")]
+    pub provider: ::prost::alloc::string::String,
+    /// When this share expires
+    #[prost(message, optional, tag = "6")]
+    pub expires_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Which sharing mode was used
+    #[prost(enumeration = "KeySharingMode", tag = "7")]
+    pub mode: i32,
+    /// Feldman VSS commitment (Shamir only, for verification)
+    #[prost(bytes = "vec", tag = "8")]
+    pub commitment: ::prost::alloc::vec::Vec<u8>,
+    /// Sharing config for reconstruction
+    #[prost(message, optional, tag = "9")]
+    pub config: ::core::option::Option<SecretSharingConfig>,
+}
+impl ::prost::Name for SecretShare {
+    const NAME: &'static str = "SecretShare";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.SecretShare".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.SecretShare".into()
+    }
+}
+/// Identity challenge for verification (challenge-response authentication)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IdentityChallenge {
+    /// Unique challenge identifier
+    #[prost(string, tag = "1")]
+    pub challenge_id: ::prost::alloc::string::String,
+    /// Random nonce to be signed
+    #[prost(bytes = "vec", tag = "2")]
+    pub nonce: ::prost::alloc::vec::Vec<u8>,
+    /// Public key being challenged
+    #[prost(bytes = "vec", tag = "3")]
+    pub challenged_pubkey: ::prost::alloc::vec::Vec<u8>,
+    /// When this challenge expires
+    #[prost(message, optional, tag = "4")]
+    pub expires_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for IdentityChallenge {
+    const NAME: &'static str = "IdentityChallenge";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.IdentityChallenge".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.IdentityChallenge".into()
+    }
+}
+/// Response to an identity challenge
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IdentityChallengeResponse {
+    /// The challenge being responded to
+    #[prost(string, tag = "1")]
+    pub challenge_id: ::prost::alloc::string::String,
+    /// Ed25519 signature over (nonce || timestamp || pubkey)
+    #[prost(bytes = "vec", tag = "2")]
+    pub signature: ::prost::alloc::vec::Vec<u8>,
+    /// Public key that created the signature
+    #[prost(bytes = "vec", tag = "3")]
+    pub public_key: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for IdentityChallengeResponse {
+    const NAME: &'static str = "IdentityChallengeResponse";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.IdentityChallengeResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.IdentityChallengeResponse".into()
+    }
+}
+/// Configuration for a provider's key sharing behavior
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ProviderSharingConfig {
+    /// Provider name (e.g., "anthropic", "openai", "ollama")
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// Ownership type (shared or local)
+    #[prost(enumeration = "ProviderOwnership", tag = "2")]
+    pub ownership: i32,
+    /// Secret sharing configuration (for SHARED providers)
+    #[prost(message, optional, tag = "3")]
+    pub sharing_config: ::core::option::Option<SecretSharingConfig>,
+}
+impl ::prost::Name for ProviderSharingConfig {
+    const NAME: &'static str = "ProviderSharingConfig";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.ProviderSharingConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.ProviderSharingConfig".into()
+    }
+}
+/// Key sharing protocol message envelope
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct KeySharingMessage {
+    #[prost(oneof = "key_sharing_message::MessageType", tags = "1, 2, 3, 4")]
+    pub message_type: ::core::option::Option<key_sharing_message::MessageType>,
+}
+/// Nested message and enum types in `KeySharingMessage`.
+pub mod key_sharing_message {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum MessageType {
+        #[prost(message, tag = "1")]
+        Request(super::KeyShareRequest),
+        #[prost(message, tag = "2")]
+        Response(super::KeyShareResponse),
+        #[prost(message, tag = "3")]
+        Revocation(super::KeyRevocation),
+        #[prost(message, tag = "4")]
+        Heartbeat(super::KeyHeartbeat),
+    }
+}
+impl ::prost::Name for KeySharingMessage {
+    const NAME: &'static str = "KeySharingMessage";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.KeySharingMessage".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.KeySharingMessage".into()
+    }
+}
+/// Request for API key shares from coordinator
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct KeyShareRequest {
+    /// Requester's public key
+    #[prost(bytes = "vec", tag = "1")]
+    pub requester_pubkey: ::prost::alloc::vec::Vec<u8>,
+    /// Which providers are being requested
+    #[prost(string, repeated, tag = "2")]
+    pub providers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Signed challenge response proving identity
+    #[prost(message, optional, tag = "3")]
+    pub challenge_response: ::core::option::Option<IdentityChallengeResponse>,
+    /// Preferred sharing mode
+    #[prost(enumeration = "KeySharingMode", tag = "4")]
+    pub preferred_mode: i32,
+}
+impl ::prost::Name for KeyShareRequest {
+    const NAME: &'static str = "KeyShareRequest";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.KeyShareRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.KeyShareRequest".into()
+    }
+}
+/// Response with secret shares
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct KeyShareResponse {
+    /// Whether the request was approved
+    #[prost(bool, tag = "1")]
+    pub approved: bool,
+    /// Rejection reason if not approved
+    #[prost(string, tag = "2")]
+    pub rejection_reason: ::prost::alloc::string::String,
+    /// Secret shares for approved providers
+    #[prost(message, repeated, tag = "3")]
+    pub shares: ::prost::alloc::vec::Vec<SecretShare>,
+    /// Next challenge for heartbeat/refresh
+    #[prost(message, optional, tag = "4")]
+    pub next_challenge: ::core::option::Option<IdentityChallenge>,
+}
+impl ::prost::Name for KeyShareResponse {
+    const NAME: &'static str = "KeyShareResponse";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.KeyShareResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.KeyShareResponse".into()
+    }
+}
+/// Key revocation message (broadcast from coordinator)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct KeyRevocation {
+    /// Provider being revoked
+    #[prost(string, tag = "1")]
+    pub provider: ::prost::alloc::string::String,
+    /// Node being revoked (empty = all nodes)
+    #[prost(bytes = "vec", tag = "2")]
+    pub revoked_pubkey: ::prost::alloc::vec::Vec<u8>,
+    /// Reason for revocation
+    #[prost(string, tag = "3")]
+    pub reason: ::prost::alloc::string::String,
+    /// Coordinator's signature
+    #[prost(bytes = "vec", tag = "4")]
+    pub coordinator_signature: ::prost::alloc::vec::Vec<u8>,
+    /// When revocation takes effect
+    #[prost(message, optional, tag = "5")]
+    pub effective_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for KeyRevocation {
+    const NAME: &'static str = "KeyRevocation";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.KeyRevocation".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.KeyRevocation".into()
+    }
+}
+/// Heartbeat to maintain key access
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct KeyHeartbeat {
+    /// Node's public key
+    #[prost(bytes = "vec", tag = "1")]
+    pub public_key: ::prost::alloc::vec::Vec<u8>,
+    /// Signed challenge response
+    #[prost(message, optional, tag = "2")]
+    pub challenge_response: ::core::option::Option<IdentityChallengeResponse>,
+    /// Currently held key IDs (for tracking)
+    #[prost(string, repeated, tag = "3")]
+    pub active_key_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for KeyHeartbeat {
+    const NAME: &'static str = "KeyHeartbeat";
+    const PACKAGE: &'static str = "ergors.network.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.network.v1.KeyHeartbeat".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.network.v1.KeyHeartbeat".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -521,6 +806,72 @@ impl NodeType {
             "NODE_TYPE_EXECUTOR" => Some(Self::Executor),
             "NODE_TYPE_REFEREE" => Some(Self::Referee),
             "NODE_TYPE_DEVELOPMENT" => Some(Self::Development),
+            _ => None,
+        }
+    }
+}
+/// Secret sharing mode selection
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum KeySharingMode {
+    Unspecified = 0,
+    /// 1-to-1 encrypted sharing (ECDH + ChaCha20Poly1305)
+    Direct = 1,
+    /// n-of-m threshold sharing (Shamir Secret Sharing)
+    Shamir = 2,
+}
+impl KeySharingMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "KEY_SHARING_MODE_UNSPECIFIED",
+            Self::Direct => "KEY_SHARING_MODE_DIRECT",
+            Self::Shamir => "KEY_SHARING_MODE_SHAMIR",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "KEY_SHARING_MODE_UNSPECIFIED" => Some(Self::Unspecified),
+            "KEY_SHARING_MODE_DIRECT" => Some(Self::Direct),
+            "KEY_SHARING_MODE_SHAMIR" => Some(Self::Shamir),
+            _ => None,
+        }
+    }
+}
+/// Provider ownership configuration
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ProviderOwnership {
+    Unspecified = 0,
+    /// Distributed via secret sharing from coordinator
+    Shared = 1,
+    /// Per-node only, not distributed
+    Local = 2,
+}
+impl ProviderOwnership {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PROVIDER_OWNERSHIP_UNSPECIFIED",
+            Self::Shared => "PROVIDER_OWNERSHIP_SHARED",
+            Self::Local => "PROVIDER_OWNERSHIP_LOCAL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PROVIDER_OWNERSHIP_UNSPECIFIED" => Some(Self::Unspecified),
+            "PROVIDER_OWNERSHIP_SHARED" => Some(Self::Shared),
+            "PROVIDER_OWNERSHIP_LOCAL" => Some(Self::Local),
             _ => None,
         }
     }
