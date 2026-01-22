@@ -3,8 +3,6 @@
 use std::collections::HashSet;
 
 use crate::custody::{AuthorizeRequest, PreAuthorization};
-use crate::types::actions::v1::{ActionPlan, TransactionPlan};
-use crate::types::keys::v1::Address;
 
 use prost::Message;
 use serde::{Deserialize, Serialize};
@@ -190,7 +188,7 @@ mod ed25519_vec_base64 {
 
 impl Policy for AuthPolicy {
     fn check_transaction(&self, request: &AuthorizeRequest) -> anyhow::Result<()> {
-        let plan = &request.plan;
+        let _plan = &request.plan;
         match self {
             // AuthPolicy::DestinationAllowList {
             //     allowed_destination_addresses,
@@ -240,7 +238,7 @@ impl Policy for PreAuthorizationPolicy {
     fn check_transaction(&self, request: &AuthorizeRequest) -> anyhow::Result<()> {
         self.check_pre_authorizations(
             &request.pre_authorizations,
-            TransactionPlan::from(request.plan.clone()).encode_to_vec(),
+            request.plan.clone().encode_to_vec(),
         )
     }
 

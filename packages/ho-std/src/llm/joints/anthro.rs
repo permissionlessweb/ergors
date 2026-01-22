@@ -109,7 +109,7 @@ impl ApiJoint for AnthropticJoint {
             final_usage.total = final_usage.prompt + final_usage.completion;
 
             Ok(PromptResponse {
-                id: (&blake3::Blake3::hash(&req.to_bytes().unwrap())).to_vec(),
+                id: blake3::Blake3::hash(&req.to_bytes().unwrap()).to_vec(),
                 provider: provider_name.to_string(),
                 model: req.model.to_string(),
                 prompt: blake3::Blake3::hash(&req.to_bytes().unwrap()).to_string(),

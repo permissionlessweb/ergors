@@ -226,7 +226,7 @@ impl SSHConnectionManager {
         if output.status.success() {
             let size_output = tokio::process::Command::new(CMD_BASH)
                 .arg("-c")
-                .arg(&format!(
+                .arg(format!(
                     "ls -lh {} | awk '{{print $5}}'",
                     WORKSPACE_ARCHIVE_PATH
                 ))

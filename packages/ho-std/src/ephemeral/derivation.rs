@@ -66,7 +66,7 @@ fn extract(salt: &[u8], ikm: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(salt);
     hasher.update(ikm);
-    hasher.update(&(salt.len() as u32).to_le_bytes());
+    hasher.update((salt.len() as u32).to_le_bytes());
     let result = hasher.finalize();
 
     let mut prk = [0u8; 32];
@@ -81,7 +81,7 @@ fn expand(prk: &[u8; 32], info: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(prk);
     hasher.update(info);
-    hasher.update(&[0x01]); // Counter for first block
+    hasher.update([0x01]); // Counter for first block
     let result = hasher.finalize();
 
     let mut okm = [0u8; 32];
@@ -107,9 +107,9 @@ pub fn derive_multiple_keys(master_key: &[u8], context: &[u8], count: u8) -> Vec
     (1..=count)
         .map(|i| {
             let mut hasher = Sha256::new();
-            hasher.update(&prk);
+            hasher.update(prk);
             hasher.update(EPHEMERAL_KEY_INFO);
-            hasher.update(&[i]);
+            hasher.update([i]);
             let result = hasher.finalize();
 
             let mut key = [0u8; 32];

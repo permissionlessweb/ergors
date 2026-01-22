@@ -23,6 +23,8 @@ const USER_INDEX_PREFIX: &str = "users/";
 const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
 const OP_PREFIX: &str = "operations/";
 const API_KEY_PREFIX: &str = "custody/api_keys/";
+const COSMOS_KEY_STORE_KEY: &str = "custody/cosmos_key_store";
+const AKASH_WORKFLOW_PREFIX: &str = "akash_workflows/";
 // const HEADSTASH: &str = "headstash/";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions/";
 const PROXY_CLIENT_INDEX_PREFIX: &str = "proxy_sessions_by_client/";
@@ -580,6 +582,129 @@ impl ErgorsStorage {
         }
 
         Ok(providers)
+    }
+
+    // ========================================
+    // Cosmos Key Storage Methods
+    // ========================================
+
+    /// Store the cosmos key store (all encrypted cosmos keys)
+    pub async fn put_cosmos_key_store(&self, store: &CosmosKeyStore) -> HoResult<()> {
+        use ho_std::Message as _;
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let data = store.encode_to_vec();
+        delta.put_raw(COSMOS_KEY_STORE_KEY.to_string(), data);
+        self.cs.commit(delta).await?;
+        info!(
+            "🔐 Stored cosmos key store with {} keys",
+            store.keys.len()
+        );
+        Ok(())
+    }
+
+    /// Get the cosmos key store
+    pub async fn get_cosmos_key_store(&self) -> HoResult<Option<CosmosKeyStore>> {
+        use ho_std::Message as _;
+        let snapshot = self.cs.latest_snapshot();
+        match snapshot.get_raw(COSMOS_KEY_STORE_KEY).await {
+            Ok(Some(data)) => {
+                let store = CosmosKeyStore::decode(data.as_slice()).map_err(|e| {
+                    HoError::DeSerialization(format!("Failed to decode cosmos key store: {}", e))
+                })?;
+                Ok(Some(store))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get cosmos key store: {}", e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Check if cosmos key store exists
+    pub async fn has_cosmos_key_store(&self) -> bool {
+        let snapshot = self.cs.latest_snapshot();
+        matches!(snapshot.get_raw(COSMOS_KEY_STORE_KEY).await, Ok(Some(_)))
+    }
+
+    // ========================================
+    // Akash Workflow Storage Methods
+    // ========================================
+
+    /// Store an Akash deployment workflow
+    pub async fn put_akash_workflow(&self, workflow: &AkashDeploymentWorkflow) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = format!("{}{}", AKASH_WORKFLOW_PREFIX, workflow.session_id);
+        let data = serde_json::to_vec(workflow)?;
+        delta.put_raw(key.clone(), data);
+        self.cs.commit(delta).await?;
+        info!(
+            "💾 Stored Akash workflow: {} (step: {:?})",
+            workflow.session_id, workflow.current_step
+        );
+        Ok(())
+    }
+
+    /// Get an Akash deployment workflow by session ID
+    pub async fn get_akash_workflow(
+        &self,
+        session_id: &str,
+    ) -> HoResult<Option<AkashDeploymentWorkflow>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}{}", AKASH_WORKFLOW_PREFIX, session_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let workflow: AkashDeploymentWorkflow = serde_json::from_slice(&data)?;
+                Ok(Some(workflow))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get Akash workflow {}: {}", session_id, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// List all Akash workflows
+    pub async fn list_akash_workflows(&self) -> HoResult<Vec<AkashDeploymentWorkflow>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut workflows = Vec::new();
+        let mut stream = snapshot.prefix_raw(AKASH_WORKFLOW_PREFIX);
+
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_, data)) => {
+                    match serde_json::from_slice::<AkashDeploymentWorkflow>(&data) {
+                        Ok(workflow) => workflows.push(workflow),
+                        Err(e) => warn!("Failed to deserialize Akash workflow: {}", e),
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading Akash workflow stream: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        // Sort by created_at (most recent first)
+        workflows.sort_by(|a, b| {
+            let b_ts = b.created_at.as_ref().map(|t| t.seconds).unwrap_or(0);
+            let a_ts = a.created_at.as_ref().map(|t| t.seconds).unwrap_or(0);
+            b_ts.cmp(&a_ts)
+        });
+
+        Ok(workflows)
+    }
+
+    /// Delete an Akash workflow
+    pub async fn delete_akash_workflow(&self, session_id: &str) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = format!("{}{}", AKASH_WORKFLOW_PREFIX, session_id);
+        delta.delete(key);
+        self.cs.commit(delta).await?;
+        info!("🗑️  Deleted Akash workflow: {}", session_id);
+        Ok(())
     }
 
     // ========================================

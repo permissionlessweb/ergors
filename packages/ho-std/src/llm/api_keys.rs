@@ -325,9 +325,7 @@ pub fn configure_api_keys_interactive(api_keys_path: &Utf8PathBuf) -> Result<()>
                             running = false;
                         }
                         Event::Key(Key::Up) => {
-                            if cursor_pos > 0 {
-                                cursor_pos -= 1;
-                            }
+                            cursor_pos = cursor_pos.saturating_sub(1);
                         }
                         Event::Key(Key::Down) => {
                             if cursor_pos < all_providers.len() - 1 {
@@ -390,9 +388,7 @@ pub fn configure_api_keys_interactive(api_keys_path: &Utf8PathBuf) -> Result<()>
                             cursor_pos = 0;
                         }
                         Event::Key(Key::Up) => {
-                            if default_provider_index > 0 {
-                                default_provider_index -= 1;
-                            }
+                            default_provider_index = default_provider_index.saturating_sub(1);
                         }
                         Event::Key(Key::Down) => {
                             let selected_count =

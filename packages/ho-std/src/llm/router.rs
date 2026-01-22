@@ -43,7 +43,7 @@ impl LlmRouter {
     pub async fn handle_request(&self, req: &PromptRequest, m: &str) -> HoResult<PromptResponse> {
         // Find provider that supports this m
         let provider = self.find_provider_for_model(m).ok_or_else(|| {
-            let ap: Vec<String> = self.ps.keys().map(|k| k.clone()).collect();
+            let ap: Vec<String> = self.ps.keys().cloned().collect();
             HoError::Llm(format!(
                 "No {} provider found, available provider: {:?}",
                 m, ap

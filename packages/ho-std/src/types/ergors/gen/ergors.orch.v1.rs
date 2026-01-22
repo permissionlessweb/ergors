@@ -2345,6 +2345,626 @@ impl ::prost::Name for UpdateDeploymentResponse {
         "/ergors.orch.v1.UpdateDeploymentResponse".into()
     }
 }
+/// Encrypted cosmos mnemonic stored in Cnidarium
+/// Uses same encryption pattern as EncryptedNodeIdentity
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct EncryptedCosmosMnemonic {
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub encrypted_mnemonic: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub nonce: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub kdf_salt: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "5")]
+    pub kdf_params: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub encryption_method: ::prost::alloc::string::String,
+    #[prost(string, tag = "7")]
+    pub chain_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "8")]
+    pub address_prefix: ::prost::alloc::string::String,
+    #[prost(string, tag = "9")]
+    pub default_hd_path: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "10")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "11")]
+    pub last_used_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(uint32, tag = "12")]
+    pub version: u32,
+}
+impl ::prost::Name for EncryptedCosmosMnemonic {
+    const NAME: &'static str = "EncryptedCosmosMnemonic";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.EncryptedCosmosMnemonic".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.EncryptedCosmosMnemonic".into()
+    }
+}
+/// Derived account from HD path (non-sensitive)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CosmosAccount {
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub hd_path: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub address: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "4")]
+    pub public_key: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "5")]
+    pub account_index: u32,
+}
+impl ::prost::Name for CosmosAccount {
+    const NAME: &'static str = "CosmosAccount";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.CosmosAccount".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.CosmosAccount".into()
+    }
+}
+/// Collection of encrypted cosmos keys stored in Cnidarium
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CosmosKeyStore {
+    #[prost(uint32, tag = "1")]
+    pub version: u32,
+    #[prost(message, repeated, tag = "2")]
+    pub keys: ::prost::alloc::vec::Vec<EncryptedCosmosMnemonic>,
+    #[prost(message, repeated, tag = "3")]
+    pub derived_accounts: ::prost::alloc::vec::Vec<CosmosAccount>,
+    #[prost(message, optional, tag = "4")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for CosmosKeyStore {
+    const NAME: &'static str = "CosmosKeyStore";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.CosmosKeyStore".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.CosmosKeyStore".into()
+    }
+}
+/// Authz grant tracking for workflow permissions
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashAuthzGrant {
+    #[prost(string, tag = "1")]
+    pub granter: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub grantee: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "3")]
+    pub msg_type_urls: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "4")]
+    pub expiration: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(string, tag = "5")]
+    pub grant_tx_hash: ::prost::alloc::string::String,
+    #[prost(bool, tag = "6")]
+    pub active: bool,
+}
+impl ::prost::Name for AkashAuthzGrant {
+    const NAME: &'static str = "AkashAuthzGrant";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashAuthzGrant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashAuthzGrant".into()
+    }
+}
+/// Feegrant allowance tracking
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashFeegrantAllowance {
+    #[prost(string, tag = "1")]
+    pub granter: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub grantee: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub spend_limit_uakt: u64,
+    #[prost(uint64, tag = "4")]
+    pub spent_uakt: u64,
+    #[prost(message, optional, tag = "5")]
+    pub expiration: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(string, repeated, tag = "6")]
+    pub allowed_messages: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag = "7")]
+    pub grant_tx_hash: ::prost::alloc::string::String,
+    #[prost(bool, tag = "8")]
+    pub active: bool,
+}
+impl ::prost::Name for AkashFeegrantAllowance {
+    const NAME: &'static str = "AkashFeegrantAllowance";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashFeegrantAllowance".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashFeegrantAllowance".into()
+    }
+}
+/// SDL template variable
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SdlVariable {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub default_value: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub var_type: ::prost::alloc::string::String,
+    #[prost(bool, tag = "5")]
+    pub required: bool,
+}
+impl ::prost::Name for SdlVariable {
+    const NAME: &'static str = "SdlVariable";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.SdlVariable".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.SdlVariable".into()
+    }
+}
+/// Configured SDL ready for deployment
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConfiguredSdl {
+    #[prost(string, tag = "1")]
+    pub template_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub resolved_content: ::prost::alloc::string::String,
+    #[prost(map = "string, string", tag = "3")]
+    pub variable_values: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    #[prost(bytes = "vec", tag = "4")]
+    pub content_hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "5")]
+    pub configured_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for ConfiguredSdl {
+    const NAME: &'static str = "ConfiguredSdl";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ConfiguredSdl".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ConfiguredSdl".into()
+    }
+}
+/// Provider selection info
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashProviderSelection {
+    #[prost(string, tag = "1")]
+    pub provider_address: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub reputation_score: u32,
+    #[prost(uint64, tag = "3")]
+    pub bid_price_uakt: u64,
+    #[prost(uint32, tag = "4")]
+    pub total_bids_received: u32,
+    #[prost(message, optional, tag = "5")]
+    pub selected_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(bool, tag = "6")]
+    pub is_trusted_provider: bool,
+}
+impl ::prost::Name for AkashProviderSelection {
+    const NAME: &'static str = "AkashProviderSelection";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashProviderSelection".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashProviderSelection".into()
+    }
+}
+/// Endpoint test result
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct EndpointTestResult {
+    #[prost(string, tag = "1")]
+    pub service_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub endpoint_uri: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub success: bool,
+    #[prost(uint64, tag = "4")]
+    pub response_time_ms: u64,
+    #[prost(string, tag = "5")]
+    pub test_type: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub error_message: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "7")]
+    pub tested_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for EndpointTestResult {
+    const NAME: &'static str = "EndpointTestResult";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.EndpointTestResult".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.EndpointTestResult".into()
+    }
+}
+/// Main Akash deployment workflow state
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AkashDeploymentWorkflow {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "AkashWorkflowStep", tag = "2")]
+    pub current_step: i32,
+    #[prost(enumeration = "AkashWorkflowStatus", tag = "3")]
+    pub status: i32,
+    /// Key management
+    #[prost(string, tag = "4")]
+    pub selected_key_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub account_address: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "6")]
+    pub hd_account_index: u32,
+    /// Permission state
+    #[prost(message, repeated, tag = "7")]
+    pub authz_grants: ::prost::alloc::vec::Vec<AkashAuthzGrant>,
+    #[prost(message, repeated, tag = "8")]
+    pub feegrants: ::prost::alloc::vec::Vec<AkashFeegrantAllowance>,
+    /// SDL configuration
+    #[prost(message, optional, tag = "9")]
+    pub configured_sdl: ::core::option::Option<ConfiguredSdl>,
+    /// Deployment state (uses existing AkashRuntime)
+    #[prost(message, optional, tag = "10")]
+    pub deployment: ::core::option::Option<AkashRuntime>,
+    #[prost(message, optional, tag = "11")]
+    pub provider: ::core::option::Option<AkashProviderSelection>,
+    /// Retrieved endpoints
+    #[prost(map = "string, string", tag = "12")]
+    pub endpoints: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    /// Test results
+    #[prost(message, repeated, tag = "13")]
+    pub test_results: ::prost::alloc::vec::Vec<EndpointTestResult>,
+    /// Error tracking
+    #[prost(string, tag = "14")]
+    pub last_error: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "15")]
+    pub retry_count: u32,
+    /// Timestamps
+    #[prost(message, optional, tag = "16")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "17")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "18")]
+    pub completed_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Chain configuration
+    #[prost(string, tag = "19")]
+    pub chain_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "20")]
+    pub node_endpoint: ::prost::alloc::string::String,
+    /// Workflow configuration
+    #[prost(uint32, tag = "21")]
+    pub max_retries: u32,
+    #[prost(uint64, tag = "22")]
+    pub timeout_seconds: u64,
+    /// Grant request state (for GRANT_REQUEST/GRANT_WAIT steps)
+    #[prost(message, optional, tag = "23")]
+    pub grant_request: ::core::option::Option<WorkflowGrantState>,
+    /// Grant request configuration (from CLI flags)
+    ///
+    /// Granter's node pubkey
+    #[prost(bytes = "vec", tag = "24")]
+    pub request_grant_from: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, tag = "25")]
+    pub grant_duration_seconds: u64,
+    #[prost(uint64, tag = "26")]
+    pub grant_spend_limit_uakt: u64,
+    #[prost(string, tag = "27")]
+    pub grant_purpose: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AkashDeploymentWorkflow {
+    const NAME: &'static str = "AkashDeploymentWorkflow";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashDeploymentWorkflow".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashDeploymentWorkflow".into()
+    }
+}
+/// Workflow step log entry for audit
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashWorkflowStepLog {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "AkashWorkflowStep", tag = "2")]
+    pub step: i32,
+    #[prost(bool, tag = "3")]
+    pub success: bool,
+    #[prost(uint64, tag = "4")]
+    pub duration_ms: u64,
+    #[prost(string, tag = "5")]
+    pub message: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub tx_hash: ::prost::alloc::string::String,
+    #[prost(string, tag = "7")]
+    pub error: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "8")]
+    pub timestamp: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for AkashWorkflowStepLog {
+    const NAME: &'static str = "AkashWorkflowStepLog";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashWorkflowStepLog".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashWorkflowStepLog".into()
+    }
+}
+/// Provider reputation record
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashProviderReputation {
+    #[prost(string, tag = "1")]
+    pub provider_address: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub score: u32,
+    #[prost(uint64, tag = "3")]
+    pub successful_deployments: u64,
+    #[prost(uint64, tag = "4")]
+    pub failed_deployments: u64,
+    #[prost(uint32, tag = "5")]
+    pub avg_uptime_percent: u32,
+    #[prost(uint64, tag = "6")]
+    pub avg_response_time_ms: u64,
+    #[prost(bool, tag = "7")]
+    pub is_trusted: bool,
+    #[prost(message, optional, tag = "8")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for AkashProviderReputation {
+    const NAME: &'static str = "AkashProviderReputation";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashProviderReputation".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashProviderReputation".into()
+    }
+}
+/// Default parameters for grants a granter will issue
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GrantDefaults {
+    #[prost(uint64, tag = "1")]
+    pub max_duration_seconds: u64,
+    #[prost(uint64, tag = "2")]
+    pub max_spend_limit_uakt: u64,
+    #[prost(string, repeated, tag = "3")]
+    pub allowed_msg_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "4")]
+    pub auto_approve_delay_seconds: u64,
+}
+impl ::prost::Name for GrantDefaults {
+    const NAME: &'static str = "GrantDefaults";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GrantDefaults".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GrantDefaults".into()
+    }
+}
+/// Custom limits for a specific whitelisted requester
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GrantLimits {
+    #[prost(uint64, tag = "1")]
+    pub max_duration_seconds: u64,
+    #[prost(uint64, tag = "2")]
+    pub max_spend_limit_uakt: u64,
+    #[prost(uint32, tag = "3")]
+    pub max_concurrent_grants: u32,
+}
+impl ::prost::Name for GrantLimits {
+    const NAME: &'static str = "GrantLimits";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GrantLimits".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GrantLimits".into()
+    }
+}
+/// Parameters for a grant request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GrantRequestParams {
+    #[prost(uint64, tag = "1")]
+    pub duration_seconds: u64,
+    #[prost(uint64, tag = "2")]
+    pub spend_limit_uakt: u64,
+    #[prost(string, repeated, tag = "3")]
+    pub msg_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Reason for the grant request
+    #[prost(string, tag = "4")]
+    pub purpose: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GrantRequestParams {
+    const NAME: &'static str = "GrantRequestParams";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GrantRequestParams".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GrantRequestParams".into()
+    }
+}
+/// A grant request submitted to the contract
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GrantRequest {
+    #[prost(uint64, tag = "1")]
+    pub id: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub requester_pubkey: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub grantee_address: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "4")]
+    pub granter_pubkey: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "5")]
+    pub granter_address: ::prost::alloc::string::String,
+    #[prost(enumeration = "GrantType", tag = "6")]
+    pub grant_type: i32,
+    #[prost(message, optional, tag = "7")]
+    pub params: ::core::option::Option<GrantRequestParams>,
+    #[prost(enumeration = "GrantRequestStatus", tag = "8")]
+    pub status: i32,
+    #[prost(message, optional, tag = "9")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "10")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(string, tag = "11")]
+    pub tx_hash: ::prost::alloc::string::String,
+    #[prost(string, tag = "12")]
+    pub rejection_reason: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GrantRequest {
+    const NAME: &'static str = "GrantRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GrantRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GrantRequest".into()
+    }
+}
+/// Information about a registered granter
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GranterInfo {
+    #[prost(bytes = "vec", tag = "1")]
+    pub node_pubkey: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "2")]
+    pub granter_address: ::prost::alloc::string::String,
+    #[prost(enumeration = "GrantAcceptanceMode", tag = "3")]
+    pub mode: i32,
+    #[prost(message, optional, tag = "4")]
+    pub defaults: ::core::option::Option<GrantDefaults>,
+    #[prost(uint32, tag = "5")]
+    pub active_grants: u32,
+    #[prost(uint64, tag = "6")]
+    pub total_granted_uakt: u64,
+    #[prost(message, optional, tag = "7")]
+    pub registered_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for GranterInfo {
+    const NAME: &'static str = "GranterInfo";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GranterInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GranterInfo".into()
+    }
+}
+/// Whitelist entry for a granter
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WhitelistEntry {
+    #[prost(bytes = "vec", tag = "1")]
+    pub requester_pubkey: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub custom_limits: ::core::option::Option<GrantLimits>,
+    #[prost(string, tag = "3")]
+    pub note: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "4")]
+    pub added_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for WhitelistEntry {
+    const NAME: &'static str = "WhitelistEntry";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.WhitelistEntry".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.WhitelistEntry".into()
+    }
+}
+/// Granter configuration stored in node config
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GranterConfig {
+    #[prost(bool, tag = "1")]
+    pub enabled: bool,
+    #[prost(enumeration = "GrantAcceptanceMode", tag = "2")]
+    pub mode: i32,
+    #[prost(string, tag = "3")]
+    pub contract_address: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "4")]
+    pub defaults: ::core::option::Option<GrantDefaults>,
+    #[prost(message, repeated, tag = "5")]
+    pub whitelist: ::prost::alloc::vec::Vec<WhitelistEntry>,
+}
+impl ::prost::Name for GranterConfig {
+    const NAME: &'static str = "GranterConfig";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GranterConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GranterConfig".into()
+    }
+}
+/// Workflow grant request state (used during deployment)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkflowGrantState {
+    #[prost(uint64, tag = "1")]
+    pub request_id: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub granter_pubkey: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub granter_address: ::prost::alloc::string::String,
+    #[prost(enumeration = "GrantType", tag = "4")]
+    pub grant_type: i32,
+    #[prost(message, optional, tag = "5")]
+    pub params: ::core::option::Option<GrantRequestParams>,
+    #[prost(enumeration = "GrantRequestStatus", tag = "6")]
+    pub status: i32,
+    #[prost(message, optional, tag = "7")]
+    pub submitted_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(string, tag = "8")]
+    pub tx_hash: ::prost::alloc::string::String,
+    #[prost(string, tag = "9")]
+    pub rejection_reason: ::prost::alloc::string::String,
+}
+impl ::prost::Name for WorkflowGrantState {
+    const NAME: &'static str = "WorkflowGrantState";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.WorkflowGrantState".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.WorkflowGrantState".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2620,6 +3240,258 @@ impl DeploymentStatus {
             "DEPLOYMENT_STATUS_STOPPED" => Some(Self::Stopped),
             "DEPLOYMENT_STATUS_FAILED" => Some(Self::Failed),
             "DEPLOYMENT_STATUS_TERMINATED" => Some(Self::Terminated),
+            _ => None,
+        }
+    }
+}
+/// Workflow step enumeration for Akash deployment wizard
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AkashWorkflowStep {
+    Unspecified = 0,
+    KeySelection = 1,
+    BalanceCheck = 2,
+    /// NEW: Request authz/feegrant from granter
+    GrantRequest = 3,
+    /// NEW: Wait for grant approval
+    GrantWait = 4,
+    AuthzSetup = 5,
+    FeegrantSetup = 6,
+    SdlConfiguration = 7,
+    CertificateSetup = 8,
+    DeploymentCreate = 9,
+    BidWait = 10,
+    ProviderSelection = 11,
+    LeaseCreate = 12,
+    ManifestSend = 13,
+    EndpointRetrieval = 14,
+    EndpointTesting = 15,
+    Complete = 16,
+    Failed = 17,
+}
+impl AkashWorkflowStep {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "AKASH_WORKFLOW_STEP_UNSPECIFIED",
+            Self::KeySelection => "AKASH_WORKFLOW_STEP_KEY_SELECTION",
+            Self::BalanceCheck => "AKASH_WORKFLOW_STEP_BALANCE_CHECK",
+            Self::GrantRequest => "AKASH_WORKFLOW_STEP_GRANT_REQUEST",
+            Self::GrantWait => "AKASH_WORKFLOW_STEP_GRANT_WAIT",
+            Self::AuthzSetup => "AKASH_WORKFLOW_STEP_AUTHZ_SETUP",
+            Self::FeegrantSetup => "AKASH_WORKFLOW_STEP_FEEGRANT_SETUP",
+            Self::SdlConfiguration => "AKASH_WORKFLOW_STEP_SDL_CONFIGURATION",
+            Self::CertificateSetup => "AKASH_WORKFLOW_STEP_CERTIFICATE_SETUP",
+            Self::DeploymentCreate => "AKASH_WORKFLOW_STEP_DEPLOYMENT_CREATE",
+            Self::BidWait => "AKASH_WORKFLOW_STEP_BID_WAIT",
+            Self::ProviderSelection => "AKASH_WORKFLOW_STEP_PROVIDER_SELECTION",
+            Self::LeaseCreate => "AKASH_WORKFLOW_STEP_LEASE_CREATE",
+            Self::ManifestSend => "AKASH_WORKFLOW_STEP_MANIFEST_SEND",
+            Self::EndpointRetrieval => "AKASH_WORKFLOW_STEP_ENDPOINT_RETRIEVAL",
+            Self::EndpointTesting => "AKASH_WORKFLOW_STEP_ENDPOINT_TESTING",
+            Self::Complete => "AKASH_WORKFLOW_STEP_COMPLETE",
+            Self::Failed => "AKASH_WORKFLOW_STEP_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AKASH_WORKFLOW_STEP_UNSPECIFIED" => Some(Self::Unspecified),
+            "AKASH_WORKFLOW_STEP_KEY_SELECTION" => Some(Self::KeySelection),
+            "AKASH_WORKFLOW_STEP_BALANCE_CHECK" => Some(Self::BalanceCheck),
+            "AKASH_WORKFLOW_STEP_GRANT_REQUEST" => Some(Self::GrantRequest),
+            "AKASH_WORKFLOW_STEP_GRANT_WAIT" => Some(Self::GrantWait),
+            "AKASH_WORKFLOW_STEP_AUTHZ_SETUP" => Some(Self::AuthzSetup),
+            "AKASH_WORKFLOW_STEP_FEEGRANT_SETUP" => Some(Self::FeegrantSetup),
+            "AKASH_WORKFLOW_STEP_SDL_CONFIGURATION" => Some(Self::SdlConfiguration),
+            "AKASH_WORKFLOW_STEP_CERTIFICATE_SETUP" => Some(Self::CertificateSetup),
+            "AKASH_WORKFLOW_STEP_DEPLOYMENT_CREATE" => Some(Self::DeploymentCreate),
+            "AKASH_WORKFLOW_STEP_BID_WAIT" => Some(Self::BidWait),
+            "AKASH_WORKFLOW_STEP_PROVIDER_SELECTION" => Some(Self::ProviderSelection),
+            "AKASH_WORKFLOW_STEP_LEASE_CREATE" => Some(Self::LeaseCreate),
+            "AKASH_WORKFLOW_STEP_MANIFEST_SEND" => Some(Self::ManifestSend),
+            "AKASH_WORKFLOW_STEP_ENDPOINT_RETRIEVAL" => Some(Self::EndpointRetrieval),
+            "AKASH_WORKFLOW_STEP_ENDPOINT_TESTING" => Some(Self::EndpointTesting),
+            "AKASH_WORKFLOW_STEP_COMPLETE" => Some(Self::Complete),
+            "AKASH_WORKFLOW_STEP_FAILED" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+/// Workflow status
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AkashWorkflowStatus {
+    Unspecified = 0,
+    Pending = 1,
+    Running = 2,
+    Paused = 3,
+    Completed = 4,
+    Failed = 5,
+    Cancelled = 6,
+}
+impl AkashWorkflowStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "AKASH_WORKFLOW_STATUS_UNSPECIFIED",
+            Self::Pending => "AKASH_WORKFLOW_STATUS_PENDING",
+            Self::Running => "AKASH_WORKFLOW_STATUS_RUNNING",
+            Self::Paused => "AKASH_WORKFLOW_STATUS_PAUSED",
+            Self::Completed => "AKASH_WORKFLOW_STATUS_COMPLETED",
+            Self::Failed => "AKASH_WORKFLOW_STATUS_FAILED",
+            Self::Cancelled => "AKASH_WORKFLOW_STATUS_CANCELLED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AKASH_WORKFLOW_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "AKASH_WORKFLOW_STATUS_PENDING" => Some(Self::Pending),
+            "AKASH_WORKFLOW_STATUS_RUNNING" => Some(Self::Running),
+            "AKASH_WORKFLOW_STATUS_PAUSED" => Some(Self::Paused),
+            "AKASH_WORKFLOW_STATUS_COMPLETED" => Some(Self::Completed),
+            "AKASH_WORKFLOW_STATUS_FAILED" => Some(Self::Failed),
+            "AKASH_WORKFLOW_STATUS_CANCELLED" => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
+}
+/// Type of grant being requested
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum GrantType {
+    Unspecified = 0,
+    /// Only authz permissions
+    AuthzOnly = 1,
+    /// Only feegrant allowance
+    FeegrantOnly = 2,
+    /// Both authz and feegrant
+    AuthzAndFeegrant = 3,
+}
+impl GrantType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "GRANT_TYPE_UNSPECIFIED",
+            Self::AuthzOnly => "GRANT_TYPE_AUTHZ_ONLY",
+            Self::FeegrantOnly => "GRANT_TYPE_FEEGRANT_ONLY",
+            Self::AuthzAndFeegrant => "GRANT_TYPE_AUTHZ_AND_FEEGRANT",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "GRANT_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "GRANT_TYPE_AUTHZ_ONLY" => Some(Self::AuthzOnly),
+            "GRANT_TYPE_FEEGRANT_ONLY" => Some(Self::FeegrantOnly),
+            "GRANT_TYPE_AUTHZ_AND_FEEGRANT" => Some(Self::AuthzAndFeegrant),
+            _ => None,
+        }
+    }
+}
+/// Status of a grant request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum GrantRequestStatus {
+    Unspecified = 0,
+    /// Waiting for granter approval
+    Pending = 1,
+    /// Approved, waiting for broadcast
+    Approved = 2,
+    /// Grant tx broadcasted
+    Broadcasted = 3,
+    /// Confirmed on-chain
+    Confirmed = 4,
+    /// Rejected by granter
+    Rejected = 5,
+    /// Cancelled by requester
+    Cancelled = 6,
+    /// Expired before approval
+    Expired = 7,
+}
+impl GrantRequestStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "GRANT_REQUEST_STATUS_UNSPECIFIED",
+            Self::Pending => "GRANT_REQUEST_STATUS_PENDING",
+            Self::Approved => "GRANT_REQUEST_STATUS_APPROVED",
+            Self::Broadcasted => "GRANT_REQUEST_STATUS_BROADCASTED",
+            Self::Confirmed => "GRANT_REQUEST_STATUS_CONFIRMED",
+            Self::Rejected => "GRANT_REQUEST_STATUS_REJECTED",
+            Self::Cancelled => "GRANT_REQUEST_STATUS_CANCELLED",
+            Self::Expired => "GRANT_REQUEST_STATUS_EXPIRED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "GRANT_REQUEST_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "GRANT_REQUEST_STATUS_PENDING" => Some(Self::Pending),
+            "GRANT_REQUEST_STATUS_APPROVED" => Some(Self::Approved),
+            "GRANT_REQUEST_STATUS_BROADCASTED" => Some(Self::Broadcasted),
+            "GRANT_REQUEST_STATUS_CONFIRMED" => Some(Self::Confirmed),
+            "GRANT_REQUEST_STATUS_REJECTED" => Some(Self::Rejected),
+            "GRANT_REQUEST_STATUS_CANCELLED" => Some(Self::Cancelled),
+            "GRANT_REQUEST_STATUS_EXPIRED" => Some(Self::Expired),
+            _ => None,
+        }
+    }
+}
+/// Granter's acceptance mode for incoming requests
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum GrantAcceptanceMode {
+    Unspecified = 0,
+    /// Auto-approve all requests
+    AcceptAll = 1,
+    /// Reject all requests
+    RejectAll = 2,
+    /// Only approve whitelisted requesters
+    Whitelist = 3,
+    /// Require manual approval
+    Manual = 4,
+}
+impl GrantAcceptanceMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "GRANT_ACCEPTANCE_MODE_UNSPECIFIED",
+            Self::AcceptAll => "GRANT_ACCEPTANCE_MODE_ACCEPT_ALL",
+            Self::RejectAll => "GRANT_ACCEPTANCE_MODE_REJECT_ALL",
+            Self::Whitelist => "GRANT_ACCEPTANCE_MODE_WHITELIST",
+            Self::Manual => "GRANT_ACCEPTANCE_MODE_MANUAL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "GRANT_ACCEPTANCE_MODE_UNSPECIFIED" => Some(Self::Unspecified),
+            "GRANT_ACCEPTANCE_MODE_ACCEPT_ALL" => Some(Self::AcceptAll),
+            "GRANT_ACCEPTANCE_MODE_REJECT_ALL" => Some(Self::RejectAll),
+            "GRANT_ACCEPTANCE_MODE_WHITELIST" => Some(Self::Whitelist),
+            "GRANT_ACCEPTANCE_MODE_MANUAL" => Some(Self::Manual),
             _ => None,
         }
     }

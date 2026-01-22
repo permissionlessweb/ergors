@@ -320,7 +320,7 @@ impl GitRepository {
             .worktree(
                 name,
                 path,
-                Some(&git2::WorktreeAddOptions::new().reference(Some(reference.get()))),
+                Some(git2::WorktreeAddOptions::new().reference(Some(reference.get()))),
             )
             .map_err(|e| HoError::Cfg(format!("Failed to create worktree: {}", e)))?;
 

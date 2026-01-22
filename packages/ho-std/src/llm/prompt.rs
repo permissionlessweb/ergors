@@ -81,7 +81,7 @@ impl PromptResponseTrait for PromptResponse {
 
     fn timestamp(&self) -> &Self::Timestamp {
         static DEFAULT_TIMESTAMP: std::sync::LazyLock<pbjson_types::Timestamp> =
-            std::sync::LazyLock::new(|| pbjson_types::Timestamp::default());
+            std::sync::LazyLock::new(pbjson_types::Timestamp::default);
         self.timestamp.as_ref().unwrap_or(&DEFAULT_TIMESTAMP)
     }
 

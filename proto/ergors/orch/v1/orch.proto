@@ -926,6 +926,330 @@ message UpdateDeploymentResponse {
 }
 
 // ========================================
+// Akash Deployment Workflow Types
+// ========================================
+
+// Encrypted cosmos mnemonic stored in Cnidarium
+// Uses same encryption pattern as EncryptedNodeIdentity
+message EncryptedCosmosMnemonic {
+  string key_name = 1;
+  bytes encrypted_mnemonic = 2;
+  bytes nonce = 3;
+  bytes kdf_salt = 4;
+  string kdf_params = 5;
+  string encryption_method = 6;
+  string chain_id = 7;
+  string address_prefix = 8;
+  string default_hd_path = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp last_used_at = 11;
+  uint32 version = 12;
+}
+
+// Derived account from HD path (non-sensitive)
+message CosmosAccount {
+  string key_name = 1;
+  string hd_path = 2;
+  string address = 3;
+  bytes public_key = 4;
+  uint32 account_index = 5;
+}
+
+// Collection of encrypted cosmos keys stored in Cnidarium
+message CosmosKeyStore {
+  uint32 version = 1;
+  repeated EncryptedCosmosMnemonic keys = 2;
+  repeated CosmosAccount derived_accounts = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+// Workflow step enumeration for Akash deployment wizard
+enum AkashWorkflowStep {
+  AKASH_WORKFLOW_STEP_UNSPECIFIED = 0;
+  AKASH_WORKFLOW_STEP_KEY_SELECTION = 1;
+  AKASH_WORKFLOW_STEP_BALANCE_CHECK = 2;
+  AKASH_WORKFLOW_STEP_GRANT_REQUEST = 3;      // NEW: Request authz/feegrant from granter
+  AKASH_WORKFLOW_STEP_GRANT_WAIT = 4;         // NEW: Wait for grant approval
+  AKASH_WORKFLOW_STEP_AUTHZ_SETUP = 5;
+  AKASH_WORKFLOW_STEP_FEEGRANT_SETUP = 6;
+  AKASH_WORKFLOW_STEP_SDL_CONFIGURATION = 7;
+  AKASH_WORKFLOW_STEP_CERTIFICATE_SETUP = 8;
+  AKASH_WORKFLOW_STEP_DEPLOYMENT_CREATE = 9;
+  AKASH_WORKFLOW_STEP_BID_WAIT = 10;
+  AKASH_WORKFLOW_STEP_PROVIDER_SELECTION = 11;
+  AKASH_WORKFLOW_STEP_LEASE_CREATE = 12;
+  AKASH_WORKFLOW_STEP_MANIFEST_SEND = 13;
+  AKASH_WORKFLOW_STEP_ENDPOINT_RETRIEVAL = 14;
+  AKASH_WORKFLOW_STEP_ENDPOINT_TESTING = 15;
+  AKASH_WORKFLOW_STEP_COMPLETE = 16;
+  AKASH_WORKFLOW_STEP_FAILED = 17;
+}
+
+// Workflow status
+enum AkashWorkflowStatus {
+  AKASH_WORKFLOW_STATUS_UNSPECIFIED = 0;
+  AKASH_WORKFLOW_STATUS_PENDING = 1;
+  AKASH_WORKFLOW_STATUS_RUNNING = 2;
+  AKASH_WORKFLOW_STATUS_PAUSED = 3;
+  AKASH_WORKFLOW_STATUS_COMPLETED = 4;
+  AKASH_WORKFLOW_STATUS_FAILED = 5;
+  AKASH_WORKFLOW_STATUS_CANCELLED = 6;
+}
+
+// Authz grant tracking for workflow permissions
+message AkashAuthzGrant {
+  string granter = 1;
+  string grantee = 2;
+  repeated string msg_type_urls = 3;
+  google.protobuf.Timestamp expiration = 4;
+  string grant_tx_hash = 5;
+  bool active = 6;
+}
+
+// Feegrant allowance tracking
+message AkashFeegrantAllowance {
+  string granter = 1;
+  string grantee = 2;
+  uint64 spend_limit_uakt = 3;
+  uint64 spent_uakt = 4;
+  google.protobuf.Timestamp expiration = 5;
+  repeated string allowed_messages = 6;
+  string grant_tx_hash = 7;
+  bool active = 8;
+}
+
+// SDL template variable
+message SdlVariable {
+  string name = 1;
+  string description = 2;
+  string default_value = 3;
+  string var_type = 4;
+  bool required = 5;
+}
+
+// Configured SDL ready for deployment
+message ConfiguredSdl {
+  string template_name = 1;
+  string resolved_content = 2;
+  map<string, string> variable_values = 3;
+  bytes content_hash = 4;
+  google.protobuf.Timestamp configured_at = 5;
+}
+
+// Provider selection info
+message AkashProviderSelection {
+  string provider_address = 1;
+  uint32 reputation_score = 2;
+  uint64 bid_price_uakt = 3;
+  uint32 total_bids_received = 4;
+  google.protobuf.Timestamp selected_at = 5;
+  bool is_trusted_provider = 6;
+}
+
+// Endpoint test result
+message EndpointTestResult {
+  string service_name = 1;
+  string endpoint_uri = 2;
+  bool success = 3;
+  uint64 response_time_ms = 4;
+  string test_type = 5;
+  string error_message = 6;
+  google.protobuf.Timestamp tested_at = 7;
+}
+
+// Main Akash deployment workflow state
+message AkashDeploymentWorkflow {
+  string session_id = 1;
+  AkashWorkflowStep current_step = 2;
+  AkashWorkflowStatus status = 3;
+
+  // Key management
+  string selected_key_name = 4;
+  string account_address = 5;
+  uint32 hd_account_index = 6;
+
+  // Permission state
+  repeated AkashAuthzGrant authz_grants = 7;
+  repeated AkashFeegrantAllowance feegrants = 8;
+
+  // SDL configuration
+  ConfiguredSdl configured_sdl = 9;
+
+  // Deployment state (uses existing AkashRuntime)
+  AkashRuntime deployment = 10;
+  AkashProviderSelection provider = 11;
+
+  // Retrieved endpoints
+  map<string, string> endpoints = 12;
+
+  // Test results
+  repeated EndpointTestResult test_results = 13;
+
+  // Error tracking
+  string last_error = 14;
+  uint32 retry_count = 15;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp updated_at = 17;
+  google.protobuf.Timestamp completed_at = 18;
+
+  // Chain configuration
+  string chain_id = 19;
+  string node_endpoint = 20;
+
+  // Workflow configuration
+  uint32 max_retries = 21;
+  uint64 timeout_seconds = 22;
+
+  // Grant request state (for GRANT_REQUEST/GRANT_WAIT steps)
+  WorkflowGrantState grant_request = 23;
+
+  // Grant request configuration (from CLI flags)
+  bytes request_grant_from = 24;     // Granter's node pubkey
+  uint64 grant_duration_seconds = 25;
+  uint64 grant_spend_limit_uakt = 26;
+  string grant_purpose = 27;
+}
+
+// Workflow step log entry for audit
+message AkashWorkflowStepLog {
+  string session_id = 1;
+  AkashWorkflowStep step = 2;
+  bool success = 3;
+  uint64 duration_ms = 4;
+  string message = 5;
+  string tx_hash = 6;
+  string error = 7;
+  google.protobuf.Timestamp timestamp = 8;
+}
+
+// Provider reputation record
+message AkashProviderReputation {
+  string provider_address = 1;
+  uint32 score = 2;
+  uint64 successful_deployments = 3;
+  uint64 failed_deployments = 4;
+  uint32 avg_uptime_percent = 5;
+  uint64 avg_response_time_ms = 6;
+  bool is_trusted = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+// ========================================
+// Grant Request System Types
+// ========================================
+
+// Type of grant being requested
+enum GrantType {
+  GRANT_TYPE_UNSPECIFIED = 0;
+  GRANT_TYPE_AUTHZ_ONLY = 1;        // Only authz permissions
+  GRANT_TYPE_FEEGRANT_ONLY = 2;     // Only feegrant allowance
+  GRANT_TYPE_AUTHZ_AND_FEEGRANT = 3; // Both authz and feegrant
+}
+
+// Status of a grant request
+enum GrantRequestStatus {
+  GRANT_REQUEST_STATUS_UNSPECIFIED = 0;
+  GRANT_REQUEST_STATUS_PENDING = 1;      // Waiting for granter approval
+  GRANT_REQUEST_STATUS_APPROVED = 2;     // Approved, waiting for broadcast
+  GRANT_REQUEST_STATUS_BROADCASTED = 3;  // Grant tx broadcasted
+  GRANT_REQUEST_STATUS_CONFIRMED = 4;    // Confirmed on-chain
+  GRANT_REQUEST_STATUS_REJECTED = 5;     // Rejected by granter
+  GRANT_REQUEST_STATUS_CANCELLED = 6;    // Cancelled by requester
+  GRANT_REQUEST_STATUS_EXPIRED = 7;      // Expired before approval
+}
+
+// Granter's acceptance mode for incoming requests
+enum GrantAcceptanceMode {
+  GRANT_ACCEPTANCE_MODE_UNSPECIFIED = 0;
+  GRANT_ACCEPTANCE_MODE_ACCEPT_ALL = 1;  // Auto-approve all requests
+  GRANT_ACCEPTANCE_MODE_REJECT_ALL = 2;  // Reject all requests
+  GRANT_ACCEPTANCE_MODE_WHITELIST = 3;   // Only approve whitelisted requesters
+  GRANT_ACCEPTANCE_MODE_MANUAL = 4;      // Require manual approval
+}
+
+// Default parameters for grants a granter will issue
+message GrantDefaults {
+  uint64 max_duration_seconds = 1;
+  uint64 max_spend_limit_uakt = 2;
+  repeated string allowed_msg_types = 3;
+  uint64 auto_approve_delay_seconds = 4;
+}
+
+// Custom limits for a specific whitelisted requester
+message GrantLimits {
+  uint64 max_duration_seconds = 1;
+  uint64 max_spend_limit_uakt = 2;
+  uint32 max_concurrent_grants = 3;
+}
+
+// Parameters for a grant request
+message GrantRequestParams {
+  uint64 duration_seconds = 1;
+  uint64 spend_limit_uakt = 2;
+  repeated string msg_types = 3;
+  string purpose = 4;  // Reason for the grant request
+}
+
+// A grant request submitted to the contract
+message GrantRequest {
+  uint64 id = 1;
+  bytes requester_pubkey = 2;
+  string grantee_address = 3;
+  bytes granter_pubkey = 4;
+  string granter_address = 5;
+  GrantType grant_type = 6;
+  GrantRequestParams params = 7;
+  GrantRequestStatus status = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  string tx_hash = 11;
+  string rejection_reason = 12;
+}
+
+// Information about a registered granter
+message GranterInfo {
+  bytes node_pubkey = 1;
+  string granter_address = 2;
+  GrantAcceptanceMode mode = 3;
+  GrantDefaults defaults = 4;
+  uint32 active_grants = 5;
+  uint64 total_granted_uakt = 6;
+  google.protobuf.Timestamp registered_at = 7;
+}
+
+// Whitelist entry for a granter
+message WhitelistEntry {
+  bytes requester_pubkey = 1;
+  GrantLimits custom_limits = 2;
+  string note = 3;
+  google.protobuf.Timestamp added_at = 4;
+}
+
+// Granter configuration stored in node config
+message GranterConfig {
+  bool enabled = 1;
+  GrantAcceptanceMode mode = 2;
+  string contract_address = 3;
+  GrantDefaults defaults = 4;
+  repeated WhitelistEntry whitelist = 5;
+}
+
+// Workflow grant request state (used during deployment)
+message WorkflowGrantState {
+  uint64 request_id = 1;
+  bytes granter_pubkey = 2;
+  string granter_address = 3;
+  GrantType grant_type = 4;
+  GrantRequestParams params = 5;
+  GrantRequestStatus status = 6;
+  google.protobuf.Timestamp submitted_at = 7;
+  string tx_hash = 8;
+  string rejection_reason = 9;
+}
+
+// ========================================
 // Key Sharing Types (defined in network/v1/network.proto)
 // ========================================
 // The following types are imported from network.v1:

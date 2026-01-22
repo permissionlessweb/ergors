@@ -52,11 +52,8 @@ impl LlmRouterConfig {
         }
     }
     pub fn remove_entity(&mut self, e_name: String) -> Result<()> {
-        match self.entities.iter().position(|e| e.name == e_name) {
-            Some(e) => {
-                self.entities.remove(e);
-            }
-            None => {}
+        if let Some(e) = self.entities.iter().position(|e| e.name == e_name) {
+            self.entities.remove(e);
         };
         Ok(())
     }
@@ -72,7 +69,7 @@ impl LlmModelTrait for LlmModel {
             LlmModel::OllamaLocal => OLLAMA_LOCAL_MODELS,
             LlmModel::OpenAi => OPENAI_MODELS,
             LlmModel::Anthropic => ANTHROPIC_MODELS,
-            LlmModel::Custom { .. } => EXTERNAL_MODELS,
+            LlmModel::Custom => EXTERNAL_MODELS,
         }
         .iter()
         .map(|s| (*s).to_string())

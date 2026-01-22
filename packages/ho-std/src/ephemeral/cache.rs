@@ -3,9 +3,9 @@
 //! Provides thread-safe storage for ephemeral keys with periodic cleanup
 //! of expired entries.
 
-use super::key::{EphemeralKey, EphemeralKeyScope};
+use super::key::EphemeralKey;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::Duration;
 use tracing::{debug, warn};
 
@@ -262,6 +262,7 @@ impl std::fmt::Debug for EphemeralKeyCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ephemeral::EphemeralKeyScope;
 
     fn create_test_key(id: &str, provider: Option<&str>) -> EphemeralKey {
         EphemeralKey::new(

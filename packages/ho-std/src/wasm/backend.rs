@@ -6,16 +6,14 @@
 #[cfg(feature = "cw")]
 use {
     crate::wasm::{
-        state_ext::WasmStorageState, WasmVmCnidariumStateRead, WasmVmCnidariumStateWrite,
+        state_ext::WasmStorageState, WasmVmCnidariumStateRead,
     },
     cosmwasm_std::{
-        Addr, Api, Binary, CanonicalAddr, ContractResult, QuerierResult, RecoverPubkeyError,
-        StdError, StdResult, SystemResult, VerificationError,
+        Api, Binary, ContractResult, SystemResult,
     },
     cosmwasm_vm::{BackendApi, BackendError, BackendResult, GasInfo, Querier, Storage},
 };
 
-use cnidarium::{StateRead, StateWrite};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -172,7 +170,7 @@ impl Storage for CnidariumStorage {
                 let value_result = tokio::task::block_in_place(|| {
                     handle.block_on(
                         self.state
-                            .get_contract_state_dyn(&self.contract_address, &key.to_vec()),
+                            .get_contract_state_dyn(&self.contract_address, key),
                     )
                 });
                 match value_result {
@@ -246,8 +244,8 @@ impl Storage for CnidariumStorage {
         let mut filtered: Vec<(Vec<u8>, Vec<u8>)> = all_state
             .into_iter()
             .filter(|(k, _)| {
-                let after_start = start.map_or(true, |s| k.as_slice() >= s);
-                let before_end = end.map_or(true, |e| k.as_slice() < e);
+                let after_start = start.is_none_or(|s| k.as_slice() >= s);
+                let before_end = end.is_none_or(|e| k.as_slice() < e);
                 after_start && before_end
             })
             .collect();
@@ -373,7 +371,7 @@ impl Querier for CnidariumQuerier {
         std::result::Result<SystemResult<ContractResult<cosmwasm_std::Binary>>, BackendError>,
         cosmwasm_vm::GasInfo,
     ) {
-        use cosmwasm_std::{from_json, to_json_binary, Coin, QueryRequest, WasmQuery};
+        use cosmwasm_std::{from_json, to_json_binary, Coin, QueryRequest};
 
         // Parse the query request
         let query_request: QueryRequest<cosmwasm_std::Empty> = match from_json(request) {
@@ -443,7 +441,7 @@ impl CnidariumQuerier {
         &self,
         wasm_query: cosmwasm_std::WasmQuery,
     ) -> std::result::Result<SystemResult<ContractResult<Binary>>, BackendError> {
-        use cosmwasm_std::{to_json_binary, Addr, WasmQuery};
+        use cosmwasm_std::{to_json_binary, WasmQuery};
 
         match wasm_query {
             WasmQuery::Raw { contract_addr, key } => {

@@ -84,10 +84,12 @@ pub trait NodeIdentityTrait {
 
 /// Custody backend type for node identity key management
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default)]
 pub enum NodeIdentityCustodyBackend {
     /// Plaintext storage (legacy, insecure for production)
     Plaintext,
     /// Password-encrypted using ChaCha20Poly1305 + Argon2
+    #[default]
     PasswordEncrypted,
     /// Encrypted using the node's own key (for API keys etc.)
     NodeKeyEncrypted,
@@ -97,11 +99,6 @@ pub enum NodeIdentityCustodyBackend {
     RemoteCustody(String),
 }
 
-impl Default for NodeIdentityCustodyBackend {
-    fn default() -> Self {
-        Self::PasswordEncrypted
-    }
-}
 
 /// Core trait for custody-backed node identity operations.
 ///
@@ -214,7 +211,7 @@ pub trait NetworkTopologyTrait {
     /// Check if the topology forms a complete tetrahedral structure for node
     /// TODO: implement direct wqieries from storage, implement epoch trigger on each request
     fn is_complete_tetrahedron(&self) -> bool {
-        let online_nodes = self.online_nodes();
+        let _online_nodes = self.online_nodes();
 
         // // Need exactly 4 nodes (one of each type)
         // if online_nodes.len() != 4 {
@@ -822,7 +819,7 @@ pub trait StateWrite: StateRead + Send + Sync {
     // fn record(&mut self, event: abci::Event);
 }
 
-impl<'a, S: StateWrite + Send + Sync> StateWrite for &'a mut S {
+impl<S: StateWrite + Send + Sync> StateWrite for &mut S {
     fn put_raw(&mut self, key: String, value: jmt::OwnedValue) {
         (**self).put_raw(key, value)
     }

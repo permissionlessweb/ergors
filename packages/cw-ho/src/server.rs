@@ -331,7 +331,7 @@ impl Server {
         use ho_std::llm::state_ext::{state_key, StateReadExt};
         use ho_std::Message as _;
 
-        let data_dir = Utf8PathBuf::from(&c.storage().data_dir);
+        let data_dir = Utf8PathBuf::from(&c.home);
         let encrypted_file = data_dir.join(ENCRYPTED_API_KEYS_FILE);
 
         // Check if we already have encrypted keys in Cnidarium storage
@@ -383,13 +383,13 @@ impl Server {
 
         // Decrypt and set environment variables for LLM router
         let mut manager = EncryptedApiKeyManager::from_store(&store);
-        manager.unlock(password).map_err(|e| {
-            HoError::Crypto(format!("Failed to unlock API key manager: {}", e))
-        })?;
+        manager
+            .unlock(password)
+            .map_err(|e| HoError::Crypto(format!("Failed to unlock API key manager: {}", e)))?;
 
-        let decrypted_keys = manager.load_store(&store).map_err(|e| {
-            HoError::Crypto(format!("Failed to decrypt API keys: {}", e))
-        })?;
+        let decrypted_keys = manager
+            .load_store(&store)
+            .map_err(|e| HoError::Crypto(format!("Failed to decrypt API keys: {}", e)))?;
 
         Self::set_api_keys_env(&decrypted_keys);
 

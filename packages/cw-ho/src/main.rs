@@ -117,7 +117,7 @@ pub fn start(cli: Cli, grpc_port: u16) -> HoResult<()> {
             return;
         }
 
-        let config = match ErgorsConfig::load(&cli.home.as_path().join(CONFIG_FILE_NAME)) {
+        let config = match ErgorsConfig::load(cli.home.as_path().join(CONFIG_FILE_NAME)) {
             Ok(c) => c,
             Err(e) => {
                 error!("Failed to load config: {}", e);
@@ -135,7 +135,7 @@ pub fn start(cli: Cli, grpc_port: u16) -> HoResult<()> {
 
         // Get app state for gRPC service
         let app_state = s.state();
-        let shutdown_tx = signal_handler.subscribe_shutdown();
+        let _shutdown_tx = signal_handler.subscribe_shutdown();
 
         // Create gRPC management service
         let grpc_service =

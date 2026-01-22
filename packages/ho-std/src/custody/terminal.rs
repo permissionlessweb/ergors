@@ -1,5 +1,4 @@
 use crate::traits::DomainType;
-use crate::types::ergors::actions::v1::ActionPlan;
 use anyhow::Result;
 use serde::de::DeserializeOwned;
 use tonic::async_trait;

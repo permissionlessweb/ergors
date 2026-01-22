@@ -211,7 +211,7 @@ impl EncryptedApiKeyManager {
         Ok(EncryptedApiKeyStore {
             version: STORE_VERSION,
             keys: encrypted_keys,
-            created_at: timestamp.clone(),
+            created_at: timestamp,
             updated_at: timestamp,
             kdf_salt: self.salt.to_vec(),
             kdf_params: kdf_params.to_string(),

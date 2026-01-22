@@ -11,7 +11,7 @@ use crate::client::{
     format_engine_state, format_uptime, ManagementClient, NodeTypeProto as NodeType,
 };
 use crate::Cli;
-pub use workspace::{TaskCmd, WorkspaceCmd};
+pub use workspace::WorkspaceCmd;
 
 // ============ Engine Commands ============
 
@@ -297,7 +297,7 @@ pub enum ConfigCmd {
 }
 
 impl ConfigCmd {
-    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+    pub async fn execute(&self, _cli: &Cli, mut client: ManagementClient) -> Result<()> {
         match self {
             ConfigCmd::Show => {
                 let config = client.get_config().await?;

@@ -1,5 +1,9 @@
 
 # Ergors
+
+<!-- [![Lint Status](https://github.com/permissionlessweb/ergors/actions/workflows/lint.yaml/badge.svg)](https://github.com/permissionlessweb/ergors/actions/workflows/lint.yaml)
+[![Test Status](https://github.com/permissionlessweb/ergors/workflows/tests.yaml/badge.svg)](https://github.com/permissionlessweb/ergors/actions/workflows/tests.yaml) -->
+
 <!-- https://en.wikipedia.org/wiki/Ergodicity -->
 ___
 ___
@@ -229,3 +233,11 @@ Tests using orchestration servers are essentially scripts that can be used to ve
 * key gen siging libary
 * custody middleware integration tests (reference penumbra testing library)
 * integration test library
+
+## DEPENDENCIES
+
+We have ported into this workspace existing designs from the following code-bases:
+
+* [penumbra](https://github.com/penumbra-zone/penumbra)
+
+THANK YOU to the contributors of these, go show some support to their projects

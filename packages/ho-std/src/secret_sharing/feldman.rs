@@ -35,7 +35,7 @@ impl FeldmanCommitment {
             .iter()
             .map(|poly_coeffs| {
                 let mut hasher = Sha256::new();
-                hasher.update(&salt);
+                hasher.update(salt);
                 for coeff in poly_coeffs {
                     hasher.update([*coeff]);
                 }
@@ -96,13 +96,13 @@ impl FeldmanCommitment {
 
         for (i, poly_coeffs) in coefficients.iter().enumerate() {
             let mut hasher = Sha256::new();
-            hasher.update(&self.salt);
+            hasher.update(self.salt);
             for coeff in poly_coeffs {
                 hasher.update([*coeff]);
             }
             let expected = hasher.finalize();
 
-            if &self.commitments[i] != expected.as_slice() {
+            if self.commitments[i] != expected.as_slice() {
                 debug!("Commitment verification failed at index {}", i);
                 return false;
             }

@@ -36,7 +36,7 @@ impl TryFrom<pb::AuthorizeRequest> for AuthorizeRequest {
 impl From<AuthorizeRequest> for pb::AuthorizeRequest {
     fn from(value: AuthorizeRequest) -> pb::AuthorizeRequest {
         Self {
-            plan: Some(value.plan.into()),
+            plan: Some(value.plan),
             pre_authorizations: value
                 .pre_authorizations
                 .into_iter()

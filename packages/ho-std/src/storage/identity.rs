@@ -20,12 +20,10 @@ use crate::types::ergors::storage::v1::{
 };
 use camino::{Utf8Path, Utf8PathBuf};
 use rand_core::OsRng;
-use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Default encryption method identifier
 const ENCRYPTION_METHOD_V1: &str = "argon2id-chacha20poly1305-v1";
@@ -104,13 +102,13 @@ impl IdentityStorage {
     pub fn create_identity(
         &self,
         password: &str,
-        metadata: Option<NodeIdentityMetadata>,
+        _metadata: Option<NodeIdentityMetadata>,
     ) -> HoResult<EncryptedNodeIdentity> {
         // Generate new keypair
         let private_key = NodePrivKey::new(&mut OsRng);
-        let public_key = private_key.id();
+        let _public_key = private_key.id();
 
-        self.store_identity(&private_key, password, metadata)
+        self.store_identity(&private_key, password)
     }
 
     /// Store an existing private key as an encrypted identity
@@ -123,7 +121,6 @@ impl IdentityStorage {
         &self,
         private_key: &NodePrivKey,
         password: &str,
-        metadata: Option<NodeIdentityMetadata>,
     ) -> HoResult<EncryptedNodeIdentity> {
         let public_key = private_key.id();
         let private_key_bytes = private_key.clone().into_bytes();
@@ -290,10 +287,10 @@ impl IdentityStorage {
         let private_key = self.get_private_key(current_password).await?;
 
         // Load current metadata
-        let encrypted = self.load_encrypted()?;
+        let _encrypted = self.load_encrypted()?;
 
         // Re-encrypt with new password
-        self.store_identity(&private_key, new_password, encrypted.metadata)?;
+        self.store_identity(&private_key, new_password)?;
 
         // Clear cache (force re-authentication)
         self.lock().await;

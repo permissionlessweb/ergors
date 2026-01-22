@@ -42,14 +42,12 @@ impl ApiJoint for OpenAiJoint {
                 .collect(),
             temperature: req
                 .llm_config
-                .as_ref()
-                .and_then(|c| Some(c.temperature))
+                .as_ref().map(|c| c.temperature)
                 .or(Some(1))
                 .unwrap_or_default(),
             max_tokens: req
                 .llm_config
-                .as_ref()
-                .and_then(|c| Some(c.max_tokens))
+                .as_ref().map(|c| c.max_tokens)
                 .unwrap_or_default(),
             // New AI SDK fields - use defaults for now
             tools: vec![],
@@ -106,7 +104,7 @@ impl ApiJoint for OpenAiJoint {
             });
 
             Ok(PromptResponse {
-                id: (&blake3::Blake3::hash(&req.to_bytes().unwrap())).to_vec(),
+                id: blake3::Blake3::hash(&req.to_bytes().unwrap()).to_vec(),
                 provider: provider_name.to_string(),
                 model: req.model.to_string(),
                 prompt: blake3::Blake3::hash(&req.to_bytes().unwrap()).to_string(),

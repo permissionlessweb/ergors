@@ -1,0 +1,27 @@
+[workspace]
+members = ["sdl-template-registrar"]
+resolver = "2"
+
+[workspace.metadata.optimizer]
+version = "0.17.0"
+
+[workspace.dependencies]
+cosmwasm-schema = "2.0"
+cosmwasm-std = "2.0"
+cw-storage-plus = "2.0"
+cw2 = "2.0"
+schemars = "0.8"
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+panic = 'abort'
+incremental = false
+overflow-checks = true

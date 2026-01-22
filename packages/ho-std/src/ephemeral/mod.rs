@@ -39,7 +39,7 @@ use rand_core::CryptoRngCore;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Default TTL for ephemeral keys (1 hour)
 pub const DEFAULT_TTL: Duration = Duration::from_secs(3600);

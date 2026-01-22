@@ -70,7 +70,7 @@ struct AkashClient {
 
 impl AkashClient {
     async fn new(config: AkashConfig) -> Result<Self> {
-        let trusted_providers = vec![
+        let trusted_providers = [
             "akash1u5cdg7k3gl43mukca4aeultuz8x2j68mgwn28e", // d3akash
             "akash1h4h33c8rv8e084el7e74f7pktz27pmxxt8nl9q", // overclock
             "akash15ksejj7g4su7ljufsg0a8eglvkje94z8qsh68a", // palmito

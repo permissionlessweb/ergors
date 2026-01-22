@@ -149,8 +149,8 @@ macro_rules! llm_entity {
             async fn call(
                 &self,
                 client: &reqwest::Client,
-                request: &crate::orchestrate::PromptRequest,
-            ) -> $crate::llm::HoResult<crate::orchestrate::PromptResponse> {
+                request: &$crate::orchestrate::PromptRequest,
+            ) -> $crate::llm::HoResult<$crate::orchestrate::PromptResponse> {
                 $crate::llm::joints::$api_type::handle_request(
                     self,
                     client,

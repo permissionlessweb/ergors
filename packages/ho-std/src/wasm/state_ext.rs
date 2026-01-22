@@ -235,7 +235,7 @@ pub trait WasmVmCnidariumStateRead: cnidarium::StateRead {
     async fn get_next_code_id(&self) -> HoResult<u64> {
         let key = wasm_config_key();
         match self.get_raw(&key).await? {
-            Some(data) => {
+            Some(_data) => {
                 // Parse config to get next_code_id
                 // For now, just return 1 as default
                 // TODO: Implement proper config storage
@@ -318,7 +318,7 @@ impl<T: cnidarium::StateWrite + ?Sized> WasmVmCnidariumStateWrite for T {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     // Tests would require mocking StateRead/StateWrite implementations
     // For now, we rely on integration tests with actual Cnidarium storage

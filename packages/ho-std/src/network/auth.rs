@@ -190,7 +190,7 @@ impl TransactionPlan {
     /// Authorize this [`TransactionPlan`] with the provided [`SpendKey`].
     ///
     /// The returned [`AuthorizationData`] can be used to build a [`Transaction`](crate::Transaction).
-    pub fn authorize<R: RngCore + CryptoRng>(&self, mut rng: R, sk: &SpendKey) -> Result<()> {
+    pub fn authorize<R: RngCore + CryptoRng>(&self, _rng: R, _sk: &SpendKey) -> Result<()> {
         // ) -> Result<AuthorizationData> {
         // let effect_hash = self.effect_hash(sk.full_viewing_key())?;
         // let mut spend_auths = Vec::new();

@@ -52,7 +52,7 @@ impl NodeIdentityTrait for NodeIdentity {
         let pubkey_hex = self
             .public_key
             .as_ref()
-            .map(|pk| hex::encode(pk))
+            .map(hex::encode)
             .unwrap_or_else(|| "no_pubkey".to_string());
         format!("{}@{}:{}", pubkey_hex, self.host, self.p2p_port)
     }
@@ -109,7 +109,7 @@ impl Serialize for NodePubkey {
         S: Serializer,
     {
         // Serialize as hex string for human readability
-        let hex_str = hex::encode(self.0.to_vec());
+        let hex_str = hex::encode(&self.0);
         serializer.serialize_str(&hex_str)
     }
 }

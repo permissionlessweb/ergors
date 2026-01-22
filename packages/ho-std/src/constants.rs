@@ -54,7 +54,7 @@ pub const OLLAMA_LOCAL_PORT: u16 = 11_434;
 // the default recursion depth is deliberately modest – deep recursion
 // can explode memory usage if the rest of the pipeline isn’t tuned.
 pub const DEFAULT_RECURSION_DEPTH: u32 = 2;
-pub const GOLDEN_RATIO: f32 = 1.618033988749894;
+pub const GOLDEN_RATIO: f32 = 1.618_034;
 pub const TETRAHEDRAL_VERTICES: usize = 4;
 pub const FRACTAL_MAX_DEPTH: u32 = 10;
 pub const PROTOCOL_VERSION: u8 = 1;

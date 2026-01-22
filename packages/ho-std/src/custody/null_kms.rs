@@ -32,7 +32,7 @@ impl pb::custody_service_server::CustodyService for NullKms {
 
     async fn decrypt_api_key(
         &self,
-        request: Request<DecryptApiKeyRequest>,
+        _request: Request<DecryptApiKeyRequest>,
     ) -> Result<Response<DecryptApiKeyResponse>, Status> {
         Err(tonic::Status::failed_precondition(
             "Got authorization request in view-only mode to null KMS.",

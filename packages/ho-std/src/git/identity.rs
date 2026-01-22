@@ -58,7 +58,7 @@ impl GitIdentity {
 
     /// Create a GitIdentity from node keys
     pub fn from_node_keys(private_key: &NodePrivKey, public_key: &NodePubkey) -> HoResult<Self> {
-        let node_id = hex::encode(public_key.0.to_vec());
+        let node_id = hex::encode(&public_key.0);
         let short_id = node_id.chars().take(16).collect::<String>();
 
         // Convert ED25519 keys to SSH format

@@ -71,7 +71,7 @@ impl ConfigLoaderTrait for DefaultFileOps {
             // Fallback to environment variables
             let mut keys = HashMap::new();
             for env_keys in ENV_KEYS {
-                if let Ok(value) = std::env::var(env_keys.1.to_string()) {
+                if let Ok(value) = std::env::var(env_keys.1) {
                     keys.insert(env_keys.0.to_string(), value);
                 }
             }
@@ -209,6 +209,112 @@ impl IdGenerator {
     }
 }
 
+/// SDL (Akash Stack Definition Language) Utilities
+///
+/// SDL files are YAML-based configuration files used by Akash Network.
+/// These utilities help convert between JSON and YAML representations.
+pub struct SdlConverter;
+
+impl SdlConverter {
+    /// Convert JSON value to YAML string (SDL format)
+    ///
+    /// # Arguments
+    /// * `json_value` - A serde_json::Value representing the SDL configuration
+    ///
+    /// # Returns
+    /// Result containing the YAML string or an error
+    ///
+    /// # Example
+    /// ```
+    /// use ho_std::utils::SdlConverter;
+    /// use serde_json::json;
+    ///
+    /// let json_sdl = json!({
+    ///     "version": "2.0",
+    ///     "services": {
+    ///         "web": {
+    ///             "image": "nginx:latest"
+    ///         }
+    ///     }
+    /// });
+    ///
+    /// let yaml_sdl = SdlConverter::json_to_yaml(&json_sdl).unwrap();
+    /// assert!(yaml_sdl.contains("version:"));
+    /// ```
+    pub fn json_to_yaml(json_value: &serde_json::Value) -> HoResult<String> {
+        serde_yaml::to_string(json_value).map_err(|e| {
+            HoError::Cfg(format!("Failed to convert JSON to YAML: {}", e))
+        })
+    }
+
+    /// Convert JSON string to YAML string (SDL format)
+    ///
+    /// # Arguments
+    /// * `json_str` - A JSON string representing the SDL configuration
+    ///
+    /// # Returns
+    /// Result containing the YAML string or an error
+    pub fn json_string_to_yaml(json_str: &str) -> HoResult<String> {
+        let json_value: serde_json::Value = serde_json::from_str(json_str)
+            .map_err(|e| HoError::Cfg(format!("Failed to parse JSON: {}", e)))?;
+        Self::json_to_yaml(&json_value)
+    }
+
+    /// Convert YAML string (SDL format) to JSON value
+    ///
+    /// # Arguments
+    /// * `yaml_str` - A YAML string representing the SDL configuration
+    ///
+    /// # Returns
+    /// Result containing the JSON value or an error
+    pub fn yaml_to_json(yaml_str: &str) -> HoResult<serde_json::Value> {
+        serde_yaml::from_str(yaml_str).map_err(|e| {
+            HoError::Cfg(format!("Failed to convert YAML to JSON: {}", e))
+        })
+    }
+
+    /// Convert YAML string (SDL format) to JSON string
+    ///
+    /// # Arguments
+    /// * `yaml_str` - A YAML string representing the SDL configuration
+    ///
+    /// # Returns
+    /// Result containing the JSON string or an error
+    pub fn yaml_to_json_string(yaml_str: &str) -> HoResult<String> {
+        let json_value = Self::yaml_to_json(yaml_str)?;
+        serde_json::to_string_pretty(&json_value)
+            .map_err(|e| HoError::Cfg(format!("Failed to serialize JSON: {}", e)))
+    }
+
+    /// Write SDL as YAML to a file
+    ///
+    /// # Arguments
+    /// * `json_value` - A serde_json::Value representing the SDL configuration
+    /// * `path` - Path where to write the YAML file
+    ///
+    /// # Returns
+    /// Result indicating success or error
+    pub fn write_sdl_yaml<P: AsRef<Path>>(
+        json_value: &serde_json::Value,
+        path: P,
+    ) -> HoResult<()> {
+        let yaml_content = Self::json_to_yaml(json_value)?;
+        DefaultFileOps::write_string(path, &yaml_content)
+    }
+
+    /// Read SDL YAML file and convert to JSON
+    ///
+    /// # Arguments
+    /// * `path` - Path to the YAML SDL file
+    ///
+    /// # Returns
+    /// Result containing the JSON value or an error
+    pub fn read_sdl_yaml<P: AsRef<Path>>(path: P) -> HoResult<serde_json::Value> {
+        let yaml_content = DefaultFileOps::read_string(path)?;
+        Self::yaml_to_json(&yaml_content)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tracing::info;
@@ -233,13 +339,13 @@ mod tests {
         fs::remove_file(&test_path).ok();
 
         async fn demonstrate_file_operations() -> HoResult<()> {
-            use std::path::Path;
+            
 
             // Create a test file
             let test_content = r#" "#;
 
             let test_file = "./test_data/example_config.md";
-            DefaultFileOps::write_string(&test_file, test_content)?;
+            DefaultFileOps::write_string(test_file, test_content)?;
             info!("Created test file: {}", test_file);
 
             // // Demonstrate file sharing:
@@ -271,5 +377,123 @@ mod tests {
 
         let timestamp = IdGenerator::timestamp_seconds();
         assert!(timestamp > 0);
+    }
+
+    #[test]
+    fn test_json_to_yaml_conversion() {
+        use serde_json::json;
+
+        let json_sdl = json!({
+            "version": "2.0",
+            "services": {
+                "web": {
+                    "image": "nginx:latest",
+                    "expose": [
+                        {
+                            "port": 80,
+                            "as": 80,
+                            "to": [{"global": true}]
+                        }
+                    ]
+                }
+            },
+            "profiles": {
+                "compute": {
+                    "web": {
+                        "resources": {
+                            "cpu": {"units": "1.0"},
+                            "memory": {"size": "512Mi"},
+                            "storage": {"size": "1Gi"}
+                        }
+                    }
+                }
+            }
+        });
+
+        let yaml_result = SdlConverter::json_to_yaml(&json_sdl).unwrap();
+
+        // Verify YAML contains expected keys
+        assert!(yaml_result.contains("version:"));
+        assert!(yaml_result.contains("services:"));
+        assert!(yaml_result.contains("web:"));
+        assert!(yaml_result.contains("nginx:latest"));
+        assert!(yaml_result.contains("profiles:"));
+        assert!(yaml_result.contains("compute:"));
+    }
+
+    #[test]
+    fn test_yaml_to_json_conversion() {
+        let yaml_sdl = r#"
+version: "2.0"
+services:
+  web:
+    image: nginx:latest
+    expose:
+      - port: 80
+        as: 80
+        to:
+          - global: true
+profiles:
+  compute:
+    web:
+      resources:
+        cpu:
+          units: "1.0"
+        memory:
+          size: 512Mi
+        storage:
+          size: 1Gi
+"#;
+
+        let json_result = SdlConverter::yaml_to_json(yaml_sdl).unwrap();
+
+        // Verify JSON structure
+        assert_eq!(json_result["version"], "2.0");
+        assert_eq!(json_result["services"]["web"]["image"], "nginx:latest");
+        assert_eq!(json_result["profiles"]["compute"]["web"]["resources"]["cpu"]["units"], "1.0");
+    }
+
+    #[test]
+    fn test_roundtrip_conversion() {
+        use serde_json::json;
+
+        let original_json = json!({
+            "version": "2.0",
+            "services": {
+                "app": {
+                    "image": "myapp:v1.0",
+                    "env": ["KEY=value"]
+                }
+            }
+        });
+
+        // Convert to YAML
+        let yaml = SdlConverter::json_to_yaml(&original_json).unwrap();
+
+        // Convert back to JSON
+        let roundtrip_json = SdlConverter::yaml_to_json(&yaml).unwrap();
+
+        // Verify they match
+        assert_eq!(original_json["version"], roundtrip_json["version"]);
+        assert_eq!(original_json["services"]["app"]["image"], roundtrip_json["services"]["app"]["image"]);
+    }
+
+    #[test]
+    fn test_json_string_to_yaml() {
+        let json_str = r#"{"version": "2.0", "services": {"web": {"image": "nginx"}}}"#;
+        let yaml = SdlConverter::json_string_to_yaml(json_str).unwrap();
+
+        assert!(yaml.contains("version:"));
+        assert!(yaml.contains("nginx"));
+    }
+
+    #[test]
+    fn test_yaml_to_json_string() {
+        let yaml_str = "version: \"2.0\"\nservices:\n  web:\n    image: nginx";
+        let json_str = SdlConverter::yaml_to_json_string(yaml_str).unwrap();
+
+        assert!(json_str.contains("\"version\""));
+        assert!(json_str.contains("\"2.0\""));
+        assert!(json_str.contains("nginx"));
     }
 }

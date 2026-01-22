@@ -7,7 +7,6 @@ use crate::types::{
     ergors::custody::v1::{self as pb, *},
 };
 // use penumbra_sdk_transaction::AuthorizationData;
-use rand_core::OsRng;
 use tonic::{async_trait, Request, Response, Status};
 
 use crate::{
@@ -105,7 +104,7 @@ impl pb::custody_service_server::CustodyService for SoftKms {
             .map_err(|e| Status::unauthenticated(format!("{e:#}")))?;
 
         let authorization_response = AuthorizeResponse {
-            data: Some(authorization_data.into()),
+            data: Some(authorization_data),
         };
 
         Ok(Response::new(authorization_response))

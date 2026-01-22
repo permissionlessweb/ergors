@@ -157,7 +157,7 @@ fn derive_ka_key_from_pubkey(ed25519_pubkey: &NodePubkey) -> (decaf377_ka::Secre
     let mut hasher = Sha256::new();
     hasher.update(KEY_DERIVATION_INFO);
     hasher.update(b"KA_KEY_FROM_PUBKEY");
-    hasher.update(&ed25519_pubkey.0.encode());
+    hasher.update(ed25519_pubkey.0.encode());
 
     let hash = hasher.finalize();
     let mut key_bytes = [0u8; 32];
@@ -201,9 +201,9 @@ fn derive_encryption_key(
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"ergors-direct-v1"); // Domain separation
-    hasher.update(&ephemeral_pubkey.0);
-    hasher.update(&recipient_pubkey.0);
-    hasher.update(&shared_secret.0);
+    hasher.update(ephemeral_pubkey.0);
+    hasher.update(recipient_pubkey.0);
+    hasher.update(shared_secret.0);
 
     let result = hasher.finalize();
     let mut key = [0u8; 32];
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
-        let sender_key = NodePrivKey::new(&mut OsRng);
+        let _sender_key = NodePrivKey::new(&mut OsRng);
         let recipient_key = NodePrivKey::new(&mut OsRng);
         let recipient_pubkey = recipient_key.id();
 

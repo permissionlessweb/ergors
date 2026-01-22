@@ -3,15 +3,12 @@
 //! This module provides implementations of `NodeIdentityCustody` trait
 //! for different custody backends (password-encrypted, plaintext, etc.).
 
-use crate::custody::encrypted::{decrypt, encrypt};
 use crate::error::{HoError, HoResult};
 use crate::keys::commonware::{NodePrivKey, NodePubkey};
 use crate::storage::identity::IdentityStorage;
 use crate::traits::{NodeIdentityCustody, NodeIdentityCustodyBackend};
-use crate::types::ergors::network::v1::NodeIdentity;
 use crate::types::ergors::storage::v1::NodeIdentityMetadata;
 use async_trait::async_trait;
-use camino::Utf8PathBuf;
 use commonware_cryptography::ed25519;
 use std::fs;
 use std::path::Path;
@@ -78,10 +75,9 @@ impl PasswordEncryptedCustody {
         &self,
         private_key: &NodePrivKey,
         password: &str,
-        metadata: Option<NodeIdentityMetadata>,
+        _metadata: Option<NodeIdentityMetadata>,
     ) -> HoResult<()> {
-        self.storage
-            .store_identity(private_key, password, metadata)?;
+        self.storage.store_identity(private_key, password)?;
         Ok(())
     }
 
@@ -395,6 +391,7 @@ fn format_openssh_public_key(public_key: &NodePubkey, comment: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use camino::Utf8PathBuf;
     use tempfile::TempDir;
 
     #[tokio::test]

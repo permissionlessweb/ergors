@@ -68,11 +68,11 @@ impl NetworkTopologyTrait for NetworkTopology {
         }
     }
 
-    fn nodes_by_type(&self, node_type: NodeType) -> Vec<&NodeInfo> {
+    fn nodes_by_type(&self, _node_type: NodeType) -> Vec<&NodeInfo> {
         todo!()
     }
 
-    fn has_connection(&self, from: &str, to: &str) -> bool {
+    fn has_connection(&self, _from: &str, _to: &str) -> bool {
         todo!()
     }
 }

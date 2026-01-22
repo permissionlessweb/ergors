@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn test_key_zeroization() {
         let key_material = vec![0xAA; 32];
-        let ptr = key_material.as_ptr();
+        let _ptr = key_material.as_ptr();
 
         {
             let _key = EphemeralKey::new(

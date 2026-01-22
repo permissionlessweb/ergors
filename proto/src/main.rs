@@ -186,7 +186,7 @@ fn main() -> anyhow::Result<()> {
         .into_iter()
         .filter_map(|e| e.ok())
     {
-        if entry.path().extension().map_or(false, |ext| ext == "rs") {
+        if entry.path().extension().is_some_and(|ext| ext == "rs") {
             let content = fs::read_to_string(entry.path())?;
             let lines: Vec<&str> = content.lines().collect();
             let mut new_lines = Vec::new();

@@ -30,7 +30,7 @@ impl Ed25519 {
     /// Verifies the provided `TransactionPlan`.
     pub fn verify(&self, message: impl AsRef<[u8]>) -> anyhow::Result<()> {
         let bytes = message.as_ref();
-        self.vk.verify(&self.sig, &bytes).map_err(Into::into)
+        self.vk.verify(&self.sig, bytes).map_err(Into::into)
     }
 }
 

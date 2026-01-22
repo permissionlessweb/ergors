@@ -302,7 +302,7 @@ impl WasmRuntime {
         contract_address: String,
         msg: Vec<u8>,
     ) -> HoResult<cosmwasm_std::ContractResult<cosmwasm_std::Binary>> {
-        use cnidarium::StateRead;
+        
 
         // Acquire shared read lock for concurrent queries
         let _node_lock = self.state_lock.read().await;
@@ -384,7 +384,7 @@ impl WasmRuntime {
         funds: Vec<Coin>,
         node_id: &str,
     ) -> HoResult<(String, cosmwasm_std::ContractResult<cosmwasm_std::Response>)> {
-        use cnidarium::StateRead;
+        
 
         // Acquire node-wide exclusive lock for state consistency
         let _node_lock = self.state_lock.write().await;
@@ -490,7 +490,7 @@ impl WasmRuntime {
         msg: Vec<u8>,
         funds: Vec<Coin>,
     ) -> HoResult<cosmwasm_std::ContractResult<cosmwasm_std::Response>> {
-        use cnidarium::StateRead;
+        
 
         // Acquire node-wide exclusive lock for state consistency
         let _node_lock = self.state_lock.write().await;

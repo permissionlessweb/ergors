@@ -91,7 +91,7 @@ mod encryption {
         let mut ciphertext = Vec::with_capacity(TAG_SIZE + salt.len() + data.len());
         ciphertext.extend_from_slice(&[0u8; TAG_SIZE]);
         ciphertext.extend_from_slice(&salt);
-        ciphertext.extend_from_slice(&data);
+        ciphertext.extend_from_slice(data);
         let tag = ChaCha20Poly1305::new(&key.into())
             .encrypt_in_place_detached(
                 &Default::default(),
@@ -117,36 +117,9 @@ mod encryption {
             password,
         );
         ChaCha20Poly1305::new(&key.into())
-            .decrypt_in_place_detached(&Default::default(), &salt, &mut message, tag.into())
+            .decrypt_in_place_detached(&Default::default(), salt, &mut message, tag.into())
             .map_err(|_| anyhow!("failed to decrypt ciphertext"))?;
         Ok(message)
-    }
-
-    #[cfg(test)]
-    mod test {
-        use rand_core::OsRng;
-
-        use super::*;
-
-        #[test]
-        fn test_encryption_decryption_roundtrip() -> anyhow::Result<()> {
-            let password = "password".try_into()?;
-            let message = b"hello world";
-            let encrypted = encrypt(&mut OsRng, password, message);
-            let decrypted = decrypt(password, &encrypted)?;
-            assert_eq!(decrypted.as_slice(), message);
-            Ok(())
-        }
-
-        #[test]
-        fn test_encryption_fails_with_different_password() -> anyhow::Result<()> {
-            let password = "password".try_into()?;
-            let message = b"hello world";
-            let encrypted = encrypt(&mut OsRng, password, message);
-            let decrypted = decrypt("not password".try_into()?, &encrypted);
-            assert!(decrypted.is_err());
-            Ok(())
-        }
     }
 
     /// Encrypt API key using node's signing key (no password, direct key derivation)
@@ -169,7 +142,7 @@ mod encryption {
             let mut hasher = Sha256::new();
             hasher.update(b"ERGORS_API_KEY_ENC_V1");
             hasher.update(node_key_bytes);
-            hasher.update(&salt);
+            hasher.update(salt);
             let hash = hasher.finalize();
             let mut key = [0u8; KEY_SIZE];
             key.copy_from_slice(&hash[..KEY_SIZE]);
@@ -179,7 +152,7 @@ mod encryption {
         let mut ciphertext = Vec::with_capacity(TAG_SIZE + salt.len() + data.len());
         ciphertext.extend_from_slice(&[0u8; TAG_SIZE]);
         ciphertext.extend_from_slice(&salt);
-        ciphertext.extend_from_slice(&data);
+        ciphertext.extend_from_slice(data);
         let tag = ChaCha20Poly1305::new(&key.into())
             .encrypt_in_place_detached(
                 &Default::default(),
@@ -219,9 +192,36 @@ mod encryption {
         };
 
         ChaCha20Poly1305::new(&key.into())
-            .decrypt_in_place_detached(&Default::default(), &salt, &mut message, tag.into())
+            .decrypt_in_place_detached(&Default::default(), salt, &mut message, tag.into())
             .map_err(|_| anyhow!("failed to decrypt ciphertext"))?;
         Ok(message)
+    }
+
+    #[cfg(test)]
+    mod test {
+        use rand_core::OsRng;
+
+        use super::*;
+
+        #[test]
+        fn test_encryption_decryption_roundtrip() -> anyhow::Result<()> {
+            let password = "password".try_into()?;
+            let message = b"hello world";
+            let encrypted = encrypt(&mut OsRng, password, message);
+            let decrypted = decrypt(password, &encrypted)?;
+            assert_eq!(decrypted.as_slice(), message);
+            Ok(())
+        }
+
+        #[test]
+        fn test_encryption_fails_with_different_password() -> anyhow::Result<()> {
+            let password = "password".try_into()?;
+            let message = b"hello world";
+            let encrypted = encrypt(&mut OsRng, password, message);
+            let decrypted = decrypt("not password".try_into()?, &encrypted);
+            assert!(decrypted.is_err());
+            Ok(())
+        }
     }
 }
 
@@ -268,7 +268,7 @@ impl Config {
 
     fn decrypt(self, password: &str) -> anyhow::Result<InnerConfig> {
         let decrypted_data = decrypt(password.try_into()?, &self.data)?;
-        Ok(InnerConfig::from_bytes(&decrypted_data)?)
+        InnerConfig::from_bytes(&decrypted_data)
     }
 }
 

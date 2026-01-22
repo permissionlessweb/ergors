@@ -19,6 +19,12 @@ pub struct RouteRegistry {
     routes: Vec<RouteDefinition>,
 }
 
+impl Default for RouteRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RouteRegistry {
     pub fn new() -> Self {
         Self {
