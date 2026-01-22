@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  mock-inference:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "11434:11434"
+    environment:
+      - PORT=11434
+      - HOST=0.0.0.0
+      - MIN_LATENCY_MS=50
+      - MAX_LATENCY_MS=200
+      - ERROR_RATE=0.0
+      - MODEL_NAME=llama2
+      - RUST_LOG=info
+      - VERBOSE=false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  # Additional instance for testing multiple providers
+  mock-inference-vllm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - MIN_LATENCY_MS=100
+      - MAX_LATENCY_MS=500
+      - ERROR_RATE=0.0
+      - MODEL_NAME=meta-llama/Llama-2-7b-chat-hf
+      - RUST_LOG=info
+    restart: unless-stopped
+
+  # High-latency instance for testing timeouts
+  mock-inference-slow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "11435:11434"
+    environment:
+      - PORT=11434
+      - HOST=0.0.0.0
+      - MIN_LATENCY_MS=2000
+      - MAX_LATENCY_MS=5000
+      - ERROR_RATE=0.0
+      - MODEL_NAME=slow-model
+      - RUST_LOG=debug
+    restart: unless-stopped
+
+  # Error-prone instance for testing error handling
+  mock-inference-unreliable:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "11436:11434"
+    environment:
+      - PORT=11434
+      - HOST=0.0.0.0
+      - MIN_LATENCY_MS=50
+      - MAX_LATENCY_MS=200
+      - ERROR_RATE=0.3
+      - MODEL_NAME=unreliable-model
+      - RUST_LOG=debug
+    restart: unless-stopped
+
+networks:
+  default:
+    name: mock-inference-network

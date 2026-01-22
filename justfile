@@ -187,6 +187,64 @@ dist:
     cargo build --profile dist -p {{engine}} -p {{cli}}
 
 # ════════════════════════════════════════════════════════════════════════════
+# CosmWasm Contracts
+# ════════════════════════════════════════════════════════════════════════════
+
+# Build optimized WASM contracts for all contracts in workspace
+contracts-optimize:
+    #!/bin/bash
+    cd contracts
+    if [[ $(uname -m) == 'arm64' ]] || [[ $(uname -m) == 'aarch64' ]]; then \
+        echo "🔨 Building optimized contracts for ARM64..."; \
+        docker run --rm -v "$(pwd)":/code \
+            --mount type=volume,source="$(basename "$(pwd)")_cache",target=/target \
+            --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
+            --platform linux/arm64 \
+            cosmwasm/optimizer-arm64:0.17.0; \
+    elif [[ $(uname -m) == 'x86_64' ]]; then \
+        echo "🔨 Building optimized contracts for x86_64..."; \
+        docker run --rm -v "$(pwd)":/code \
+            --mount type=volume,source="$(basename "$(pwd)")_cache",target=/target \
+            --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
+            --platform linux/amd64 \
+            cosmwasm/optimizer:0.17.0; \
+    else \
+        echo "❌ Unsupported architecture: $(uname -m)"; \
+        exit 1; \
+    fi
+    echo "✅ Optimized contracts available in contracts/artifacts/"
+
+# Test all contracts
+contracts-test:
+    cd contracts && cargo test --workspace
+
+# Check all contracts
+contracts-check:
+    cd contracts && cargo chec
+
+# Generate contract schemas
+contracts-schema:
+    #!/bin/bash
+    cd contracts
+    for contract in */; do \
+        if [ -f "$contract/Cargo.toml" ]; then \
+            echo "📄 Generating schema for $contract"; \
+            cd "$contract" && cargo schema 2>/dev/null || true; \
+            cd ..; \
+        fi \
+    done
+    echo "✅ Schemas generated"
+
+# Build contracts in debug mode
+contracts-build:
+    cd contracts && cargo build --workspace
+
+# Clean contract artifacts
+contracts-clean:
+    cd contracts && cargo clean
+    rm -rf contracts/artifacts
+
+# ════════════════════════════════════════════════════════════════════════════
 # Utilities
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -224,3 +282,5 @@ r := "build-release"
 t := "test"
 c := "check"
 i := "install"
+cw := "contracts-optimize"
+ct := "contracts-test"

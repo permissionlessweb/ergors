@@ -323,11 +323,11 @@ impl WasmRuntime {
             .await?
             .ok_or_else(|| HoError::Wasm(format!("Code not found for code_id: {}", code_id)))?;
 
-        // Get checksum from cache (store_code validates and returns checksum)
+        // Save WASM to cache filesystem so get_instance can find it
         let checksum = self
             .cache
-            .store_code(&wasm_code, true, false)
-            .map_err(|e| HoError::Wasm(format!("Failed to get code checksum: {}", e)))?;
+            .save_wasm(&wasm_code)
+            .map_err(|e| HoError::Wasm(format!("Failed to save WASM to cache: {}", e)))?;
 
         // Create state reader for querier
         let state_reader = Arc::new(SnapshotStateReader::new(state.clone()));
@@ -403,11 +403,12 @@ impl WasmRuntime {
             .await?
             .ok_or_else(|| HoError::Wasm(format!("Code not found for code_id: {}", code_id)))?;
 
-        // Get checksum from cache
+        // Save WASM to cache filesystem so get_instance can find it
+        // Note: save_wasm persists the source, while store_code only caches compiled modules
         let checksum = self
             .cache
-            .store_code(&wasm_code, true, false)
-            .map_err(|e| HoError::Wasm(format!("Failed to get code checksum: {}", e)))?;
+            .save_wasm(&wasm_code)
+            .map_err(|e| HoError::Wasm(format!("Failed to save WASM to cache: {}", e)))?;
 
         // Create state reader for querier
         let state_reader = Arc::new(SnapshotStateReader::new(state.clone()));
@@ -513,11 +514,11 @@ impl WasmRuntime {
             .await?
             .ok_or_else(|| HoError::Wasm(format!("Code not found for code_id: {}", code_id)))?;
 
-        // Get checksum from cache
+        // Save WASM to cache filesystem so get_instance can find it
         let checksum = self
             .cache
-            .store_code(&wasm_code, true, false)
-            .map_err(|e| HoError::Wasm(format!("Failed to get code checksum: {}", e)))?;
+            .save_wasm(&wasm_code)
+            .map_err(|e| HoError::Wasm(format!("Failed to save WASM to cache: {}", e)))?;
 
         // Create state reader for querier
         let state_reader = Arc::new(SnapshotStateReader::new(state.clone()));

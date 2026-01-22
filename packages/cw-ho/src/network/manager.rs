@@ -171,12 +171,15 @@ impl ErgorsNetworkManifold {
     /// * `custody` - Custody backend that provides access to the node's private key
     ///
     /// # Example
-    /// ```ignore
-    /// use ho_std::custody::{PasswordEncryptedCustody, NodeIdentityCustody};
+    /// ```rust,ignore
+    /// use ho_std::custody::PasswordEncryptedCustody;
+    /// use ho_std::traits::NodeIdentityCustody;
     ///
-    /// let custody = PasswordEncryptedCustody::new(identity_path);
-    /// custody.unlock("password").await?;
-    /// manifold.start_network_with_custody(&config, &custody).await?;
+    /// async fn example(manifold: &mut ErgorsNetworkManifold, config: &NetworkConfig) {
+    ///     let custody = PasswordEncryptedCustody::new("/path/to/identity");
+    ///     custody.unlock("password").await.unwrap();
+    ///     manifold.start_network_with_custody(&config, &custody).await.unwrap();
+    /// }
     /// ```
     pub async fn start_network_with_custody<C: NodeIdentityCustody>(
         &mut self,

@@ -2,6 +2,7 @@ pub mod auth;
 pub mod bootstrap;
 pub mod call;
 pub mod config;
+pub mod config_cmd;
 #[cfg(feature = "cw")]
 pub mod contracts;
 pub mod daemon;

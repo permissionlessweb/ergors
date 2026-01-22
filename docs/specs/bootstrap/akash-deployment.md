@@ -591,3 +591,95 @@ Typical costs for inference deployments (mainnet):
 | 8 CPU, 64Gi, 2 GPU | ~8-15 AKT |
 
 Costs vary by provider and market conditions. Use `--max-price` to cap spending.
+
+## Testing
+
+### Integration Testing Environment
+
+ERGORS provides a comprehensive testing suite for validating Akash deployments without production costs.
+
+**Components:**
+- **Kind Cluster**: Local Kubernetes with Akash node/provider
+- **Mock Inference Provider**: Simulates Ollama/OpenAI/TGI APIs without GPU
+- **Test Wallet Manager**: Pre-funded accounts for testing
+- **Network Topology**: Multi-node grant request simulation
+
+### Quick Start
+
+```bash
+# 1. Setup Akash development environment
+./packages/cw-ho/tests/scripts/setup-akash-dev.sh
+
+# 2. Build mock inference provider
+cd docker/mock-inference-provider
+docker build -t ergors/mock-inference-provider .
+
+# 3. Run mock provider
+docker run -p 11434:11434 ergors/mock-inference-provider
+
+# 4. Run integration tests
+cargo test -p ergors --features testing -- --nocapture
+```
+
+### Mock Inference Provider
+
+Test against a mock inference provider that simulates real API responses:
+
+```bash
+# Ollama API
+curl http://localhost:11434/api/generate \
+  -d '{"model":"llama2","prompt":"Hello","stream":false}'
+
+# OpenAI API
+curl http://localhost:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama2","messages":[{"role":"user","content":"Hello"}]}'
+
+# TGI API
+curl http://localhost:11434/generate \
+  -d '{"inputs":"Hello","parameters":{"max_new_tokens":100}}'
+```
+
+### Deploy Mock Provider to Akash
+
+Test the full deployment workflow using the mock provider:
+
+```bash
+# Deploy mock inference provider (no GPU required)
+ergors akash deploy custom \
+  --key deployer \
+  --template docker/mock-inference-provider/deploy.sdl.yaml \
+  --var MODEL_NAME=llama2 \
+  --var MIN_LATENCY_MS=100
+```
+
+### Testing Grant Requests
+
+Test the authz/feegrant workflow without real funds:
+
+```rust
+use cw_ho::deploy::testing::prelude::*;
+
+#[tokio::test]
+async fn test_deployment_with_grants() {
+    // Setup network simulation
+    let network = NetworkTopology::new();
+    let requester = network.create_node("requester").await?;
+    network.create_node("granter").await?;
+
+    // Configure whitelist
+    network.set_grant_mode("granter", GrantAcceptanceMode::Whitelist).await?;
+    network.whitelist_add("granter", &requester.pubkey).await?;
+
+    // Submit grant request
+    let request = network.submit_grant_request(
+        "requester", "granter",
+        GrantTypeRequest::AuthzAndFeegrant,
+        86400, 5_000_000, "Test deployment"
+    ).await?;
+
+    assert_eq!(request.status, GrantRequestStatus::Approved);
+}
+```
+
+See [Akash Deployment Testing Plan](../akash-deployment-testing-plan.md) for complete documentation.

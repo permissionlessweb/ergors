@@ -117,16 +117,34 @@ impl Server {
             use ho_std::wasm::WasmRuntime;
             use std::path::PathBuf;
 
-            let cache_dir = PathBuf::from(&c.storage().data_dir).join("wasm_cache");
+            // Use cache_dir from cosmwasm config
+            let cache_dir = PathBuf::from(c.wasm_cache_dir().as_str());
+            std::fs::create_dir_all(&cache_dir)?;
             Arc::new(WasmRuntime::new(cache_dir)?)
         };
+
+        let storage_arc = Arc::new(s);
+
+        // Deploy required contracts on startup (only if CosmWasm enabled)
+        #[cfg(feature = "cw")]
+        {
+            use crate::contracts::ContractManager;
+
+            let contract_manager = ContractManager::new(
+                storage_arc.clone(),
+                wasm_runtime.clone(),
+                c.identity().node_type.clone(),
+            );
+
+            contract_manager.deploy_required_contracts(&c).await?;
+        }
 
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
-                Arc::new(LlmRouter::new(&s.cs.latest_snapshot(), c.llm().deref()).await?),
+                Arc::new(LlmRouter::new(&storage_arc.cs.latest_snapshot(), c.llm().deref()).await?),
                 // s == storage layer
-                Arc::new(s),
+                storage_arc,
                 // nm == network manifold
                 Arc::new(tokio::sync::Mutex::new(nm)),
                 // t == time

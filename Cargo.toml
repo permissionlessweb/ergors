@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 
-exclude = ["sub-modules/*"]
+exclude = []
 members = ["packages/*", "proto"]
 
 [workspace.metadata]
@@ -62,7 +62,7 @@ camino  = { version = "1" }
 chacha20poly1305                 = { version = "0.9.0" }
 chrono = { version = "0.4.40", default-features = false, features = ["serde","clock"] }
 clap = { version = "4.5", features = ["derive"] }
-cnidarium = { path = "./sub-modules/cnidarium" }
+cnidarium  = { version =  "0.84.0" }
 commonware-broadcast  = "0.0.63"
 commonware-codec         = { version = "0.0.63" }
 commonware-collector  = "0.0.63"

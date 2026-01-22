@@ -9,6 +9,7 @@ use ergors::{
     auth::AuthCmd,
     call::CallCmd,
     config::ErgorsConfig,
+    config_cmd::ConfigCmd,
     daemon::{Daemon, SignalHandler},
     grpc::management::{start_grpc_server, ManagementServiceImpl},
     init::InitCmd,
@@ -52,6 +53,8 @@ pub enum Commands {
     },
     /// Generate a sample configuration file
     Init(InitCmd),
+    /// Manage configuration values
+    Config(ConfigCmd),
     /// register/revoke
     ManageAuth(AuthCmd),
     /// register/revoke
@@ -76,6 +79,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Init(cmd) => cmd.init(cli.home.as_path())?,
+        Commands::Config(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::Start { grpc_port } => start(cli, grpc_port)?,
         Commands::ManageAuth(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::Call(_) => todo!(),

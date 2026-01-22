@@ -1,0 +1,61 @@
+---
+# Akash SDL for Mock Inference Provider
+# Deploy this to Akash Network for integration testing without GPU requirements
+#
+# Variables:
+#   MODEL_NAME - Model name to report (default: llama2)
+#   MIN_LATENCY_MS - Minimum simulated latency (default: 50)
+#   MAX_LATENCY_MS - Maximum simulated latency (default: 200)
+#   ERROR_RATE - Error rate 0.0-1.0 (default: 0.0)
+#
+# Usage:
+#   akash tx deployment create deploy.sdl.yaml --from <wallet> --chain-id akashnet-2
+
+version: "2.0"
+
+services:
+  mock-inference:
+    image: ghcr.io/permissionlessweb/mock-inference-provider:latest
+    expose:
+      - port: 11434
+        as: 80
+        to:
+          - global: true
+    env:
+      - PORT=11434
+      - HOST=0.0.0.0
+      - MODEL_NAME=${MODEL_NAME:llama2}
+      - MIN_LATENCY_MS=${MIN_LATENCY_MS:50}
+      - MAX_LATENCY_MS=${MAX_LATENCY_MS:200}
+      - ERROR_RATE=${ERROR_RATE:0.0}
+      - RUST_LOG=${LOG_LEVEL:info}
+
+profiles:
+  compute:
+    mock-inference:
+      resources:
+        cpu:
+          units: ${CPU_UNITS:1}
+        memory:
+          size: ${MEMORY_SIZE:512Mi}
+        storage:
+          - size: ${STORAGE_SIZE:1Gi}
+
+  placement:
+    dcloud:
+      attributes:
+        host: akash
+      signedBy:
+        anyOf:
+          - akash1365ez32a3v6f08m4v05tn6jdnfhv6v5rxukgdt
+          - akash18qa2a2ltfyvkyj0ggj3hkvuj6twzy8eddrq5he
+      pricing:
+        mock-inference:
+          denom: uakt
+          amount: ${MAX_PRICE:1000}
+
+deployment:
+  mock-inference:
+    dcloud:
+      profile: mock-inference
+      count: ${REPLICAS:1}

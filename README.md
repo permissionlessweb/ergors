@@ -239,5 +239,7 @@ Tests using orchestration servers are essentially scripts that can be used to ve
 We have ported into this workspace existing designs from the following code-bases:
 
 * [penumbra](https://github.com/penumbra-zone/penumbra)
+* [commonware](https://commonware.xyz/)
+* [cosmwasm](https://github.com/cosmwasm/cosmwasm)
 
 THANK YOU to the contributors of these, go show some support to their projects

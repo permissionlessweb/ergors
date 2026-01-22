@@ -9,6 +9,7 @@ license = "MIT"
 [features]
 default = ["cw"]
 cw = []
+testing = []
 
 
 [[bin]]

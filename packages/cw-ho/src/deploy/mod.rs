@@ -10,3 +10,6 @@ pub mod requester;
 pub mod sdl;
 pub mod transaction;
 pub mod workflow;
+
+#[cfg(feature = "testing")]
+pub mod testing;
