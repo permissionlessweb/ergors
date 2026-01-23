@@ -2965,6 +2965,203 @@ impl ::prost::Name for WorkflowGrantState {
         "/ergors.orch.v1.WorkflowGrantState".into()
     }
 }
+/// Entry representing an authenticator registration
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AuthenticatorEntry {
+    /// The endpoint label this authenticator is registered for
+    #[prost(string, tag = "1")]
+    pub endpoint_label: ::prost::alloc::string::String,
+    /// The CosmWasm contract address that handles authorization
+    #[prost(string, tag = "2")]
+    pub contract_address: ::prost::alloc::string::String,
+    /// Human-readable description of this authenticator
+    #[prost(string, tag = "3")]
+    pub description: ::prost::alloc::string::String,
+    /// When the authenticator was registered
+    #[prost(message, optional, tag = "4")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Whether the authenticator is currently active
+    #[prost(bool, tag = "5")]
+    pub active: bool,
+}
+impl ::prost::Name for AuthenticatorEntry {
+    const NAME: &'static str = "AuthenticatorEntry";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AuthenticatorEntry".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AuthenticatorEntry".into()
+    }
+}
+/// Request to register an authenticator for an endpoint
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterAuthenticatorRequest {
+    /// The endpoint label to protect (e.g., "api/prompts", "orchestrate/fractal")
+    #[prost(string, tag = "1")]
+    pub endpoint_label: ::prost::alloc::string::String,
+    /// The CosmWasm contract address that will handle authorization
+    #[prost(string, tag = "2")]
+    pub contract_address: ::prost::alloc::string::String,
+    /// Optional description of this authenticator
+    #[prost(string, tag = "3")]
+    pub description: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RegisterAuthenticatorRequest {
+    const NAME: &'static str = "RegisterAuthenticatorRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RegisterAuthenticatorRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RegisterAuthenticatorRequest".into()
+    }
+}
+/// Response from registering an authenticator
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterAuthenticatorResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub entry: ::core::option::Option<AuthenticatorEntry>,
+}
+impl ::prost::Name for RegisterAuthenticatorResponse {
+    const NAME: &'static str = "RegisterAuthenticatorResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RegisterAuthenticatorResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RegisterAuthenticatorResponse".into()
+    }
+}
+/// Request to list all registered authenticators
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListAuthenticatorsRequest {
+    /// Optional filter by endpoint label prefix
+    #[prost(string, tag = "1")]
+    pub endpoint_prefix: ::prost::alloc::string::String,
+    /// Pagination limit
+    #[prost(uint32, tag = "2")]
+    pub limit: u32,
+    /// Pagination offset
+    #[prost(uint32, tag = "3")]
+    pub offset: u32,
+}
+impl ::prost::Name for ListAuthenticatorsRequest {
+    const NAME: &'static str = "ListAuthenticatorsRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ListAuthenticatorsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ListAuthenticatorsRequest".into()
+    }
+}
+/// Response listing all registered authenticators
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListAuthenticatorsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub authenticators: ::prost::alloc::vec::Vec<AuthenticatorEntry>,
+    #[prost(uint32, tag = "2")]
+    pub total_count: u32,
+}
+impl ::prost::Name for ListAuthenticatorsResponse {
+    const NAME: &'static str = "ListAuthenticatorsResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ListAuthenticatorsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ListAuthenticatorsResponse".into()
+    }
+}
+/// Request to remove an authenticator
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteAuthenticatorRequest {
+    /// The endpoint label to remove the authenticator from
+    #[prost(string, tag = "1")]
+    pub endpoint_label: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeleteAuthenticatorRequest {
+    const NAME: &'static str = "DeleteAuthenticatorRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeleteAuthenticatorRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeleteAuthenticatorRequest".into()
+    }
+}
+/// Response from deleting an authenticator
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteAuthenticatorResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeleteAuthenticatorResponse {
+    const NAME: &'static str = "DeleteAuthenticatorResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeleteAuthenticatorResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeleteAuthenticatorResponse".into()
+    }
+}
+/// Query for checking if an address is authorized for an endpoint
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AuthorizationCheckRequest {
+    /// The endpoint label to check
+    #[prost(string, tag = "1")]
+    pub endpoint_label: ::prost::alloc::string::String,
+    /// The address/pubkey to check authorization for
+    #[prost(string, tag = "2")]
+    pub address: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AuthorizationCheckRequest {
+    const NAME: &'static str = "AuthorizationCheckRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AuthorizationCheckRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AuthorizationCheckRequest".into()
+    }
+}
+/// Response from authorization check
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AuthorizationCheckResponse {
+    #[prost(bool, tag = "1")]
+    pub authorized: bool,
+    #[prost(string, tag = "2")]
+    pub reason: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub authenticator_contract: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AuthorizationCheckResponse {
+    const NAME: &'static str = "AuthorizationCheckResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AuthorizationCheckResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AuthorizationCheckResponse".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

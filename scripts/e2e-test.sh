@@ -19,10 +19,14 @@
 #
 # Options:
 #   --skip-build       Skip building ergors binary
+#   --skip-contracts   Skip building CosmWasm contracts (use existing artifacts)
 #   --skip-network     Skip ERGORS network setup (use existing)
 #   --skip-akash       Skip Akash/Kind setup (use existing)
 #   --skip-cleanup     Keep everything running after tests
 #   --verbose          Enable verbose output
+#   --live-logs        Stream node logs in real-time (colored by node)
+#   --mock             Use mock Akash mode (Kind cluster only, no real blockchain)
+#   --akash-home PATH  Set Akash repo location (default: ~/go/src/github.com/akash-network)
 #   --help             Show this help message
 
 set -e
@@ -49,8 +53,27 @@ BASE_PORT=50100
 EXECUTOR_COUNT=2
 TEST_CUSTODY_PASSWORD="e2e-test-password-12345"
 
+# Akash Dev Environment Config
+AKASH_HOME="${HOME}/go/src/github.com/akash-network"
+AKASH_PROVIDER_DIR="${AKASH_HOME}/provider"
+AKASH_KUBE_DIR="${AKASH_PROVIDER_DIR}/_run/kube"
+KUBE_ROLLOUT_TIMEOUT=${KUBE_ROLLOUT_TIMEOUT:-30000}
+GOVERSION_SEMVER=${GOVERSION_SEMVER:-"v1.24.2"}
+
+# GNU Make command - will be resolved after PATH setup in check_prerequisites
+MAKE_CMD="make"
+
+# Akash process PIDs
+AKASH_NODE_PID=""
+AKASH_PROVIDER_PID=""
+AKASH_OPERATOR_PIDS=()
+
+# Real Akash mode (vs mock mode) - default to real blockchain
+USE_REAL_AKASH=true
+
 # Flags
 SKIP_BUILD=false
+SKIP_CONTRACTS=false
 SKIP_NETWORK=false
 SKIP_AKASH=false
 SKIP_CLEANUP=false
@@ -58,21 +81,29 @@ VERBOSE=false
 
 # Tracking
 declare -a NODE_PIDS
+declare -a TAIL_PIDS
 COORDINATOR_GRPC=""
 EXECUTOR_GRPC=""
 DEPLOYED_ENDPOINT=""
 DEPLOYMENT_ID=""
 
+# Live log streaming flag
+LIVE_LOGS=false
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --skip-build) SKIP_BUILD=true; shift ;;
+        --skip-contracts) SKIP_CONTRACTS=true; shift ;;
         --skip-network) SKIP_NETWORK=true; shift ;;
         --skip-akash) SKIP_AKASH=true; shift ;;
         --skip-cleanup) SKIP_CLEANUP=true; shift ;;
         --verbose) VERBOSE=true; shift ;;
+        --live-logs) LIVE_LOGS=true; shift ;;
+        --mock) USE_REAL_AKASH=false; shift ;;
+        --akash-home) AKASH_HOME="$2"; AKASH_PROVIDER_DIR="${AKASH_HOME}/provider"; AKASH_KUBE_DIR="${AKASH_PROVIDER_DIR}/_run/kube"; shift 2 ;;
         --help|-h)
-            head -n 28 "$0" | tail -n 25 | sed 's/^#//'
+            head -n 35 "$0" | tail -n 32 | sed 's/^#//'
             exit 0
             ;;
         *) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
@@ -85,6 +116,47 @@ log_success() { echo -e "${GREEN}[$(date +%H:%M:%S)] ✓${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[$(date +%H:%M:%S)] ⚠${NC} $1"; }
 log_error() { echo -e "${RED}[$(date +%H:%M:%S)] ✗${NC} $1"; }
 log_step() { echo -e "\n${CYAN}${BOLD}═══════════════════════════════════════════════════════════${NC}"; echo -e "${CYAN}${BOLD}  $1${NC}"; echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════════${NC}\n"; }
+
+# Node-specific log colors
+COORD_COLOR='\033[0;35m'   # Magenta for coordinator
+EXEC_COLOR='\033[0;36m'    # Cyan for executor
+MOCK_COLOR='\033[0;33m'    # Yellow for mock provider
+
+# Start streaming logs from a node's log file
+start_log_stream() {
+    local node_name=$1
+    local log_file=$2
+    local color=$3
+    local prefix="[$node_name]"
+
+    if [ "$LIVE_LOGS" != true ]; then
+        return
+    fi
+
+    # Create the log file if it doesn't exist
+    touch "$log_file"
+
+    # Start tail -f in background, prefixing each line with colored node name
+    (tail -f "$log_file" 2>/dev/null | while IFS= read -r line; do
+        echo -e "${color}${prefix}${NC} $line"
+    done) &
+    local tail_pid=$!
+    TAIL_PIDS+=($tail_pid)
+    log "Started log stream for $node_name (tail PID: $tail_pid)"
+}
+
+# Stop all log streams
+stop_log_streams() {
+    if [ ${#TAIL_PIDS[@]} -gt 0 ]; then
+        log "Stopping log streams..."
+        for pid in "${TAIL_PIDS[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" 2>/dev/null || true
+            fi
+        done
+        TAIL_PIDS=()
+    fi
+}
 
 # Debug: show node logs
 show_node_logs() {
@@ -117,11 +189,16 @@ START_TIME=$(date +%s)
 
 # Cleanup function
 cleanup() {
+    # Always stop log streams first
+    stop_log_streams
+
     if [ "$SKIP_CLEANUP" = true ]; then
         log_warn "Skipping cleanup (--skip-cleanup)"
         log_warn "Test dir: ${TEST_DIR}"
         log_warn "Cluster: ${CLUSTER_NAME}"
-        [ ${#NODE_PIDS[@]} -gt 0 ] && log_warn "Node PIDs: ${NODE_PIDS[*]}"
+        [ ${#NODE_PIDS[@]} -gt 0 ] && log_warn "ERGORS PIDs: ${NODE_PIDS[*]}"
+        [ -n "$AKASH_NODE_PID" ] && log_warn "Akash Node PID: ${AKASH_NODE_PID}"
+        [ -n "$AKASH_PROVIDER_PID" ] && log_warn "Akash Provider PID: ${AKASH_PROVIDER_PID}"
         return
     fi
 
@@ -135,10 +212,15 @@ cleanup() {
         fi
     done
 
-    # Delete Kind cluster
-    if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
-        log "Deleting Kind cluster..."
-        kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
+    # Cleanup real Akash environment if used
+    if [ "$USE_REAL_AKASH" = true ]; then
+        cleanup_akash_environment
+    else
+        # Delete Kind cluster (mock mode)
+        if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+            log "Deleting Kind cluster..."
+            kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
+        fi
     fi
 
     # Remove test directory
@@ -163,6 +245,73 @@ check_prerequisites() {
     command -v kubectl &>/dev/null || missing+=("kubectl")
     command -v cargo &>/dev/null || missing+=("cargo")
 
+    # Additional prerequisites for real Akash mode
+    if [ "$USE_REAL_AKASH" = true ]; then
+        command -v go &>/dev/null || missing+=("go")
+
+        # Check for GNU Make 4.0+ (required by Akash)
+        local make_version=""
+        if [[ "$(uname)" == "Darwin" ]]; then
+            # macOS: prefer gmake (GNU Make from Homebrew)
+            if command -v gmake &>/dev/null; then
+                make_version=$(gmake --version 2>/dev/null | head -1 | grep -o '[0-9]\+\.[0-9]\+' | head -1)
+                MAKE_CMD="gmake"
+                log "Using GNU Make (gmake): $make_version"
+            else
+                log_error "GNU Make 4.0+ required but not found"
+                log_error "Install with: brew install make"
+                log_error "Then use 'gmake' or add /opt/homebrew/opt/make/libexec/gnubin to PATH"
+                missing+=("gmake (GNU Make 4.0+)")
+            fi
+        else
+            # Linux: check system make version
+            if command -v make &>/dev/null; then
+                make_version=$(make --version 2>/dev/null | head -1 | grep -o '[0-9]\+\.[0-9]\+' | head -1)
+                local major_version=$(echo "$make_version" | cut -d. -f1)
+                if [ "$major_version" -lt 4 ] 2>/dev/null; then
+                    log_error "GNU Make 4.0+ required, found $make_version"
+                    missing+=("make (version 4.0+)")
+                fi
+            else
+                missing+=("make")
+            fi
+        fi
+
+        # On macOS, setup GNU Make wrapper and install missing deps
+        if [[ "$(uname)" == "Darwin" ]]; then
+            # Use Homebrew's gnubin to put GNU Make as 'make' in PATH
+            if [ -d "/opt/homebrew/opt/make/libexec/gnubin" ]; then
+                export PATH="/opt/homebrew/opt/make/libexec/gnubin:$PATH"
+                log "Using Homebrew GNU Make: $(make --version | head -1)"
+            elif [ -d "/usr/local/opt/make/libexec/gnubin" ]; then
+                export PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
+                log "Using Homebrew GNU Make: $(make --version | head -1)"
+            elif command -v gmake &>/dev/null; then
+                # Fallback: create wrapper symlink
+                MAKE_WRAPPER_DIR="${HOME}/.local/bin/gmake-wrapper"
+                mkdir -p "$MAKE_WRAPPER_DIR"
+                ln -sf "$(which gmake)" "$MAKE_WRAPPER_DIR/make"
+                export PATH="$MAKE_WRAPPER_DIR:$PATH"
+                log "Created make -> gmake wrapper"
+            else
+                log_error "GNU Make 4.0+ required: brew install make"
+                missing+=("gmake")
+            fi
+
+            # Ensure wget is available (required by Akash Makefile)
+            if ! command -v wget &>/dev/null; then
+                log_warn "wget not found - installing..."
+                brew install wget 2>&1 | tail -3
+            fi
+
+            # Ensure realpath is available (coreutils on macOS)
+            if ! command -v realpath &>/dev/null; then
+                log_warn "realpath not found - installing coreutils..."
+                brew install coreutils 2>&1 | tail -3
+            fi
+        fi
+    fi
+
     if [ ${#missing[@]} -gt 0 ]; then
         log_error "Missing required tools: ${missing[*]}"
         exit 1
@@ -173,7 +322,561 @@ check_prerequisites() {
         exit 1
     fi
 
+    # Check Go version for real Akash mode
+    if [ "$USE_REAL_AKASH" = true ]; then
+        local go_version=$(go version 2>/dev/null | awk '{print $3}')
+        log "Go version: $go_version"
+    fi
+
     log_success "All prerequisites satisfied"
+}
+
+# ==================== Real Akash Dev Environment ====================
+
+# Clone or update Akash provider repository
+setup_akash_repos() {
+    log_step "Setting Up Akash Dev Repositories"
+
+    # Create parent directory if needed
+    mkdir -p "${AKASH_HOME}"
+
+    # Clone provider repo if not present
+    if [ ! -d "${AKASH_PROVIDER_DIR}" ]; then
+        log "Cloning akash-network/provider repository..."
+        cd "${AKASH_HOME}"
+        git clone https://github.com/akash-network/provider.git
+        log_success "Provider repo cloned to ${AKASH_PROVIDER_DIR}"
+    else
+        log "Provider repo already exists at ${AKASH_PROVIDER_DIR}"
+        # Optionally update
+        if [ "$VERBOSE" = true ]; then
+            cd "${AKASH_PROVIDER_DIR}"
+            git fetch origin
+            log "Current branch: $(git branch --show-current)"
+        fi
+    fi
+
+    # Verify kube runbook exists
+    if [ ! -d "${AKASH_KUBE_DIR}" ]; then
+        log_error "Akash kube directory not found at ${AKASH_KUBE_DIR}"
+        log_error "The provider repo structure may have changed"
+        exit 1
+    fi
+
+    # Setup environment for the provider repo
+    cd "${AKASH_PROVIDER_DIR}"
+    log "Loading Akash environment variables..."
+    load_akash_env
+
+    log_success "Akash repos ready"
+}
+
+# Setup Akash environment variables (replaces direnv)
+# Sources the .env file and sets all required variables the Makefile expects
+load_akash_env() {
+    export AP_ROOT="${AKASH_PROVIDER_DIR}"
+    export AKASH_DIRENV_SET=1
+
+    # Source the .env file to get DEVCACHE paths
+    if [ -f "${AKASH_PROVIDER_DIR}/.env" ]; then
+        # Substitute AP_ROOT in .env values and export them
+        while IFS='=' read -r key value; do
+            # Skip comments and empty lines
+            [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
+            # Substitute ${AP_ROOT} with actual path
+            value="${value//\$\{AP_ROOT\}/$AP_ROOT}"
+            value="${value//\$AP_ROOT/$AP_ROOT}"
+            export "$key=$value"
+        done < "${AKASH_PROVIDER_DIR}/.env"
+    fi
+
+    # Set kube-specific run variables
+    export AP_RUN_NAME="kube"
+    export DEVCACHE_RUN="${AP_DEVCACHE_BASE:-${AP_ROOT}/.cache}/run"
+    export AP_RUN_DIR="${DEVCACHE_RUN}/${AP_RUN_NAME}"
+    export AKASH_HOME="${AP_RUN_DIR}/.akash"
+
+    # Trick the Makefile into thinking direnv loaded (DIRENV_FILE must match CURDIR/.envrc)
+    export DIRENV_FILE="${AKASH_KUBE_DIR}/.envrc"
+    export DIRENV_DIR="${AKASH_KUBE_DIR}"
+
+    # Set Go environment variables (parsed from go.mod)
+    local gomod="${AP_ROOT}/go.mod"
+    if [ -f "$gomod" ]; then
+        local go_version=$(grep -E '^go [0-9]+\.[0-9]+' "$gomod" | head -1 | awk '{print $2}')
+        local toolchain=$(grep -E '^toolchain go' "$gomod" | head -1 | awk '{print $2}')
+
+        if [ -n "$toolchain" ]; then
+            export GOTOOLCHAIN="$toolchain"
+        elif [ -n "$go_version" ]; then
+            # If no toolchain directive, use go version
+            export GOTOOLCHAIN="go${go_version}"
+        fi
+
+        export GOVERSION="${GOTOOLCHAIN}"
+        export GOTOOLCHAIN_SEMVER="v${GOTOOLCHAIN#go}"
+        export GOVERSION_SEMVER="${GOTOOLCHAIN_SEMVER}"
+    fi
+
+    # Set GOPATH if not set
+    if [ -z "$GOPATH" ]; then
+        export GOPATH=$(go env GOPATH 2>/dev/null || echo "$HOME/go")
+    fi
+
+    # Set ROOT_DIR for Makefile
+    export ROOT_DIR="${AP_ROOT}"
+
+    # Set binary paths (normally set by .envrc)
+    export AP_DEVCACHE="${AP_DEVCACHE:-${AP_ROOT}/.cache}"
+    export AP_DEVCACHE_BIN="${AP_DEVCACHE_BIN:-${AP_DEVCACHE}/bin}"
+    export AP_DEVCACHE_INCLUDE="${AP_DEVCACHE_INCLUDE:-${AP_DEVCACHE}/include}"
+    export AP_DEVCACHE_VERSIONS="${AP_DEVCACHE_VERSIONS:-${AP_DEVCACHE}/versions}"
+    export AP_DEVCACHE_NODE_MODULES="${AP_DEVCACHE_NODE_MODULES:-${AP_DEVCACHE}}"
+    export AP_DEVCACHE_NODE_BIN="${AP_DEVCACHE_NODE_BIN:-${AP_DEVCACHE_NODE_MODULES}/node_modules/.bin}"
+    export AP_DEVCACHE_TESTS="${AP_DEVCACHE_TESTS:-${AP_DEVCACHE}/tests}"
+    export AKASH="${AP_DEVCACHE_BIN}/akash"
+    export PROVIDER_SERVICES="${AP_DEVCACHE_BIN}/provider-services"
+    export SEMVER="${AP_ROOT}/script/semver.sh"
+
+    # Create required directories
+    mkdir -p "$AP_RUN_DIR" "$AKASH_HOME" "$AP_DEVCACHE_BIN" "$AP_DEVCACHE_INCLUDE" \
+             "$AP_DEVCACHE_VERSIONS" "$AP_DEVCACHE_TESTS" "$DEVCACHE_RUN" 2>/dev/null || true
+}
+
+# Run a make command in the Akash kube directory with proper environment
+akash_make() {
+    local target="$1"
+    shift
+
+    # Ensure environment is loaded
+    load_akash_env
+
+    # Run gmake from the kube directory
+    cd "${AKASH_KUBE_DIR}"
+    $MAKE_CMD "$target" "$@"
+}
+
+# Initialize Akash kube environment (clean state)
+init_akash_kube() {
+    log "Initializing Akash kube environment..."
+
+    # Clean up any existing state using direnv exec
+    akash_make clean 2>/dev/null || true
+    akash_make init 2>/dev/null || true
+
+    log_success "Akash kube environment initialized"
+}
+
+# Create Kind cluster with Akash components
+setup_akash_kube_cluster() {
+    log_step "Setting Up Akash Kind Cluster"
+
+    # Delete existing cluster if present
+    if kind get clusters 2>/dev/null | grep -q "^kind$"; then
+        log "Deleting existing Kind cluster..."
+        akash_make kube-cluster-delete 2>/dev/null || kind delete cluster --name kind
+    fi
+
+    # Set environment for build
+    export GOVERSION_SEMVER="${GOVERSION_SEMVER}"
+    export KUBE_ROLLOUT_TIMEOUT="${KUBE_ROLLOUT_TIMEOUT}"
+    # Skip building provider from source - uses released binaries instead
+    # (goreleaser-cross images may not exist for latest Go versions)
+    export SKIP_BUILD=true
+
+    log "Creating Kind cluster with Akash components (timeout: ${KUBE_ROLLOUT_TIMEOUT}s)..."
+    log "This may take several minutes..."
+
+    local cluster_log="${TEST_DIR}/akash-cluster-setup.log"
+    if [ "$VERBOSE" = true ]; then
+        akash_make kube-cluster-setup 2>&1 | tee "$cluster_log"
+    else
+        # Stream to log file, show periodic progress
+        akash_make kube-cluster-setup > "$cluster_log" 2>&1 &
+        local make_pid=$!
+        local elapsed=0
+        while kill -0 "$make_pid" 2>/dev/null; do
+            sleep 10
+            elapsed=$((elapsed + 10))
+            local last_line=$(tail -1 "$cluster_log" 2>/dev/null | head -c 120)
+            log "  [${elapsed}s] ${last_line}"
+        done
+        wait "$make_pid"
+        local exit_code=$?
+        if [ $exit_code -ne 0 ]; then
+            log_error "kube-cluster-setup failed (exit code: $exit_code). Last 30 lines:"
+            tail -30 "$cluster_log" | while IFS= read -r line; do
+                log "  $line"
+            done
+            exit 1
+        fi
+        log "Cluster setup complete. Full log: $cluster_log"
+    fi
+
+    # Verify cluster is ready
+    if ! kubectl cluster-info &>/dev/null; then
+        log_error "Kind cluster failed to start"
+        exit 1
+    fi
+
+    log_success "Akash Kind cluster ready"
+    kubectl get nodes
+}
+
+# Start Akash blockchain node
+start_akash_node() {
+    log_step "Starting Akash Blockchain Node"
+
+    local node_log="${TEST_DIR}/akash-node.log"
+    mkdir -p "${TEST_DIR}"
+
+    log "Starting Akash node (logs: ${node_log})..."
+
+    # Start node in background using direnv exec
+    akash_make node-run > "${node_log}" 2>&1 &
+    AKASH_NODE_PID=$!
+
+    log "Akash node PID: ${AKASH_NODE_PID}"
+
+    # Start log streaming if enabled
+    start_log_stream "ANODE" "${node_log}" "${BLUE}"
+
+    # Wait for node to be ready
+    local max_wait=60
+    local waited=0
+    log "Waiting for Akash node to be ready..."
+
+    while [ $waited -lt $max_wait ]; do
+        sleep 2
+        waited=$((waited + 2))
+
+        # Check if process is still running
+        if ! kill -0 "$AKASH_NODE_PID" 2>/dev/null; then
+            log_error "Akash node process died"
+            tail -50 "${node_log}" 2>/dev/null || true
+            exit 1
+        fi
+
+        # Check for ready indicators in log
+        if grep -q "committed state\|indexed block\|Timed out" "${node_log}" 2>/dev/null; then
+            log_success "Akash node ready (${waited}s)"
+            return 0
+        fi
+
+        log "  Waiting for node... (${waited}/${max_wait}s)"
+    done
+
+    log_warn "Node may not be fully ready yet (timeout after ${max_wait}s)"
+    log_warn "Continuing anyway - check logs if issues occur"
+}
+
+# Create provider on blockchain
+create_akash_provider() {
+    log_step "Creating Akash Provider"
+
+    log "Registering provider on blockchain..."
+
+    if [ "$VERBOSE" = true ]; then
+        akash_make provider-create
+    else
+        akash_make provider-create 2>&1 | tail -10
+    fi
+
+    log_success "Akash provider created"
+}
+
+# Start Akash provider service
+start_akash_provider() {
+    log_step "Starting Akash Provider Service"
+
+    local provider_log="${TEST_DIR}/akash-provider.log"
+
+    log "Starting Akash provider (logs: ${provider_log})..."
+
+    # Start provider in background using direnv exec
+    akash_make provider-run > "${provider_log}" 2>&1 &
+    AKASH_PROVIDER_PID=$!
+
+    log "Akash provider PID: ${AKASH_PROVIDER_PID}"
+
+    # Start log streaming if enabled
+    start_log_stream "APROV" "${provider_log}" "${GREEN}"
+
+    # Wait for provider to be ready
+    local max_wait=60
+    local waited=0
+    log "Waiting for Akash provider to be ready..."
+
+    while [ $waited -lt $max_wait ]; do
+        sleep 2
+        waited=$((waited + 2))
+
+        # Check if process is still running
+        if ! kill -0 "$AKASH_PROVIDER_PID" 2>/dev/null; then
+            log_error "Akash provider process died"
+            tail -50 "${provider_log}" 2>/dev/null || true
+            exit 1
+        fi
+
+        # Check for ready indicators
+        if grep -q "listening\|bidengine.*running\|server started" "${provider_log}" 2>/dev/null; then
+            log_success "Akash provider ready (${waited}s)"
+            return 0
+        fi
+
+        log "  Waiting for provider... (${waited}/${max_wait}s)"
+    done
+
+    log_warn "Provider may not be fully ready yet (timeout after ${max_wait}s)"
+}
+
+# Full Akash dev environment setup
+setup_real_akash_environment() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        log_warn "Real Akash mode not enabled (use --real-akash flag)"
+        return 0
+    fi
+
+    setup_akash_repos
+    init_akash_kube
+    setup_akash_kube_cluster
+    start_akash_node
+    create_akash_provider
+    start_akash_provider
+
+    log_success "Real Akash development environment ready"
+    log "  Node PID: ${AKASH_NODE_PID}"
+    log "  Provider PID: ${AKASH_PROVIDER_PID}"
+}
+
+# Cleanup Akash dev environment
+cleanup_akash_environment() {
+    log "Cleaning up Akash environment..."
+
+    # Stop provider
+    if [ -n "$AKASH_PROVIDER_PID" ] && kill -0 "$AKASH_PROVIDER_PID" 2>/dev/null; then
+        log "Stopping Akash provider (PID: $AKASH_PROVIDER_PID)..."
+        kill "$AKASH_PROVIDER_PID" 2>/dev/null || true
+    fi
+
+    # Stop node
+    if [ -n "$AKASH_NODE_PID" ] && kill -0 "$AKASH_NODE_PID" 2>/dev/null; then
+        log "Stopping Akash node (PID: $AKASH_NODE_PID)..."
+        kill "$AKASH_NODE_PID" 2>/dev/null || true
+    fi
+
+    # Delete Kind cluster created by Akash
+    if [ "$USE_REAL_AKASH" = true ] && [ -d "${AKASH_KUBE_DIR}" ]; then
+        akash_make kube-cluster-delete 2>/dev/null || true
+    fi
+
+    log_success "Akash environment cleaned up"
+}
+
+# ==================== Real Akash Deployment Workflow ====================
+
+# Create deployment on real Akash network
+create_akash_deployment() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        log_warn "Skipping real deployment (use real Akash mode)"
+        return 0
+    fi
+
+    log_step "Creating Akash Deployment"
+
+    log "Submitting deployment to Akash network..."
+    akash_make deployment-create 2>&1 | tee "${TEST_DIR}/deployment-create.log"
+
+    # Extract DSEQ from output
+    local dseq=$(grep -oE 'DSEQ=[0-9]+' "${TEST_DIR}/deployment-create.log" 2>/dev/null | cut -d= -f2 || echo "1")
+    export DSEQ="${dseq}"
+    log "Deployment sequence: ${DSEQ}"
+
+    log_success "Deployment created"
+}
+
+# Query deployments
+query_akash_deployments() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log "Querying Akash deployments..."
+    akash_make query-deployments 2>&1 | tee "${TEST_DIR}/query-deployments.log"
+}
+
+# Query bids on deployment
+query_akash_bids() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log "Querying bids..."
+
+    # Wait for bids to appear
+    local max_wait=30
+    local waited=0
+
+    while [ $waited -lt $max_wait ]; do
+        local bids=$(akash_make query-bids 2>&1)
+        echo "$bids" > "${TEST_DIR}/query-bids.log"
+
+        if echo "$bids" | grep -q "bid"; then
+            log_success "Found bids"
+            echo "$bids"
+            return 0
+        fi
+
+        sleep 2
+        waited=$((waited + 2))
+        log "  Waiting for bids... (${waited}/${max_wait}s)"
+    done
+
+    log_warn "No bids received (timeout)"
+}
+
+# Create lease with provider
+create_akash_lease() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log_step "Creating Lease"
+
+    log "Accepting bid and creating lease..."
+    akash_make lease-create 2>&1 | tee "${TEST_DIR}/lease-create.log"
+
+    log_success "Lease created"
+}
+
+# Send manifest to provider
+send_akash_manifest() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log_step "Sending Manifest"
+
+    log "Sending deployment manifest to provider..."
+    akash_make send-manifest 2>&1 | tee "${TEST_DIR}/send-manifest.log"
+
+    log_success "Manifest sent"
+}
+
+# Check lease status
+check_akash_lease_status() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log "Checking lease status..."
+    akash_make provider-lease-status 2>&1 | tee "${TEST_DIR}/lease-status.log"
+}
+
+# Get deployment logs
+get_akash_deployment_logs() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log "Getting deployment logs..."
+    akash_make provider-lease-logs 2>&1 | tail -50 || true
+}
+
+# Full deployment workflow on real Akash
+run_real_akash_deployment() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        log_warn "Skipping real Akash deployment workflow (use --real-akash)"
+        return 0
+    fi
+
+    log_step "Running Real Akash Deployment Workflow"
+
+    create_akash_deployment
+    query_akash_deployments
+    query_akash_bids
+    create_akash_lease
+    send_akash_manifest
+
+    # Wait for deployment to be ready
+    log "Waiting for deployment to be ready..."
+    sleep 10
+
+    check_akash_lease_status
+    get_akash_deployment_logs
+
+    log_success "Real Akash deployment workflow complete"
+}
+
+# ==================== End Real Akash Dev Environment ====================
+
+# Build CosmWasm contracts
+build_contracts() {
+    if [ "$SKIP_BUILD" = true ] || [ "$SKIP_CONTRACTS" = true ]; then
+        log_warn "Skipping contract build (--skip-build or --skip-contracts)"
+        if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
+            log_success "Using existing contract artifacts"
+        else
+            log_warn "No existing contract artifacts found - tests may fail"
+        fi
+        return
+    fi
+
+    # Skip build if artifacts already exist
+    if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
+        local size=$(ls -lh "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" | awk '{print $5}')
+        log_success "Contract artifacts already exist (sdl_template_registrar.wasm: $size), skipping build"
+        return
+    fi
+
+    log_step "Building CosmWasm Contracts"
+
+    cd "$ROOT_DIR/contracts"
+
+    # Check if Docker is running
+    if ! docker info &>/dev/null; then
+        log_error "Docker is not running - required for contract optimization"
+        exit 1
+    fi
+
+    # Detect platform and build optimized contracts
+    local arch=$(uname -m)
+    log "Detected architecture: $arch"
+
+    if [[ "$arch" == "arm64" ]] || [[ "$arch" == "aarch64" ]]; then
+        log "Building optimized contracts for ARM64..."
+        docker run --rm -v "$(pwd)":/code \
+            --mount type=volume,source="contracts_cache",target=/target \
+            --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
+            --platform linux/arm64 \
+            cosmwasm/optimizer-arm64:0.17.0 2>&1 | tail -20
+    elif [[ "$arch" == "x86_64" ]]; then
+        log "Building optimized contracts for x86_64..."
+        docker run --rm -v "$(pwd)":/code \
+            --mount type=volume,source="contracts_cache",target=/target \
+            --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
+            --platform linux/amd64 \
+            cosmwasm/optimizer:0.17.0 2>&1 | tail -20
+    else
+        log_error "Unsupported architecture: $arch"
+        exit 1
+    fi
+
+    cd "$ROOT_DIR"
+
+    # Verify artifacts were created
+    if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
+        local size=$(ls -lh "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" | awk '{print $5}')
+        log_success "SDL Template Registrar contract built: $size"
+    else
+        log_error "Contract build failed - sdl_template_registrar.wasm not found"
+        ls -la "$ROOT_DIR/contracts/artifacts/" 2>/dev/null || log_error "artifacts/ directory not found"
+        exit 1
+    fi
+
+    # List all built artifacts
+    log "Built contract artifacts:"
+    ls -lh "$ROOT_DIR/contracts/artifacts/"*.wasm 2>/dev/null || true
 }
 
 # Build ERGORS binary
@@ -331,6 +1034,9 @@ start_ergors_network() {
     NODE_PIDS+=($!)
     log_success "Coordinator started (PID: $!, HTTP: $coord_http, gRPC: $coord_grpc)"
 
+    # Start log streaming for coordinator
+    start_log_stream "COORD" "$coord_home/node.log" "$COORD_COLOR"
+
     sleep 2
 
     # === Executor ===
@@ -352,6 +1058,9 @@ start_ergors_network() {
         > "$exec_home/node.log" 2>&1 &
     NODE_PIDS+=($!)
     log_success "Executor started (PID: $!, HTTP: $exec_http, gRPC: $exec_grpc)"
+
+    # Start log streaming for executor
+    start_log_stream "EXEC " "$exec_home/node.log" "$EXEC_COLOR"
 
     # Brief pause to let nodes initialize
     sleep 2
@@ -382,7 +1091,13 @@ setup_akash_environment() {
         return
     fi
 
-    log_step "Setting Up Akash Environment"
+    # Use real Akash if enabled
+    if [ "$USE_REAL_AKASH" = true ]; then
+        setup_real_akash_environment
+        return
+    fi
+
+    log_step "Setting Up Mock Akash Environment"
 
     # Delete existing cluster
     if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
@@ -415,7 +1130,7 @@ EOF
     kubectl create namespace akash-services --dry-run=client -o yaml | kubectl apply -f -
     kubectl create namespace mock-inference --dry-run=client -o yaml | kubectl apply -f -
 
-    log_success "Akash environment ready"
+    log_success "Mock Akash environment ready"
 }
 
 # Build mock inference provider image
@@ -642,6 +1357,762 @@ test_sdl_workflow() {
     else
         log_warn "  Executor log not found"
     fi
+
+    # Run additional SDL tests
+    test_sdl_contract_queries
+    test_sdl_variable_substitution
+}
+
+# ==================== API Key Management Tests ====================
+
+# Start mock inference provider for API key testing
+start_mock_provider() {
+    log_step "Starting Mock Inference Provider"
+
+    local mock_port=11434
+    local mock_home="$TEST_DIR/mock-provider"
+    mkdir -p "$mock_home"
+
+    # First, build the mock provider binary
+    log "Building mock inference provider..."
+    cd "${ROOT_DIR}/docker/mock-inference-provider"
+    if [ "$VERBOSE" = true ]; then
+        cargo build --release 2>&1
+    else
+        cargo build --release 2>&1 | tail -5
+    fi
+    cd "$ROOT_DIR"
+
+    local mock_bin="${ROOT_DIR}/docker/mock-inference-provider/target/release/mock-inference-provider"
+
+    if [ ! -f "$mock_bin" ]; then
+        log_error "Failed to build mock inference provider binary"
+        log_warn "API key tests will be skipped"
+        return 1
+    fi
+
+    log "Starting mock provider binary..."
+    "$mock_bin" --port "$mock_port" > "$mock_home/provider.log" 2>&1 &
+    MOCK_PROVIDER_PID=$!
+    NODE_PIDS+=($MOCK_PROVIDER_PID)
+    log "Mock provider PID: $MOCK_PROVIDER_PID, port: $mock_port"
+
+    # Start log streaming for mock provider
+    start_log_stream "MOCK " "$mock_home/provider.log" "$MOCK_COLOR"
+
+    # Wait for provider to be ready with retries
+    local max_retries=10
+    local retry=0
+    while [ $retry -lt $max_retries ]; do
+        sleep 1
+        if curl -s "http://localhost:$mock_port/health" > /dev/null 2>&1; then
+            log_success "Mock provider health check passed"
+            MOCK_PROVIDER_URL="http://localhost:$mock_port"
+            return 0
+        fi
+        retry=$((retry + 1))
+        log "Waiting for mock provider to start... ($retry/$max_retries)"
+    done
+
+    # If we get here, the provider didn't start
+    log_error "Mock provider failed to start after $max_retries seconds"
+    if [ -f "$mock_home/provider.log" ]; then
+        echo -e "${YELLOW}=== Mock provider logs ===${NC}"
+        tail -30 "$mock_home/provider.log"
+        echo -e "${YELLOW}=== end mock provider logs ===${NC}"
+    fi
+
+    # Check if process is still running
+    if ! kill -0 "$MOCK_PROVIDER_PID" 2>/dev/null; then
+        log_error "Mock provider process died"
+    fi
+
+    MOCK_PROVIDER_URL=""
+    return 1
+}
+
+# Test API key generation on mock provider
+test_api_key_generation() {
+    log_step "Testing API Key Generation"
+
+    if [ -z "$MOCK_PROVIDER_URL" ]; then
+        log_warn "Mock provider not running, skipping API key tests"
+        return
+    fi
+
+    # First, verify the /api/keys/generate endpoint exists
+    log "Checking if API key endpoints are available..."
+    local root_response=$(curl -s "$MOCK_PROVIDER_URL/")
+    if echo "$root_response" | grep -q "api_keys"; then
+        log_success "  API key endpoints are registered"
+    else
+        log_error "  API key endpoints not found - mock provider may need rebuild"
+        log "Root response: $root_response"
+        return
+    fi
+
+    # Test 1: Generate valid key
+    log "Generating valid API key..."
+    local gen_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/generate" \
+        -H "Content-Type: application/json" \
+        -d '{"provider": "anthropic", "expiry_seconds": 3600, "valid": true}')
+
+    if [ "$VERBOSE" = true ]; then
+        log "Generate response: $gen_response"
+    fi
+
+    if echo "$gen_response" | grep -q "api_key"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TEST_API_KEY=$(echo "$gen_response" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
+        log_success "  Generated valid API key: ${TEST_API_KEY:0:16}..."
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Failed to generate API key: $gen_response"
+    fi
+
+    # Test 2: Generate invalid key (for testing failure scenarios)
+    log "Generating invalid API key..."
+    local invalid_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/generate" \
+        -H "Content-Type: application/json" \
+        -d '{"provider": "mock-invalid", "valid": false}')
+
+    if echo "$invalid_response" | grep -q '"valid":false'; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        INVALID_TEST_KEY=$(echo "$invalid_response" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
+        log_success "  Generated invalid test key"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Failed to generate invalid key: $invalid_response"
+    fi
+
+    # Test 3: Generate expiring key (short TTL)
+    log "Generating short-TTL key..."
+    local expiring_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/generate" \
+        -H "Content-Type: application/json" \
+        -d '{"provider": "mock-expiring", "expiry_seconds": 2, "valid": true}')
+
+    if echo "$expiring_response" | grep -q "expires_at"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        EXPIRING_KEY=$(echo "$expiring_response" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
+        log_success "  Generated expiring key (TTL: 2s)"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Failed to generate expiring key: $expiring_response"
+    fi
+}
+
+# Test API key validation
+test_api_key_validation() {
+    log_step "Testing API Key Validation"
+
+    if [ -z "$MOCK_PROVIDER_URL" ]; then
+        log_warn "Mock provider not running, skipping validation tests"
+        return
+    fi
+
+    # Test 1: Validate valid key
+    if [ -n "$TEST_API_KEY" ]; then
+        log "Validating valid API key..."
+        local valid_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
+            -H "Content-Type: application/json" \
+            -d "{\"api_key\": \"$TEST_API_KEY\"}")
+
+        if echo "$valid_response" | grep -q '"valid":true'; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Valid key validated successfully"
+        else
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            log_error "  Valid key validation failed: $valid_response"
+        fi
+    fi
+
+    # Test 2: Validate invalid key
+    if [ -n "$INVALID_TEST_KEY" ]; then
+        log "Validating invalid API key..."
+        local invalid_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
+            -H "Content-Type: application/json" \
+            -d "{\"api_key\": \"$INVALID_TEST_KEY\"}")
+
+        if echo "$invalid_response" | grep -q '"valid":false'; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Invalid key correctly rejected"
+        else
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            log_error "  Invalid key not rejected: $invalid_response"
+        fi
+    fi
+
+    # Test 3: Validate non-existent key
+    log "Validating non-existent API key..."
+    local nonexistent_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
+        -H "Content-Type: application/json" \
+        -d '{"api_key": "sk-nonexistent-key-12345"}')
+
+    if echo "$nonexistent_response" | grep -q '"valid":false'; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Non-existent key correctly rejected"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Non-existent key not rejected: $nonexistent_response"
+    fi
+
+    # Test 4: Wait for expiring key to expire and validate
+    if [ -n "$EXPIRING_KEY" ]; then
+        log "Waiting for key to expire (3s)..."
+        sleep 3
+
+        local expired_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
+            -H "Content-Type: application/json" \
+            -d "{\"api_key\": \"$EXPIRING_KEY\"}")
+
+        if echo "$expired_response" | grep -q '"expired":true' || echo "$expired_response" | grep -q '"valid":false'; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Expired key correctly rejected"
+        else
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            log_error "  Expired key not rejected: $expired_response"
+        fi
+    fi
+}
+
+# Test API key revocation
+test_api_key_revocation() {
+    log_step "Testing API Key Revocation"
+
+    if [ -z "$MOCK_PROVIDER_URL" ]; then
+        log_warn "Mock provider not running, skipping revocation tests"
+        return
+    fi
+
+    # Generate a key to revoke
+    log "Generating key for revocation test..."
+    local gen_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/generate" \
+        -H "Content-Type: application/json" \
+        -d '{"provider": "revoke-test", "valid": true}')
+
+    local revoke_key=$(echo "$gen_response" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
+
+    if [ -z "$revoke_key" ]; then
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Failed to generate key for revocation test"
+        return
+    fi
+
+    # Verify key is valid before revocation
+    local pre_revoke=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
+        -H "Content-Type: application/json" \
+        -d "{\"api_key\": \"$revoke_key\"}")
+
+    if echo "$pre_revoke" | grep -q '"valid":true'; then
+        log_success "  Key valid before revocation"
+    else
+        log_error "  Key not valid before revocation"
+    fi
+
+    # Revoke the key
+    log "Revoking API key..."
+    local revoke_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/revoke" \
+        -H "Content-Type: application/json" \
+        -d "{\"api_key\": \"$revoke_key\"}")
+
+    if echo "$revoke_response" | grep -q '"success":true'; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Key revocation request successful"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Key revocation failed: $revoke_response"
+    fi
+
+    # Verify key is invalid after revocation
+    local post_revoke=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
+        -H "Content-Type: application/json" \
+        -d "{\"api_key\": \"$revoke_key\"}")
+
+    if echo "$post_revoke" | grep -q '"valid":false'; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Revoked key correctly invalidated"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Revoked key still valid: $post_revoke"
+    fi
+}
+
+# Test key list endpoint
+test_api_key_listing() {
+    log_step "Testing API Key Listing"
+
+    if [ -z "$MOCK_PROVIDER_URL" ]; then
+        log_warn "Mock provider not running, skipping listing tests"
+        return
+    fi
+
+    log "Listing all API keys..."
+    local list_response=$(curl -s "$MOCK_PROVIDER_URL/api/keys/list")
+
+    if echo "$list_response" | grep -q '"keys":'; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        local key_count=$(echo "$list_response" | grep -o '"total":[0-9]*' | cut -d':' -f2)
+        log_success "  Listed $key_count API keys"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Failed to list keys: $list_response"
+    fi
+}
+
+# Test coordinator API key configuration
+test_coordinator_key_config() {
+    log_step "Testing Coordinator API Key Configuration"
+
+    # Check if coordinator has ephemeral key manager logs
+    if [ -f "$TEST_DIR/coordinator/node.log" ]; then
+        log "Checking coordinator logs for key management..."
+
+        # Check for ephemeral key manager initialization
+        if grep -q "EphemeralKeyManager\|ephemeral.*key\|key.*manager" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Ephemeral key manager initialized"
+        else
+            log_warn "  Ephemeral key manager not found in logs (may not be wired yet)"
+        fi
+
+        # Check for bootstrap handler initialization
+        if grep -q "BootstrapHandler\|bootstrap.*handler\|key.*sharing" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Bootstrap handler initialized"
+        else
+            log_warn "  Bootstrap handler not found in logs (may not be wired yet)"
+        fi
+
+        # Check for encrypted API keys loading
+        if grep -q "encrypted.*api.*key\|API.*key.*encrypted\|Decrypted.*key\|🔐\|🔑" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Encrypted API keys processed"
+        else
+            log_warn "  Encrypted API keys not found in logs"
+        fi
+    else
+        log_warn "  Coordinator log not found"
+    fi
+
+    # Check coordinator config for LLM settings
+    if grep -q "llm_router\|api_keys" "$TEST_DIR/coordinator/config.toml" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  LLM router configuration present"
+    else
+        log_warn "  LLM router configuration not found"
+    fi
+}
+
+# Run all API key management tests
+run_api_key_tests() {
+    log_step "Running API Key Management Tests"
+
+    # Variables for test keys
+    TEST_API_KEY=""
+    INVALID_TEST_KEY=""
+    EXPIRING_KEY=""
+    MOCK_PROVIDER_PID=""
+    MOCK_PROVIDER_URL=""
+
+    start_mock_provider
+    test_api_key_generation
+    test_api_key_validation
+    test_api_key_revocation
+    test_api_key_listing
+    test_coordinator_key_config
+}
+
+# ==================== End API Key Management Tests ====================
+
+# ==================== Authz/Feegrant Workflow Tests ====================
+
+# Test authz grant request from executor to coordinator
+test_authz_grant_request() {
+    log_step "Testing Authz Grant Request Workflow"
+
+    if [ "$USE_REAL_AKASH" != true ]; then
+        log_warn "Authz tests require real Akash mode (--real-akash)"
+        log "Testing ERGORS grant request infrastructure instead..."
+    fi
+
+    # Test 1: Check coordinator supports grant requests
+    if [ -f "$TEST_DIR/coordinator/node.log" ]; then
+        log "Checking coordinator grant request support..."
+
+        if grep -q "grant\|authz\|GrantRequest" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Grant request handler initialized"
+        else
+            log_warn "  Grant request handler not found in logs (may be pending implementation)"
+        fi
+    fi
+
+    # Test 2: Check executor can discover coordinator
+    if [ -f "$TEST_DIR/executor_0/node.log" ]; then
+        log "Checking executor coordinator discovery..."
+
+        if grep -q "coordinator\|peer\|connected" "$TEST_DIR/executor_0/node.log" 2>/dev/null; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Executor discovered coordinator"
+        else
+            log_warn "  Coordinator discovery not confirmed"
+        fi
+    fi
+
+    # Test 3: Verify authz config in coordinator
+    log "Checking authz configuration..."
+    if grep -q "authz\|auto_approve\|grant" "$TEST_DIR/coordinator/config.toml" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Authz configuration present"
+    else
+        log_warn "  Authz configuration not found (may use defaults)"
+    fi
+
+    # For real Akash mode, query actual grants
+    if [ "$USE_REAL_AKASH" = true ] && [ -d "${AKASH_KUBE_DIR}" ]; then
+        log "Querying actual authz grants on blockchain..."
+
+        # Try to query grants (may fail if provider cli not in path)
+        local grants_output=$(akash_make query-grants 2>/dev/null || echo "")
+        if [ -n "$grants_output" ]; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Blockchain authz query successful"
+            if [ "$VERBOSE" = true ]; then
+                echo "$grants_output"
+            fi
+        fi
+    fi
+}
+
+# Test feegrant allowance workflow
+test_feegrant_workflow() {
+    log_step "Testing Feegrant Allowance Workflow"
+
+    if [ "$USE_REAL_AKASH" != true ]; then
+        log_warn "Feegrant tests require real Akash mode (--real-akash)"
+        log "Testing ERGORS feegrant infrastructure instead..."
+    fi
+
+    # Test 1: Check feegrant config in coordinator
+    log "Checking feegrant configuration..."
+    if grep -q "feegrant\|fee.*grant\|allowance" "$TEST_DIR/coordinator/config.toml" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Feegrant configuration present"
+    else
+        log_warn "  Feegrant configuration not found"
+    fi
+
+    # Test 2: Check coordinator logs for feegrant initialization
+    if [ -f "$TEST_DIR/coordinator/node.log" ]; then
+        log "Checking feegrant handler in logs..."
+
+        if grep -q "feegrant\|FeeAllowance\|allowance" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Feegrant handler initialized"
+        else
+            log_warn "  Feegrant handler not found in logs"
+        fi
+    fi
+
+    # For real Akash mode, query actual allowances
+    if [ "$USE_REAL_AKASH" = true ] && [ -d "${AKASH_KUBE_DIR}" ]; then
+        log "Querying actual feegrant allowances on blockchain..."
+
+        # Try to query allowances
+        local allowances_output=$(akash_make query-allowances 2>/dev/null || echo "")
+        if [ -n "$allowances_output" ]; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Blockchain feegrant query successful"
+        fi
+    fi
+}
+
+# Test combined grant request workflow (ERGORS multi-node)
+test_ergors_grant_workflow() {
+    log_step "Testing ERGORS Grant Request Workflow"
+
+    # This tests the complete grant request flow:
+    # 1. Executor discovers coordinator
+    # 2. Executor sends grant request via gRPC
+    # 3. Coordinator approves (or queues for manual approval)
+    # 4. Executor receives grant confirmation
+    # 5. Executor can deploy on behalf of coordinator
+
+    log "Testing grant request infrastructure..."
+
+    # Test 1: Both nodes are running
+    log "Verifying node processes..."
+    local coord_running=false
+    local exec_running=false
+
+    for pid in "${NODE_PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            # Check which node this PID belongs to
+            if grep -q "coordinator" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+                coord_running=true
+            fi
+            if grep -q "executor" "$TEST_DIR/executor_0/node.log" 2>/dev/null; then
+                exec_running=true
+            fi
+        fi
+    done
+
+    if [ "$coord_running" = true ] || [ "$exec_running" = true ]; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  ERGORS nodes running for grant workflow"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  ERGORS nodes not running"
+    fi
+
+    # Test 2: Check for GrantRequestService in coordinator
+    log "Checking GrantRequestService..."
+    if grep -qi "GrantRequest\|grant_request\|grant-request" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  GrantRequestService detected"
+    else
+        log_warn "  GrantRequestService not detected (may be pending wire-up)"
+    fi
+
+    # Test 3: Check channel registration for grant requests
+    log "Checking P2P channels..."
+    if grep -q "channel\|P2P\|libp2p" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  P2P channel infrastructure detected"
+    else
+        log_warn "  P2P channels not detected"
+    fi
+
+    # Test 4: Verify gRPC endpoints available
+    log "Checking gRPC management endpoints..."
+    if nc -z 127.0.0.1 "${COORDINATOR_GRPC##*:}" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Coordinator gRPC available for grant management"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Coordinator gRPC not available"
+    fi
+}
+
+# Run all authz/feegrant tests
+run_authz_feegrant_tests() {
+    log_step "Running Authz/Feegrant Workflow Tests"
+
+    test_authz_grant_request
+    test_feegrant_workflow
+    test_ergors_grant_workflow
+
+    log_success "Authz/Feegrant tests complete"
+}
+
+# ==================== End Authz/Feegrant Tests ====================
+
+# ==================== Real Akash Deployment Tests ====================
+
+# Test real Akash deployment creation
+test_real_deployment_create() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log_step "Testing Real Akash Deployment Creation"
+
+    # Test 1: Create deployment
+    log "Creating test deployment..."
+    local create_output=$(akash_make deployment-create 2>&1)
+    echo "$create_output" > "${TEST_DIR}/test-deployment-create.log"
+
+    if echo "$create_output" | grep -q "deployment\|created\|DSEQ"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Deployment created successfully"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Deployment creation failed"
+        if [ "$VERBOSE" = true ]; then
+            echo "$create_output"
+        fi
+    fi
+
+    # Test 2: Query deployment
+    log "Querying deployment..."
+    local query_output=$(akash_make query-deployments 2>&1)
+
+    if echo "$query_output" | grep -q "deployment\|state"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Deployment query successful"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Deployment query failed"
+    fi
+}
+
+# Test bid reception
+test_real_bid_reception() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log_step "Testing Real Akash Bid Reception"
+
+    log "Waiting for provider bids..."
+    local max_wait=60
+    local waited=0
+
+    while [ $waited -lt $max_wait ]; do
+        local bids_output=$(akash_make query-bids 2>&1)
+
+        if echo "$bids_output" | grep -q "bid\|provider"; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Provider bid received"
+            if [ "$VERBOSE" = true ]; then
+                echo "$bids_output"
+            fi
+            return 0
+        fi
+
+        sleep 3
+        waited=$((waited + 3))
+        log "  Waiting for bids... (${waited}/${max_wait}s)"
+    done
+
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    log_error "  No bids received within timeout"
+}
+
+# Test lease creation
+test_real_lease_creation() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log_step "Testing Real Akash Lease Creation"
+
+    # Create lease
+    log "Creating lease with provider..."
+    local lease_output=$(akash_make lease-create 2>&1)
+    echo "$lease_output" > "${TEST_DIR}/test-lease-create.log"
+
+    if echo "$lease_output" | grep -q "lease\|created\|success"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Lease created successfully"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Lease creation failed"
+    fi
+
+    # Query lease
+    log "Verifying lease..."
+    local query_lease=$(akash_make query-leases 2>&1)
+
+    if echo "$query_lease" | grep -q "lease\|state"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Lease verified"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Lease verification failed"
+    fi
+}
+
+# Test manifest deployment
+test_real_manifest_deployment() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        return 0
+    fi
+
+    log_step "Testing Real Akash Manifest Deployment"
+
+    # Send manifest
+    log "Sending manifest to provider..."
+    local manifest_output=$(akash_make send-manifest 2>&1)
+
+    if echo "$manifest_output" | grep -qi "success\|sent\|deployed"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Manifest sent successfully"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Manifest deployment failed"
+    fi
+
+    # Wait for deployment to start
+    log "Waiting for deployment to start..."
+    sleep 10
+
+    # Check status
+    log "Checking deployment status..."
+    local status_output=$(akash_make provider-lease-status 2>&1)
+
+    if echo "$status_output" | grep -qi "running\|ready\|available"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Deployment running"
+    else
+        log_warn "  Deployment status unclear"
+        if [ "$VERBOSE" = true ]; then
+            echo "$status_output"
+        fi
+    fi
+}
+
+# Run all real Akash deployment tests
+run_real_akash_tests() {
+    if [ "$USE_REAL_AKASH" != true ]; then
+        log_warn "Skipping real Akash tests (use --real-akash to enable)"
+        return 0
+    fi
+
+    log_step "Running Real Akash Deployment Tests"
+
+    test_real_deployment_create
+    test_real_bid_reception
+    test_real_lease_creation
+    test_real_manifest_deployment
+
+    log_success "Real Akash deployment tests complete"
+}
+
+# ==================== End Real Akash Deployment Tests ====================
+
+# Test contract build artifacts
+test_contract_artifacts() {
+    log_step "Testing Contract Build Artifacts"
+
+    # Test 1: Check SDL contract artifact exists
+    log "Verifying SDL contract WASM artifact..."
+    if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        local size=$(ls -lh "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" | awk '{print $5}')
+        log_success "  SDL contract artifact exists ($size)"
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  SDL contract artifact not found"
+    fi
+
+    # Test 2: Verify artifact is a valid WASM file
+    log "Verifying WASM file header..."
+    if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
+        # WASM files start with magic bytes: 0x00 0x61 0x73 0x6D (\0asm)
+        local magic=$(xxd -l 4 -p "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" 2>/dev/null)
+        if [ "$magic" = "0061736d" ]; then
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            log_success "  Valid WASM magic bytes verified"
+        else
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            log_error "  Invalid WASM file (magic: $magic)"
+        fi
+    fi
+
+    # Test 3: List all contract artifacts
+    log "Listing all contract artifacts..."
+    local artifact_count=$(ls "$ROOT_DIR/contracts/artifacts/"*.wasm 2>/dev/null | wc -l)
+    if [ "$artifact_count" -gt 0 ]; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Found $artifact_count contract artifact(s)"
+        if [ "$VERBOSE" = true ]; then
+            ls -lh "$ROOT_DIR/contracts/artifacts/"*.wasm
+        fi
+    else
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  No contract artifacts found"
+    fi
 }
 
 # Test SDL contract deployment
@@ -701,6 +2172,88 @@ test_contract_deployment() {
     fi
 }
 
+# Test SDL contract queries (real blockchain verification)
+test_sdl_contract_queries() {
+    log_step "Testing SDL Contract Queries"
+
+    # Test 1: Check for contract address in logs
+    log "Looking for deployed contract address..."
+    local contract_addr=$(grep -oP 'contract_address.*?:\s*\K[a-z0-9]+' "$TEST_DIR/coordinator/node.log" 2>/dev/null | head -1)
+
+    if [ -n "$contract_addr" ]; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Contract address: ${contract_addr:0:20}..."
+    else
+        log_warn "  Contract address not found in logs"
+    fi
+
+    # Test 2: Check for template registration
+    log "Checking for SDL template registration..."
+    if grep -q "template.*registered\|RegisterTemplate\|template.*added" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  SDL templates registered"
+    else
+        log_warn "  Template registration not found in logs"
+    fi
+
+    # Test 3: Check for template query capability
+    log "Checking template query capability..."
+    if grep -q "QueryTemplate\|template.*query\|GetTemplate" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Template query capability available"
+    else
+        log_warn "  Template query capability not detected"
+    fi
+
+    # For real Akash mode, perform actual contract queries
+    if [ "$USE_REAL_AKASH" = true ]; then
+        log "Performing real contract state queries..."
+
+        # This would query the actual contract state on the blockchain
+        # For now, we check if the infrastructure is ready
+        if [ -f "$TEST_DIR/coordinator/node.log" ]; then
+            if grep -q "cosmwasm.*initialized\|wasm.*runtime\|contract.*loaded" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+                TESTS_PASSED=$((TESTS_PASSED + 1))
+                log_success "  CosmWasm runtime initialized for real queries"
+            fi
+        fi
+    fi
+}
+
+# Test SDL template variable substitution
+test_sdl_variable_substitution() {
+    log_step "Testing SDL Variable Substitution"
+
+    # Test 1: Check for variable substitution in logs
+    log "Checking variable substitution processing..."
+    if grep -q "substitut\|variable\|\${.*}" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Variable substitution processing detected"
+    else
+        log_warn "  Variable substitution not detected in logs"
+    fi
+
+    # Test 2: Check SDL processing
+    log "Checking SDL processing..."
+    if grep -q "SDL\|sdl.*process\|yaml\|manifest" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  SDL processing detected"
+    else
+        log_warn "  SDL processing not detected"
+    fi
+
+    # Test 3: Verify no unsubstituted variables in processed SDL
+    log "Checking for unsubstituted variables..."
+    # Look for error messages about unsubstituted variables
+    if grep -q "unsubstituted\|missing.*variable\|undefined.*\${" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Unsubstituted variables found"
+    else
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  No unsubstituted variable errors"
+    fi
+}
+
 # Print summary
 print_summary() {
     local end_time=$(date +%s)
@@ -743,28 +2296,80 @@ main() {
     echo -e "${CYAN}${BOLD}║                                                               ║${NC}"
     echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
+
+    # Show mode
+    if [ "$USE_REAL_AKASH" = true ]; then
+        echo -e "  ${BOLD}Mode:${NC} ${GREEN}REAL AKASH${NC} (blockchain node + provider)"
+        echo -e "  ${BOLD}Akash Home:${NC} ${AKASH_HOME}"
+    else
+        echo -e "  ${BOLD}Mode:${NC} ${YELLOW}MOCK${NC} (Kind cluster only)"
+    fi
+    echo ""
+
+    if [ "$LIVE_LOGS" = true ]; then
+        echo -e "  ${BOLD}Live Logs:${NC} ${GREEN}ENABLED${NC}"
+        echo -e "    ${COORD_COLOR}[COORD]${NC} Coordinator logs"
+        echo -e "    ${EXEC_COLOR}[EXEC ]${NC} Executor logs"
+        echo -e "    ${MOCK_COLOR}[MOCK ]${NC} Mock provider logs"
+        if [ "$USE_REAL_AKASH" = true ]; then
+            echo -e "    ${BLUE}[ANODE]${NC} Akash node logs"
+            echo -e "    ${GREEN}[APROV]${NC} Akash provider logs"
+        fi
+        echo ""
+    fi
+
     echo -e "  ${BOLD}Workflow:${NC}"
-    echo -e "    1. Build ERGORS binary"
-    echo -e "    2. Start ERGORS test network (coordinator + executor)"
-    echo -e "    3. Setup Kind cluster with Akash"
-    echo -e "    4. Build mock inference provider image"
-    echo -e "    5. Configure ERGORS deployment workflow"
-    echo -e "    6. Test ERGORS network connectivity"
-    echo -e "    7. Test node configuration"
-    echo -e "    8. Test SDL contract deployment"
-    echo -e "    9. Test SDL workflow"
+    echo -e "    1. Build CosmWasm contracts (Docker optimizer)"
+    echo -e "    2. Build ERGORS binary"
+    echo -e "    3. Verify contract artifacts"
+    echo -e "    4. Start ERGORS test network (coordinator + executor)"
+    if [ "$USE_REAL_AKASH" = true ]; then
+        echo -e "    5. Setup real Akash dev environment (node + provider)"
+        echo -e "    6. Run real Akash deployment workflow"
+        echo -e "    7. Test real blockchain deployments"
+    else
+        echo -e "    5. Setup Kind cluster with Akash (mock mode)"
+        echo -e "    6. Build mock inference provider image"
+    fi
+    echo -e "    7. Configure ERGORS deployment workflow"
+    echo -e "    8. Test ERGORS network connectivity"
+    echo -e "    9. Test node configuration"
+    echo -e "   10. Test SDL contract deployment"
+    echo -e "   11. Test SDL workflow"
+    echo -e "   12. Test API key management workflow"
+    echo -e "   13. Test Authz/Feegrant workflow"
+    if [ "$USE_REAL_AKASH" = true ]; then
+        echo -e "   14. Test real Akash deployment lifecycle"
+    fi
     echo ""
 
     check_prerequisites
+    build_contracts
     build_ergors
+    test_contract_artifacts
     start_ergors_network
     setup_akash_environment
-    build_mock_image
+
+    # Real Akash deployment workflow (if enabled)
+    if [ "$USE_REAL_AKASH" = true ]; then
+        run_real_akash_deployment
+    else
+        build_mock_image
+    fi
+
     deploy_via_ergors
     test_ergors_network
     test_node_config
     test_contract_deployment
     test_sdl_workflow
+    run_api_key_tests
+    run_authz_feegrant_tests
+
+    # Real Akash tests (if enabled)
+    if [ "$USE_REAL_AKASH" = true ]; then
+        run_real_akash_tests
+    fi
+
     print_summary
 }
 

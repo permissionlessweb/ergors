@@ -1,11 +1,18 @@
 # PRIORITIZE SOVEREIGN MODEL USE
 
-- LOAD STATUS AND NETWORK
-- cli chat,tips and query examples,
 - DEEP WIKI
 - SESSION SNAPSHOT AND STORAGE WORKFLOW TESTS
 
+- notifications on api key request from nodes
 - CONSENSUS CONFIRMS COMMITMENTS TO UNIQUE NODE STATES
+  - create commmitments to nodes internal data, share with network, bft consensus on network-wide commitment state
+
+## COSMWASM
+
+- contract to keep registry of access to node api
+- configure cosmwasm contract for api auth middleware
+- configure wirkflow for creating ephemeral accounts for akash deployments + feegrant from main orchestrator node (revents leaking private keys for sensitive account to providers on akahs, since env variables are public)
+- akashsdl registrar (store sdk templates for use on akash network, included details about vairables to prompt to populate)
 
 - RECIPIES: EMBEDDING STORAGE: Ability to store embeddings for reuse of known/familiar/common code for agentic workflows. correct storage mapping and data routing.
   - create new session with details about the task we are performing. Saves session information in organized storage structures. Used for creating accurate traiding data for fine tuning.
@@ -48,8 +55,6 @@
 
 ## SECURITY
 
-- move commonware keys definition into keys ho-std-keys, implement types for local and commonware keys for cross-crate-compatibility.
-- enhance identity key security: use soft-kms for storage and access to node key
 - ephemeral users: create dedicated user profile for containerized instance to granularize access to agents in workflow
 - [api-key storage](https://crates.io/crates/keyring):
 

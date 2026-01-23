@@ -1257,3 +1257,99 @@ message WorkflowGrantState {
 // - IdentityChallenge, IdentityChallengeResponse
 // - ProviderOwnership, ProviderSharingConfig
 
+// ========================================
+// CosmWasm Custom Authenticator Types
+// ========================================
+
+// Entry representing an authenticator registration
+message AuthenticatorEntry {
+  // The endpoint label this authenticator is registered for
+  string endpoint_label = 1;
+  // The CosmWasm contract address that handles authorization
+  string contract_address = 2;
+  // Human-readable description of this authenticator
+  string description = 3;
+  // When the authenticator was registered
+  google.protobuf.Timestamp created_at = 4;
+  // Whether the authenticator is currently active
+  bool active = 5;
+}
+
+// Request to register an authenticator for an endpoint
+message RegisterAuthenticatorRequest {
+  // The endpoint label to protect (e.g., "api/prompts", "orchestrate/fractal")
+  string endpoint_label = 1;
+  // The CosmWasm contract address that will handle authorization
+  string contract_address = 2;
+  // Optional description of this authenticator
+  string description = 3;
+}
+
+// Response from registering an authenticator
+message RegisterAuthenticatorResponse {
+  bool success = 1;
+  string message = 2;
+  AuthenticatorEntry entry = 3;
+}
+
+// Request to list all registered authenticators
+message ListAuthenticatorsRequest {
+  // Optional filter by endpoint label prefix
+  string endpoint_prefix = 1;
+  // Pagination limit
+  uint32 limit = 2;
+  // Pagination offset
+  uint32 offset = 3;
+}
+
+// Response listing all registered authenticators
+message ListAuthenticatorsResponse {
+  repeated AuthenticatorEntry authenticators = 1;
+  uint32 total_count = 2;
+}
+
+// Request to remove an authenticator
+message DeleteAuthenticatorRequest {
+  // The endpoint label to remove the authenticator from
+  string endpoint_label = 1;
+}
+
+// Response from deleting an authenticator
+message DeleteAuthenticatorResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Query for checking if an address is authorized for an endpoint
+message AuthorizationCheckRequest {
+  // The endpoint label to check
+  string endpoint_label = 1;
+  // The address/pubkey to check authorization for
+  string address = 2;
+}
+
+// Response from authorization check
+message AuthorizationCheckResponse {
+  bool authorized = 1;
+  string reason = 2;
+  string authenticator_contract = 3;
+}
+
+// ========================================
+// Authenticator Contract Message Types
+// These are JSON messages sent to/from CosmWasm contracts
+// Documented here for reference but used as serde structs in Rust
+// ========================================
+
+// Query message for auth_registry_updater contract
+// JSON: {"is_authorized": {"address": "ergors{node_id}_{pubkey_hash}"}}
+// Response: {"authorized": true|false}
+
+// Query message for whitelist_authenticator contract
+// JSON: {"is_allowed": {"address": "ergors{node_id}_{pubkey_hash}"}}
+// Response: {"allowed": true|false}
+
+// Execute message for whitelist_authenticator contract
+// JSON: {"add_address": {"address": "ergors{node_id}_{pubkey_hash}"}}
+// JSON: {"remove_address": {"address": "ergors{node_id}_{pubkey_hash}"}}
+

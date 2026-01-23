@@ -614,3 +614,122 @@ Track grant system health:
 - `grant_broadcast_latency_seconds` - Time from approval to on-chain
 - `active_grants_count{granter}` - Active grants per granter
 - `grant_spend_total_uakt{granter}` - Total spend authorized
+
+## Testing
+
+The grant request system can be tested using the ERGORS integration testing framework.
+
+### Testing Components
+
+| Component | Location | Description |
+|-----------|----------|-------------|
+| `NetworkTopology` | `packages/cw-ho/src/deploy/testing/network.rs` | Multi-node network simulation |
+| `TestWalletManager` | `packages/cw-ho/src/deploy/testing/wallet.rs` | Wallet and grant management |
+
+### Testing Grant Acceptance Modes
+
+```rust
+use cw_ho::deploy::testing::prelude::*;
+
+#[tokio::test]
+async fn test_grant_request_whitelist_mode() {
+    let network = NetworkTopology::new();
+    let requester = network.create_node("requester").await.unwrap();
+    network.create_node("granter").await.unwrap();
+
+    // Set whitelist mode
+    network.set_grant_mode("granter", GrantAcceptanceMode::Whitelist).await.unwrap();
+
+    // Request without whitelist - rejected
+    let request = network.submit_grant_request(
+        "requester", "granter",
+        GrantTypeRequest::AuthzAndFeegrant,
+        86400, 5_000_000, "Test deployment"
+    ).await.unwrap();
+    assert_eq!(request.status, GrantRequestStatus::Rejected);
+
+    // Add to whitelist
+    network.whitelist_add("granter", &requester.pubkey).await.unwrap();
+
+    // Request with whitelist - approved
+    let request2 = network.submit_grant_request(
+        "requester", "granter",
+        GrantTypeRequest::AuthzAndFeegrant,
+        86400, 5_000_000, "Test deployment"
+    ).await.unwrap();
+    assert_eq!(request2.status, GrantRequestStatus::Approved);
+}
+```
+
+### Testing Manual Approval
+
+```rust
+#[tokio::test]
+async fn test_manual_grant_approval() {
+    let network = NetworkTopology::new();
+    network.create_node("requester").await.unwrap();
+    network.create_node("granter").await.unwrap();
+
+    network.set_grant_mode("granter", GrantAcceptanceMode::Manual).await.unwrap();
+
+    // Submit request - pending
+    let request = network.submit_grant_request(
+        "requester", "granter",
+        GrantTypeRequest::AuthzOnly,
+        86400, 0, "Test"
+    ).await.unwrap();
+    assert_eq!(request.status, GrantRequestStatus::Pending);
+
+    // Approve manually
+    let approved = network.approve_request("granter", request.id).await.unwrap();
+    assert_eq!(approved.status, GrantRequestStatus::Approved);
+
+    // Or reject
+    let request2 = network.submit_grant_request(
+        "requester", "granter",
+        GrantTypeRequest::AuthzOnly,
+        86400, 0, "Test 2"
+    ).await.unwrap();
+    let rejected = network.reject_request("granter", request2.id, "Insufficient trust").await.unwrap();
+    assert_eq!(rejected.status, GrantRequestStatus::Rejected);
+}
+```
+
+### Testing with Wallet Manager
+
+```rust
+#[tokio::test]
+async fn test_grant_with_wallets() {
+    let wallet_manager = TestWalletManager::new();
+
+    // Create wallets
+    wallet_manager.create_wallet("granter", 100_000_000_000).await.unwrap();  // 100k AKT
+    wallet_manager.create_wallet("grantee", 1_000_000).await.unwrap();        // 1 AKT
+
+    // Create Akash deployment grants
+    wallet_manager.create_akash_deployment_grants("granter", "grantee").await.unwrap();
+    wallet_manager.create_feegrant("granter", "grantee", Some(5_000_000), None).await.unwrap();
+
+    // Verify
+    assert!(wallet_manager.has_authz_permission(
+        "grantee",
+        "/akash.deployment.v1beta3.MsgCreateDeployment"
+    ).await);
+    assert!(wallet_manager.has_feegrant("grantee").await);
+    assert_eq!(wallet_manager.get_feegrant_limit("grantee").await, Some(5_000_000));
+}
+```
+
+### Running Grant System Tests
+
+```bash
+# Run all grant-related tests
+cargo test -p ergors --features testing test_grant -- --nocapture
+cargo test -p ergors --features testing test_network_grant -- --nocapture
+cargo test -p ergors --features testing test_wallet_manager_authz -- --nocapture
+
+# Run with verbose output
+RUST_LOG=debug cargo test -p ergors --features testing test_grant -- --nocapture
+```
+
+See [Akash Deployment Testing Plan](../akash-deployment-testing-plan.md) for complete testing documentation.

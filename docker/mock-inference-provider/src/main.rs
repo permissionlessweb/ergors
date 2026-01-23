@@ -70,6 +70,8 @@ struct AppState {
     config: Arc<AppConfig>,
     request_count: Arc<AtomicU64>,
     tool_calls: Arc<RwLock<Vec<ToolCallRecord>>>,
+    /// API keys storage for testing key validation workflow
+    api_keys: Arc<RwLock<HashMap<String, ApiKeyRecord>>>,
 }
 
 /// Application configuration
@@ -78,6 +80,17 @@ struct AppConfig {
     max_latency_ms: u64,
     error_rate: f32,
     models: Vec<ModelInfo>,
+}
+
+/// API key record for mock key management
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ApiKeyRecord {
+    key: String,
+    provider: String,
+    created_at: u64,
+    expires_at: Option<u64>,
+    valid: bool,
+    usage_count: u64,
 }
 
 /// Model information
@@ -153,6 +166,7 @@ async fn main() {
         config: Arc::new(config),
         request_count: Arc::new(AtomicU64::new(0)),
         tool_calls: Arc::new(RwLock::new(Vec::new())),
+        api_keys: Arc::new(RwLock::new(HashMap::new())),
     };
 
     let app = Router::new()
@@ -178,6 +192,11 @@ async fn main() {
         // Agentic endpoints
         .route("/api/agentic/execute", post(agentic_execute_handler))
         .route("/api/agentic/tool-calls", get(agentic_tool_calls_handler))
+        // API Key Management (for testing key sharing workflow)
+        .route("/api/keys/generate", post(api_key_generate_handler))
+        .route("/api/keys/validate", post(api_key_validate_handler))
+        .route("/api/keys/list", get(api_key_list_handler))
+        .route("/api/keys/revoke", post(api_key_revoke_handler))
         // Metrics
         .route("/metrics", get(metrics_handler))
         .layer(CorsLayer::permissive())
@@ -392,6 +411,7 @@ async fn root_handler() -> impl IntoResponse {
             "openai": ["/v1/completions", "/v1/chat/completions", "/v1/models", "/v1/embeddings"],
             "tgi": ["/generate", "/generate_stream", "/info"],
             "agentic": ["/api/agentic/execute", "/api/agentic/tool-calls"],
+            "api_keys": ["/api/keys/generate", "/api/keys/validate", "/api/keys/list", "/api/keys/revoke"],
             "system": ["/health", "/metrics"]
         }
     }))
@@ -859,6 +879,189 @@ async fn agentic_tool_calls_handler(State(state): State<AppState>) -> impl IntoR
         "tool_calls": calls,
         "total": calls.len()
     }))
+}
+
+// ==================== API Key Management Handlers ====================
+
+/// Request to generate a mock API key
+#[derive(Debug, Deserialize)]
+struct GenerateKeyRequest {
+    /// Provider name (e.g., "anthropic", "openai", "mock")
+    provider: String,
+    /// Optional expiry duration in seconds (None = no expiry)
+    #[serde(default)]
+    expiry_seconds: Option<u64>,
+    /// Whether the key should be valid (for testing invalid key scenarios)
+    #[serde(default = "default_valid")]
+    valid: bool,
+}
+
+fn default_valid() -> bool { true }
+
+/// Response from key generation
+#[derive(Debug, Serialize)]
+struct GenerateKeyResponse {
+    api_key: String,
+    provider: String,
+    expires_at: Option<u64>,
+    valid: bool,
+}
+
+/// Request to validate an API key
+#[derive(Debug, Deserialize)]
+struct ValidateKeyRequest {
+    api_key: String,
+}
+
+/// Response from key validation
+#[derive(Debug, Serialize)]
+struct ValidateKeyResponse {
+    valid: bool,
+    provider: Option<String>,
+    expired: bool,
+    message: String,
+}
+
+/// Generate a mock API key for testing
+async fn api_key_generate_handler(
+    State(state): State<AppState>,
+    Json(req): Json<GenerateKeyRequest>,
+) -> impl IntoResponse {
+    let now = chrono::Utc::now().timestamp() as u64;
+
+    // Generate a mock API key with provider prefix
+    let key = format!(
+        "sk-mock-{}-{}",
+        req.provider,
+        uuid::Uuid::new_v4().to_string().replace("-", "")[..24].to_string()
+    );
+
+    let expires_at = req.expiry_seconds.map(|secs| now + secs);
+
+    let record = ApiKeyRecord {
+        key: key.clone(),
+        provider: req.provider.clone(),
+        created_at: now,
+        expires_at,
+        valid: req.valid,
+        usage_count: 0,
+    };
+
+    // Store the key
+    state.api_keys.write().await.insert(key.clone(), record);
+
+    info!(
+        "Generated mock API key for provider '{}': {}...{}",
+        req.provider,
+        &key[..12],
+        &key[key.len()-4..]
+    );
+
+    Json(GenerateKeyResponse {
+        api_key: key,
+        provider: req.provider,
+        expires_at,
+        valid: req.valid,
+    })
+}
+
+/// Validate a mock API key
+async fn api_key_validate_handler(
+    State(state): State<AppState>,
+    Json(req): Json<ValidateKeyRequest>,
+) -> impl IntoResponse {
+    let now = chrono::Utc::now().timestamp() as u64;
+    let keys = state.api_keys.read().await;
+
+    match keys.get(&req.api_key) {
+        Some(record) => {
+            // Check if expired
+            let expired = record.expires_at.map(|exp| now > exp).unwrap_or(false);
+
+            // Key is valid only if: record.valid is true AND not expired
+            let is_valid = record.valid && !expired;
+
+            let message = if !record.valid {
+                "Key marked as invalid".to_string()
+            } else if expired {
+                "Key has expired".to_string()
+            } else {
+                "Key is valid".to_string()
+            };
+
+            Json(ValidateKeyResponse {
+                valid: is_valid,
+                provider: Some(record.provider.clone()),
+                expired,
+                message,
+            })
+        }
+        None => {
+            Json(ValidateKeyResponse {
+                valid: false,
+                provider: None,
+                expired: false,
+                message: "Key not found".to_string(),
+            })
+        }
+    }
+}
+
+/// List all generated API keys (for testing/debugging)
+async fn api_key_list_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let now = chrono::Utc::now().timestamp() as u64;
+    let keys = state.api_keys.read().await;
+
+    let key_list: Vec<serde_json::Value> = keys.values().map(|record| {
+        let expired = record.expires_at.map(|exp| now > exp).unwrap_or(false);
+        serde_json::json!({
+            "key": format!("{}...{}", &record.key[..12], &record.key[record.key.len()-4..]),
+            "provider": record.provider,
+            "created_at": record.created_at,
+            "expires_at": record.expires_at,
+            "valid": record.valid && !expired,
+            "expired": expired,
+            "usage_count": record.usage_count
+        })
+    }).collect();
+
+    Json(serde_json::json!({
+        "keys": key_list,
+        "total": keys.len()
+    }))
+}
+
+/// Revoke (invalidate) an API key
+#[derive(Debug, Deserialize)]
+struct RevokeKeyRequest {
+    api_key: String,
+}
+
+async fn api_key_revoke_handler(
+    State(state): State<AppState>,
+    Json(req): Json<RevokeKeyRequest>,
+) -> Response {
+    let mut keys = state.api_keys.write().await;
+
+    match keys.get_mut(&req.api_key) {
+        Some(record) => {
+            record.valid = false;
+            info!("Revoked API key: {}...{}", &req.api_key[..12], &req.api_key[req.api_key.len()-4..]);
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Key revoked successfully"
+            })).into_response()
+        }
+        None => {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": "Key not found"
+                }))
+            ).into_response()
+        }
+    }
 }
 
 // ==================== Helper Functions ====================

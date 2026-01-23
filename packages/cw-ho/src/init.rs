@@ -185,7 +185,7 @@ impl InitCmd {
                 println!("   ────────────────────────────────────");
                 println!("   Your API keys will be encrypted using your custody password");
                 println!("   and stored securely. Press Enter to skip any provider.\n");
-
+                
                 let encrypted_keys_path = home_dir.as_ref().join("api-keys.enc");
                 self.configure_api_keys_encrypted(&encrypted_keys_path, &password)?;
 

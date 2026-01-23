@@ -63,6 +63,11 @@ impl Server {
                 { path: "/api/proxy/sessions/{id}", method: get, handler: crate::proxy::handle_get_session },
                 { path: "/orchestrate/fractal", method: post, handler: crate::orchestrator::handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: crate::storage::handle_prune },
+                // Authenticator management endpoints
+                { path: "/auth/register", method: post, handler: crate::auth::handle_register_authenticator },
+                { path: "/auth/list", method: get, handler: crate::auth::handle_list_authenticators },
+                { path: "/auth/check", method: get, handler: crate::auth::handle_check_authorization },
+                { path: "/auth/{endpoint_label}", method: delete, handler: crate::auth::handle_delete_authenticator },
                 ]
         };
         let server_addr = format!(

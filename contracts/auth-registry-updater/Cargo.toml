@@ -1,0 +1,30 @@
+[package]
+name = "auth-registry-updater"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ergors Team"]
+description = "CosmWasm contract for controlling who can update the authenticator registry"
+
+[package.metadata.optimizer]
+builds = [
+    { name = "auth_registry_updater", features = [] }
+]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+library = []
+
+[dependencies]
+cosmwasm-schema = { workspace = true }
+cosmwasm-std = { workspace = true }
+cw-storage-plus = { workspace = true }
+cw2 = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+cw-multi-test = "2.0"

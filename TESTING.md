@@ -58,18 +58,21 @@ Start an ERGORS network for manual testing:
 ## Test Coverage
 
 **ERGORS Network:**
+
 - Coordinator node starts and accepts connections
 - Executor nodes connect to coordinator
 - Grant request/approval workflow
 - Node health monitoring
 
 **Akash Deployment:**
+
 - Container deploys to Akash provider
 - Service is exposed and accessible
 - Pod reaches running state
 - Deployment scaling works
 
 **Inference APIs (on deployed service):**
+
 - Ollama: `/api/tags`, `/api/generate`, `/api/chat`
 - OpenAI: `/v1/models`, `/v1/chat/completions`
 - TGI: `/info`, `/generate`

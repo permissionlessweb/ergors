@@ -513,3 +513,110 @@ pub struct ProviderConfig {
     /// For shared providers: total shares to generate
     pub total_shares: Option<u32>,
 }
+
+/// Instantiation message for the auth_registry_updater contract
+#[derive(Debug, Clone, Serialize)]
+pub struct AuthRegistryUpdaterInstantiateMsg {
+    /// Coordinator's public key (has admin rights)
+    pub coordinator: String,
+    /// Initial list of addresses authorized to update the registry
+    pub initial_authorized: Option<Vec<String>>,
+}
+
+/// Instantiation message for the whitelist_authenticator contract
+#[derive(Debug, Clone, Serialize)]
+pub struct WhitelistAuthenticatorInstantiateMsg {
+    /// Admin who can modify the whitelist
+    pub admin: String,
+    /// Optional description of this authenticator
+    pub description: Option<String>,
+    /// Initial addresses to whitelist
+    pub initial_whitelist: Option<Vec<String>>,
+    /// Whether to allow all addresses by default (open policy)
+    pub default_allow: Option<bool>,
+}
+
+impl ContractManager {
+    /// Deploy the auth registry updater contract
+    ///
+    /// This contract controls who can update the authenticator registry.
+    /// It's automatically deployed on coordinator nodes during startup.
+    ///
+    /// # Arguments
+    /// * `wasm_bytes` - Auth registry updater WASM bytecode
+    /// * `coordinator_address` - Coordinator's address for admin rights
+    pub async fn deploy_auth_registry_updater(
+        &self,
+        wasm_bytes: &[u8],
+        coordinator_address: String,
+    ) -> HoResult<String> {
+        // Check if already deployed
+        if let Some(address) = self.get_contract_address("auth_registry_updater").await? {
+            info!("Auth registry updater already deployed at: {}", address);
+            return Ok(address);
+        }
+
+        // Upload the contract
+        let code_id = self
+            .upload_contract(wasm_bytes, "auth_registry_updater")
+            .await?;
+
+        // Prepare instantiation message
+        let init_msg = AuthRegistryUpdaterInstantiateMsg {
+            coordinator: coordinator_address,
+            initial_authorized: None,
+        };
+
+        // Instantiate the contract
+        let address = self
+            .instantiate_contract(code_id, "auth_registry_updater", &init_msg)
+            .await?;
+
+        info!("Deployed auth_registry_updater contract at: {}", address);
+        Ok(address)
+    }
+
+    /// Deploy a whitelist authenticator contract for a specific endpoint
+    ///
+    /// # Arguments
+    /// * `wasm_bytes` - Whitelist authenticator WASM bytecode
+    /// * `endpoint_name` - Name/identifier for this authenticator
+    /// * `admin_address` - Admin who can modify the whitelist
+    /// * `description` - Description of what this authenticator protects
+    /// * `initial_whitelist` - Initial addresses to whitelist
+    pub async fn deploy_whitelist_authenticator(
+        &self,
+        wasm_bytes: &[u8],
+        endpoint_name: &str,
+        admin_address: String,
+        description: Option<String>,
+        initial_whitelist: Option<Vec<String>>,
+    ) -> HoResult<String> {
+        let contract_name = format!("whitelist_auth_{}", endpoint_name);
+
+        // Check if already deployed
+        if let Some(address) = self.get_contract_address(&contract_name).await? {
+            info!("Whitelist authenticator '{}' already deployed at: {}", contract_name, address);
+            return Ok(address);
+        }
+
+        // Upload the contract (reuse code if same bytecode already uploaded)
+        let code_id = self.upload_contract(wasm_bytes, &contract_name).await?;
+
+        // Prepare instantiation message
+        let init_msg = WhitelistAuthenticatorInstantiateMsg {
+            admin: admin_address,
+            description,
+            initial_whitelist,
+            default_allow: Some(false), // Default to deny mode (allowlist)
+        };
+
+        // Instantiate the contract
+        let address = self
+            .instantiate_contract(code_id, &contract_name, &init_msg)
+            .await?;
+
+        info!("Deployed whitelist_authenticator '{}' at: {}", contract_name, address);
+        Ok(address)
+    }
+}

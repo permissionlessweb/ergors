@@ -47,6 +47,10 @@ const SESSION_BY_TAG_PREFIX: &str = "sessions_by_tag/";
 const SESSION_STATE_PREFIX: &str = "session_states/";
 const SESSION_LOCK_PREFIX: &str = "session_locks/";
 
+// Custom Authenticator Storage Prefixes
+const AUTHENTICATOR_PREFIX: &str = "authenticators/";
+const AUTHENTICATOR_META_PREFIX: &str = "authenticators/metadata/";
+
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
     pub cs: CnidariumStorage,
@@ -1410,6 +1414,146 @@ impl ErgorsStorage {
         // For now, just query and count. Could be optimized with separate count indices.
         let sessions = self.query_fractal_sessions(query).await?;
         Ok(sessions.len() as u64)
+    }
+
+    // ========================================
+    // Authenticator Registry Storage Methods
+    // ========================================
+
+    /// Register an authenticator contract for an endpoint label.
+    /// This maps endpoint labels to CosmWasm contract addresses that will
+    /// handle authorization decisions for that endpoint.
+    pub async fn put_authenticator(
+        &self,
+        endpoint_label: &str,
+        contract_address: &str,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = format!("{}{}", AUTHENTICATOR_PREFIX, endpoint_label);
+        delta.put_raw(key.clone(), contract_address.as_bytes().to_vec());
+        self.cs.commit(delta).await?;
+        info!(
+            "🔐 Registered authenticator for endpoint '{}': {}",
+            endpoint_label, contract_address
+        );
+        Ok(())
+    }
+
+    /// Get the authenticator contract address for an endpoint label.
+    /// Returns None if no authenticator is registered for this endpoint.
+    pub async fn get_authenticator(&self, endpoint_label: &str) -> HoResult<Option<String>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}{}", AUTHENTICATOR_PREFIX, endpoint_label);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let address = String::from_utf8(data)
+                    .map_err(|e| HoError::Storage(format!("Invalid authenticator address: {}", e)))?;
+                Ok(Some(address))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!(
+                    "Failed to get authenticator for endpoint '{}': {}",
+                    endpoint_label, e
+                );
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Remove the authenticator for an endpoint label.
+    pub async fn delete_authenticator(&self, endpoint_label: &str) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = format!("{}{}", AUTHENTICATOR_PREFIX, endpoint_label);
+        delta.delete(key);
+
+        // Also delete metadata if it exists
+        let meta_key = format!("{}{}", AUTHENTICATOR_META_PREFIX, endpoint_label);
+        delta.delete(meta_key);
+
+        self.cs.commit(delta).await?;
+        info!("🗑️  Removed authenticator for endpoint '{}'", endpoint_label);
+        Ok(())
+    }
+
+    /// Store metadata for an authenticator endpoint (e.g., description, created_at, etc.).
+    pub async fn put_authenticator_metadata(
+        &self,
+        endpoint_label: &str,
+        metadata: &str,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = format!("{}{}", AUTHENTICATOR_META_PREFIX, endpoint_label);
+        delta.put_raw(key, metadata.as_bytes().to_vec());
+        self.cs.commit(delta).await?;
+        debug!(
+            "Stored metadata for authenticator endpoint '{}'",
+            endpoint_label
+        );
+        Ok(())
+    }
+
+    /// Get metadata for an authenticator endpoint.
+    pub async fn get_authenticator_metadata(
+        &self,
+        endpoint_label: &str,
+    ) -> HoResult<Option<String>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}{}", AUTHENTICATOR_META_PREFIX, endpoint_label);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let metadata = String::from_utf8(data)
+                    .map_err(|e| HoError::Storage(format!("Invalid metadata: {}", e)))?;
+                Ok(Some(metadata))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!(
+                    "Failed to get authenticator metadata for endpoint '{}': {}",
+                    endpoint_label, e
+                );
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// List all registered authenticator endpoint labels.
+    pub async fn list_authenticators(&self) -> HoResult<Vec<(String, String)>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut results = Vec::new();
+        let mut stream = snapshot.prefix_raw(AUTHENTICATOR_PREFIX);
+
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((key, value)) => {
+                    let key_str = String::from_utf8_lossy(&key.as_bytes());
+                    if let Some(endpoint_label) = key_str.strip_prefix(AUTHENTICATOR_PREFIX) {
+                        // Skip metadata entries
+                        if endpoint_label.starts_with("metadata/") {
+                            continue;
+                        }
+                        let contract_address = String::from_utf8_lossy(&value).to_string();
+                        results.push((endpoint_label.to_string(), contract_address));
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading authenticator stream: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Check if an endpoint has an authenticator registered.
+    pub async fn has_authenticator(&self, endpoint_label: &str) -> bool {
+        match self.get_authenticator(endpoint_label).await {
+            Ok(Some(_)) => true,
+            _ => false,
+        }
     }
 }
 
