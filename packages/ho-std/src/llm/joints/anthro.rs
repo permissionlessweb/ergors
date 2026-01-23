@@ -123,6 +123,9 @@ impl ApiJoint for AnthropticJoint {
                     final_usage.completion,
                 ),
                 latency_ms,
+                status: None,
+                output: vec![],
+                response_metadata: None,
             })
         } else {
             let error_text = response.text().await?;

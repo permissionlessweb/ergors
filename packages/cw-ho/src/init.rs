@@ -566,7 +566,7 @@ impl InitCmd {
 }
 
 impl SoftKmsInitCmd {
-    fn spend_key(&self, init_type: InitType) -> Result<SpendKey> {
+    fn spend_key(&self, _init_type: InitType) -> Result<SpendKey> {
         // Ok(match self {
         //     SoftKmsInitCmd::Generate { stdout } => {
         //         let seed_phrase = SeedPhrase::generate(OsRng);

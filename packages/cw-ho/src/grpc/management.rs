@@ -45,7 +45,6 @@ use ho_std::types::ergors::management::v1::{
     EngineStatus,
     FailSessionRequest,
     FailTaskWorktreeRequest,
-    FractalSession,
     GetHierarchyRequest,
     GetHierarchyResponse,
     GetSessionRequest,
@@ -102,7 +101,6 @@ use ho_std::types::ergors::management::v1::{
     SyncWorkspaceRequest,
     SyncWorkspaceResponse,
     TokenIdRequest,
-    TokenInfo,
     TokenLabel,
     TokenList,
     TokenResponse,
@@ -116,7 +114,7 @@ use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::broadcast;
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
 
@@ -143,7 +141,7 @@ impl ManagementServiceImpl {
         let node_id = identity
             .public_key
             .as_ref()
-            .map(|pk| hex::encode(pk))
+            .map(hex::encode)
             .unwrap_or_else(|| "local".to_string());
 
         // Create SessionManager with default config
@@ -180,7 +178,7 @@ impl ManagementServiceImpl {
         let node_id = identity
             .public_key
             .as_ref()
-            .map(|pk| hex::encode(pk))
+            .map(hex::encode)
             .unwrap_or_else(|| "local".to_string());
 
         let session_manager = Arc::new(SessionManager::new(
@@ -871,7 +869,7 @@ impl ManagementService for ManagementServiceImpl {
             .await
         {
             Ok(session) => {
-                let metrics = session.metrics.clone();
+                let metrics = session.metrics;
                 Ok(Response::new(CompleteSessionResponse {
                     session: Some(session),
                     final_metrics: metrics,
@@ -1533,7 +1531,7 @@ impl ManagementService for ManagementServiceImpl {
                 let node_id = identity
                     .public_key
                     .as_ref()
-                    .map(|pk| hex::encode(pk))
+                    .map(hex::encode)
                     .unwrap_or_else(|| "local".to_string());
                 let git_identity = ho_std::git::GitIdentity::minimal(&node_id, &identity.node_type);
                 worktree_repo.set_identity(git_identity.clone());
@@ -1764,7 +1762,7 @@ impl ManagementService for ManagementServiceImpl {
                 let node_id = identity
                     .public_key
                     .as_ref()
-                    .map(|pk| hex::encode(pk))
+                    .map(hex::encode)
                     .unwrap_or_else(|| "local".to_string());
                 let git_identity = ho_std::git::GitIdentity::minimal(&node_id, &identity.node_type);
                 repo.set_identity(git_identity);
@@ -1902,7 +1900,7 @@ impl ManagementService for ManagementServiceImpl {
                 resolved_content: req.sdl_content,
                 variable_values: req.sdl_variables,
                 content_hash: vec![],
-                configured_at: Some(now.clone()),
+                configured_at: Some(now),
             })
         } else {
             None
@@ -1924,7 +1922,7 @@ impl ManagementService for ManagementServiceImpl {
             test_results: vec![],
             last_error: String::new(),
             retry_count: 0,
-            created_at: Some(now.clone()),
+            created_at: Some(now),
             updated_at: Some(now),
             completed_at: None,
             chain_id,
@@ -2046,7 +2044,7 @@ impl ManagementService for ManagementServiceImpl {
         // Mark as complete if we reached the complete step
         if next_step >= AkashWorkflowStep::Complete as i32 {
             workflow.status = AkashWorkflowStatus::Completed as i32;
-            workflow.completed_at = workflow.updated_at.clone();
+            workflow.completed_at = workflow.updated_at;
         }
 
         // Persist

@@ -10,8 +10,7 @@ use bytes::Bytes;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::debug;
 
 /// Default Anthropic API base URL
 pub const DEFAULT_ANTHROPIC_URL: &str = "https://api.anthropic.com";

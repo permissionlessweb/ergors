@@ -1,30 +1,14 @@
-use crate::{
-    middleware::record_operation, storage::ErgorsStorage, ErgorsAppState, ErgorsConfig,
-    ErgorsNetworkManifold, LlmRouter,
-};
+use crate::ErgorsAppState;
 use axum::{
-    extract::{Query, State},
-    middleware, Json, Router,
+    extract::State, Json,
 };
-use commonware_cryptography::{blake3, Hasher};
-use commonware_runtime::tokio::Context;
 use ho_std::llm::HoError;
-use ho_std::{error::error_json, network::AuthLayer};
-use ho_std::{
-    error::{error_json_detailed, HoResult},
-    traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityTrait},
-    types::ergors::{orch::v1::*, storage::v1::*},
-};
-use std::{ops::Deref, sync::Arc, time::Instant};
-use tokio::net::TcpListener;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::{error, info};
-use uuid::Uuid;
+use ho_std::error::error_json_detailed;
 
 // implement logic for storing headatsh metadata into ipfs gateway/storage for retrieval
 pub async fn handle_vote_extension(
-    State(state): State<ErgorsAppState>,
-    Json(r): Json<serde_json::Value>,
+    State(_state): State<ErgorsAppState>,
+    Json(_r): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
     // ensure request is coming from known validator
 

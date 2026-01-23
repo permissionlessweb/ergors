@@ -183,6 +183,13 @@ message PromptRequest {
   string tool_choice = 6;               // "auto", "none", "required", or specific tool name
   bool stream = 7;                      // Enable streaming response
   string system = 8;                    // System message (Anthropic style)
+
+  // ===== Open Responses Extensions =====
+  optional string previous_response_id = 9;      // Conversation resumption
+  repeated string allowed_tools = 10;            // Cache-preserving tool filter
+  optional string truncation = 11;               // "auto" | "disabled"
+  optional string service_tier = 12;             // "standard" | "priority" | "batch"
+  optional string response_format = 13;          // "ergors" | "open_responses" | "auto"
 }
 
 message PromptResponse {
@@ -195,6 +202,83 @@ message PromptResponse {
   TokenUsage tokens_used = 7;
   double cost = 8;
   uint64 latency_ms = 9;
+
+  // ===== Open Responses Extensions =====
+  optional string status = 10;                   // "in_progress" | "completed" | "failed"
+  repeated ResponseOutputItem output = 11;       // Open Responses items array
+  optional ResponseMetadata response_metadata = 12;
+}
+
+// ===== Open Responses Types =====
+
+// Output item in Open Responses format (polymorphic via oneof)
+message ResponseOutputItem {
+  string id = 1;                                 // Unique item ID
+  string type = 2;                               // "message" | "function_call" | "function_call_output"
+  string status = 3;                             // "in_progress" | "completed" | "incomplete"
+
+  oneof content {
+    MessageItemContent message = 4;              // Reuses ContentBlock!
+    FunctionCallItemContent function_call = 5;
+    FunctionCallOutputItemContent function_call_output = 6;
+  }
+}
+
+// Message item content (maps to existing PromptMessage/ContentBlock)
+message MessageItemContent {
+  string role = 1;                               // "user" | "assistant" | "system"
+  repeated ContentBlock content = 2;             // REUSE existing ContentBlock
+}
+
+// Function call item content (maps to existing ToolUse)
+message FunctionCallItemContent {
+  string name = 1;
+  string arguments = 2;                          // JSON string
+  string call_id = 3;                            // For result correlation
+}
+
+// Function call output (maps to existing ToolResult)
+message FunctionCallOutputItemContent {
+  string call_id = 1;                            // References function_call item
+  string output = 2;                             // Result content
+}
+
+// Response metadata for Open Responses
+message ResponseMetadata {
+  google.protobuf.Timestamp created = 1;
+  google.protobuf.Timestamp completed = 2;
+  string previous_response_id = 3;               // Echo back for chaining
+}
+
+// Open Responses streaming event envelope
+message OpenResponsesStreamEvent {
+  string event = 1;                              // Event type (e.g., "response.output_item.added")
+  uint32 sequence_number = 2;
+  string response_id = 3;
+
+  oneof payload {
+    ResponseStatusPayload status = 4;
+    OutputItemPayload item = 5;
+    TextDeltaPayload text_delta = 6;
+  }
+}
+
+// Response status event (in_progress, completed, failed)
+message ResponseStatusPayload {
+  string status = 1;
+}
+
+// Output item event (added, done)
+message OutputItemPayload {
+  uint32 output_index = 1;                       // Item index in output array
+  ResponseOutputItem item = 2;
+}
+
+// Text delta event (delta, done)
+message TextDeltaPayload {
+  uint32 output_index = 1;
+  uint32 content_index = 2;
+  string delta = 3;                              // Incremental text
 }
 
 message PromptMessage {

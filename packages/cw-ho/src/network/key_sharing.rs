@@ -174,7 +174,7 @@ impl KeySharingHandler {
     /// Handle a key share response (node only)
     async fn handle_response(
         &self,
-        from: &NodePubkey,
+        _from: &NodePubkey,
         response: KeyShareResponse,
     ) -> HoResult<Option<KeySharingMessage>> {
         if self.is_coordinator {
@@ -218,7 +218,7 @@ impl KeySharingHandler {
     /// Handle a key revocation message
     async fn handle_revocation(
         &self,
-        from: &NodePubkey,
+        _from: &NodePubkey,
         revocation: KeyRevocation,
     ) -> HoResult<Option<KeySharingMessage>> {
         // Only accept revocations from coordinators

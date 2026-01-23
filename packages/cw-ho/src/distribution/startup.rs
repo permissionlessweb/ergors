@@ -4,7 +4,7 @@
 //! initializing the ephemeral key manager, bootstrap handlers,
 //! and distribution manager.
 
-use super::{ApiKeyDistributor, ProviderDistributionConfig, default_provider_configs};
+use super::{ApiKeyDistributor, default_provider_configs};
 use crate::bootstrap::{BootstrapConfig, BootstrapHandler, BootstrapInitiator};
 use crate::network::KeySharingHandler;
 use ho_std::ephemeral::{EphemeralKeyManager, DEFAULT_TTL};
@@ -12,7 +12,7 @@ use ho_std::error::{HoError, HoResult};
 use ho_std::keys::commonware::NodePrivKey;
 use ho_std::types::ergors::network::v1::NodeIdentity;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Key distribution system state
 ///

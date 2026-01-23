@@ -98,6 +98,10 @@ DEPLOY_DSEQ="${DEPLOY_DSEQ:-1}"
 # Live log streaming flag
 LIVE_LOGS=false
 
+# Enhanced test tracking with visual feedback
+declare -a TEST_ORDER
+TEST_CURRENT_SECTION=""
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -124,6 +128,83 @@ log_success() { echo -e "${GREEN}[$(date +%H:%M:%S)] ✓${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[$(date +%H:%M:%S)] ⚠${NC} $1"; }
 log_error() { echo -e "${RED}[$(date +%H:%M:%S)] ✗${NC} $1"; }
 log_step() { echo -e "\n${CYAN}${BOLD}═══════════════════════════════════════════════════════════${NC}"; echo -e "${CYAN}${BOLD}  $1${NC}"; echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════════${NC}\n"; }
+
+# Enhanced test result tracking with visual feedback
+test_pass() {
+    local test_name="$1"
+    local description="$2"
+
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    TEST_ORDER+=("$test_name:PASS")
+
+    echo -e "${GREEN}✅ $description${NC}"
+    if [ "$VERBOSE" = true ]; then
+        log_success "  ✓ $test_name"
+    fi
+
+    # Log to detailed test log for debugging
+    echo "[$(date +%H:%M:%S)] PASS: $test_name - $description" >> "${TEST_DIR}/test-results.log"
+}
+
+test_fail() {
+    local test_name="$1"
+    local description="$2"
+    local details="$3"
+
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    TEST_ORDER+=("$test_name:FAIL:$details")
+
+    echo -e "${RED}❌ $description${NC}"
+    if [ -n "$details" ]; then
+        echo -e "${RED}   └─ $details${NC}"
+    fi
+    if [ "$VERBOSE" = true ]; then
+        log_error "  ✗ $test_name: $details"
+    fi
+
+    # Log to detailed test log for debugging
+    echo "[$(date +%H:%M:%S)] FAIL: $test_name - $description" >> "${TEST_DIR}/test-results.log"
+    if [ -n "$details" ]; then
+        echo "    Details: $details" >> "${TEST_DIR}/test-results.log"
+    fi
+}
+
+test_section() {
+    local section_name="$1"
+    TEST_CURRENT_SECTION="$section_name"
+    echo -e "\n${YELLOW}${BOLD}🧪 $section_name${NC}"
+}
+
+test_summary() {
+    local section_name="$1"
+    local passed=0
+    local failed=0
+
+    echo -e "\n${BLUE}${BOLD}📊 $section_name Summary:${NC}"
+
+    for test_entry in "${TEST_ORDER[@]}"; do
+        # Parse test_entry format: "test_name:STATUS:details"
+        local test_name=$(echo "$test_entry" | cut -d: -f1)
+        local status=$(echo "$test_entry" | cut -d: -f2)
+
+        if [ "$status" = "PASS" ]; then
+            echo -e "  ${GREEN}✅ $test_name${NC}"
+            passed=$((passed + 1))
+        elif [ "$status" = "FAIL" ]; then
+            local details=$(echo "$test_entry" | cut -d: -f3-)
+            echo -e "  ${RED}❌ $test_name${NC}"
+            if [ -n "$details" ]; then
+                echo -e "     ${RED}└─ $details${NC}"
+            fi
+            failed=$((failed + 1))
+        fi
+    done
+
+    echo -e "  ${BOLD}Section Results:${NC} ${GREEN}$passed passed${NC}, ${RED}$failed failed${NC}"
+
+    # Reset for next section
+    TEST_ORDER=()
+}
 
 # Node-specific log colors
 COORD_COLOR='\033[0;35m'   # Magenta for coordinator
@@ -1358,30 +1439,23 @@ deploy_via_ergors() {
 
 # Test ERGORS network communication
 test_ergors_network() {
-    log_step "Testing ERGORS Network"
+    test_section "ERGORS Network Tests"
 
     # Test 1: Coordinator is healthy
-    log "Testing coordinator health..."
     if nc -z 127.0.0.1 "${COORDINATOR_GRPC##*:}" 2>/dev/null; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Coordinator gRPC reachable"
+        test_pass "coordinator_grpc_reachable" "Coordinator gRPC reachable at ${COORDINATOR_GRPC}"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Coordinator gRPC unreachable"
+        test_fail "coordinator_grpc_reachable" "Coordinator gRPC unreachable at ${COORDINATOR_GRPC}"
     fi
 
     # Test 2: Executor is healthy
-    log "Testing executor health..."
     if nc -z 127.0.0.1 "${EXECUTOR_GRPC##*:}" 2>/dev/null; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Executor gRPC reachable"
+        test_pass "executor_grpc_reachable" "Executor gRPC reachable at ${EXECUTOR_GRPC}"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Executor gRPC unreachable"
+        test_fail "executor_grpc_reachable" "Executor gRPC unreachable at ${EXECUTOR_GRPC}"
     fi
 
     # Test 3: Nodes are running
-    log "Testing node processes..."
     local running=0
     for pid in "${NODE_PIDS[@]}"; do
         if kill -0 "$pid" 2>/dev/null; then
@@ -1389,138 +1463,115 @@ test_ergors_network() {
         fi
     done
     if [ $running -eq ${#NODE_PIDS[@]} ]; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  All ${#NODE_PIDS[@]} nodes running"
+        test_pass "all_nodes_running" "All ${#NODE_PIDS[@]} ERGORS nodes running"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Only $running/${#NODE_PIDS[@]} nodes running"
+        test_fail "all_nodes_running" "Only $running/${#NODE_PIDS[@]} nodes running" "Expected all nodes to be running"
         # Show logs for debugging
         show_node_logs "coordinator"
         show_node_logs "executor_0"
     fi
+
+    test_summary "ERGORS Network"
 }
 
 # Test ERGORS node configuration
 test_node_config() {
-    log_step "Testing Node Configuration"
+    test_section "Node Configuration Tests"
 
     # Test 1: Config files exist
-    log "Verifying config files..."
     if [ -f "$TEST_DIR/coordinator/config.toml" ]; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Coordinator config.toml exists"
+        test_pass "coordinator_config_exists" "Coordinator config.toml exists"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Coordinator config.toml missing"
+        test_fail "coordinator_config_exists" "Coordinator config.toml missing"
     fi
 
     # Test 2: CosmWasm config present
     if grep -q "cosmwasm" "$TEST_DIR/coordinator/config.toml" 2>/dev/null; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  CosmWasm configuration present"
+        test_pass "cosmwasm_config_present" "CosmWasm configuration present in config"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  CosmWasm configuration missing"
+        test_fail "cosmwasm_config_present" "CosmWasm configuration missing from config" "Config should include cosmwasm settings"
         show_config "coordinator"
     fi
 
     # Test 3: WASM artifact copied
     if [ -f "$TEST_DIR/coordinator/sdl_template_registrar.wasm" ]; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  SDL contract WASM artifact present"
+        test_pass "wasm_artifact_present" "SDL contract WASM artifact present"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  SDL contract WASM artifact missing"
+        test_fail "wasm_artifact_present" "SDL contract WASM artifact missing"
     fi
 
     # Test 4: Validate config using ergors config get
-    log "Testing 'ergors config get' command..."
     local node_type=$("$ERGORS_BIN" --home "$TEST_DIR/coordinator" config get identity.node_type 2>&1)
     if echo "$node_type" | grep -q "Coordinator"; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Config get: identity.node_type = Coordinator"
+        test_pass "config_get_node_type" "Config get: identity.node_type = Coordinator"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Config get failed: $node_type"
+        test_fail "config_get_node_type" "Config get failed for identity.node_type" "Expected 'Coordinator', got: $node_type"
     fi
 
     # Test 5: Validate api_port
     local api_port=$("$ERGORS_BIN" --home "$TEST_DIR/coordinator" config get identity.api_port 2>&1)
     if echo "$api_port" | grep -q "50100"; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Config get: identity.api_port = 50100"
+        test_pass "config_get_api_port" "Config get: identity.api_port = 50100"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Config get api_port failed: $api_port"
+        test_fail "config_get_api_port" "Config get api_port failed" "Expected '50100', got: $api_port"
     fi
 
     # Test 6: Validate cosmwasm enabled
     local cw_enabled=$("$ERGORS_BIN" --home "$TEST_DIR/coordinator" config get cosmwasm.enabled 2>&1)
     if echo "$cw_enabled" | grep -q "true"; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Config get: cosmwasm.enabled = true"
+        test_pass "config_get_cosmwasm_enabled" "Config get: cosmwasm.enabled = true"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Config get cosmwasm.enabled failed: $cw_enabled"
+        test_fail "config_get_cosmwasm_enabled" "Config get cosmwasm.enabled failed" "Expected 'true', got: $cw_enabled"
     fi
 
     # Test 7: Validate config list command
-    log "Testing 'ergors config list' command..."
     local config_list=$("$ERGORS_BIN" --home "$TEST_DIR/coordinator" config list 2>&1)
     if echo "$config_list" | grep -q "identity.host" && echo "$config_list" | grep -q "network.listen_port"; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Config list shows available keys"
+        test_pass "config_list_command" "Config list shows available keys (identity.host, network.listen_port)"
     else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Config list failed"
+        test_fail "config_list_command" "Config list failed" "Expected to find identity.host and network.listen_port keys"
     fi
+
+    test_summary "Node Configuration"
 }
 
 # Test SDL template workflow
 test_sdl_workflow() {
-    log_step "Testing SDL Template Workflow"
+    test_section "SDL Template Workflow Tests"
 
     # Check coordinator logs for contract activity
     if [ -f "$TEST_DIR/coordinator/node.log" ]; then
-        log "Checking coordinator node logs..."
-
         # Check for startup
         if grep -q "Starting ERGORS\|Starting.*engine" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Coordinator started successfully"
+            test_pass "coordinator_startup_successful" "Coordinator started successfully"
         else
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-            log_error "  Coordinator startup not detected"
+            test_fail "coordinator_startup_successful" "Coordinator startup not detected in logs"
         fi
 
         # Check for storage init
         if grep -q "storage\|Cnidarium\|rocksdb" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Storage initialized"
+            test_pass "storage_initialized" "Storage system initialized (Cnidarium/RocksDB)"
         else
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-            log_error "  Storage initialization not detected"
+            test_fail "storage_initialized" "Storage initialization not detected in logs"
         fi
     else
-        log_warn "  Coordinator log not found"
+        test_fail "coordinator_log_exists" "Coordinator log file not found" "Expected $TEST_DIR/coordinator/node.log to exist"
     fi
 
     # Check executor logs
     if [ -f "$TEST_DIR/executor_0/node.log" ]; then
-        log "Checking executor node logs..."
-
         if grep -q "Starting ERGORS\|Starting.*engine" "$TEST_DIR/executor_0/node.log" 2>/dev/null; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Executor started successfully"
+            test_pass "executor_startup_successful" "Executor started successfully"
         else
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-            log_error "  Executor startup not detected"
+            test_fail "executor_startup_successful" "Executor startup not detected in logs"
         fi
     else
-        log_warn "  Executor log not found"
+        test_fail "executor_log_exists" "Executor log file not found" "Expected $TEST_DIR/executor_0/node.log to exist"
     fi
 
-    # Run additional SDL tests
+    test_summary "SDL Workflow Basics"
+
+    # Run additional SDL tests with their own sections
     test_sdl_contract_queries
     test_sdl_variable_substitution
 }
@@ -2370,84 +2421,77 @@ test_contract_deployment() {
 
 # Test SDL contract queries (real blockchain verification)
 test_sdl_contract_queries() {
-    log_step "Testing SDL Contract Queries"
+    test_section "SDL Contract Queries Tests"
 
     # Test 1: Check for contract address in logs
-    log "Looking for deployed contract address..."
     local contract_addr=$(grep -oP 'contract_address.*?:\s*\K[a-z0-9]+' "$TEST_DIR/coordinator/node.log" 2>/dev/null | head -1)
 
     if [ -n "$contract_addr" ]; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Contract address: ${contract_addr:0:20}..."
+        test_pass "contract_address_found" "Contract address found: ${contract_addr:0:20}..."
     else
-        log_warn "  Contract address not found in logs"
+        test_fail "contract_address_found" "Contract address not found in logs"
     fi
 
     # Test 2: Check for template registration
-    log "Checking for SDL template registration..."
     if grep -q "template.*registered\|RegisterTemplate\|template.*added" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  SDL templates registered"
+        test_pass "template_registration_detected" "SDL templates registered in contract"
     else
-        log_warn "  Template registration not found in logs"
+        test_fail "template_registration_detected" "Template registration not found in logs"
     fi
 
     # Test 3: Check for template query capability
-    log "Checking template query capability..."
     if grep -q "QueryTemplate\|template.*query\|GetTemplate" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Template query capability available"
+        test_pass "template_query_capability" "Template query capability available"
     else
-        log_warn "  Template query capability not detected"
+        test_fail "template_query_capability" "Template query capability not detected"
     fi
 
     # For real Akash mode, perform actual contract queries
     if [ "$USE_REAL_AKASH" = true ]; then
-        log "Performing real contract state queries..."
-
-        # This would query the actual contract state on the blockchain
-        # For now, we check if the infrastructure is ready
+        # Check if the infrastructure is ready
         if [ -f "$TEST_DIR/coordinator/node.log" ]; then
             if grep -q "cosmwasm.*initialized\|wasm.*runtime\|contract.*loaded" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-                TESTS_PASSED=$((TESTS_PASSED + 1))
-                log_success "  CosmWasm runtime initialized for real queries"
+                test_pass "cosmwasm_runtime_ready" "CosmWasm runtime initialized for real queries"
+            else
+                test_fail "cosmwasm_runtime_ready" "CosmWasm runtime not initialized"
             fi
+        else
+            test_fail "coordinator_log_available" "Coordinator log not available for CosmWasm checks"
         fi
+    else
+        test_pass "mock_mode_skip_real_queries" "Mock mode - skipping real blockchain queries"
     fi
+
+    test_summary "SDL Contract Queries"
 }
 
 # Test SDL template variable substitution
 test_sdl_variable_substitution() {
-    log_step "Testing SDL Variable Substitution"
+    test_section "SDL Variable Substitution Tests"
 
     # Test 1: Check for variable substitution in logs
-    log "Checking variable substitution processing..."
     if grep -q "substitut\|variable\|\${.*}" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Variable substitution processing detected"
+        test_pass "variable_substitution_detected" "Variable substitution processing detected in logs"
     else
-        log_warn "  Variable substitution not detected in logs"
+        test_fail "variable_substitution_detected" "Variable substitution not detected in logs"
     fi
 
     # Test 2: Check SDL processing
-    log "Checking SDL processing..."
     if grep -q "SDL\|sdl.*process\|yaml\|manifest" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  SDL processing detected"
+        test_pass "sdl_processing_detected" "SDL processing detected in logs"
     else
-        log_warn "  SDL processing not detected"
+        test_fail "sdl_processing_detected" "SDL processing not detected in logs"
     fi
 
     # Test 3: Verify no unsubstituted variables in processed SDL
-    log "Checking for unsubstituted variables..."
     # Look for error messages about unsubstituted variables
     if grep -q "unsubstituted\|missing.*variable\|undefined.*\${" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Unsubstituted variables found"
+        test_fail "no_unsubstituted_variables" "Unsubstituted variables found in logs"
     else
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  No unsubstituted variable errors"
+        test_pass "no_unsubstituted_variables" "No unsubstituted variable errors detected"
     fi
+
+    test_summary "SDL Variable Substitution"
 }
 
 # Print summary
@@ -2470,6 +2514,24 @@ print_summary() {
     echo -e "    Endpoint: ${DEPLOYED_ENDPOINT}"
     echo ""
 
+    # Show detailed test results if available
+    if [ -f "${TEST_DIR}/test-results.log" ]; then
+        echo -e "  ${BOLD}Test Details:${NC}"
+        echo -e "    Detailed log: ${TEST_DIR}/test-results.log"
+        echo ""
+
+        # Show failed tests
+        if [ $TESTS_FAILED -gt 0 ]; then
+            echo -e "  ${RED}${BOLD}Failed Tests:${NC}"
+            grep "^\[" "${TEST_DIR}/test-results.log" | grep "FAIL:" | while IFS= read -r line; do
+                # Extract test name from log line
+                local test_info=$(echo "$line" | sed 's/.*FAIL: \([^ ]*\) - .*/\1/')
+                echo -e "    ${RED}❌ $test_info${NC}"
+            done
+            echo ""
+        fi
+    fi
+
     if [ $TESTS_FAILED -eq 0 ]; then
         echo -e "${GREEN}${BOLD}  ╔═══════════════════════════════════════╗${NC}"
         echo -e "${GREEN}${BOLD}  ║     ALL TESTS PASSED SUCCESSFULLY     ║${NC}"
@@ -2479,6 +2541,7 @@ print_summary() {
         echo -e "${RED}${BOLD}  ╔═══════════════════════════════════════╗${NC}"
         echo -e "${RED}${BOLD}  ║         SOME TESTS FAILED             ║${NC}"
         echo -e "${RED}${BOLD}  ╚═══════════════════════════════════════╝${NC}"
+        echo -e "  ${BOLD}Check logs:${NC} ${TEST_DIR}/test-results.log"
         return 1
     fi
 }

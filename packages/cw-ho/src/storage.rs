@@ -4,7 +4,6 @@ use cnidarium::{StateRead, StateWrite, Storage as CnidariumStorage};
 use futures::StreamExt;
 use ho_std::error::error_json;
 use ho_std::llm::{HoError, HoResult};
-use ho_std::traits::MessageExt;
 use ho_std::types::ergors::{
     management::v1::{
         FractalSession, QuerySessionsRequest, SessionStateSnapshot, SessionStatus, SessionType,
@@ -46,6 +45,9 @@ const SESSION_BY_LABEL_PREFIX: &str = "sessions_by_label/";
 const SESSION_BY_TAG_PREFIX: &str = "sessions_by_tag/";
 const SESSION_STATE_PREFIX: &str = "session_states/";
 const SESSION_LOCK_PREFIX: &str = "session_locks/";
+
+// Open Responses Storage Prefix
+const OPEN_RESPONSE_PREFIX: &str = "open_responses/";
 
 // Custom Authenticator Storage Prefixes
 const AUTHENTICATOR_PREFIX: &str = "authenticators/";
@@ -181,7 +183,7 @@ impl ErgorsStorage {
 
             match entry_result {
                 Ok((key, value)) => {
-                    let key_str = String::from_utf8_lossy(&key.as_bytes());
+                    let key_str = String::from_utf8_lossy(key.as_bytes());
                     debug!(
                         "📋 Found entry with key: {}, value size: {} bytes",
                         key_str,
@@ -239,6 +241,108 @@ impl ErgorsStorage {
         Ok(results)
     }
 
+    // ===== Open Responses Session Storage =====
+
+    /// Store an Open Responses session (request + response) for conversation continuity.
+    pub async fn put_open_response(
+        &self,
+        response_id: &str,
+        request: &PromptRequest,
+        response_text: &[String],
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        // Store the conversation context: request messages + response
+        let session_data = serde_json::json!({
+            "request_messages": request.messages.iter().map(|m| {
+                serde_json::json!({
+                    "role": m.role,
+                    "content": m.content,
+                })
+            }).collect::<Vec<_>>(),
+            "response_messages": response_text,
+            "model": request.model,
+            "system": request.system,
+        });
+
+        let key = format!("{}{}", OPEN_RESPONSE_PREFIX, response_id);
+        delta.put_raw(key, serde_json::to_vec(&session_data)?);
+        self.cs.commit(delta).await?;
+
+        debug!("Stored Open Response session: {}", response_id);
+        Ok(())
+    }
+
+    /// Load previous conversation context for `previous_response_id`.
+    /// Returns messages to prepend to the current request.
+    pub async fn get_open_response_context(
+        &self,
+        response_id: &str,
+    ) -> HoResult<Vec<PromptMessage>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}{}", OPEN_RESPONSE_PREFIX, response_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let session: serde_json::Value = serde_json::from_slice(&data)?;
+
+                let mut messages = Vec::new();
+
+                // Reconstruct request messages
+                if let Some(req_msgs) = session.get("request_messages").and_then(|v| v.as_array())
+                {
+                    for msg in req_msgs {
+                        messages.push(PromptMessage {
+                            role: msg
+                                .get("role")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("user")
+                                .to_string(),
+                            content: msg
+                                .get("content")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            tool_calls: vec![],
+                            tool_result: None,
+                            content_blocks: vec![],
+                        });
+                    }
+                }
+
+                // Add response as assistant message
+                if let Some(resp_msgs) =
+                    session.get("response_messages").and_then(|v| v.as_array())
+                {
+                    let combined: String = resp_msgs
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !combined.is_empty() {
+                        messages.push(PromptMessage {
+                            role: "assistant".to_string(),
+                            content: combined,
+                            tool_calls: vec![],
+                            tool_result: None,
+                            content_blocks: vec![],
+                        });
+                    }
+                }
+
+                Ok(messages)
+            }
+            Ok(None) => Ok(vec![]),
+            Err(e) => {
+                warn!(
+                    "Failed to get open response context {}: {}",
+                    response_id, e
+                );
+                Ok(vec![])
+            }
+        }
+    }
+
     fn matches_query_filters(&self, prompt: &PromptResponse, query: &QueryRequest) -> bool {
         let prompt_nano = prompt.timestamp.expect("should have a time").nanos;
         // Apply time filters if specified
@@ -257,7 +361,7 @@ impl ErgorsStorage {
         }
 
         // Apply session_id filter if specified
-        if let Some(ref query_session_id) = query.session_id {
+        if let Some(_query_session_id) = &query.session_id {
             // if let Some(ref context) = prompt.context {
             //     if let Some(ref session_id) = context.session_id {
             //         if session_id != query_session_id {
@@ -272,7 +376,7 @@ impl ErgorsStorage {
         }
 
         // Apply user_id filter if specified
-        if let Some(ref query_user_id) = query.user_id {
+        if let Some(_query_user_id) = &query.user_id {
             // if let Some(ref context) = prompt.context {
             //     if let Some(ref user_id) = context.user_id {
             //         if user_id != query_user_id {
@@ -452,7 +556,7 @@ impl ErgorsStorage {
                 break;
             }
             match entry_result {
-                Ok((key, value)) => {
+                Ok((_key, value)) => {
                     match serde_json::from_slice::<OperationRecord>(&value) {
                         Ok(operation) => {
                             // Filter by operation type if specified
@@ -573,7 +677,7 @@ impl ErgorsStorage {
         while let Some(entry_result) = stream.next().await {
             match entry_result {
                 Ok((key, _)) => {
-                    let key_str = String::from_utf8_lossy(&key.as_bytes());
+                    let key_str = String::from_utf8_lossy(key.as_bytes());
                     if let Some(provider) = key_str.strip_prefix(API_KEY_PREFIX) {
                         providers.push(provider.to_string());
                     }
@@ -1528,7 +1632,7 @@ impl ErgorsStorage {
         while let Some(entry_result) = stream.next().await {
             match entry_result {
                 Ok((key, value)) => {
-                    let key_str = String::from_utf8_lossy(&key.as_bytes());
+                    let key_str = String::from_utf8_lossy(key.as_bytes());
                     if let Some(endpoint_label) = key_str.strip_prefix(AUTHENTICATOR_PREFIX) {
                         // Skip metadata entries
                         if endpoint_label.starts_with("metadata/") {

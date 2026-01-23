@@ -137,10 +137,10 @@ impl SessionManager {
                 node_id: self.local_node_id.clone(),
                 node_type: self.local_node_type.into(),
                 role: ParticipantRole::Owner.into(),
-                joined_at: Some(now.clone()),
+                joined_at: Some(now),
                 is_active: true,
             }],
-            created_at: Some(now.clone()),
+            created_at: Some(now),
             updated_at: Some(now),
             started_at: None,
             paused_at: None,
@@ -154,7 +154,7 @@ impl SessionManager {
             propagation: Some(
                 request
                     .propagation
-                    .unwrap_or_else(|| self.config.default_propagation.clone()),
+                    .unwrap_or(self.config.default_propagation),
             ),
         };
 
@@ -373,7 +373,7 @@ impl SessionManager {
     pub async fn complete_session(
         &self,
         session_id: &str,
-        result: Option<pbjson_types::Struct>,
+        _result: Option<pbjson_types::Struct>,
     ) -> HoResult<FractalSession> {
         let mut session = self
             .storage
@@ -576,7 +576,7 @@ impl SessionManager {
             .await?
             .ok_or_else(|| HoError::Other("Session not found".to_string()))?;
 
-        let mut aggregated = session.metrics.clone().unwrap_or_default();
+        let mut aggregated = session.metrics.unwrap_or_default();
 
         // Recursively collect metrics from all descendants
         for child_id in &session.child_session_ids {

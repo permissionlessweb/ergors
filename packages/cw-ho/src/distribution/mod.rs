@@ -40,7 +40,7 @@ use ho_std::types::ergors::network::v1::{
 use rand::rngs::OsRng;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Provider configuration for key distribution
 #[derive(Debug, Clone)]

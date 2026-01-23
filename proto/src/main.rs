@@ -95,7 +95,7 @@ fn main() -> anyhow::Result<()> {
                 "./ergors/orch/v1/orch.proto",
                 "./ergors/proxy/v1/proxy.proto",
                 "./ergors/storage/v1/storage.proto",
-                "./ergors/sct/v1/sct.proto",
+                // "./ergors/sct/v1/sct.proto",
                 "./ergors/tct/v1/tct.proto",
                 "./ergors/types/v1/common.proto",
                 "./headstash/headstash/v1/headstash.proto",

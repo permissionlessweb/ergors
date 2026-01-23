@@ -1,29 +1,19 @@
 use ho_std::types::ergors::orch::v1::*;
 
 use axum::{
-    extract::{Query, State},
-    middleware, Json, Router,
+    extract::State, Json,
 };
-use commonware_cryptography::{blake3, Hasher};
 use std::time::Instant;
 
 use crate::ErgorsAppState;
-use ho_std::{
-    error::{error_json, error_json_detailed},
-    network::AuthLayer,
-    types::ergors::{orch::v1::*, storage::v1::*},
-    HoResult,
-};
 
-use tracing::{error, info};
-use uuid::Uuid;
 
 pub async fn handle_bootstrap(
     State(..): State<ErgorsAppState>,
     Json(..): Json<BootstrapRequest>,
 ) -> Json<serde_json::Value> {
-    let start_time = Instant::now();
-    let id = uuid::Uuid::new_v4();
+    let _start_time = Instant::now();
+    let _id = uuid::Uuid::new_v4();
 
     // TODO: handle bootstrap via method:
     // /ergors.network.v1.bootstrap.types: (transport connections for nodes,bootstrapping types used in functions for traits )

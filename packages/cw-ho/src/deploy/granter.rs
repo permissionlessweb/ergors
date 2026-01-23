@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Default grant parameters
 pub const DEFAULT_MAX_DURATION_SECONDS: u64 = 172800; // 48 hours

@@ -326,7 +326,7 @@ impl ErgorsNetworkManifold {
         let peers = self.peers.read().await;
         let targets: Vec<ed25519::PublicKey> = peers
             .values()
-            .filter(|p| &p.node_info.node_type == role.as_str_name())
+            .filter(|p| p.node_info.node_type == role.as_str_name())
             .map(|p| p.public_key.0.clone())
             .collect();
 
@@ -425,7 +425,7 @@ impl ErgorsNetworkManifold {
         }
 
         let msg = MessageType::NodeAnnounce(NodeAnnounce {
-            node_id: hex::encode(&self.identity.public_key.clone().unwrap_or_default()),
+            node_id: hex::encode(self.identity.public_key.clone().unwrap_or_default()),
             role: NodeType::from_str_name(&self.identity.node_type.clone())
                 .unwrap_or(NodeType::Unspecified)
                 .into(),

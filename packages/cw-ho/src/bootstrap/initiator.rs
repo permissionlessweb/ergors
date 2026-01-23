@@ -10,9 +10,9 @@ use super::{create_challenge_response, BootstrapConfig, BootstrapState};
 use ho_std::ephemeral::EphemeralKeyManager;
 use ho_std::error::{HoError, HoResult};
 use ho_std::keys::commonware::NodePrivKey;
-use ho_std::secret_sharing::{self, DecryptedShare, Secret, SharingMode};
+use ho_std::secret_sharing::{self, DecryptedShare, SharingMode};
 use ho_std::types::ergors::network::v1::{
-    IdentityChallenge, KeySharingMode, NodeIdentity, SecretShare,
+    IdentityChallenge, NodeIdentity, SecretShare,
 };
 use ho_std::types::ergors::orch::v1::{BootstrapMethod, BootstrapRequest, BootstrapResponse};
 use rand::rngs::OsRng;
@@ -180,7 +180,7 @@ impl BootstrapInitiator {
         let mut shares = self.collected_shares.write().unwrap();
         shares
             .entry(share.provider.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(decrypted_share);
 
         debug!(

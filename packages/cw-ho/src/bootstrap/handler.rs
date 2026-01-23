@@ -300,7 +300,7 @@ impl BootstrapHandler {
                     expires_at: None,
                     mode: mode_proto.into(),
                     commitment: share.commitment.unwrap_or_default(),
-                    config: provider_config.clone(),
+                    config: provider_config,
                 }
             })
             .collect();

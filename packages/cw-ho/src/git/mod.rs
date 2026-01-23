@@ -11,7 +11,7 @@ use crate::storage::{
 };
 use cnidarium::{StateRead, StateWrite};
 use futures::StreamExt;
-use ho_std::llm::{HoError, HoResult};
+use ho_std::llm::HoResult;
 use tracing::{info, warn};
 pub mod coordinator;
 pub use coordinator::WorkspaceSyncCoordinator;

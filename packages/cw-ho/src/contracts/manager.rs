@@ -7,7 +7,7 @@ use super::ContractError;
 use crate::config::{ContractDeployment, ErgorsConfig};
 use crate::storage::ErgorsStorage;
 use ho_std::error::HoResult;
-use ho_std::traits::{HoConfigTrait, NodeIdentityCustody};
+use ho_std::traits::HoConfigTrait;
 use ho_std::wasm::WasmRuntime;
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
@@ -248,7 +248,7 @@ impl ContractManager {
         // Extract the binary result
         let binary = result
             .into_result()
-            .map_err(|e| ContractError::QueryFailed(e))?;
+            .map_err(ContractError::QueryFailed)?;
 
         // Deserialize the response
         serde_json::from_slice(&binary)

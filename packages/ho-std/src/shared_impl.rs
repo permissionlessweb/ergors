@@ -257,6 +257,9 @@ impl LlmShareImpl {
             }),
             cost: Some(total_cost),
             latency_ms: responses.iter().filter_map(|r| r.latency_ms).max(),
+            status: None,
+            output: vec![],
+            response_metadata: None,
         })
     }
 

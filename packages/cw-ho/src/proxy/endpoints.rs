@@ -13,10 +13,9 @@ use axum::{
     Json,
 };
 use bytes::Bytes;
-use ho_std::traits::ApiKeyProvider;
 use ho_std::types::ergors::proxy::v1::{ProxyApiFormat, QueryProxySessionsRequest};
 use tokio::sync::{mpsc, OnceCell};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Global capture service sender (initialized on first use)
 static CAPTURE_TX: OnceCell<mpsc::UnboundedSender<CaptureMessage>> = OnceCell::const_new();

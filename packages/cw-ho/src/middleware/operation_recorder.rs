@@ -27,8 +27,8 @@ pub async fn record_operation(
     let method = req.method().to_string();
 
     // Set span fields for tracing context
-    tracing::Span::current().record("operation_id", &operation_id.as_str());
-    tracing::Span::current().record("endpoint", &endpoint.as_str());
+    tracing::Span::current().record("operation_id", operation_id.as_str());
+    tracing::Span::current().record("endpoint", endpoint.as_str());
 
     // Extract session_id if present (could come from headers or body)
     let session_id = extract_session_id(&req);

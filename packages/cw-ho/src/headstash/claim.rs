@@ -9,11 +9,11 @@ use ho_std::llm::HoError;
 // - validate proof, save verified details to storage/mempool (msg prooved, prood details)
 
 pub async fn handle_headstash_claim(
-    State(state): State<ErgorsAppState>,
-    Json(r): Json<serde_json::Value>,
+    State(_state): State<ErgorsAppState>,
+    Json(_r): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
     // parse MsgClaimHeadstash
-    let suite = zk_headstash::deploy::HeadstashSuite::new();
+    let _suite = zk_headstash::deploy::HeadstashSuite::new();
     // verify halo2-proof
 
     // save pending claim to mempool for use (inside dedicated storage layer of node)

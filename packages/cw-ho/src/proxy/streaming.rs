@@ -6,16 +6,14 @@
 use crate::proxy::capture::CaptureMessage;
 use async_stream::stream;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use bytes::Bytes;
 use chrono::Utc;
 use futures::stream::Stream;
-use futures::StreamExt;
 use ho_std::types::ergors::proxy::v1::StreamChunk;
 use reqwest::Response;
 use std::convert::Infallible;
 use std::time::Instant;
 use tokio::sync::mpsc;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, trace};
 
 /// Helper to create a pbjson timestamp from current time.
 fn now_timestamp() -> Option<pbjson_types::Timestamp> {

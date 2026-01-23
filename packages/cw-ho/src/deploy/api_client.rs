@@ -3,11 +3,9 @@
 //! This module provides gRPC clients for interacting with Akash Network services
 //! directly, replacing CLI command execution.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use reqwest::Client as HttpClient;
 use serde_json::Value;
 
@@ -70,12 +68,10 @@ impl AkashApiClient {
     /// Query deployments with filters
     pub async fn query_deployments(
         &mut self,
-        owner: Option<&str>,
-        state: Option<&str>,
+        _owner: Option<&str>,
+        _state: Option<&str>,
     ) -> Result<ho_std::types::ergors::akash::deployment::v1beta3::QueryDeploymentsResponse> {
-        use ho_std::types::ergors::akash::deployment::v1beta3::{
-            DeploymentFilters, QueryDeploymentsRequest, QueryDeploymentsResponse,
-        };
+        use ho_std::types::ergors::akash::deployment::v1beta3::QueryDeploymentsResponse;
 
         // TODO: Implement actual gRPC query using tonic client
         // For now, return a stub response

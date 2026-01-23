@@ -122,6 +122,9 @@ impl ApiJoint for OpenAiJoint {
                     usage.completion_tokens,
                 ),
                 latency_ms,
+                status: None,
+                output: vec![],
+                response_metadata: None,
             })
         } else {
             let error_text = response.text().await?;

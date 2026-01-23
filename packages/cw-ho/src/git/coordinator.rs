@@ -12,9 +12,8 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use ho_std::error::HoResult;
-use ho_std::git::{GitIdentity, GitRepository, MergeResult, WorkspaceManager};
-use ho_std::llm::HoError;
-use ho_std::types::ergors::git::v1::{SyncAction, WorkspaceMetadata, WorkspaceSync};
+use ho_std::git::{GitIdentity, GitRepository, WorkspaceManager};
+use ho_std::types::ergors::git::v1::{SyncAction, WorkspaceSync};
 
 use crate::storage::ErgorsStorage;
 
@@ -414,7 +413,7 @@ impl WorkspaceSyncCoordinator {
     }
 
     /// Get a workspace manager by ID
-    pub async fn get_workspace_manager(&self, workspace_id: &str) -> Option<WorkspaceManager> {
+    pub async fn get_workspace_manager(&self, _workspace_id: &str) -> Option<WorkspaceManager> {
         // Note: This clones the manager, which isn't ideal but works for now
         // In a more complex implementation, we'd use Arc<Mutex<WorkspaceManager>>
         None // Placeholder - managers should be accessed via engine state
@@ -476,7 +475,7 @@ impl WorkspaceSyncCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     #[test]
     fn test_create_sync_message() {

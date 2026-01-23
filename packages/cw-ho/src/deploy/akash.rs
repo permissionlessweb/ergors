@@ -169,7 +169,7 @@ impl AkashClient {
         let tx_broadcaster = TxBroadcaster::new(rest_endpoint, tx_config);
 
         // Initialize keyring
-        let mut keyring = SimpleKeyring::new();
+        let keyring = SimpleKeyring::new();
 
         Ok(Self {
             config,
@@ -367,7 +367,7 @@ impl AkashClient {
         Ok(())
     }
 
-    async fn wait_for_bids(&self, dseq: &str) -> Result<()> {
+    async fn wait_for_bids(&self, _dseq: &str) -> Result<()> {
         println!("[INFO] Waiting for bids...");
 
         // TODO: Implement bid querying using akash.market.v1beta4.Query/Bids
@@ -391,7 +391,7 @@ impl AkashClient {
         Err(anyhow!("No bids received after 12 attempts"))
     }
 
-    async fn select_provider(&self, dseq: &str) -> Result<String> {
+    async fn select_provider(&self, _dseq: &str) -> Result<String> {
         println!("[INFO] Finding optimal bid from trusted providers...");
 
         // TODO: Implement bid querying using akash.market.v1beta4.Query/Bids
@@ -407,7 +407,7 @@ impl AkashClient {
         }
     }
 
-    async fn collect_node_info(&self, step: u32, dseq: &str, provider: &str) -> Result<()> {
+    async fn collect_node_info(&self, step: u32, _dseq: &str, _provider: &str) -> Result<()> {
         println!("[INFO] Checking lease status...");
 
         // TODO: Implement lease status querying using akash.provider.lease.v1.LeaseRPC/ServiceStatus
@@ -564,7 +564,7 @@ impl AkashClient {
         }
 
         // Read and parse YAML
-        let mut yaml: Value = serde_yaml::from_str(&fs::read_to_string(sdl_file)?)?;
+        let yaml: Value = serde_yaml::from_str(&fs::read_to_string(sdl_file)?)?;
 
         match step {
             1 => {

@@ -12,8 +12,8 @@ use crate::storage::ErgorsStorage;
 use anyhow::{anyhow, Result};
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::ergors::orch::v1::{
-    AkashAuthzGrant, AkashDeploymentWorkflow, AkashFeegrantAllowance, AkashProviderSelection,
-    AkashWorkflowStatus, AkashWorkflowStep, ConfiguredSdl, EndpointTestResult,
+    AkashDeploymentWorkflow, AkashProviderSelection,
+    AkashWorkflowStatus, AkashWorkflowStep, EndpointTestResult,
     GrantRequestParams, GrantRequestStatus, GrantType, WorkflowGrantState,
 };
 use pbjson_types::Timestamp;
@@ -101,7 +101,7 @@ impl AkashWorkflowManager {
             test_results: vec![],
             last_error: String::new(),
             retry_count: 0,
-            created_at: Some(now.clone()),
+            created_at: Some(now),
             updated_at: Some(now),
             completed_at: None,
             chain_id: self.chain_id.clone(),

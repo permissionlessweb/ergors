@@ -2,7 +2,7 @@ use crate::define_wrapper;
 use crate::traits::Wrap;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use ho_std::custody::{PasswordEncryptedCustody, PlaintextCustody};
+use ho_std::custody::PasswordEncryptedCustody;
 use ho_std::llm::{HoError, HoResult};
 use ho_std::traits::{NodeIdentityCustody, NodeIdentityCustodyBackend};
 use ho_std::types::ergors::{network::v1::*, orch::v1::*, storage::v1::*};
@@ -93,7 +93,7 @@ impl HoConfigTrait for ErgorsConfig {
     where
         Self: Sized,
     {
-        Ok(DefaultFileOps::from_toml_file(path)?)
+        DefaultFileOps::from_toml_file(path)
     }
 
     fn load<P: AsRef<std::path::Path> + std::fmt::Display>(path: P) -> HoResult<Self>
@@ -105,7 +105,7 @@ impl HoConfigTrait for ErgorsConfig {
                 e.kind(),
                 format!(
                     "ho config file not found: {}. hint: run 'init' to create new config",
-                    path.to_string()
+                    path
                 ),
             ))
         })?;
@@ -258,24 +258,24 @@ impl LLMRouterConfigTrait for CwHoLlmRouterConfig {
         todo!()
     }
 
-    fn remove_provider(&mut self, name: &str) {
+    fn remove_provider(&mut self, _name: &str) {
         todo!()
     }
 
-    fn set_default_provider(&mut self, name: String) {
+    fn set_default_provider(&mut self, _name: String) {
         todo!()
     }
 
-    fn set_timeout(&mut self, timeout: u32) {
+    fn set_timeout(&mut self, _timeout: u32) {
         todo!()
     }
 
-    fn set_retry_attempts(&mut self, attempts: u32) {
+    fn set_retry_attempts(&mut self, _attempts: u32) {
         todo!()
     }
     fn validate(&self) -> HoResult<()> {
         // validate each llm provider has keys defined in .env file
-        for llm in &self.0.entities {}
+        for _llm in &self.0.entities {}
         Ok(())
     }
 }
@@ -286,7 +286,6 @@ impl LLMRouterConfigTrait for CwHoLlmRouterConfig {
 
 use crate::proxy::router::ProxyRouterConfig;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Configuration for the LLM proxy service
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -28,8 +28,7 @@ pub async fn handle_cosmwasm_action(
     #[cfg(feature = "cw")]
     {
         use ho_std::types::cosmwasm::wasm::v1::{
-            MsgExecuteContract, MsgExecuteContractResponse, MsgInstantiateContract,
-            MsgInstantiateContractResponse, MsgStoreCode, MsgStoreCodeResponse,
+            MsgExecuteContract, MsgInstantiateContract, MsgStoreCode,
         };
 
         // Extract the message type from the JSON

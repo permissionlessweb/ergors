@@ -309,6 +309,23 @@ pub struct PromptRequest {
     /// System message (Anthropic style)
     #[prost(string, tag = "8")]
     pub system: ::prost::alloc::string::String,
+    /// ===== Open Responses Extensions =====
+    ///
+    /// Conversation resumption
+    #[prost(string, optional, tag = "9")]
+    pub previous_response_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// Cache-preserving tool filter
+    #[prost(string, repeated, tag = "10")]
+    pub allowed_tools: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// "auto" | "disabled"
+    #[prost(string, optional, tag = "11")]
+    pub truncation: ::core::option::Option<::prost::alloc::string::String>,
+    /// "standard" | "priority" | "batch"
+    #[prost(string, optional, tag = "12")]
+    pub service_tier: ::core::option::Option<::prost::alloc::string::String>,
+    /// "ergors" | "open_responses" | "auto"
+    #[prost(string, optional, tag = "13")]
+    pub response_format: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for PromptRequest {
     const NAME: &'static str = "PromptRequest";
@@ -341,6 +358,16 @@ pub struct PromptResponse {
     pub cost: f64,
     #[prost(uint64, tag = "9")]
     pub latency_ms: u64,
+    /// ===== Open Responses Extensions =====
+    ///
+    /// "in_progress" | "completed" | "failed"
+    #[prost(string, optional, tag = "10")]
+    pub status: ::core::option::Option<::prost::alloc::string::String>,
+    /// Open Responses items array
+    #[prost(message, repeated, tag = "11")]
+    pub output: ::prost::alloc::vec::Vec<ResponseOutputItem>,
+    #[prost(message, optional, tag = "12")]
+    pub response_metadata: ::core::option::Option<ResponseMetadata>,
 }
 impl ::prost::Name for PromptResponse {
     const NAME: &'static str = "PromptResponse";
@@ -350,6 +377,229 @@ impl ::prost::Name for PromptResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.PromptResponse".into()
+    }
+}
+/// Output item in Open Responses format (polymorphic via oneof)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResponseOutputItem {
+    /// Unique item ID
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// "message" | "function_call" | "function_call_output"
+    #[prost(string, tag = "2")]
+    pub r#type: ::prost::alloc::string::String,
+    /// "in_progress" | "completed" | "incomplete"
+    #[prost(string, tag = "3")]
+    pub status: ::prost::alloc::string::String,
+    #[prost(oneof = "response_output_item::Content", tags = "4, 5, 6")]
+    pub content: ::core::option::Option<response_output_item::Content>,
+}
+/// Nested message and enum types in `ResponseOutputItem`.
+pub mod response_output_item {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Content {
+        /// Reuses ContentBlock!
+        #[prost(message, tag = "4")]
+        Message(super::MessageItemContent),
+        #[prost(message, tag = "5")]
+        FunctionCall(super::FunctionCallItemContent),
+        #[prost(message, tag = "6")]
+        FunctionCallOutput(super::FunctionCallOutputItemContent),
+    }
+}
+impl ::prost::Name for ResponseOutputItem {
+    const NAME: &'static str = "ResponseOutputItem";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ResponseOutputItem".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ResponseOutputItem".into()
+    }
+}
+/// Message item content (maps to existing PromptMessage/ContentBlock)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MessageItemContent {
+    /// "user" | "assistant" | "system"
+    #[prost(string, tag = "1")]
+    pub role: ::prost::alloc::string::String,
+    /// REUSE existing ContentBlock
+    #[prost(message, repeated, tag = "2")]
+    pub content: ::prost::alloc::vec::Vec<ContentBlock>,
+}
+impl ::prost::Name for MessageItemContent {
+    const NAME: &'static str = "MessageItemContent";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.MessageItemContent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.MessageItemContent".into()
+    }
+}
+/// Function call item content (maps to existing ToolUse)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FunctionCallItemContent {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// JSON string
+    #[prost(string, tag = "2")]
+    pub arguments: ::prost::alloc::string::String,
+    /// For result correlation
+    #[prost(string, tag = "3")]
+    pub call_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for FunctionCallItemContent {
+    const NAME: &'static str = "FunctionCallItemContent";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.FunctionCallItemContent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.FunctionCallItemContent".into()
+    }
+}
+/// Function call output (maps to existing ToolResult)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FunctionCallOutputItemContent {
+    /// References function_call item
+    #[prost(string, tag = "1")]
+    pub call_id: ::prost::alloc::string::String,
+    /// Result content
+    #[prost(string, tag = "2")]
+    pub output: ::prost::alloc::string::String,
+}
+impl ::prost::Name for FunctionCallOutputItemContent {
+    const NAME: &'static str = "FunctionCallOutputItemContent";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.FunctionCallOutputItemContent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.FunctionCallOutputItemContent".into()
+    }
+}
+/// Response metadata for Open Responses
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ResponseMetadata {
+    #[prost(message, optional, tag = "1")]
+    pub created: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "2")]
+    pub completed: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Echo back for chaining
+    #[prost(string, tag = "3")]
+    pub previous_response_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ResponseMetadata {
+    const NAME: &'static str = "ResponseMetadata";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ResponseMetadata".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ResponseMetadata".into()
+    }
+}
+/// Open Responses streaming event envelope
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OpenResponsesStreamEvent {
+    /// Event type (e.g., "response.output_item.added")
+    #[prost(string, tag = "1")]
+    pub event: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub sequence_number: u32,
+    #[prost(string, tag = "3")]
+    pub response_id: ::prost::alloc::string::String,
+    #[prost(oneof = "open_responses_stream_event::Payload", tags = "4, 5, 6")]
+    pub payload: ::core::option::Option<open_responses_stream_event::Payload>,
+}
+/// Nested message and enum types in `OpenResponsesStreamEvent`.
+pub mod open_responses_stream_event {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Payload {
+        #[prost(message, tag = "4")]
+        Status(super::ResponseStatusPayload),
+        #[prost(message, tag = "5")]
+        Item(super::OutputItemPayload),
+        #[prost(message, tag = "6")]
+        TextDelta(super::TextDeltaPayload),
+    }
+}
+impl ::prost::Name for OpenResponsesStreamEvent {
+    const NAME: &'static str = "OpenResponsesStreamEvent";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.OpenResponsesStreamEvent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.OpenResponsesStreamEvent".into()
+    }
+}
+/// Response status event (in_progress, completed, failed)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ResponseStatusPayload {
+    #[prost(string, tag = "1")]
+    pub status: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ResponseStatusPayload {
+    const NAME: &'static str = "ResponseStatusPayload";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ResponseStatusPayload".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ResponseStatusPayload".into()
+    }
+}
+/// Output item event (added, done)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OutputItemPayload {
+    /// Item index in output array
+    #[prost(uint32, tag = "1")]
+    pub output_index: u32,
+    #[prost(message, optional, tag = "2")]
+    pub item: ::core::option::Option<ResponseOutputItem>,
+}
+impl ::prost::Name for OutputItemPayload {
+    const NAME: &'static str = "OutputItemPayload";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.OutputItemPayload".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.OutputItemPayload".into()
+    }
+}
+/// Text delta event (delta, done)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TextDeltaPayload {
+    #[prost(uint32, tag = "1")]
+    pub output_index: u32,
+    #[prost(uint32, tag = "2")]
+    pub content_index: u32,
+    /// Incremental text
+    #[prost(string, tag = "3")]
+    pub delta: ::prost::alloc::string::String,
+}
+impl ::prost::Name for TextDeltaPayload {
+    const NAME: &'static str = "TextDeltaPayload";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.TextDeltaPayload".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.TextDeltaPayload".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]

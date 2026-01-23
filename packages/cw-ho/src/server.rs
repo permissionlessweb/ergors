@@ -50,6 +50,8 @@ impl Server {
                 { path: "/headstash/upload", method: get, handler: crate::headstash::ipfs::handle_headstash_metadata_storage },
                 { path: "/headstash/watch", method: get, handler: crate::headstash::indexer::handle_indexer_instructions },
                 { path: "/network/topology", method: get, handler: handle_network_topology },
+                // Open Responses API endpoint
+                { path: "/v1/responses", method: post, handler: crate::orchestrator::handle_open_responses },
                 // Proxy endpoints for CLI tools (Claude Code, opencode)
                 { path: "/v1/messages", method: post, handler: crate::proxy::handle_anthropic_proxy },
                 { path: "/v1/chat/completions", method: post, handler: crate::proxy::handle_openai_proxy },
@@ -232,22 +234,22 @@ impl Server {
             }
             NodeIdentityCustodyBackend::NodeKeyEncrypted => {
                 // Future: node-key encrypted
-                return Err(HoError::Cfg(
+                Err(HoError::Cfg(
                     "NodeKeyEncrypted custody backend not yet implemented".to_string(),
-                ));
+                ))
             }
             NodeIdentityCustodyBackend::Threshold => {
                 // Future: threshold custody
-                return Err(HoError::Cfg(
+                Err(HoError::Cfg(
                     "Threshold custody backend not yet implemented".to_string(),
-                ));
+                ))
             }
             NodeIdentityCustodyBackend::RemoteCustody(endpoint) => {
                 // Future: remote custody
-                return Err(HoError::Cfg(format!(
+                Err(HoError::Cfg(format!(
                     "RemoteCustody ({}) not yet implemented",
                     endpoint
-                )));
+                )))
             }
         }
     }
@@ -479,7 +481,7 @@ impl Server {
             }
             let key_ref = provider_config.api_key.clone();
             // Check if API key is configured in environment
-            if &key_ref != "" {
+            if !key_ref.is_empty() {
                 if key_ref.starts_with("${") && key_ref.ends_with("}") {
                     let env_var_name = &key_ref[2..key_ref.len() - 1];
 

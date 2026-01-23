@@ -158,6 +158,12 @@ pub struct KeyInfo {
     pub private_key_placeholder: String,
 }
 
+impl Default for SimpleKeyring {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SimpleKeyring {
     pub fn new() -> Self {
         Self {

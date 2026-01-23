@@ -17,7 +17,7 @@ pub enum CallTopSubCmd {
     Prompt {},
 }
 impl CallTopSubCmd {
-    pub fn exec(&self, home_dir: &Utf8Path) -> Result<()> {
+    pub fn exec(&self, _home_dir: &Utf8Path) -> Result<()> {
         //
         match self {
             CallTopSubCmd::Prompt {} => {
