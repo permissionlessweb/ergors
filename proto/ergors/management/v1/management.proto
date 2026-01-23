@@ -5,6 +5,7 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
 import "network/v1/network.proto";
 import "git/v1/git.proto";
+import "orch/v1/orch.proto";
 
 // Minimal management service for CLI-to-engine communication
 // Reuses types from network.proto where possible
@@ -95,6 +96,25 @@ service ManagementService {
   rpc CompleteTaskWorktree(CompleteTaskWorktreeRequest) returns (CompleteTaskWorktreeResponse);
   rpc FailTaskWorktree(FailTaskWorktreeRequest) returns (OperationResult);
   rpc ResolveConflict(ResolveConflictRequest) returns (ResolveConflictResponse);
+
+  // ============================================
+  // Akash Deployment Management
+  // ============================================
+
+  // Create a new Akash deployment workflow
+  rpc CreateAkashDeployment(CreateAkashDeploymentRequest) returns (CreateAkashDeploymentResponse);
+  // List deployment workflows
+  rpc ListAkashDeployments(ListAkashDeploymentsRequest) returns (ListAkashDeploymentsResponse);
+  // Get deployment workflow details
+  rpc GetAkashDeployment(GetAkashDeploymentRequest) returns (GetAkashDeploymentResponse);
+  // Advance workflow to next step
+  rpc AdvanceAkashDeployment(AdvanceAkashDeploymentRequest) returns (AdvanceAkashDeploymentResponse);
+  // Query bids for a deployment
+  rpc QueryAkashBids(QueryAkashBidsRequest) returns (QueryAkashBidsResponse);
+  // Select provider and create lease
+  rpc SelectAkashProvider(SelectAkashProviderRequest) returns (SelectAkashProviderResponse);
+  // Cancel a deployment workflow
+  rpc CancelAkashDeployment(CancelAkashDeploymentRequest) returns (OperationResult);
 }
 
 // Common empty request
@@ -912,4 +932,108 @@ message ResolveConflictResponse {
   string commit_hash = 2;  // Commit hash after resolution
   repeated string remaining_conflicts = 3;  // Any remaining conflicts
   string error_message = 4;
+}
+
+// ============================================
+// Akash Deployment Management Messages
+// ============================================
+
+// Create deployment request
+message CreateAkashDeploymentRequest {
+  // Key name for signing transactions
+  string key_name = 1;
+  // HD account index for key derivation
+  uint32 hd_account_index = 2;
+  // SDL content (raw YAML string)
+  string sdl_content = 3;
+  // Template name for the SDL
+  string template_name = 4;
+  // SDL template variable values
+  map<string, string> sdl_variables = 5;
+  // Override node endpoint (uses config default if empty)
+  string node_endpoint = 6;
+  // Override chain ID (uses config default if empty)
+  string chain_id = 7;
+  // Whether to auto-advance through all steps
+  bool auto_run = 8;
+}
+
+// Create deployment response
+message CreateAkashDeploymentResponse {
+  bool success = 1;
+  ergors.orch.v1.AkashDeploymentWorkflow workflow = 2;
+  string error_message = 3;
+}
+
+// List deployments request
+message ListAkashDeploymentsRequest {
+  // Optional status filter
+  ergors.orch.v1.AkashWorkflowStatus status = 1;
+  uint32 limit = 2;
+  uint32 offset = 3;
+}
+
+// List deployments response
+message ListAkashDeploymentsResponse {
+  repeated ergors.orch.v1.AkashDeploymentWorkflow workflows = 1;
+  uint32 total_count = 2;
+}
+
+// Get deployment request
+message GetAkashDeploymentRequest {
+  string session_id = 1;
+}
+
+// Get deployment response
+message GetAkashDeploymentResponse {
+  ergors.orch.v1.AkashDeploymentWorkflow workflow = 1;
+}
+
+// Advance deployment workflow
+message AdvanceAkashDeploymentRequest {
+  string session_id = 1;
+}
+
+// Advance deployment response
+message AdvanceAkashDeploymentResponse {
+  bool success = 1;
+  ergors.orch.v1.AkashDeploymentWorkflow workflow = 2;
+  string error_message = 3;
+}
+
+// Query bids request
+message QueryAkashBidsRequest {
+  string session_id = 1;
+}
+
+// Bid information from a provider
+message AkashBidInfo {
+  string provider_address = 1;
+  uint64 price_uakt = 2;
+  ergors.orch.v1.AkashProviderReputation reputation = 3;
+}
+
+// Query bids response
+message QueryAkashBidsResponse {
+  repeated AkashBidInfo bids = 1;
+  uint32 total_bids = 2;
+}
+
+// Select provider request
+message SelectAkashProviderRequest {
+  string session_id = 1;
+  string provider_address = 2;
+  uint64 bid_price_uakt = 3;
+}
+
+// Select provider response
+message SelectAkashProviderResponse {
+  bool success = 1;
+  ergors.orch.v1.AkashDeploymentWorkflow workflow = 2;
+  string error_message = 3;
+}
+
+// Cancel deployment request
+message CancelAkashDeploymentRequest {
+  string session_id = 1;
 }

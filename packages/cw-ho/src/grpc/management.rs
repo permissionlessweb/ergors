@@ -11,6 +11,20 @@ use ho_std::types::ergors::management::v1::{
     // Workspace types
     AddWorkspaceRequest,
     AddWorkspaceResponse,
+    // Akash deployment types
+    AdvanceAkashDeploymentRequest,
+    AdvanceAkashDeploymentResponse,
+    CancelAkashDeploymentRequest,
+    CreateAkashDeploymentRequest,
+    CreateAkashDeploymentResponse,
+    GetAkashDeploymentRequest,
+    GetAkashDeploymentResponse,
+    ListAkashDeploymentsRequest,
+    ListAkashDeploymentsResponse,
+    QueryAkashBidsRequest,
+    QueryAkashBidsResponse,
+    SelectAkashProviderRequest,
+    SelectAkashProviderResponse,
     // Network routing types (for OpenCode tools)
     AnnounceNodeRequest,
     AnnounceNodeResponse,
@@ -94,6 +108,9 @@ use ho_std::types::ergors::management::v1::{
     TokenResponse,
     UpdateSessionRequest,
     UpdateSessionResponse,
+};
+use ho_std::types::ergors::orch::v1::{
+    AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep, ConfiguredSdl,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
 use std::pin::Pin;
@@ -1835,6 +1852,319 @@ impl ManagementService for ManagementServiceImpl {
                 req.task_id
             ))),
         }
+    }
+
+    // ============ Akash Deployment Management ============
+
+    async fn create_akash_deployment(
+        &self,
+        request: Request<CreateAkashDeploymentRequest>,
+    ) -> Result<Response<CreateAkashDeploymentResponse>, Status> {
+        let req = request.into_inner();
+        tracing::info!(
+            "Create Akash deployment: key={}, chain={}, node={}",
+            req.key_name,
+            req.chain_id,
+            req.node_endpoint
+        );
+
+        let session_id = uuid::Uuid::new_v4().to_string();
+
+        // Use engine config as defaults, override with request params
+        let akash_config = self.state.c.0.akash.as_ref();
+        let chain_id = if !req.chain_id.is_empty() {
+            req.chain_id
+        } else if let Some(cfg) = akash_config {
+            if cfg.chain_id.is_empty() { "akashnet-2".to_string() } else { cfg.chain_id.clone() }
+        } else {
+            "akashnet-2".to_string()
+        };
+        let node_endpoint = if !req.node_endpoint.is_empty() {
+            req.node_endpoint
+        } else if let Some(cfg) = akash_config {
+            if cfg.rpc_endpoint.is_empty() { "https://rpc-akash.ecostake.com:443".to_string() } else { cfg.rpc_endpoint.clone() }
+        } else {
+            "https://rpc-akash.ecostake.com:443".to_string()
+        };
+
+        let now = pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        };
+
+        // Configure SDL if provided
+        let configured_sdl = if !req.sdl_content.is_empty() {
+            Some(ConfiguredSdl {
+                template_name: req.template_name,
+                resolved_content: req.sdl_content,
+                variable_values: req.sdl_variables,
+                content_hash: vec![],
+                configured_at: Some(now.clone()),
+            })
+        } else {
+            None
+        };
+
+        let workflow = AkashDeploymentWorkflow {
+            session_id: session_id.clone(),
+            current_step: AkashWorkflowStep::KeySelection as i32,
+            status: AkashWorkflowStatus::Pending as i32,
+            selected_key_name: req.key_name,
+            account_address: String::new(),
+            hd_account_index: req.hd_account_index,
+            authz_grants: vec![],
+            feegrants: vec![],
+            configured_sdl,
+            deployment: None,
+            provider: None,
+            endpoints: std::collections::HashMap::new(),
+            test_results: vec![],
+            last_error: String::new(),
+            retry_count: 0,
+            created_at: Some(now.clone()),
+            updated_at: Some(now),
+            completed_at: None,
+            chain_id,
+            node_endpoint,
+            max_retries: 3,
+            timeout_seconds: 3600,
+            grant_request: None,
+            request_grant_from: vec![],
+            grant_duration_seconds: 0,
+            grant_spend_limit_uakt: 0,
+            grant_purpose: String::new(),
+        };
+
+        // Persist to storage
+        if let Err(e) = self.state.s.put_akash_workflow(&workflow).await {
+            return Ok(Response::new(CreateAkashDeploymentResponse {
+                success: false,
+                workflow: None,
+                error_message: format!("Failed to persist workflow: {}", e),
+            }));
+        }
+
+        Ok(Response::new(CreateAkashDeploymentResponse {
+            success: true,
+            workflow: Some(workflow),
+            error_message: String::new(),
+        }))
+    }
+
+    async fn list_akash_deployments(
+        &self,
+        request: Request<ListAkashDeploymentsRequest>,
+    ) -> Result<Response<ListAkashDeploymentsResponse>, Status> {
+        let req = request.into_inner();
+
+        let workflows = self
+            .state
+            .s
+            .list_akash_workflows()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to list workflows: {}", e)))?;
+
+        // Apply status filter if set
+        let filtered: Vec<_> = if req.status != 0 {
+            workflows
+                .into_iter()
+                .filter(|wf| wf.status == req.status)
+                .collect()
+        } else {
+            workflows
+        };
+
+        let total_count = filtered.len() as u32;
+        let limited = filtered
+            .into_iter()
+            .skip(req.offset as usize)
+            .take(if req.limit > 0 { req.limit as usize } else { 50 })
+            .collect();
+
+        Ok(Response::new(ListAkashDeploymentsResponse {
+            workflows: limited,
+            total_count,
+        }))
+    }
+
+    async fn get_akash_deployment(
+        &self,
+        request: Request<GetAkashDeploymentRequest>,
+    ) -> Result<Response<GetAkashDeploymentResponse>, Status> {
+        let req = request.into_inner();
+
+        let workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?;
+
+        Ok(Response::new(GetAkashDeploymentResponse { workflow }))
+    }
+
+    async fn advance_akash_deployment(
+        &self,
+        request: Request<AdvanceAkashDeploymentRequest>,
+    ) -> Result<Response<AdvanceAkashDeploymentResponse>, Status> {
+        let req = request.into_inner();
+
+        let mut workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // Advance to next step
+        let current = workflow.current_step;
+        let next_step = current + 1;
+
+        // Validate step transition
+        if current >= AkashWorkflowStep::Complete as i32 {
+            return Ok(Response::new(AdvanceAkashDeploymentResponse {
+                success: false,
+                workflow: Some(workflow),
+                error_message: "Workflow is already complete".to_string(),
+            }));
+        }
+
+        workflow.current_step = next_step;
+        workflow.status = AkashWorkflowStatus::Running as i32;
+        workflow.updated_at = Some(pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        });
+
+        // Mark as complete if we reached the complete step
+        if next_step >= AkashWorkflowStep::Complete as i32 {
+            workflow.status = AkashWorkflowStatus::Completed as i32;
+            workflow.completed_at = workflow.updated_at.clone();
+        }
+
+        // Persist
+        self.state.s.put_akash_workflow(&workflow).await.ok();
+
+        Ok(Response::new(AdvanceAkashDeploymentResponse {
+            success: true,
+            workflow: Some(workflow),
+            error_message: String::new(),
+        }))
+    }
+
+    async fn query_akash_bids(
+        &self,
+        request: Request<QueryAkashBidsRequest>,
+    ) -> Result<Response<QueryAkashBidsResponse>, Status> {
+        let req = request.into_inner();
+
+        let workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // TODO: Query actual bids from Akash node using workflow.node_endpoint
+        // For now, return empty bids list
+        tracing::info!(
+            "Querying bids for deployment on node: {}",
+            workflow.node_endpoint
+        );
+
+        Ok(Response::new(QueryAkashBidsResponse {
+            bids: vec![],
+            total_bids: 0,
+        }))
+    }
+
+    async fn select_akash_provider(
+        &self,
+        request: Request<SelectAkashProviderRequest>,
+    ) -> Result<Response<SelectAkashProviderResponse>, Status> {
+        let req = request.into_inner();
+
+        let mut workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // Update provider selection
+        workflow.provider = Some(ho_std::types::ergors::orch::v1::AkashProviderSelection {
+            provider_address: req.provider_address,
+            reputation_score: 0,
+            bid_price_uakt: req.bid_price_uakt,
+            total_bids_received: 0,
+            selected_at: Some(pbjson_types::Timestamp {
+                seconds: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+                nanos: 0,
+            }),
+            is_trusted_provider: false,
+        });
+
+        workflow.current_step = AkashWorkflowStep::LeaseCreate as i32;
+        workflow.updated_at = Some(pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        });
+
+        // Persist
+        self.state.s.put_akash_workflow(&workflow).await.ok();
+
+        Ok(Response::new(SelectAkashProviderResponse {
+            success: true,
+            workflow: Some(workflow),
+            error_message: String::new(),
+        }))
+    }
+
+    async fn cancel_akash_deployment(
+        &self,
+        request: Request<CancelAkashDeploymentRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        let mut workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        workflow.status = AkashWorkflowStatus::Cancelled as i32;
+        workflow.updated_at = Some(pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        });
+
+        // Persist
+        self.state.s.put_akash_workflow(&workflow).await.ok();
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!("Deployment {} cancelled", req.session_id),
+        }))
     }
 }
 

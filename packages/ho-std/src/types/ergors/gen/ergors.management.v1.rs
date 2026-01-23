@@ -2154,6 +2154,310 @@ impl ::prost::Name for ResolveConflictResponse {
         "/ergors.management.v1.ResolveConflictResponse".into()
     }
 }
+/// Create deployment request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateAkashDeploymentRequest {
+    /// Key name for signing transactions
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+    /// HD account index for key derivation
+    #[prost(uint32, tag = "2")]
+    pub hd_account_index: u32,
+    /// SDL content (raw YAML string)
+    #[prost(string, tag = "3")]
+    pub sdl_content: ::prost::alloc::string::String,
+    /// Template name for the SDL
+    #[prost(string, tag = "4")]
+    pub template_name: ::prost::alloc::string::String,
+    /// SDL template variable values
+    #[prost(map = "string, string", tag = "5")]
+    pub sdl_variables: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    /// Override node endpoint (uses config default if empty)
+    #[prost(string, tag = "6")]
+    pub node_endpoint: ::prost::alloc::string::String,
+    /// Override chain ID (uses config default if empty)
+    #[prost(string, tag = "7")]
+    pub chain_id: ::prost::alloc::string::String,
+    /// Whether to auto-advance through all steps
+    #[prost(bool, tag = "8")]
+    pub auto_run: bool,
+}
+impl ::prost::Name for CreateAkashDeploymentRequest {
+    const NAME: &'static str = "CreateAkashDeploymentRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.CreateAkashDeploymentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.CreateAkashDeploymentRequest".into()
+    }
+}
+/// Create deployment response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateAkashDeploymentResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(message, optional, tag = "2")]
+    pub workflow: ::core::option::Option<
+        super::super::orch::v1::AkashDeploymentWorkflow,
+    >,
+    #[prost(string, tag = "3")]
+    pub error_message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for CreateAkashDeploymentResponse {
+    const NAME: &'static str = "CreateAkashDeploymentResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.CreateAkashDeploymentResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.CreateAkashDeploymentResponse".into()
+    }
+}
+/// List deployments request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListAkashDeploymentsRequest {
+    /// Optional status filter
+    #[prost(enumeration = "super::super::orch::v1::AkashWorkflowStatus", tag = "1")]
+    pub status: i32,
+    #[prost(uint32, tag = "2")]
+    pub limit: u32,
+    #[prost(uint32, tag = "3")]
+    pub offset: u32,
+}
+impl ::prost::Name for ListAkashDeploymentsRequest {
+    const NAME: &'static str = "ListAkashDeploymentsRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListAkashDeploymentsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListAkashDeploymentsRequest".into()
+    }
+}
+/// List deployments response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListAkashDeploymentsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub workflows: ::prost::alloc::vec::Vec<
+        super::super::orch::v1::AkashDeploymentWorkflow,
+    >,
+    #[prost(uint32, tag = "2")]
+    pub total_count: u32,
+}
+impl ::prost::Name for ListAkashDeploymentsResponse {
+    const NAME: &'static str = "ListAkashDeploymentsResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListAkashDeploymentsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListAkashDeploymentsResponse".into()
+    }
+}
+/// Get deployment request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetAkashDeploymentRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GetAkashDeploymentRequest {
+    const NAME: &'static str = "GetAkashDeploymentRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetAkashDeploymentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetAkashDeploymentRequest".into()
+    }
+}
+/// Get deployment response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetAkashDeploymentResponse {
+    #[prost(message, optional, tag = "1")]
+    pub workflow: ::core::option::Option<
+        super::super::orch::v1::AkashDeploymentWorkflow,
+    >,
+}
+impl ::prost::Name for GetAkashDeploymentResponse {
+    const NAME: &'static str = "GetAkashDeploymentResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetAkashDeploymentResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetAkashDeploymentResponse".into()
+    }
+}
+/// Advance deployment workflow
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AdvanceAkashDeploymentRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AdvanceAkashDeploymentRequest {
+    const NAME: &'static str = "AdvanceAkashDeploymentRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.AdvanceAkashDeploymentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.AdvanceAkashDeploymentRequest".into()
+    }
+}
+/// Advance deployment response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AdvanceAkashDeploymentResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(message, optional, tag = "2")]
+    pub workflow: ::core::option::Option<
+        super::super::orch::v1::AkashDeploymentWorkflow,
+    >,
+    #[prost(string, tag = "3")]
+    pub error_message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AdvanceAkashDeploymentResponse {
+    const NAME: &'static str = "AdvanceAkashDeploymentResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.AdvanceAkashDeploymentResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.AdvanceAkashDeploymentResponse".into()
+    }
+}
+/// Query bids request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QueryAkashBidsRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for QueryAkashBidsRequest {
+    const NAME: &'static str = "QueryAkashBidsRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.QueryAkashBidsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.QueryAkashBidsRequest".into()
+    }
+}
+/// Bid information from a provider
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashBidInfo {
+    #[prost(string, tag = "1")]
+    pub provider_address: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub price_uakt: u64,
+    #[prost(message, optional, tag = "3")]
+    pub reputation: ::core::option::Option<
+        super::super::orch::v1::AkashProviderReputation,
+    >,
+}
+impl ::prost::Name for AkashBidInfo {
+    const NAME: &'static str = "AkashBidInfo";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.AkashBidInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.AkashBidInfo".into()
+    }
+}
+/// Query bids response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryAkashBidsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub bids: ::prost::alloc::vec::Vec<AkashBidInfo>,
+    #[prost(uint32, tag = "2")]
+    pub total_bids: u32,
+}
+impl ::prost::Name for QueryAkashBidsResponse {
+    const NAME: &'static str = "QueryAkashBidsResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.QueryAkashBidsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.QueryAkashBidsResponse".into()
+    }
+}
+/// Select provider request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SelectAkashProviderRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub provider_address: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub bid_price_uakt: u64,
+}
+impl ::prost::Name for SelectAkashProviderRequest {
+    const NAME: &'static str = "SelectAkashProviderRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SelectAkashProviderRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SelectAkashProviderRequest".into()
+    }
+}
+/// Select provider response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SelectAkashProviderResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(message, optional, tag = "2")]
+    pub workflow: ::core::option::Option<
+        super::super::orch::v1::AkashDeploymentWorkflow,
+    >,
+    #[prost(string, tag = "3")]
+    pub error_message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SelectAkashProviderResponse {
+    const NAME: &'static str = "SelectAkashProviderResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SelectAkashProviderResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SelectAkashProviderResponse".into()
+    }
+}
+/// Cancel deployment request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CancelAkashDeploymentRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for CancelAkashDeploymentRequest {
+    const NAME: &'static str = "CancelAkashDeploymentRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.CancelAkashDeploymentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.CancelAkashDeploymentRequest".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -4004,6 +4308,216 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Create a new Akash deployment workflow
+        pub async fn create_akash_deployment(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateAkashDeploymentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateAkashDeploymentResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/CreateAkashDeployment",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "CreateAkashDeployment",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List deployment workflows
+        pub async fn list_akash_deployments(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListAkashDeploymentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListAkashDeploymentsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListAkashDeployments",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListAkashDeployments",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get deployment workflow details
+        pub async fn get_akash_deployment(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetAkashDeploymentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetAkashDeploymentResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/GetAkashDeployment",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "GetAkashDeployment",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Advance workflow to next step
+        pub async fn advance_akash_deployment(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AdvanceAkashDeploymentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AdvanceAkashDeploymentResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/AdvanceAkashDeployment",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "AdvanceAkashDeployment",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Query bids for a deployment
+        pub async fn query_akash_bids(
+            &mut self,
+            request: impl tonic::IntoRequest<super::QueryAkashBidsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::QueryAkashBidsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/QueryAkashBids",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "QueryAkashBids",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Select provider and create lease
+        pub async fn select_akash_provider(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SelectAkashProviderRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SelectAkashProviderResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/SelectAkashProvider",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "SelectAkashProvider",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Cancel a deployment workflow
+        pub async fn cancel_akash_deployment(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CancelAkashDeploymentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/CancelAkashDeployment",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "CancelAkashDeployment",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -4329,6 +4843,59 @@ pub mod management_service_server {
             tonic::Response<super::ResolveConflictResponse>,
             tonic::Status,
         >;
+        /// Create a new Akash deployment workflow
+        async fn create_akash_deployment(
+            &self,
+            request: tonic::Request<super::CreateAkashDeploymentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateAkashDeploymentResponse>,
+            tonic::Status,
+        >;
+        /// List deployment workflows
+        async fn list_akash_deployments(
+            &self,
+            request: tonic::Request<super::ListAkashDeploymentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListAkashDeploymentsResponse>,
+            tonic::Status,
+        >;
+        /// Get deployment workflow details
+        async fn get_akash_deployment(
+            &self,
+            request: tonic::Request<super::GetAkashDeploymentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetAkashDeploymentResponse>,
+            tonic::Status,
+        >;
+        /// Advance workflow to next step
+        async fn advance_akash_deployment(
+            &self,
+            request: tonic::Request<super::AdvanceAkashDeploymentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AdvanceAkashDeploymentResponse>,
+            tonic::Status,
+        >;
+        /// Query bids for a deployment
+        async fn query_akash_bids(
+            &self,
+            request: tonic::Request<super::QueryAkashBidsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::QueryAkashBidsResponse>,
+            tonic::Status,
+        >;
+        /// Select provider and create lease
+        async fn select_akash_provider(
+            &self,
+            request: tonic::Request<super::SelectAkashProviderRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SelectAkashProviderResponse>,
+            tonic::Status,
+        >;
+        /// Cancel a deployment workflow
+        async fn cancel_akash_deployment(
+            &self,
+            request: tonic::Request<super::CancelAkashDeploymentRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
     }
     /// Minimal management service for CLI-to-engine communication
     /// Reuses types from network.proto where possible
@@ -6583,6 +7150,346 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ResolveConflictSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/CreateAkashDeployment" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateAkashDeploymentSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::CreateAkashDeploymentRequest>
+                    for CreateAkashDeploymentSvc<T> {
+                        type Response = super::CreateAkashDeploymentResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateAkashDeploymentRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::create_akash_deployment(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CreateAkashDeploymentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListAkashDeployments" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListAkashDeploymentsSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ListAkashDeploymentsRequest>
+                    for ListAkashDeploymentsSvc<T> {
+                        type Response = super::ListAkashDeploymentsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListAkashDeploymentsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_akash_deployments(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListAkashDeploymentsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/GetAkashDeployment" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetAkashDeploymentSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::GetAkashDeploymentRequest>
+                    for GetAkashDeploymentSvc<T> {
+                        type Response = super::GetAkashDeploymentResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetAkashDeploymentRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::get_akash_deployment(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetAkashDeploymentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/AdvanceAkashDeployment" => {
+                    #[allow(non_camel_case_types)]
+                    struct AdvanceAkashDeploymentSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::AdvanceAkashDeploymentRequest>
+                    for AdvanceAkashDeploymentSvc<T> {
+                        type Response = super::AdvanceAkashDeploymentResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AdvanceAkashDeploymentRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::advance_akash_deployment(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = AdvanceAkashDeploymentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/QueryAkashBids" => {
+                    #[allow(non_camel_case_types)]
+                    struct QueryAkashBidsSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::QueryAkashBidsRequest>
+                    for QueryAkashBidsSvc<T> {
+                        type Response = super::QueryAkashBidsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::QueryAkashBidsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::query_akash_bids(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = QueryAkashBidsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/SelectAkashProvider" => {
+                    #[allow(non_camel_case_types)]
+                    struct SelectAkashProviderSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::SelectAkashProviderRequest>
+                    for SelectAkashProviderSvc<T> {
+                        type Response = super::SelectAkashProviderResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SelectAkashProviderRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::select_akash_provider(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SelectAkashProviderSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/CancelAkashDeployment" => {
+                    #[allow(non_camel_case_types)]
+                    struct CancelAkashDeploymentSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::CancelAkashDeploymentRequest>
+                    for CancelAkashDeploymentSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CancelAkashDeploymentRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::cancel_akash_deployment(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CancelAkashDeploymentSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

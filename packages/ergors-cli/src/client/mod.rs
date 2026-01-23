@@ -8,18 +8,28 @@ use ho_std::types::ergors::management::v1::{
     // Workspace types
     AddWorkspaceRequest,
     AddWorkspaceResponse,
+    // Akash deployment types
+    AdvanceAkashDeploymentRequest,
+    AdvanceAkashDeploymentResponse,
+    CancelAkashDeploymentRequest,
     CompleteTaskWorktreeRequest,
     CompleteTaskWorktreeResponse,
     ConfigData,
     ConfigUpdate,
+    CreateAkashDeploymentRequest,
+    CreateAkashDeploymentResponse,
     CreateTaskWorktreeRequest,
     CreateTaskWorktreeResponse,
     Empty,
     EngineState,
     EngineStatus,
     FailTaskWorktreeRequest,
+    GetAkashDeploymentRequest,
+    GetAkashDeploymentResponse,
     GetWorkspaceRequest,
     GetWorkspaceResponse,
+    ListAkashDeploymentsRequest,
+    ListAkashDeploymentsResponse,
     ListTaskWorktreesRequest,
     ListTaskWorktreesResponse,
     ListWorkspacesRequest,
@@ -32,7 +42,11 @@ use ho_std::types::ergors::management::v1::{
     ProviderList,
     ProviderName,
     ProviderTestResult,
+    QueryAkashBidsRequest,
+    QueryAkashBidsResponse,
     RemoveWorkspaceRequest,
+    SelectAkashProviderRequest,
+    SelectAkashProviderResponse,
     ShutdownRequest,
     SyncWorkspaceRequest,
     SyncWorkspaceResponse,
@@ -425,6 +439,141 @@ impl ManagementClient {
             })
             .await
             .context("Failed to fail task worktree")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ Akash Deployment Management ============
+
+    /// Create a new Akash deployment workflow
+    pub async fn create_akash_deployment(
+        &mut self,
+        key_name: &str,
+        hd_account_index: u32,
+        sdl_content: &str,
+        template_name: &str,
+        sdl_variables: std::collections::HashMap<String, String>,
+        node_endpoint: &str,
+        chain_id: &str,
+        auto_run: bool,
+    ) -> Result<CreateAkashDeploymentResponse> {
+        let response = self
+            .inner
+            .create_akash_deployment(CreateAkashDeploymentRequest {
+                key_name: key_name.to_string(),
+                hd_account_index,
+                sdl_content: sdl_content.to_string(),
+                template_name: template_name.to_string(),
+                sdl_variables,
+                node_endpoint: node_endpoint.to_string(),
+                chain_id: chain_id.to_string(),
+                auto_run,
+            })
+            .await
+            .context("Failed to create Akash deployment")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// List Akash deployment workflows
+    pub async fn list_akash_deployments(
+        &mut self,
+        status: i32,
+        limit: u32,
+    ) -> Result<ListAkashDeploymentsResponse> {
+        let response = self
+            .inner
+            .list_akash_deployments(ListAkashDeploymentsRequest {
+                status,
+                limit,
+                offset: 0,
+            })
+            .await
+            .context("Failed to list Akash deployments")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Get Akash deployment workflow details
+    pub async fn get_akash_deployment(
+        &mut self,
+        session_id: &str,
+    ) -> Result<GetAkashDeploymentResponse> {
+        let response = self
+            .inner
+            .get_akash_deployment(GetAkashDeploymentRequest {
+                session_id: session_id.to_string(),
+            })
+            .await
+            .context("Failed to get Akash deployment")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Advance Akash deployment to next step
+    pub async fn advance_akash_deployment(
+        &mut self,
+        session_id: &str,
+    ) -> Result<AdvanceAkashDeploymentResponse> {
+        let response = self
+            .inner
+            .advance_akash_deployment(AdvanceAkashDeploymentRequest {
+                session_id: session_id.to_string(),
+            })
+            .await
+            .context("Failed to advance Akash deployment")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Query bids for a deployment
+    pub async fn query_akash_bids(
+        &mut self,
+        session_id: &str,
+    ) -> Result<QueryAkashBidsResponse> {
+        let response = self
+            .inner
+            .query_akash_bids(QueryAkashBidsRequest {
+                session_id: session_id.to_string(),
+            })
+            .await
+            .context("Failed to query Akash bids")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Select a provider for Akash deployment
+    pub async fn select_akash_provider(
+        &mut self,
+        session_id: &str,
+        provider_address: &str,
+        bid_price_uakt: u64,
+    ) -> Result<SelectAkashProviderResponse> {
+        let response = self
+            .inner
+            .select_akash_provider(SelectAkashProviderRequest {
+                session_id: session_id.to_string(),
+                provider_address: provider_address.to_string(),
+                bid_price_uakt,
+            })
+            .await
+            .context("Failed to select Akash provider")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Cancel an Akash deployment workflow
+    pub async fn cancel_akash_deployment(
+        &mut self,
+        session_id: &str,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .cancel_akash_deployment(CancelAkashDeploymentRequest {
+                session_id: session_id.to_string(),
+            })
+            .await
+            .context("Failed to cancel Akash deployment")?;
 
         Ok(response.into_inner())
     }

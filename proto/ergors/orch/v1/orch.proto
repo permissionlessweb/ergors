@@ -19,6 +19,8 @@ message HoConfig {
   storage.v1.NodeIdentityCustodyConfig custody = 6;
   // CosmWasm VM configuration
   CosmwasmConfig cosmwasm = 7;
+  // Akash deployment configuration
+  AkashDeployConfig akash = 8;
 }
 
 // ==============================================
@@ -961,6 +963,26 @@ message CosmosKeyStore {
   repeated EncryptedCosmosMnemonic keys = 2;
   repeated CosmosAccount derived_accounts = 3;
   google.protobuf.Timestamp updated_at = 4;
+}
+
+// Configuration for Akash network deployment endpoints
+message AkashDeployConfig {
+  // RPC endpoint for the Akash node (e.g. "https://rpc-akash.ecostake.com:443")
+  string rpc_endpoint = 1;
+  // gRPC endpoint for the Akash node (e.g. "https://grpc-akash.ecostake.com:443")
+  string grpc_endpoint = 2;
+  // Chain ID (e.g. "akashnet-2" for mainnet, "local" for dev)
+  string chain_id = 3;
+  // Gas prices (e.g. "0.0025uakt")
+  string gas_prices = 4;
+  // Gas adjustment multiplier (e.g. 1.3)
+  double gas_adjustment = 5;
+  // Keyring backend (e.g. "os", "file", "test")
+  string keyring_backend = 6;
+  // Default key name to use for deployments
+  string default_key_name = 7;
+  // Trusted provider addresses (optional whitelist)
+  repeated string trusted_providers = 8;
 }
 
 // Workflow step enumeration for Akash deployment wizard

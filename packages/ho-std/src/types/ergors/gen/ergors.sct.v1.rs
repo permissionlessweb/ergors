@@ -449,7 +449,7 @@ impl ::prost::Name for SctFrontierRequest {
         "/ergors.sct.v1.SctFrontierRequest".into()
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(  Clone, PartialEq, ::prost::Message)]
 pub struct SctFrontierResponse {
     /// The height of the frontier we are returning.
     #[prost(uint64, tag = "1")]

@@ -2,6 +2,7 @@
 //!
 //! Each command module handles its own subcommands and output formatting.
 
+mod deploy;
 mod workspace;
 
 use anyhow::Result;
@@ -11,6 +12,7 @@ use crate::client::{
     format_engine_state, format_uptime, ManagementClient, NodeTypeProto as NodeType,
 };
 use crate::Cli;
+pub use deploy::DeployCmd;
 pub use workspace::WorkspaceCmd;
 
 // ============ Engine Commands ============

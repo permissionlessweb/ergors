@@ -1,0 +1,1351 @@
+{
+  "ollama": {
+    "generate": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/generate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "prompt": "Hello world",
+            "stream": false
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "created_at": "2024-01-01T12:00:00Z",
+            "response": "Hello! I'm a mock inference provider. This is a test response for network connectivity verification.",
+            "done": true,
+            "context": [1, 2, 3, 4, 5],
+            "total_duration": 150000000,
+            "load_duration": 10000000,
+            "prompt_eval_count": 2,
+            "prompt_eval_duration": 50000000,
+            "eval_count": 25,
+            "eval_duration": 90000000
+          }
+        },
+        "description": "Basic connectivity test for Ollama generate API",
+        "tags": ["connectivity", "basic", "ollama"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/generate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "mistral",
+            "prompt": "What is 2+2?",
+            "stream": false,
+            "options": {
+              "temperature": 0.0,
+              "num_predict": 50
+            }
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "mistral",
+            "created_at": "2024-01-01T12:00:00Z",
+            "response": "2 + 2 = 4. This is a simple arithmetic calculation.",
+            "done": true,
+            "context": [10, 20, 30, 40, 50],
+            "total_duration": 200000000,
+            "load_duration": 15000000,
+            "prompt_eval_count": 4,
+            "prompt_eval_duration": 80000000,
+            "eval_count": 15,
+            "eval_duration": 105000000
+          }
+        },
+        "description": "Generate with different model and options",
+        "tags": ["parameters", "model-variation", "ollama"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/generate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "codellama",
+            "prompt": "Write a function to calculate fibonacci numbers",
+            "stream": false
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "codellama",
+            "created_at": "2024-01-01T12:00:00Z",
+            "response": "```rust\nfn fibonacci(n: u32) -> u64 {\n    match n {\n        0 => 0,\n        1 => 1,\n        _ => fibonacci(n - 1) + fibonacci(n - 2),\n    }\n}\n\nfn main() {\n    println!(\"Fibonacci of 10: {}\", fibonacci(10));\n}\n```",
+            "done": true,
+            "context": [100, 200, 300, 400, 500],
+            "total_duration": 300000000,
+            "load_duration": 20000000,
+            "prompt_eval_count": 8,
+            "prompt_eval_duration": 120000000,
+            "eval_count": 40,
+            "eval_duration": 160000000
+          }
+        },
+        "description": "Code generation request",
+        "tags": ["code-generation", "complex", "ollama"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/generate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "invalid-model",
+            "prompt": "test",
+            "stream": false
+          }
+        },
+        "response": {
+          "status": 404,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "error": "model 'invalid-model' not found"
+          }
+        },
+        "description": "Error response for invalid model",
+        "tags": ["error", "invalid-model", "ollama"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/generate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "prompt": "missing model field"
+          }
+        },
+        "response": {
+          "status": 400,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "error": "model field is required"
+          }
+        },
+        "description": "Error response for missing required field",
+        "tags": ["error", "validation", "ollama"]
+      }
+    ],
+    "chat": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/chat",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Hello, how are you?"
+              }
+            ],
+            "stream": false
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "created_at": "2024-01-01T12:00:00Z",
+            "message": {
+              "role": "assistant",
+              "content": "Hello! I'm doing well, thank you for asking. I'm a mock inference provider designed for testing network connectivity and API functionality. How can I help you today?"
+            },
+            "done": true,
+            "total_duration": 180000000,
+            "load_duration": 12000000,
+            "prompt_eval_count": 6,
+            "eval_count": 35
+          }
+        },
+        "description": "Basic chat completion test",
+        "tags": ["connectivity", "chat", "ollama"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/chat",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "messages": [
+              {
+                "role": "system",
+                "content": "You are a helpful assistant."
+              },
+              {
+                "role": "user",
+                "content": "Search for information about Rust programming"
+              }
+            ],
+            "stream": false,
+            "tools": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "web_search",
+                  "description": "Search the web for information",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "query": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["query"]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "created_at": "2024-01-01T12:00:00Z",
+            "message": {
+              "role": "assistant",
+              "content": "I'll search for information about Rust programming language.",
+              "tool_calls": [
+                {
+                  "id": "call_123456789",
+                  "type": "function",
+                  "function": {
+                    "name": "web_search",
+                    "arguments": "{\"query\": \"Rust programming language overview\"}"
+                  }
+                }
+              ]
+            },
+            "done": true,
+            "total_duration": 250000000,
+            "load_duration": 18000000,
+            "prompt_eval_count": 12,
+            "eval_count": 45
+          }
+        },
+        "description": "Chat with tool calling",
+        "tags": ["tools", "agentic", "ollama"]
+      }
+    ],
+    "tags": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/api/tags",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "models": [
+              {
+                "name": "llama2:latest",
+                "model": "llama2:latest",
+                "modified_at": "2024-01-01T12:00:00Z",
+                "size": 4000000000,
+                "digest": "sha256:abcd1234efgh5678ijkl9012mnop3456qrst7890uvwx1234yzab5678cdef9012ghij",
+                "details": {
+                  "parent_model": "",
+                  "format": "gguf",
+                  "family": "llama",
+                  "families": ["llama"],
+                  "parameter_size": "7B",
+                  "quantization_level": "Q4_0"
+                }
+              },
+              {
+                "name": "mistral:latest",
+                "model": "mistral:latest",
+                "modified_at": "2024-01-01T12:00:00Z",
+                "size": 4500000000,
+                "digest": "sha256:1234abcd5678efgh9012ijkl3456mnop7890qrst1234uvwx5678yzab9012cdef3456ghij",
+                "details": {
+                  "parent_model": "",
+                  "format": "gguf",
+                  "family": "llama",
+                  "families": ["llama"],
+                  "parameter_size": "7B",
+                  "quantization_level": "Q4_0"
+                }
+              }
+            ]
+          }
+        },
+        "description": "List available models",
+        "tags": ["models", "metadata", "ollama"]
+      }
+    ],
+    "pull": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/pull",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "name": "llama2:latest"
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "status": "success",
+            "digest": "sha256:abcd1234efgh5678ijkl9012mnop3456qrst7890uvwx1234yzab5678cdef9012ghij"
+          }
+        },
+        "description": "Pull model request",
+        "tags": ["models", "pull", "ollama"]
+      }
+    ],
+    "show": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/show",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "name": "llama2:latest"
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "modelfile": "FROM llama2:latest\nPARAMETER temperature 0.7\nPARAMETER top_p 0.9",
+            "parameters": "temperature 0.7\ntop_p 0.9",
+            "template": "{{ .System }}\n\n{{ .Prompt }}",
+            "details": {
+              "parent_model": "",
+              "format": "gguf",
+              "family": "llama",
+              "parameter_size": "7B",
+              "quantization_level": "Q4_0"
+            },
+            "model_info": {
+              "general.architecture": "llama",
+              "general.file_type": 2,
+              "general.parameter_count": 7000000000,
+              "general.quantization_version": 2
+            }
+          }
+        },
+        "description": "Show model information",
+        "tags": ["models", "info", "ollama"]
+      }
+    ],
+    "embeddings": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/embeddings",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "prompt": "Hello world"
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "embeddings": [
+              [0.123, 0.456, 0.789, -0.123, 0.567, 0.890, -0.234, 0.678]
+            ]
+          }
+        },
+        "description": "Single embedding generation",
+        "tags": ["embeddings", "single", "ollama"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/embeddings",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "prompt": ["Hello world", "How are you?"]
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "embeddings": [
+              [0.123, 0.456, 0.789, -0.123, 0.567, 0.890, -0.234, 0.678],
+              [0.234, 0.567, 0.890, -0.234, 0.678, 0.901, -0.345, 0.789]
+            ]
+          }
+        },
+        "description": "Batch embedding generation",
+        "tags": ["embeddings", "batch", "ollama"]
+      }
+    ]
+  },
+  "openai": {
+    "completions": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/v1/completions",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "text-davinci-003",
+            "prompt": "Hello world",
+            "max_tokens": 50,
+            "temperature": 0.7
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "id": "cmpl-test123",
+            "object": "text_completion",
+            "created": 1704110400,
+            "model": "text-davinci-003",
+            "choices": [
+              {
+                "text": "Hello! This is a test response from the mock inference provider. Network connectivity test successful.",
+                "index": 0,
+                "logprobs": null,
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 2,
+              "completion_tokens": 15,
+              "total_tokens": 17
+            }
+          }
+        },
+        "description": "Basic OpenAI completions test",
+        "tags": ["connectivity", "completions", "openai"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/v1/completions",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "text-davinci-003",
+            "prompt": "What is the capital of France?",
+            "max_tokens": 10,
+            "temperature": 0.0
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "id": "cmpl-test456",
+            "object": "text_completion",
+            "created": 1704110400,
+            "model": "text-davinci-003",
+            "choices": [
+              {
+                "text": "Paris",
+                "index": 0,
+                "logprobs": null,
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 7,
+              "completion_tokens": 1,
+              "total_tokens": 8
+            }
+          }
+        },
+        "description": "Completions with low temperature",
+        "tags": ["parameters", "deterministic", "openai"]
+      }
+    ],
+    "chat_completions": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Hello, how are you?"
+              }
+            ],
+            "max_tokens": 100,
+            "temperature": 0.7
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "id": "chatcmpl-test123",
+            "object": "chat.completion",
+            "created": 1704110400,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "Hello! I'm doing well, thank you for asking. I'm a mock inference provider designed for testing network connectivity and API functionality."
+                },
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 13,
+              "completion_tokens": 28,
+              "total_tokens": 41
+            }
+          }
+        },
+        "description": "Basic OpenAI chat completions test",
+        "tags": ["connectivity", "chat", "openai"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "gpt-4",
+            "messages": [
+              {
+                "role": "system",
+                "content": "You are a helpful assistant."
+              },
+              {
+                "role": "user",
+                "content": "Explain quantum computing in simple terms."
+              }
+            ],
+            "max_tokens": 200,
+            "temperature": 0.3
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "id": "chatcmpl-test456",
+            "object": "chat.completion",
+            "created": 1704110400,
+            "model": "gpt-4",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "Quantum computing is a type of computing that uses quantum mechanics principles to perform calculations. Unlike classical computers that use bits (0s and 1s), quantum computers use quantum bits or 'qubits' that can exist in multiple states simultaneously. This allows quantum computers to solve certain problems much faster than classical computers."
+                },
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 32,
+              "completion_tokens": 72,
+              "total_tokens": 104
+            }
+          }
+        },
+        "description": "Complex chat completion with system message",
+        "tags": ["complex", "system-message", "openai"]
+      }
+    ],
+    "models": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/v1/models",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "object": "list",
+            "data": [
+              {
+                "id": "gpt-3.5-turbo",
+                "object": "model",
+                "created": 1677610602,
+                "owned_by": "openai"
+              },
+              {
+                "id": "gpt-4",
+                "object": "model",
+                "created": 1687882411,
+                "owned_by": "openai"
+              },
+              {
+                "id": "text-davinci-003",
+                "object": "model",
+                "created": 1669599635,
+                "owned_by": "openai"
+              }
+            ]
+          }
+        },
+        "description": "List available OpenAI models",
+        "tags": ["models", "list", "openai"]
+      }
+    ],
+    "embeddings": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/v1/embeddings",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "text-embedding-ada-002",
+            "input": "Hello world"
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "object": "list",
+            "data": [
+              {
+                "object": "embedding",
+                "embedding": [0.123, 0.456, 0.789, -0.123, 0.567, 0.890, -0.234, 0.678],
+                "index": 0
+              }
+            ],
+            "model": "text-embedding-ada-002",
+            "usage": {
+              "prompt_tokens": 2,
+              "total_tokens": 2
+            }
+          }
+        },
+        "description": "Single OpenAI embedding",
+        "tags": ["embeddings", "single", "openai"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/v1/embeddings",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "text-embedding-ada-002",
+            "input": ["Hello world", "How are you doing?"]
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "object": "list",
+            "data": [
+              {
+                "object": "embedding",
+                "embedding": [0.123, 0.456, 0.789, -0.123, 0.567, 0.890, -0.234, 0.678],
+                "index": 0
+              },
+              {
+                "object": "embedding",
+                "embedding": [0.234, 0.567, 0.890, -0.234, 0.678, 0.901, -0.345, 0.789],
+                "index": 1
+              }
+            ],
+            "model": "text-embedding-ada-002",
+            "usage": {
+              "prompt_tokens": 6,
+              "total_tokens": 6
+            }
+          }
+        },
+        "description": "Batch OpenAI embeddings",
+        "tags": ["embeddings", "batch", "openai"]
+      }
+    ]
+  },
+  "tgi": {
+    "generate": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/generate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "inputs": "Hello world",
+            "parameters": {
+              "max_new_tokens": 50,
+              "temperature": 0.7
+            }
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "generated_text": "Hello! This is a test response from the mock TGI inference provider. Network connectivity test successful.",
+            "details": {
+              "finish_reason": "eos_token",
+              "generated_tokens": 15,
+              "seed": 42
+            }
+          }
+        },
+        "description": "Basic TGI generate test",
+        "tags": ["connectivity", "generate", "tgi"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/generate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "inputs": "What is machine learning?",
+            "parameters": {
+              "max_new_tokens": 100,
+              "temperature": 0.3,
+              "do_sample": true
+            }
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "generated_text": "Machine learning is a subset of artificial intelligence that enables computers to learn and improve from experience without being explicitly programmed. It involves algorithms that can identify patterns in data and make predictions or decisions based on those patterns.",
+            "details": {
+              "finish_reason": "eos_token",
+              "generated_tokens": 45,
+              "seed": 123
+            }
+          }
+        },
+        "description": "TGI generate with sampling parameters",
+        "tags": ["parameters", "sampling", "tgi"]
+      }
+    ],
+    "generate_stream": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/generate_stream",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "inputs": "Tell me a story",
+            "parameters": {
+              "max_new_tokens": 50
+            }
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "text/event-stream"
+          },
+          "body": "data: {\"token\":{\"id\":0,\"text\":\"Once\",\"logprob\":-0.1,\"special\":false},\"generated_text\":null,\"details\":null}\n\ndata: {\"token\":{\"id\":1,\"text\":\" upon\",\"logprob\":-0.2,\"special\":false},\"generated_text\":null,\"details\":null}\n\ndata: {\"token\":{\"id\":2,\"text\":\" a\",\"logprob\":-0.15,\"special\":false},\"generated_text\":null,\"details\":null}\n\ndata: {\"token\":{\"id\":3,\"text\":\" time\",\"logprob\":-0.1,\"special\":false},\"generated_text\":\"Once upon a time\",\"details\":{\"finish_reason\":\"eos_token\",\"generated_tokens\":4,\"seed\":42}}\n\n"
+        },
+        "description": "TGI streaming generation",
+        "tags": ["streaming", "sse", "tgi"]
+      }
+    ],
+    "info": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/info",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model_id": "mock-model",
+            "model_sha": "abc123def456",
+            "model_dtype": "float16",
+            "model_device_type": "cuda",
+            "model_pipeline_tag": "text-generation",
+            "max_concurrent_requests": 128,
+            "max_best_of": 2,
+            "max_stop_sequences": 4,
+            "max_input_length": 4096,
+            "max_total_tokens": 8192,
+            "waiting_served_ratio": 1.2,
+            "max_batch_prefill_tokens": 4096,
+            "max_batch_total_tokens": 32768,
+            "validation_workers": 2,
+            "version": "1.4.0",
+            "sha": "abc123",
+            "docker_label": "ghcr.io/huggingface/text-generation-inference:1.4"
+          }
+        },
+        "description": "TGI model information",
+        "tags": ["info", "metadata", "tgi"]
+      }
+    ]
+  },
+  "agentic": {
+    "execute": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/agentic/execute",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "prompt": "Search for information about Rust programming language",
+            "tools": [
+              {
+                "name": "web_search",
+                "description": "Search the web for information",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["query"]
+                }
+              }
+            ],
+            "max_iterations": 2
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "response": "I'll help you find information about Rust programming language using available tools.",
+            "tool_calls": [
+              {
+                "id": "call_123456789",
+                "type": "function",
+                "function": {
+                  "name": "web_search",
+                  "arguments": "{\"query\": \"Rust programming language overview\"}"
+                }
+              }
+            ],
+            "iterations": 1,
+            "completed": true
+          }
+        },
+        "description": "Basic agentic execution with tool calling",
+        "tags": ["agentic", "tools", "search"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/agentic/execute",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "model": "llama2",
+            "prompt": "Calculate 15 + 27",
+            "tools": [
+              {
+                "name": "calculator",
+                "description": "Perform mathematical calculations",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["expression"]
+                }
+              }
+            ]
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "response": "I need to calculate 15 + 27. Let me use the calculator tool.",
+            "tool_calls": [
+              {
+                "id": "call_987654321",
+                "type": "function",
+                "function": {
+                  "name": "calculator",
+                  "arguments": "{\"expression\": \"15 + 27\"}"
+                }
+              }
+            ],
+            "iterations": 1,
+            "completed": true
+          }
+        },
+        "description": "Agentic execution with calculator tool",
+        "tags": ["agentic", "calculator", "math"]
+      }
+    ],
+    "tool_calls": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/api/agentic/tool-calls",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "tool_calls": [
+              {
+                "timestamp": 1704110400,
+                "model": "llama2",
+                "tool_name": "web_search",
+                "arguments": {
+                  "query": "Rust programming language overview"
+                }
+              },
+              {
+                "timestamp": 1704110410,
+                "model": "llama2",
+                "tool_name": "calculator",
+                "arguments": {
+                  "expression": "15 + 27"
+                }
+              }
+            ],
+            "total": 2
+          }
+        },
+        "description": "List recorded tool calls",
+        "tags": ["agentic", "tool-calls", "history"]
+      }
+    ]
+  },
+  "api_keys": {
+    "generate": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/keys/generate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "provider": "openai",
+            "valid": true
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "api_key": "sk-mock-openai-abcdef1234567890abcdef1234567890abcdef12",
+            "provider": "openai",
+            "expires_at": null,
+            "valid": true
+          }
+        },
+        "description": "Generate valid API key",
+        "tags": ["api-keys", "generate", "valid"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/keys/generate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "provider": "anthropic",
+            "expiry_seconds": 3600,
+            "valid": false
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "api_key": "sk-mock-anthropic-fedcba0987654321fedcba0987654321fedcba09",
+            "provider": "anthropic",
+            "expires_at": 1704114000,
+            "valid": false
+          }
+        },
+        "description": "Generate invalid API key with expiry",
+        "tags": ["api-keys", "generate", "invalid", "expiry"]
+      }
+    ],
+    "validate": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/keys/validate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "api_key": "sk-mock-openai-abcdef1234567890abcdef1234567890abcdef12"
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "valid": true,
+            "provider": "openai",
+            "expired": false,
+            "message": "Key is valid"
+          }
+        },
+        "description": "Validate valid API key",
+        "tags": ["api-keys", "validate", "valid"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/keys/validate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "api_key": "sk-mock-anthropic-fedcba0987654321fedcba0987654321fedcba09"
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "valid": false,
+            "provider": "anthropic",
+            "expired": false,
+            "message": "Key marked as invalid"
+          }
+        },
+        "description": "Validate invalid API key",
+        "tags": ["api-keys", "validate", "invalid"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/keys/validate",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "api_key": "invalid-key-format"
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "valid": false,
+            "provider": null,
+            "expired": false,
+            "message": "Key not found"
+          }
+        },
+        "description": "Validate non-existent API key",
+        "tags": ["api-keys", "validate", "not-found"]
+      }
+    ],
+    "list": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/api/keys/list",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "keys": [
+              {
+                "key": "sk-mock-openai-abcd...cdef12",
+                "provider": "openai",
+                "created_at": 1704110400,
+                "expires_at": null,
+                "valid": true,
+                "expired": false,
+                "usage_count": 0
+              },
+              {
+                "key": "sk-mock-anthropic-fedc...cba09",
+                "provider": "anthropic",
+                "created_at": 1704110400,
+                "expires_at": 1704114000,
+                "valid": false,
+                "expired": false,
+                "usage_count": 0
+              }
+            ],
+            "total": 2
+          }
+        },
+        "description": "List generated API keys",
+        "tags": ["api-keys", "list", "overview"]
+      }
+    ],
+    "revoke": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/keys/revoke",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "api_key": "sk-mock-openai-abcdef1234567890abcdef1234567890abcdef12"
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "success": true,
+            "message": "Key revoked successfully"
+          }
+        },
+        "description": "Revoke valid API key",
+        "tags": ["api-keys", "revoke", "success"]
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/api/keys/revoke",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "api_key": "non-existent-key"
+          }
+        },
+        "response": {
+          "status": 404,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "success": false,
+            "message": "Key not found"
+          }
+        },
+        "description": "Attempt to revoke non-existent key",
+        "tags": ["api-keys", "revoke", "not-found"]
+      }
+    ]
+  },
+  "system": {
+    "health": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/health",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "status": "ok",
+            "timestamp": "2024-01-01T12:00:00Z"
+          }
+        },
+        "description": "Health check endpoint",
+        "tags": ["system", "health", "monitoring"]
+      }
+    ],
+    "metrics": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/metrics",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "total_requests": 42,
+            "total_tool_calls": 5,
+            "uptime_seconds": 3600,
+            "models_loaded": 4
+          }
+        },
+        "description": "Metrics endpoint",
+        "tags": ["system", "metrics", "monitoring"]
+      }
+    ],
+    "root": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "name": "Mock Inference Provider",
+            "version": "1.0.0",
+            "description": "Simulates Ollama, OpenAI, and TGI APIs for testing",
+            "endpoints": {
+              "ollama": ["/api/generate", "/api/chat", "/api/tags", "/api/pull", "/api/show", "/api/embeddings"],
+              "openai": ["/v1/completions", "/v1/chat/completions", "/v1/models", "/v1/embeddings"],
+              "tgi": ["/generate", "/generate_stream", "/info"],
+              "agentic": ["/api/agentic/execute", "/api/agentic/tool-calls"],
+              "api_keys": ["/api/keys/generate", "/api/keys/validate", "/api/keys/list", "/api/keys/revoke"],
+              "system": ["/health", "/metrics"]
+            }
+          }
+        },
+        "description": "Root endpoint with API information",
+        "tags": ["system", "info", "root"]
+      }
+    ]
+  }
+}

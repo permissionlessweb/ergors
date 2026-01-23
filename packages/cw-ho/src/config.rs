@@ -33,6 +33,7 @@ impl HoConfigTrait for ErgorsConfig {
             home: home.as_str().into(),
             custody: None, // Custody config is managed separately
             cosmwasm: None, // CosmWasm config is optional
+            akash: None,    // Akash deploy config is optional
         })
     }
 

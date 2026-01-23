@@ -21,6 +21,9 @@ pub struct HoConfig {
     /// CosmWasm VM configuration
     #[prost(message, optional, tag = "7")]
     pub cosmwasm: ::core::option::Option<CosmwasmConfig>,
+    /// Akash deployment configuration
+    #[prost(message, optional, tag = "8")]
+    pub akash: ::core::option::Option<AkashDeployConfig>,
 }
 impl ::prost::Name for HoConfig {
     const NAME: &'static str = "HoConfig";
@@ -2431,6 +2434,45 @@ impl ::prost::Name for CosmosKeyStore {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.CosmosKeyStore".into()
+    }
+}
+/// Configuration for Akash network deployment endpoints
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AkashDeployConfig {
+    /// RPC endpoint for the Akash node (e.g. "<https://rpc-akash.ecostake.com:443">)
+    #[prost(string, tag = "1")]
+    pub rpc_endpoint: ::prost::alloc::string::String,
+    /// gRPC endpoint for the Akash node (e.g. "<https://grpc-akash.ecostake.com:443">)
+    #[prost(string, tag = "2")]
+    pub grpc_endpoint: ::prost::alloc::string::String,
+    /// Chain ID (e.g. "akashnet-2" for mainnet, "local" for dev)
+    #[prost(string, tag = "3")]
+    pub chain_id: ::prost::alloc::string::String,
+    /// Gas prices (e.g. "0.0025uakt")
+    #[prost(string, tag = "4")]
+    pub gas_prices: ::prost::alloc::string::String,
+    /// Gas adjustment multiplier (e.g. 1.3)
+    #[prost(double, tag = "5")]
+    pub gas_adjustment: f64,
+    /// Keyring backend (e.g. "os", "file", "test")
+    #[prost(string, tag = "6")]
+    pub keyring_backend: ::prost::alloc::string::String,
+    /// Default key name to use for deployments
+    #[prost(string, tag = "7")]
+    pub default_key_name: ::prost::alloc::string::String,
+    /// Trusted provider addresses (optional whitelist)
+    #[prost(string, repeated, tag = "8")]
+    pub trusted_providers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for AkashDeployConfig {
+    const NAME: &'static str = "AkashDeployConfig";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashDeployConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashDeployConfig".into()
     }
 }
 /// Authz grant tracking for workflow permissions

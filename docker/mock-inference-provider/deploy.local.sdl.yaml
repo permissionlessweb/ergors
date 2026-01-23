@@ -1,0 +1,50 @@
+---
+# Akash SDL for Mock Inference Provider - Local Development
+# Configured for local Kind cluster testing (no signedBy, no auditor requirements)
+#
+# Usage:
+#   ergors-cli deploy create --sdl deploy.local.sdl.yaml \
+#     --node http://localhost:26657 --chain-id local
+
+version: "2.0"
+
+services:
+  mock-inference:
+    image: mock-inference-provider:e2e
+    expose:
+      - port: 11434
+        as: 80
+        to:
+          - global: true
+    env:
+      - PORT=11434
+      - HOST=0.0.0.0
+      - MODEL_NAME=llama2
+      - MIN_LATENCY_MS=50
+      - MAX_LATENCY_MS=200
+      - ERROR_RATE=0.0
+      - RUST_LOG=info
+
+profiles:
+  compute:
+    mock-inference:
+      resources:
+        cpu:
+          units: 0.5
+        memory:
+          size: 256Mi
+        storage:
+          - size: 512Mi
+
+  placement:
+    local:
+      pricing:
+        mock-inference:
+          denom: uakt
+          amount: 10000
+
+deployment:
+  mock-inference:
+    local:
+      profile: mock-inference
+      count: 1

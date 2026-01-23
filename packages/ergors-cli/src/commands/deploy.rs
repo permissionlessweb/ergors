@@ -1,0 +1,419 @@
+//! Akash deployment management CLI commands
+//!
+//! Commands for managing Akash network deployments through the engine.
+
+use anyhow::Result;
+use clap::Subcommand;
+use std::collections::HashMap;
+
+use crate::client::ManagementClient;
+use crate::Cli;
+
+/// Akash deployment management commands
+#[derive(Subcommand)]
+pub enum DeployCmd {
+    /// Create a new Akash deployment
+    Create {
+        /// Path to SDL file
+        #[arg(long)]
+        sdl: Option<String>,
+        /// Raw SDL content (alternative to --sdl)
+        #[arg(long)]
+        sdl_content: Option<String>,
+        /// Key name for signing transactions
+        #[arg(long, default_value = "default")]
+        key_name: String,
+        /// HD account index
+        #[arg(long, default_value = "0")]
+        account_index: u32,
+        /// Override node RPC endpoint
+        #[arg(long, env = "AKASH_NODE")]
+        node: Option<String>,
+        /// Override chain ID
+        #[arg(long, env = "AKASH_CHAIN_ID")]
+        chain_id: Option<String>,
+        /// Auto-advance through all workflow steps
+        #[arg(long)]
+        auto: bool,
+        /// SDL template variables (key=value pairs)
+        #[arg(long, value_parser = parse_key_val)]
+        var: Vec<(String, String)>,
+    },
+    /// List deployment workflows
+    List {
+        /// Filter by status (pending, running, completed, failed)
+        #[arg(long)]
+        status: Option<String>,
+        /// Maximum results
+        #[arg(long, default_value = "50")]
+        limit: u32,
+    },
+    /// Get deployment workflow details
+    Get {
+        /// Session ID
+        session_id: String,
+    },
+    /// Advance deployment to next step
+    Advance {
+        /// Session ID
+        session_id: String,
+    },
+    /// Query bids for a deployment
+    Bids {
+        /// Session ID
+        session_id: String,
+    },
+    /// Select a provider for the deployment
+    Select {
+        /// Session ID
+        session_id: String,
+        /// Provider address
+        #[arg(long)]
+        provider: String,
+        /// Bid price in uakt
+        #[arg(long, default_value = "0")]
+        price: u64,
+    },
+    /// Cancel a deployment workflow
+    Cancel {
+        /// Session ID
+        session_id: String,
+    },
+}
+
+/// Parse a key=value pair
+fn parse_key_val(s: &str) -> Result<(String, String), String> {
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid KEY=value: no `=` found in `{s}`"))?;
+    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
+}
+
+impl DeployCmd {
+    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+        match self {
+            DeployCmd::Create {
+                sdl,
+                sdl_content,
+                key_name,
+                account_index,
+                node,
+                chain_id,
+                auto,
+                var,
+            } => {
+                // Resolve SDL content
+                let content = match (sdl, sdl_content) {
+                    (Some(path), _) => std::fs::read_to_string(path)
+                        .map_err(|e| anyhow::anyhow!("Failed to read SDL file '{}': {}", path, e))?,
+                    (_, Some(raw)) => raw.clone(),
+                    (None, None) => {
+                        anyhow::bail!("Either --sdl <path> or --sdl-content <yaml> is required");
+                    }
+                };
+
+                let variables: HashMap<String, String> = var.iter().cloned().collect();
+
+                let response = client
+                    .create_akash_deployment(
+                        key_name,
+                        *account_index,
+                        &content,
+                        "",
+                        variables,
+                        node.as_deref().unwrap_or(""),
+                        chain_id.as_deref().unwrap_or(""),
+                        *auto,
+                    )
+                    .await?;
+
+                if response.success {
+                    if cli.json {
+                        if let Some(wf) = &response.workflow {
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&serde_json::json!({
+                                    "session_id": wf.session_id,
+                                    "status": wf.status,
+                                    "current_step": wf.current_step,
+                                    "account_address": wf.account_address,
+                                    "chain_id": wf.chain_id,
+                                    "node_endpoint": wf.node_endpoint,
+                                }))?
+                            );
+                        }
+                    } else {
+                        println!("Deployment workflow created!");
+                        if let Some(wf) = &response.workflow {
+                            println!("  Session ID: {}", wf.session_id);
+                            println!("  Account:    {}", wf.account_address);
+                            println!("  Chain:      {}", wf.chain_id);
+                            println!("  Node:       {}", wf.node_endpoint);
+                            println!("  Step:       {}", format_step(wf.current_step));
+                            println!("  Status:     {}", format_status(wf.status));
+                        }
+                    }
+                } else {
+                    eprintln!("Failed to create deployment: {}", response.error_message);
+                }
+                Ok(())
+            }
+            DeployCmd::List { status, limit } => {
+                let status_filter = status
+                    .as_deref()
+                    .map(|s| match s.to_lowercase().as_str() {
+                        "pending" => 1,
+                        "running" => 2,
+                        "paused" => 3,
+                        "completed" => 4,
+                        "failed" => 5,
+                        "cancelled" => 6,
+                        _ => 0,
+                    })
+                    .unwrap_or(0);
+
+                let response = client
+                    .list_akash_deployments(status_filter, *limit)
+                    .await?;
+
+                if cli.json {
+                    let workflows: Vec<_> = response
+                        .workflows
+                        .iter()
+                        .map(|wf| {
+                            serde_json::json!({
+                                "session_id": wf.session_id,
+                                "status": format_status(wf.status),
+                                "current_step": format_step(wf.current_step),
+                                "account_address": wf.account_address,
+                            })
+                        })
+                        .collect();
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "workflows": workflows,
+                            "total_count": response.total_count,
+                        }))?
+                    );
+                } else {
+                    println!("Akash Deployments ({} total)", response.total_count);
+                    println!("==========================");
+
+                    if response.workflows.is_empty() {
+                        println!("No deployment workflows found.");
+                    } else {
+                        for wf in &response.workflows {
+                            println!(
+                                "  {} | {} | {} | {}",
+                                &wf.session_id[..8.min(wf.session_id.len())],
+                                format_status(wf.status),
+                                format_step(wf.current_step),
+                                wf.account_address,
+                            );
+                        }
+                    }
+                }
+                Ok(())
+            }
+            DeployCmd::Get { session_id } => {
+                let response = client.get_akash_deployment(session_id).await?;
+
+                if let Some(wf) = &response.workflow {
+                    if cli.json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "session_id": wf.session_id,
+                                "status": format_status(wf.status),
+                                "current_step": format_step(wf.current_step),
+                                "account_address": wf.account_address,
+                                "chain_id": wf.chain_id,
+                                "node_endpoint": wf.node_endpoint,
+                                "selected_key_name": wf.selected_key_name,
+                                "last_error": wf.last_error,
+                                "retry_count": wf.retry_count,
+                            }))?
+                        );
+                    } else {
+                        println!("Deployment Workflow: {}", wf.session_id);
+                        println!("====================");
+                        println!("Status:     {}", format_status(wf.status));
+                        println!("Step:       {}", format_step(wf.current_step));
+                        println!("Account:    {}", wf.account_address);
+                        println!("Key:        {}", wf.selected_key_name);
+                        println!("Chain:      {}", wf.chain_id);
+                        println!("Node:       {}", wf.node_endpoint);
+
+                        if let Some(runtime) = &wf.deployment {
+                            println!("\nDeployment Info:");
+                            println!("  DSEQ:     {}", runtime.deployment_sequence);
+                            println!("  Provider: {}", runtime.provider_address);
+                            println!("  Lease:    {}", runtime.lease_id);
+                            if !runtime.service_endpoints.is_empty() {
+                                println!("  Endpoints:");
+                                for ep in &runtime.service_endpoints {
+                                    println!("    - {}", ep);
+                                }
+                            }
+                        }
+
+                        if !wf.last_error.is_empty() {
+                            println!("\nLast Error: {}", wf.last_error);
+                        }
+                    }
+                } else {
+                    println!("Deployment not found: {}", session_id);
+                }
+                Ok(())
+            }
+            DeployCmd::Advance { session_id } => {
+                let response = client.advance_akash_deployment(session_id).await?;
+
+                if cli.json {
+                    let mut json = serde_json::json!({
+                        "success": response.success,
+                    });
+                    if let Some(wf) = &response.workflow {
+                        json["current_step"] = serde_json::json!(format_step(wf.current_step));
+                        json["status"] = serde_json::json!(format_status(wf.status));
+                        json["session_id"] = serde_json::json!(&wf.session_id);
+                    }
+                    if !response.error_message.is_empty() {
+                        json["error"] = serde_json::json!(&response.error_message);
+                    }
+                    println!("{}", serde_json::to_string_pretty(&json)?);
+                } else if response.success {
+                    if let Some(wf) = &response.workflow {
+                        println!(
+                            "Advanced to step: {} (status: {})",
+                            format_step(wf.current_step),
+                            format_status(wf.status)
+                        );
+                    }
+                } else {
+                    eprintln!("Failed to advance: {}", response.error_message);
+                }
+                Ok(())
+            }
+            DeployCmd::Bids { session_id } => {
+                let response = client.query_akash_bids(session_id).await?;
+
+                if cli.json {
+                    let bids: Vec<_> = response
+                        .bids
+                        .iter()
+                        .map(|b| {
+                            serde_json::json!({
+                                "provider": b.provider_address,
+                                "price_uakt": b.price_uakt,
+                            })
+                        })
+                        .collect();
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "bids": bids,
+                            "total": response.total_bids,
+                        }))?
+                    );
+                } else {
+                    println!("Bids ({} total)", response.total_bids);
+                    println!("==========");
+
+                    if response.bids.is_empty() {
+                        println!("No bids received yet.");
+                    } else {
+                        for bid in &response.bids {
+                            println!(
+                                "  {} | {} uakt/block",
+                                bid.provider_address, bid.price_uakt
+                            );
+                        }
+                    }
+                }
+                Ok(())
+            }
+            DeployCmd::Select {
+                session_id,
+                provider,
+                price,
+            } => {
+                let response = client
+                    .select_akash_provider(session_id, provider, *price)
+                    .await?;
+
+                if cli.json {
+                    let mut json = serde_json::json!({
+                        "success": response.success,
+                        "provider": provider,
+                    });
+                    if let Some(wf) = &response.workflow {
+                        json["current_step"] = serde_json::json!(format_step(wf.current_step));
+                        json["status"] = serde_json::json!(format_status(wf.status));
+                    }
+                    if !response.error_message.is_empty() {
+                        json["error"] = serde_json::json!(&response.error_message);
+                    }
+                    println!("{}", serde_json::to_string_pretty(&json)?);
+                } else if response.success {
+                    println!("Provider selected: {}", provider);
+                    if let Some(wf) = &response.workflow {
+                        println!("  Step: {}", format_step(wf.current_step));
+                        println!("  Status: {}", format_status(wf.status));
+                    }
+                } else {
+                    eprintln!("Failed to select provider: {}", response.error_message);
+                }
+                Ok(())
+            }
+            DeployCmd::Cancel { session_id } => {
+                let result = client.cancel_akash_deployment(session_id).await?;
+
+                if result.success {
+                    println!("Deployment cancelled: {}", session_id);
+                } else {
+                    eprintln!("Failed to cancel: {}", result.message);
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+fn format_step(step: i32) -> &'static str {
+    match step {
+        0 => "unspecified",
+        1 => "key_selection",
+        2 => "balance_check",
+        3 => "grant_request",
+        4 => "grant_wait",
+        5 => "authz_setup",
+        6 => "feegrant_setup",
+        7 => "sdl_configuration",
+        8 => "certificate_setup",
+        9 => "deployment_create",
+        10 => "bid_wait",
+        11 => "provider_selection",
+        12 => "lease_create",
+        13 => "manifest_send",
+        14 => "endpoint_retrieval",
+        15 => "endpoint_testing",
+        16 => "complete",
+        17 => "failed",
+        _ => "unknown",
+    }
+}
+
+fn format_status(status: i32) -> &'static str {
+    match status {
+        0 => "unspecified",
+        1 => "pending",
+        2 => "running",
+        3 => "paused",
+        4 => "completed",
+        5 => "failed",
+        6 => "cancelled",
+        _ => "unknown",
+    }
+}

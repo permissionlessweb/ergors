@@ -21,6 +21,7 @@ use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::fs;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -62,6 +63,10 @@ struct Args {
     /// Enable verbose logging
     #[arg(short, long, env = "VERBOSE")]
     verbose: bool,
+
+    /// Enable testdata mode (use predefined responses from testdata.json)
+    #[arg(long, env = "TESTDATA_MODE")]
+    testdata_mode: bool,
 }
 
 /// Application state
@@ -72,6 +77,8 @@ struct AppState {
     tool_calls: Arc<RwLock<Vec<ToolCallRecord>>>,
     /// API keys storage for testing key validation workflow
     api_keys: Arc<RwLock<HashMap<String, ApiKeyRecord>>>,
+    /// Predefined test data for deterministic responses
+    testdata: Arc<Option<TestData>>,
 }
 
 /// Application configuration
@@ -80,6 +87,7 @@ struct AppConfig {
     max_latency_ms: u64,
     error_rate: f32,
     models: Vec<ModelInfo>,
+    testdata_mode: bool,
 }
 
 /// API key record for mock key management
@@ -101,6 +109,40 @@ struct ModelInfo {
     size_bytes: u64,
     parameter_count: String,
     quantization: String,
+}
+
+/// TestData structures for predefined request-response pairs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestRequest {
+    method: String,
+    path: String,
+    headers: Option<HashMap<String, String>>,
+    body: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestResponse {
+    status: u16,
+    headers: Option<HashMap<String, String>>,
+    body: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestCase {
+    request: TestRequest,
+    response: TestResponse,
+    description: String,
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestData {
+    ollama: HashMap<String, Vec<TestCase>>,
+    openai: HashMap<String, Vec<TestCase>>,
+    tgi: HashMap<String, Vec<TestCase>>,
+    agentic: HashMap<String, Vec<TestCase>>,
+    api_keys: HashMap<String, Vec<TestCase>>,
+    system: HashMap<String, Vec<TestCase>>,
 }
 
 /// Tool call record for agentic testing
@@ -160,6 +202,29 @@ async fn main() {
         max_latency_ms: args.max_latency_ms,
         error_rate: args.error_rate,
         models,
+        testdata_mode: args.testdata_mode,
+    };
+
+    // Load testdata if enabled
+    let testdata = if args.testdata_mode {
+        match fs::read_to_string("testdata.json") {
+            Ok(content) => match serde_json::from_str::<TestData>(&content) {
+                Ok(data) => {
+                    info!("Loaded testdata.json with predefined responses");
+                    Some(data)
+                }
+                Err(e) => {
+                    info!("Failed to parse testdata.json: {}. Disabling testdata mode.", e);
+                    None
+                }
+            },
+            Err(e) => {
+                info!("Failed to read testdata.json: {}. Disabling testdata mode.", e);
+                None
+            }
+        }
+    } else {
+        None
     };
 
     let state = AppState {
@@ -167,6 +232,7 @@ async fn main() {
         request_count: Arc::new(AtomicU64::new(0)),
         tool_calls: Arc::new(RwLock::new(Vec::new())),
         api_keys: Arc::new(RwLock::new(HashMap::new())),
+        testdata: Arc::new(testdata),
     };
 
     let app = Router::new()
@@ -213,7 +279,7 @@ async fn main() {
 
 // ==================== Request/Response Types ====================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct OllamaGenerateRequest {
     model: String,
     prompt: String,
@@ -399,9 +465,99 @@ struct EmbeddingsResponse {
     embeddings: Vec<Vec<f32>>,
 }
 
+// ==================== TestData Matching ====================
+
+/// Try to find a matching test case for the given request
+fn find_matching_test_case<'a>(
+    testdata: &'a TestData,
+    method: &'a str,
+    path: &'a str,
+    request_body: Option<&'a serde_json::Value>,
+) -> Option<&'a TestCase> {
+    // Determine which API section to search based on path
+    let (api_section, endpoint) = if path.starts_with("/api/") {
+        if path.starts_with("/api/agentic/") {
+            ("agentic", path.strip_prefix("/api/agentic/").unwrap_or(path))
+        } else if path.starts_with("/api/keys/") {
+            ("api_keys", path.strip_prefix("/api/keys/").unwrap_or(path))
+        } else {
+            ("ollama", path.strip_prefix("/api/").unwrap_or(path))
+        }
+    } else if path.starts_with("/v1/") {
+        ("openai", path.strip_prefix("/v1/").unwrap_or(path))
+    } else if path == "/" || path == "/health" || path == "/metrics" {
+        ("system", match path {
+            "/" => "root",
+            "/health" => "health",
+            "/metrics" => "metrics",
+            _ => path,
+        })
+    } else {
+        ("tgi", path.strip_prefix("/").unwrap_or(path))
+    };
+
+    // Get the test cases for this API section and endpoint
+    let test_cases = match api_section {
+        "ollama" => testdata.ollama.get(endpoint),
+        "openai" => testdata.openai.get(endpoint),
+        "tgi" => testdata.tgi.get(endpoint),
+        "agentic" => testdata.agentic.get(endpoint),
+        "api_keys" => testdata.api_keys.get(endpoint),
+        "system" => testdata.system.get(endpoint),
+        _ => None,
+    };
+
+    if let Some(cases) = test_cases {
+        // Try to find an exact match
+        for test_case in cases {
+            if test_case.request.method == method && test_case.request.path == path {
+                // For requests with bodies, check if they match (allowing for some flexibility)
+                if let Some(expected_body) = &test_case.request.body {
+                    if let Some(actual_body) = request_body {
+                        // Simple JSON comparison - in a real implementation you might want more sophisticated matching
+                        if expected_body == actual_body {
+                            return Some(test_case);
+                        }
+                    } else if expected_body.is_null() {
+                        // If expected body is null and no actual body, it's a match
+                        return Some(test_case);
+                    }
+                } else if request_body.is_none() {
+                    // No expected body and no actual body - match
+                    return Some(test_case);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Try to get a testdata response for the current request
+fn get_testdata_response(
+    state: &AppState,
+    method: &str,
+    path: &str,
+    request_body: Option<&serde_json::Value>,
+) -> Option<TestCase> {
+    if let Some(testdata) = &*state.testdata {
+        find_matching_test_case(testdata, method, path, request_body).cloned()
+    } else {
+        None
+    }
+}
+
 // ==================== Handlers ====================
 
-async fn root_handler() -> impl IntoResponse {
+async fn root_handler(State(state): State<AppState>) -> Response {
+    // Check for testdata response first
+    if let Some(test_case) = get_testdata_response(&state, "GET", "/", None) {
+        let status_code = StatusCode::from_u16(test_case.response.status)
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (status_code, Json(test_case.response.body)).into_response();
+    }
+
+    // Fallback to dynamic response
     Json(serde_json::json!({
         "name": "Mock Inference Provider",
         "version": env!("CARGO_PKG_VERSION"),
@@ -414,14 +570,30 @@ async fn root_handler() -> impl IntoResponse {
             "api_keys": ["/api/keys/generate", "/api/keys/validate", "/api/keys/list", "/api/keys/revoke"],
             "system": ["/health", "/metrics"]
         }
-    }))
+    })).into_response()
 }
 
-async fn health_handler() -> impl IntoResponse {
-    Json(serde_json::json!({"status": "ok", "timestamp": chrono::Utc::now().to_rfc3339()}))
+async fn health_handler(State(state): State<AppState>) -> Response {
+    // Check for testdata response first
+    if let Some(test_case) = get_testdata_response(&state, "GET", "/health", None) {
+        let status_code = StatusCode::from_u16(test_case.response.status)
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (status_code, Json(test_case.response.body)).into_response();
+    }
+
+    // Fallback to dynamic response
+    Json(serde_json::json!({"status": "ok", "timestamp": chrono::Utc::now().to_rfc3339()})).into_response()
 }
 
-async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
+async fn metrics_handler(State(state): State<AppState>) -> Response {
+    // Check for testdata response first
+    if let Some(test_case) = get_testdata_response(&state, "GET", "/metrics", None) {
+        let status_code = StatusCode::from_u16(test_case.response.status)
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (status_code, Json(test_case.response.body)).into_response();
+    }
+
+    // Fallback to dynamic response
     let count = state.request_count.load(Ordering::Relaxed);
     let tool_calls = state.tool_calls.read().await.len();
 
@@ -430,7 +602,7 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
         "total_tool_calls": tool_calls,
         "uptime_seconds": 0, // Would track actual uptime
         "models_loaded": state.config.models.len()
-    }))
+    })).into_response()
 }
 
 async fn ollama_generate_handler(
@@ -438,6 +610,27 @@ async fn ollama_generate_handler(
     Json(req): Json<OllamaGenerateRequest>,
 ) -> Response {
     state.request_count.fetch_add(1, Ordering::Relaxed);
+
+    // Check for testdata response first
+    let request_body = serde_json::to_value(&req).ok();
+    if let Some(test_case) = get_testdata_response(&state, "POST", "/api/generate", request_body.as_ref()) {
+        let status_code = StatusCode::from_u16(test_case.response.status)
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+
+        // Handle streaming responses for testdata
+        if req.stream && test_case.response.status == 200 {
+            // For streaming testdata, we'd need to implement streaming from testdata
+            // For now, fall back to dynamic streaming
+            simulate_latency(&state.config).await;
+            let response_text = generate_response(&req.prompt, &req.model);
+            let chunks = create_stream_chunks(&response_text, &req.model);
+            return Sse::new(chunks).into_response();
+        }
+
+        return (status_code, Json(test_case.response.body)).into_response();
+    }
+
+    // Fallback to dynamic response
     simulate_latency(&state.config).await;
 
     if should_error(&state.config) {
@@ -526,7 +719,15 @@ async fn ollama_chat_handler(
     Json(resp).into_response()
 }
 
-async fn ollama_tags_handler(State(state): State<AppState>) -> impl IntoResponse {
+async fn ollama_tags_handler(State(state): State<AppState>) -> Response {
+    // Check for testdata response first
+    if let Some(test_case) = get_testdata_response(&state, "GET", "/api/tags", None) {
+        let status_code = StatusCode::from_u16(test_case.response.status)
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (status_code, Json(test_case.response.body)).into_response();
+    }
+
+    // Fallback to dynamic response
     let models: Vec<serde_json::Value> = state.config.models.iter().map(|m| {
         serde_json::json!({
             "name": m.name,
@@ -545,7 +746,7 @@ async fn ollama_tags_handler(State(state): State<AppState>) -> impl IntoResponse
         })
     }).collect();
 
-    Json(serde_json::json!({"models": models}))
+    Json(serde_json::json!({"models": models})).into_response()
 }
 
 async fn ollama_pull_handler(Json(req): Json<serde_json::Value>) -> impl IntoResponse {

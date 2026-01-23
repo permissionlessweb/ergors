@@ -17,28 +17,83 @@ use tokio::time::sleep;
 // Import our API client and proto types
 use crate::deploy::api_client::{AkashApiClient, AkashApiConfig};
 use crate::deploy::transaction::{SimpleKeyring, TxBroadcaster, TxConfig};
+use ho_std::types::ergors::orch::v1::AkashDeployConfig;
 
-#[derive(Debug)]
-struct AkashConfig {
-    key_name: String,
-    keyring_backend: String,
-    node: String,
-    chain_id: String,
-    account_address: String,
-    gas: String,
-    gas_adjustment: f64,
-    gas_prices: String,
-    sign_mode: String,
+#[derive(Debug, Clone)]
+pub struct AkashConfig {
+    pub key_name: String,
+    pub keyring_backend: String,
+    pub node: String,
+    pub chain_id: String,
+    pub account_address: String,
+    pub gas: String,
+    pub gas_adjustment: f64,
+    pub gas_prices: String,
+    pub sign_mode: String,
 }
 
 impl AkashConfig {
-    async fn new() -> Result<Self> {
-        // Similar to bash script's environment setup
+    /// Create config from explicit parameters (used by CLI/gRPC)
+    pub fn with_params(key_name: &str, node: &str, chain_id: &str) -> Self {
+        Self {
+            key_name: key_name.to_string(),
+            keyring_backend: "os".to_string(),
+            node: node.to_string(),
+            chain_id: chain_id.to_string(),
+            account_address: String::new(),
+            gas: "auto".to_string(),
+            gas_adjustment: 1.3,
+            gas_prices: "0.0025uakt".to_string(),
+            sign_mode: "amino-json".to_string(),
+        }
+    }
+
+    /// Create config from proto AkashDeployConfig (loaded from engine config)
+    pub fn from_proto_config(proto: &AkashDeployConfig) -> Self {
+        Self {
+            key_name: if proto.default_key_name.is_empty() {
+                "default".to_string()
+            } else {
+                proto.default_key_name.clone()
+            },
+            keyring_backend: if proto.keyring_backend.is_empty() {
+                "os".to_string()
+            } else {
+                proto.keyring_backend.clone()
+            },
+            node: if proto.rpc_endpoint.is_empty() {
+                "https://rpc-akash.ecostake.com:443".to_string()
+            } else {
+                proto.rpc_endpoint.clone()
+            },
+            chain_id: if proto.chain_id.is_empty() {
+                "akashnet-2".to_string()
+            } else {
+                proto.chain_id.clone()
+            },
+            account_address: String::new(),
+            gas: "auto".to_string(),
+            gas_adjustment: if proto.gas_adjustment == 0.0 {
+                1.3
+            } else {
+                proto.gas_adjustment
+            },
+            gas_prices: if proto.gas_prices.is_empty() {
+                "0.0025uakt".to_string()
+            } else {
+                proto.gas_prices.clone()
+            },
+            sign_mode: "amino-json".to_string(),
+        }
+    }
+
+    /// Create config with mainnet defaults (fallback)
+    pub async fn mainnet_defaults() -> Result<Self> {
         let node = "https://rpc-akash.ecostake.com:443".to_string();
         let chain_id = fetch_chain_id().await?;
 
         Ok(Self {
-            key_name: "test1".to_string(),
+            key_name: "default".to_string(),
             keyring_backend: "os".to_string(),
             node,
             chain_id,
@@ -59,7 +114,7 @@ struct DeploymentInfo {
     provider: String,
 }
 
-struct AkashClient {
+pub struct AkashClient {
     config: AkashConfig,
     trusted_providers: Vec<String>,
     deployments: HashMap<String, DeploymentInfo>,
@@ -69,30 +124,33 @@ struct AkashClient {
 }
 
 impl AkashClient {
-    async fn new(config: AkashConfig) -> Result<Self> {
-        let trusted_providers = [
-            "akash1u5cdg7k3gl43mukca4aeultuz8x2j68mgwn28e", // d3akash
-            "akash1h4h33c8rv8e084el7e74f7pktz27pmxxt8nl9q", // overclock
-            "akash15ksejj7g4su7ljufsg0a8eglvkje94z8qsh68a", // palmito
-            "akash1kqzpqqhm39umt06wu8m4hx63v5hefhrfmjf9dj", // leet.haus
-            "akash16yrzlu9cgxcf4d7k6qjax5fd3cll05p87qha4m", // dsm.hh
-            "akash1efge8vzg376fnnfeyg5v8tdq9sg3elhgy42wvm", // marzrock
-            "akash1tweev0k42guyv3a2jtgphmgfrl2h5y2884vh9d", // dcnorse
-            "akash18ga02jzaq8cw52anyhzkwta5wygufgu6zsz6xc", // europlots
-            "akash17l0f3kf7gv4kmgqjmgc0ksj3em6lqgcc4kl4dg", // pcgameservers
-            "akash1ut3m97h62tty06qdq9lds85r34dxe3snjj0xfe", // akashgpu.com
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    pub async fn new(config: AkashConfig) -> Result<Self> {
+        Self::with_providers(config, vec![]).await
+    }
 
-        // Initialize API client
+    /// Create client from proto AkashDeployConfig
+    pub async fn from_proto_config(proto: &AkashDeployConfig) -> Result<Self> {
+        let config = AkashConfig::from_proto_config(proto);
+        Self::with_providers(config, proto.trusted_providers.clone()).await
+    }
+
+    pub async fn with_providers(
+        config: AkashConfig,
+        trusted_providers: Vec<String>,
+    ) -> Result<Self> {
+
+        // Initialize API client - derive endpoints from node config
+        let grpc_endpoint = config
+            .node
+            .replace("https://rpc-", "https://grpc-")
+            .replace("http://", "http://");
+        let rest_endpoint_derived = config
+            .node
+            .replace("https://rpc-", "https://rest-")
+            .replace(":443", "");
         let api_config = AkashApiConfig {
-            grpc_endpoint: "https://grpc-akash.ecostake.com:443".to_string(),
-            rest_endpoint: config
-                .node
-                .replace("https://rpc-", "https://rest-")
-                .replace(":443", ""),
+            grpc_endpoint,
+            rest_endpoint: rest_endpoint_derived,
             timeout: Duration::from_secs(30),
             chain_id: config.chain_id.clone(),
         };
@@ -574,7 +632,7 @@ async fn main() -> Result<()> {
     println!("[INFO] Starting Akash deployment process...");
 
     // Initialize config
-    let config = AkashConfig::new().await?;
+    let config = AkashConfig::mainnet_defaults().await?;
     let mut client = AkashClient::new(config).await?;
 
     // 1. Setup

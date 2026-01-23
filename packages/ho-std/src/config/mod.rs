@@ -4,7 +4,7 @@ use crate::{HoError, HoResult};
 impl crate::traits::NetworkConfigTrait for NetworkConfig {
     fn validate(&self) -> HoResult<()> {
         if self.channels.is_none() {};
-        self.connection_timeout_ms < 100;
+        // self.connection_timeout_ms < 100;
         // Basic validation - could be expanded
         if self.listen_port == 0 {
             return Err(HoError::Cfg("Listen port must be non-zero".to_string()));

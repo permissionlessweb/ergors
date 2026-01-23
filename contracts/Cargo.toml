@@ -1,5 +1,5 @@
 [workspace]
-members = ["sdl-template-registrar"]
+members = ["sdl-template-registrar", "auth-registry-updater", "whitelist-authenticator"]
 resolver = "2"
 
 [workspace.metadata.optimizer]

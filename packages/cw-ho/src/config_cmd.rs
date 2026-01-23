@@ -180,6 +180,7 @@ impl ConfigCmd {
                 with_sdl_contract,
                 sdl_wasm_path,
             )?),
+            akash: None,
         });
 
         config.save(&config_path)?;

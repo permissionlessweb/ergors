@@ -147,9 +147,8 @@ async fn query_authenticator_contract(
     contract_address: &str,
     caller_address: &str,
 ) -> Result<bool, String> {
-    let query_msg = IsAllowedQuery::new(caller_address);
-    let query_bytes =
-        serde_json::to_vec(&query_msg).map_err(|e| format!("Failed to serialize query: {}", e))?;
+    let query_bytes = serde_json::to_vec(&IsAllowedQuery::new(caller_address))
+        .map_err(|e| format!("Failed to serialize query: {}", e))?;
 
     let result = state
         .wasm
@@ -163,9 +162,7 @@ async fn query_authenticator_contract(
                 .map_err(|e| format!("Failed to deserialize response: {}", e))?;
             Ok(response.allowed)
         }
-        cosmwasm_std::ContractResult::Err(err) => {
-            Err(format!("Contract returned error: {}", err))
-        }
+        cosmwasm_std::ContractResult::Err(err) => Err(format!("Contract returned error: {}", err)),
     }
 }
 
