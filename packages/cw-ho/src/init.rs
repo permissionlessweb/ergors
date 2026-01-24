@@ -173,6 +173,14 @@ impl InitCmd {
                     password
                 };
 
+                // Unlock the custody for SSH key generation
+                // This is required because generate_ssh_keys_from_custody needs access to the private key
+                let rt = tokio::runtime::Runtime::new()?;
+                if !custody.is_unlocked() {
+                    rt.block_on(custody.unlock(&password))
+                        .map_err(|e| anyhow::anyhow!("Failed to unlock custody for SSH key generation: {}", e))?;
+                }
+
                 // Generate SSH keys from the encrypted custody
                 let ssh_dir = home_dir.as_ref().join("ssh");
                 if let Err(e) = self.generate_ssh_keys_from_custody(&ssh_dir, &custody) {

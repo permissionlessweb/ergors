@@ -61,6 +61,22 @@ impl AkashWorkflowManager {
 
     // ==================== Workflow Lifecycle ====================
 
+    /// Create a new deployment workflow session using the default key
+    pub async fn create_workflow_default(&self) -> Result<AkashDeploymentWorkflow> {
+        let key_store = self
+            .storage
+            .get_cosmos_key_store()
+            .await
+            .map_err(|e| anyhow!("Storage error: {}", e))?
+            .ok_or_else(|| anyhow!("No cosmos key store found. Import a key with `ergors keys import-mnemonic`"))?;
+
+        let default_key_name = EncryptedCosmosKeyManager::get_default_key_name(&key_store)
+            .ok_or_else(|| anyhow!("No default key set. Use `ergors keys set-default --key-name <name>`"))?
+            .to_string();
+
+        self.create_workflow(&default_key_name, 0).await
+    }
+
     /// Create a new deployment workflow session
     pub async fn create_workflow(
         &self,
@@ -232,7 +248,7 @@ impl AkashWorkflowManager {
                 self.execute_manifest_send(&workflow).await
             }
             AkashWorkflowStep::EndpointRetrieval => {
-                self.execute_endpoint_retrieval(&workflow).await
+                self.execute_endpoint_retrieval(&mut workflow).await
             }
             AkashWorkflowStep::EndpointTesting => {
                 self.execute_endpoint_testing(&mut workflow).await
@@ -602,11 +618,92 @@ impl AkashWorkflowManager {
 
     async fn execute_endpoint_retrieval(
         &self,
-        _workflow: &AkashDeploymentWorkflow,
+        workflow: &mut AkashDeploymentWorkflow,
     ) -> Result<AkashWorkflowStep> {
-        tracing::info!("Retrieving deployment endpoints...");
-        // In production, query lease status for URIs
-        Ok(AkashWorkflowStep::EndpointTesting)
+        tracing::info!("Retrieving deployment endpoints from Akash provider...");
+
+        // Extract deployment info from workflow
+        let deployment = workflow
+            .deployment
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No deployment info in workflow"))?;
+
+        let provider_selection = workflow
+            .provider
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No provider selected in workflow"))?;
+
+        // Create Akash client to query provider
+        let akash_config = crate::deploy::akash::AkashConfig {
+            key_name: workflow.selected_key_name.clone(),
+            keyring_backend: "os".to_string(),
+            node: workflow.node_endpoint.clone(),
+            chain_id: workflow.chain_id.clone(),
+            account_address: workflow.account_address.clone(),
+            gas: "auto".to_string(),
+            gas_adjustment: 1.3,
+            gas_prices: "0.0025uakt".to_string(),
+            sign_mode: "amino-json".to_string(),
+        };
+
+        let akash_client = crate::deploy::akash::AkashClient::new(akash_config)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to create Akash client: {}", e))?;
+
+        // Construct provider gRPC URI
+        // Providers typically expose gRPC on port 8443
+        let provider_grpc = if provider_selection.provider_address.starts_with("http") {
+            provider_selection.provider_address.clone()
+        } else {
+            // If just an address, construct the gRPC endpoint
+            format!("https://{}:8443", provider_selection.provider_address)
+        };
+
+        // Parse sequences from strings
+        let dseq = deployment
+            .deployment_sequence
+            .parse::<u64>()
+            .map_err(|e| anyhow::anyhow!("Invalid dseq: {}", e))?;
+        let gseq = deployment
+            .group_sequence
+            .parse::<u32>()
+            .map_err(|e| anyhow::anyhow!("Invalid gseq: {}", e))?;
+        let oseq = deployment
+            .order_sequence
+            .parse::<u32>()
+            .map_err(|e| anyhow::anyhow!("Invalid oseq: {}", e))?;
+
+        // Query endpoints from provider
+        match akash_client
+            .query_deployment_endpoints(
+                &provider_grpc,
+                &workflow.account_address,
+                dseq,
+                gseq,
+                oseq,
+            )
+            .await
+        {
+            Ok(endpoints) => {
+                tracing::info!("Successfully retrieved {} service endpoints", endpoints.len());
+                for (service, uri) in &endpoints {
+                    tracing::info!("  {} -> {}", service, uri);
+                }
+                // Store endpoints in workflow
+                workflow.endpoints = endpoints;
+                workflow.updated_at = Some(current_timestamp());
+                // Return EndpointTesting to proceed to testing step
+                Ok(AkashWorkflowStep::EndpointTesting)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to retrieve endpoints from provider: {}. Proceeding to endpoint testing anyway.",
+                    e
+                );
+                // Even if query fails, proceed to testing (endpoints might be set manually)
+                Ok(AkashWorkflowStep::EndpointTesting)
+            }
+        }
     }
 
     async fn execute_endpoint_testing(

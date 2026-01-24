@@ -4,6 +4,7 @@
 //! - Parsing SDL templates to detect variables
 //! - Variable substitution with validation
 //! - Creating ConfiguredSdl records for deployment
+//! - Querying SDL templates from CosmWasm contracts
 
 use anyhow::{anyhow, Result};
 use ho_std::types::ergors::orch::v1::{ConfiguredSdl, SdlVariable};
@@ -12,6 +13,13 @@ use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::time::SystemTime;
+
+#[cfg(feature = "cw")]
+use {
+    cnidarium::Storage,
+    cosmwasm_std,
+    ho_std::wasm::runtime::WasmRuntime,
+};
 
 /// Variable placeholder pattern: ${VAR_NAME} or ${VAR_NAME:default}
 const VAR_PATTERN: &str = r"\$\{([A-Z_][A-Z0-9_]*)(:[^}]*)?\}";
@@ -409,6 +417,190 @@ impl SdlTemplateManager {
         }
 
         defaults
+    }
+
+    /// Query SDL template from a CosmWasm contract
+    #[cfg(feature = "cw")]
+    pub async fn query_template_from_contract(
+        &self,
+        wasm_runtime: &WasmRuntime,
+        storage: &Storage,
+        contract_address: &str,
+    ) -> Result<(String, serde_json::Value)> {
+        
+
+        // Create QueryMsg::GetTemplate
+        let query_msg = serde_json::json!({
+            "get_template": {}
+        });
+
+        let query_bytes = serde_json::to_vec(&query_msg)?;
+
+        // Query the contract
+        let result = wasm_runtime
+            .query_contract(storage, contract_address.to_string(), query_bytes)
+            .await
+            .map_err(|e| anyhow!("Failed to query template contract: {}", e))?;
+
+        // Extract response from ContractResult
+        let response_binary = match result {
+            cosmwasm_std::ContractResult::Ok(binary) => binary,
+            cosmwasm_std::ContractResult::Err(err) => {
+                return Err(anyhow!("Contract query failed: {}", err));
+            }
+        };
+
+        // Parse TemplateResponse
+        let response: serde_json::Value = serde_json::from_slice(&response_binary)?;
+
+        let sdl_template = response["sdl_template"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing sdl_template in response"))?
+            .to_string();
+
+        let template_json = response["template_json"].clone();
+
+        Ok((sdl_template, template_json))
+    }
+
+    /// Query rendered SDL from contract with variable substitution
+    #[cfg(feature = "cw")]
+    pub async fn query_rendered_sdl_from_contract(
+        &self,
+        wasm_runtime: &WasmRuntime,
+        storage: &Storage,
+        contract_address: &str,
+        variables: Option<HashMap<String, String>>,
+    ) -> Result<(String, HashMap<String, String>)> {
+        
+
+        // Create QueryMsg::RenderSdl
+        let query_msg = serde_json::json!({
+            "render_sdl": {
+                "variables": variables
+            }
+        });
+
+        let query_bytes = serde_json::to_vec(&query_msg)?;
+
+        // Query the contract
+        let result = wasm_runtime
+            .query_contract(storage, contract_address.to_string(), query_bytes)
+            .await
+            .map_err(|e| anyhow!("Failed to query contract: {}", e))?;
+
+        // Extract response from ContractResult
+        let response_binary = match result {
+            cosmwasm_std::ContractResult::Ok(binary) => binary,
+            cosmwasm_std::ContractResult::Err(err) => {
+                return Err(anyhow!("Contract query failed: {}", err));
+            }
+        };
+
+        // Parse RenderedSdlResponse
+        let response: serde_json::Value = serde_json::from_slice(&response_binary)?;
+
+        let rendered_sdl = response["rendered_sdl"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing rendered_sdl in response"))?
+            .to_string();
+
+        let used_variables: HashMap<String, String> = serde_json::from_value(
+            response["used_variables"].clone()
+        ).unwrap_or_default();
+
+        Ok((rendered_sdl, used_variables))
+    }
+
+    /// Query variable defaults from contract
+    #[cfg(feature = "cw")]
+    pub async fn query_defaults_from_contract(
+        &self,
+        wasm_runtime: &WasmRuntime,
+        storage: &Storage,
+        contract_address: &str,
+    ) -> Result<HashMap<String, String>> {
+        
+
+        // Create QueryMsg::GetDefaults
+        let query_msg = serde_json::json!({
+            "get_defaults": {}
+        });
+
+        let query_bytes = serde_json::to_vec(&query_msg)?;
+
+        // Query the contract
+        let result = wasm_runtime
+            .query_contract(storage, contract_address.to_string(), query_bytes)
+            .await
+            .map_err(|e| anyhow!("Failed to query contract: {}", e))?;
+
+        // Extract response from ContractResult
+        let response_binary = match result {
+            cosmwasm_std::ContractResult::Ok(binary) => binary,
+            cosmwasm_std::ContractResult::Err(err) => {
+                return Err(anyhow!("Contract query failed: {}", err));
+            }
+        };
+
+        // Parse DefaultsResponse
+        let response: serde_json::Value = serde_json::from_slice(&response_binary)?;
+
+        let defaults: HashMap<String, String> = serde_json::from_value(
+            response["defaults"].clone()
+        ).map_err(|e| anyhow!("Failed to parse defaults: {}", e))?;
+
+        Ok(defaults)
+    }
+
+    /// Configure SDL from contract-sourced template
+    #[cfg(feature = "cw")]
+    pub async fn configure_sdl_from_contract(
+        &self,
+        wasm_runtime: &WasmRuntime,
+        storage: &Storage,
+        contract_address: &str,
+        template_name: &str,
+        user_values: &HashMap<String, String>,
+    ) -> Result<ConfiguredSdl> {
+        // Query defaults from contract
+        let defaults = self
+            .query_defaults_from_contract(wasm_runtime, storage, contract_address)
+            .await?;
+
+        // Merge user values with defaults
+        let final_values = merge_with_defaults(user_values, &defaults);
+
+        // Query rendered SDL from contract
+        let (rendered_sdl, used_variables) = self
+            .query_rendered_sdl_from_contract(
+                wasm_runtime,
+                storage,
+                contract_address,
+                Some(final_values.clone()),
+            )
+            .await?;
+
+        // Compute content hash
+        let mut hasher = Sha256::new();
+        hasher.update(rendered_sdl.as_bytes());
+        let content_hash = hasher.finalize().to_vec();
+
+        // Create timestamp
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+
+        Ok(ConfiguredSdl {
+            template_name: template_name.to_string(),
+            resolved_content: rendered_sdl,
+            variable_values: used_variables,
+            content_hash,
+            configured_at: Some(Timestamp {
+                seconds: now.as_secs() as i64,
+                nanos: now.subsec_nanos() as i32,
+            }),
+        })
     }
 }
 

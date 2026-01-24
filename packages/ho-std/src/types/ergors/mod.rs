@@ -167,6 +167,7 @@ pub mod sct {
         include!("gen/ergors.sct.v1.rs");
     }
 }
+
 pub mod tct {
     pub mod v1 {
         include!("gen/ergors.tct.v1.rs");

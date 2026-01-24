@@ -2458,6 +2458,549 @@ impl ::prost::Name for CancelAkashDeploymentRequest {
         "/ergors.management.v1.CancelAkashDeploymentRequest".into()
     }
 }
+/// Set workflow endpoints request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetWorkflowEndpointsRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// Map of service name -> endpoint URI (e.g., "mock-inference" -> "<http://host:port">)
+    #[prost(map = "string, string", tag = "2")]
+    pub endpoints: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for SetWorkflowEndpointsRequest {
+    const NAME: &'static str = "SetWorkflowEndpointsRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SetWorkflowEndpointsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SetWorkflowEndpointsRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetWorkflowEndpointsResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(message, optional, tag = "2")]
+    pub workflow: ::core::option::Option<
+        super::super::orch::v1::AkashDeploymentWorkflow,
+    >,
+    #[prost(string, tag = "3")]
+    pub error_message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SetWorkflowEndpointsResponse {
+    const NAME: &'static str = "SetWorkflowEndpointsResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SetWorkflowEndpointsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SetWorkflowEndpointsResponse".into()
+    }
+}
+/// Configure proxy routes request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConfigureProxyRoutesRequest {
+    /// Override base URL for OpenAI API requests
+    #[prost(string, tag = "1")]
+    pub openai_base_url: ::prost::alloc::string::String,
+    /// Override base URL for Anthropic API requests
+    #[prost(string, tag = "2")]
+    pub anthropic_base_url: ::prost::alloc::string::String,
+    /// Override base URL for Ollama API requests
+    #[prost(string, tag = "3")]
+    pub ollama_base_url: ::prost::alloc::string::String,
+    /// Model-specific routing rules (glob patterns -> URLs)
+    #[prost(map = "string, string", tag = "4")]
+    pub model_routes: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for ConfigureProxyRoutesRequest {
+    const NAME: &'static str = "ConfigureProxyRoutesRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ConfigureProxyRoutesRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ConfigureProxyRoutesRequest".into()
+    }
+}
+/// Request grant from another node (coordinator)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RequestGrantRequest {
+    /// Address of the granter (coordinator that will provide funds/permissions)
+    #[prost(string, tag = "1")]
+    pub granter_address: ::prost::alloc::string::String,
+    /// Address of the grantee (executor requesting permissions)
+    #[prost(string, tag = "2")]
+    pub grantee_address: ::prost::alloc::string::String,
+    /// Message types to grant authorization for (e.g., "/akash.deployment.v1beta3.MsgCreateDeployment")
+    #[prost(string, repeated, tag = "3")]
+    pub msg_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Feegrant allowance amount in uakt (0 = no feegrant, only authz)
+    #[prost(uint64, tag = "4")]
+    pub allowance_amount: u64,
+    /// Grant expiration timestamp (optional)
+    #[prost(message, optional, tag = "5")]
+    pub expiration: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Reason for grant request
+    #[prost(string, tag = "6")]
+    pub reason: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RequestGrantRequest {
+    const NAME: &'static str = "RequestGrantRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RequestGrantRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RequestGrantRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RequestGrantResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    /// Unique request ID for tracking approval status
+    #[prost(string, tag = "3")]
+    pub request_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RequestGrantResponse {
+    const NAME: &'static str = "RequestGrantResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RequestGrantResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RequestGrantResponse".into()
+    }
+}
+/// Approve pending grant request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ApproveGrantRequest {
+    /// Request ID from RequestGrantResponse
+    #[prost(string, tag = "1")]
+    pub request_id: ::prost::alloc::string::String,
+    /// Whether to approve (true) or reject (false)
+    #[prost(bool, tag = "2")]
+    pub approve: bool,
+    /// Optional reason for decision
+    #[prost(string, tag = "3")]
+    pub reason: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ApproveGrantRequest {
+    const NAME: &'static str = "ApproveGrantRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ApproveGrantRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ApproveGrantRequest".into()
+    }
+}
+/// Revoke an existing grant
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RevokeGrantRequest {
+    /// Address of the granter
+    #[prost(string, tag = "1")]
+    pub granter_address: ::prost::alloc::string::String,
+    /// Address of the grantee
+    #[prost(string, tag = "2")]
+    pub grantee_address: ::prost::alloc::string::String,
+    /// Message type to revoke (empty = revoke all)
+    #[prost(string, tag = "3")]
+    pub msg_type: ::prost::alloc::string::String,
+    /// Whether to also revoke feegrant
+    #[prost(bool, tag = "4")]
+    pub revoke_feegrant: bool,
+}
+impl ::prost::Name for RevokeGrantRequest {
+    const NAME: &'static str = "RevokeGrantRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RevokeGrantRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RevokeGrantRequest".into()
+    }
+}
+/// List pending grant requests
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListGrantRequestsRequest {
+    /// Filter by granter address (optional)
+    #[prost(string, tag = "1")]
+    pub granter_address: ::prost::alloc::string::String,
+    /// Filter by grantee address (optional)
+    #[prost(string, tag = "2")]
+    pub grantee_address: ::prost::alloc::string::String,
+    /// Filter by status (pending, approved, rejected)
+    #[prost(string, tag = "3")]
+    pub status: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ListGrantRequestsRequest {
+    const NAME: &'static str = "ListGrantRequestsRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListGrantRequestsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListGrantRequestsRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListGrantRequestsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub requests: ::prost::alloc::vec::Vec<GrantRequest>,
+}
+impl ::prost::Name for ListGrantRequestsResponse {
+    const NAME: &'static str = "ListGrantRequestsResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListGrantRequestsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListGrantRequestsResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GrantRequest {
+    #[prost(string, tag = "1")]
+    pub request_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub granter_address: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub grantee_address: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "4")]
+    pub msg_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "5")]
+    pub allowance_amount: u64,
+    #[prost(message, optional, tag = "6")]
+    pub expiration: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(string, tag = "7")]
+    pub reason: ::prost::alloc::string::String,
+    /// pending, approved, rejected
+    #[prost(string, tag = "8")]
+    pub status: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "9")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for GrantRequest {
+    const NAME: &'static str = "GrantRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GrantRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GrantRequest".into()
+    }
+}
+/// Create feegrant allowance
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateFeeGrantRequest {
+    /// Address of the granter (who pays fees)
+    #[prost(string, tag = "1")]
+    pub granter_address: ::prost::alloc::string::String,
+    /// Address of the grantee (who can use the allowance)
+    #[prost(string, tag = "2")]
+    pub grantee_address: ::prost::alloc::string::String,
+    /// Allowance amount in uakt
+    #[prost(uint64, tag = "3")]
+    pub allowance_amount: u64,
+    /// Grant expiration timestamp (optional)
+    #[prost(message, optional, tag = "4")]
+    pub expiration: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for CreateFeeGrantRequest {
+    const NAME: &'static str = "CreateFeeGrantRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.CreateFeeGrantRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.CreateFeeGrantRequest".into()
+    }
+}
+/// Revoke feegrant allowance
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RevokeFeeGrantRequest {
+    /// Address of the granter
+    #[prost(string, tag = "1")]
+    pub granter_address: ::prost::alloc::string::String,
+    /// Address of the grantee
+    #[prost(string, tag = "2")]
+    pub grantee_address: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RevokeFeeGrantRequest {
+    const NAME: &'static str = "RevokeFeeGrantRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RevokeFeeGrantRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RevokeFeeGrantRequest".into()
+    }
+}
+/// Query account balance
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QueryBalanceRequest {
+    /// Account address to query
+    #[prost(string, tag = "1")]
+    pub address: ::prost::alloc::string::String,
+    /// Denom to query (default: uakt)
+    #[prost(string, tag = "2")]
+    pub denom: ::prost::alloc::string::String,
+}
+impl ::prost::Name for QueryBalanceRequest {
+    const NAME: &'static str = "QueryBalanceRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.QueryBalanceRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.QueryBalanceRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QueryBalanceResponse {
+    /// Account address
+    #[prost(string, tag = "1")]
+    pub address: ::prost::alloc::string::String,
+    /// Denom
+    #[prost(string, tag = "2")]
+    pub denom: ::prost::alloc::string::String,
+    /// Balance amount
+    #[prost(string, tag = "3")]
+    pub amount: ::prost::alloc::string::String,
+}
+impl ::prost::Name for QueryBalanceResponse {
+    const NAME: &'static str = "QueryBalanceResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.QueryBalanceResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.QueryBalanceResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListSdlTemplatesRequest {}
+impl ::prost::Name for ListSdlTemplatesRequest {
+    const NAME: &'static str = "ListSdlTemplatesRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListSdlTemplatesRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListSdlTemplatesRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SdlTemplateInfo {
+    #[prost(string, tag = "1")]
+    pub contract_address: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "2")]
+    pub label: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "3")]
+    pub code_id: u64,
+}
+impl ::prost::Name for SdlTemplateInfo {
+    const NAME: &'static str = "SdlTemplateInfo";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SdlTemplateInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SdlTemplateInfo".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListSdlTemplatesResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub templates: ::prost::alloc::vec::Vec<SdlTemplateInfo>,
+}
+impl ::prost::Name for ListSdlTemplatesResponse {
+    const NAME: &'static str = "ListSdlTemplatesResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListSdlTemplatesResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListSdlTemplatesResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetSdlTemplateRequest {
+    #[prost(string, tag = "1")]
+    pub contract_address: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GetSdlTemplateRequest {
+    const NAME: &'static str = "GetSdlTemplateRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetSdlTemplateRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetSdlTemplateRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetSdlTemplateResponse {
+    #[prost(string, tag = "1")]
+    pub sdl_template: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub template_json: ::core::option::Option<::pbjson_types::Struct>,
+}
+impl ::prost::Name for GetSdlTemplateResponse {
+    const NAME: &'static str = "GetSdlTemplateResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetSdlTemplateResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetSdlTemplateResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetSdlDefaultsRequest {
+    #[prost(string, tag = "1")]
+    pub contract_address: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GetSdlDefaultsRequest {
+    const NAME: &'static str = "GetSdlDefaultsRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetSdlDefaultsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetSdlDefaultsRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetSdlDefaultsResponse {
+    #[prost(map = "string, string", tag = "1")]
+    pub defaults: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for GetSdlDefaultsResponse {
+    const NAME: &'static str = "GetSdlDefaultsResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetSdlDefaultsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetSdlDefaultsResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RenderSdlTemplateRequest {
+    #[prost(string, tag = "1")]
+    pub contract_address: ::prost::alloc::string::String,
+    #[prost(map = "string, string", tag = "2")]
+    pub variables: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for RenderSdlTemplateRequest {
+    const NAME: &'static str = "RenderSdlTemplateRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RenderSdlTemplateRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RenderSdlTemplateRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RenderSdlTemplateResponse {
+    #[prost(string, tag = "1")]
+    pub rendered_sdl: ::prost::alloc::string::String,
+    #[prost(map = "string, string", tag = "2")]
+    pub used_variables: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for RenderSdlTemplateResponse {
+    const NAME: &'static str = "RenderSdlTemplateResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RenderSdlTemplateResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RenderSdlTemplateResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterSdlTemplateRequest {
+    #[prost(string, tag = "1")]
+    pub contract_address: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "2")]
+    pub label: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "3")]
+    pub code_id: u64,
+}
+impl ::prost::Name for RegisterSdlTemplateRequest {
+    const NAME: &'static str = "RegisterSdlTemplateRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RegisterSdlTemplateRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RegisterSdlTemplateRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterSdlTemplateResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RegisterSdlTemplateResponse {
+    const NAME: &'static str = "RegisterSdlTemplateResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RegisterSdlTemplateResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RegisterSdlTemplateResponse".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -4518,6 +5061,426 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Set discovered endpoints for a deployment workflow
+        pub async fn set_workflow_endpoints(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetWorkflowEndpointsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetWorkflowEndpointsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/SetWorkflowEndpoints",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "SetWorkflowEndpoints",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Configure proxy routing dynamically
+        pub async fn configure_proxy_routes(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ConfigureProxyRoutesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ConfigureProxyRoutes",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ConfigureProxyRoutes",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Request authz grant from coordinator
+        pub async fn request_grant(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RequestGrantRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RequestGrantResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RequestGrant",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RequestGrant",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Approve pending grant request
+        pub async fn approve_grant(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ApproveGrantRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ApproveGrant",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ApproveGrant",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Revoke an existing grant
+        pub async fn revoke_grant(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RevokeGrantRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RevokeGrant",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RevokeGrant",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List pending grant requests
+        pub async fn list_grant_requests(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListGrantRequestsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListGrantRequestsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListGrantRequests",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListGrantRequests",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Create feegrant allowance
+        pub async fn create_fee_grant(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateFeeGrantRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/CreateFeeGrant",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "CreateFeeGrant",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Revoke feegrant allowance
+        pub async fn revoke_fee_grant(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RevokeFeeGrantRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RevokeFeeGrant",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RevokeFeeGrant",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Query account balances
+        pub async fn query_balance(
+            &mut self,
+            request: impl tonic::IntoRequest<super::QueryBalanceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::QueryBalanceResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/QueryBalance",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "QueryBalance",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List deployed SDL template contracts
+        pub async fn list_sdl_templates(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListSdlTemplatesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSdlTemplatesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListSdlTemplates",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListSdlTemplates",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Register an SDL template contract
+        pub async fn register_sdl_template(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RegisterSdlTemplateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RegisterSdlTemplateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RegisterSdlTemplate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RegisterSdlTemplate",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get SDL template from contract
+        pub async fn get_sdl_template(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetSdlTemplateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetSdlTemplateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/GetSdlTemplate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "GetSdlTemplate",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get variable defaults from contract
+        pub async fn get_sdl_defaults(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetSdlDefaultsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetSdlDefaultsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/GetSdlDefaults",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "GetSdlDefaults",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Render SDL template with variables
+        pub async fn render_sdl_template(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RenderSdlTemplateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RenderSdlTemplateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RenderSdlTemplate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RenderSdlTemplate",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -4896,6 +5859,103 @@ pub mod management_service_server {
             &self,
             request: tonic::Request<super::CancelAkashDeploymentRequest>,
         ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Set discovered endpoints for a deployment workflow
+        async fn set_workflow_endpoints(
+            &self,
+            request: tonic::Request<super::SetWorkflowEndpointsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetWorkflowEndpointsResponse>,
+            tonic::Status,
+        >;
+        /// Configure proxy routing dynamically
+        async fn configure_proxy_routes(
+            &self,
+            request: tonic::Request<super::ConfigureProxyRoutesRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Request authz grant from coordinator
+        async fn request_grant(
+            &self,
+            request: tonic::Request<super::RequestGrantRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RequestGrantResponse>,
+            tonic::Status,
+        >;
+        /// Approve pending grant request
+        async fn approve_grant(
+            &self,
+            request: tonic::Request<super::ApproveGrantRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Revoke an existing grant
+        async fn revoke_grant(
+            &self,
+            request: tonic::Request<super::RevokeGrantRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// List pending grant requests
+        async fn list_grant_requests(
+            &self,
+            request: tonic::Request<super::ListGrantRequestsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListGrantRequestsResponse>,
+            tonic::Status,
+        >;
+        /// Create feegrant allowance
+        async fn create_fee_grant(
+            &self,
+            request: tonic::Request<super::CreateFeeGrantRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Revoke feegrant allowance
+        async fn revoke_fee_grant(
+            &self,
+            request: tonic::Request<super::RevokeFeeGrantRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Query account balances
+        async fn query_balance(
+            &self,
+            request: tonic::Request<super::QueryBalanceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::QueryBalanceResponse>,
+            tonic::Status,
+        >;
+        /// List deployed SDL template contracts
+        async fn list_sdl_templates(
+            &self,
+            request: tonic::Request<super::ListSdlTemplatesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSdlTemplatesResponse>,
+            tonic::Status,
+        >;
+        /// Register an SDL template contract
+        async fn register_sdl_template(
+            &self,
+            request: tonic::Request<super::RegisterSdlTemplateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RegisterSdlTemplateResponse>,
+            tonic::Status,
+        >;
+        /// Get SDL template from contract
+        async fn get_sdl_template(
+            &self,
+            request: tonic::Request<super::GetSdlTemplateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetSdlTemplateResponse>,
+            tonic::Status,
+        >;
+        /// Get variable defaults from contract
+        async fn get_sdl_defaults(
+            &self,
+            request: tonic::Request<super::GetSdlDefaultsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetSdlDefaultsResponse>,
+            tonic::Status,
+        >;
+        /// Render SDL template with variables
+        async fn render_sdl_template(
+            &self,
+            request: tonic::Request<super::RenderSdlTemplateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RenderSdlTemplateResponse>,
+            tonic::Status,
+        >;
     }
     /// Minimal management service for CLI-to-engine communication
     /// Reuses types from network.proto where possible
@@ -7490,6 +8550,668 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = CancelAkashDeploymentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/SetWorkflowEndpoints" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetWorkflowEndpointsSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::SetWorkflowEndpointsRequest>
+                    for SetWorkflowEndpointsSvc<T> {
+                        type Response = super::SetWorkflowEndpointsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetWorkflowEndpointsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::set_workflow_endpoints(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetWorkflowEndpointsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ConfigureProxyRoutes" => {
+                    #[allow(non_camel_case_types)]
+                    struct ConfigureProxyRoutesSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ConfigureProxyRoutesRequest>
+                    for ConfigureProxyRoutesSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ConfigureProxyRoutesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::configure_proxy_routes(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ConfigureProxyRoutesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RequestGrant" => {
+                    #[allow(non_camel_case_types)]
+                    struct RequestGrantSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RequestGrantRequest>
+                    for RequestGrantSvc<T> {
+                        type Response = super::RequestGrantResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RequestGrantRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::request_grant(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RequestGrantSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ApproveGrant" => {
+                    #[allow(non_camel_case_types)]
+                    struct ApproveGrantSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ApproveGrantRequest>
+                    for ApproveGrantSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ApproveGrantRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::approve_grant(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ApproveGrantSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RevokeGrant" => {
+                    #[allow(non_camel_case_types)]
+                    struct RevokeGrantSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RevokeGrantRequest>
+                    for RevokeGrantSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RevokeGrantRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::revoke_grant(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RevokeGrantSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListGrantRequests" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListGrantRequestsSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ListGrantRequestsRequest>
+                    for ListGrantRequestsSvc<T> {
+                        type Response = super::ListGrantRequestsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListGrantRequestsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_grant_requests(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListGrantRequestsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/CreateFeeGrant" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateFeeGrantSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::CreateFeeGrantRequest>
+                    for CreateFeeGrantSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateFeeGrantRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::create_fee_grant(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CreateFeeGrantSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RevokeFeeGrant" => {
+                    #[allow(non_camel_case_types)]
+                    struct RevokeFeeGrantSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RevokeFeeGrantRequest>
+                    for RevokeFeeGrantSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RevokeFeeGrantRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::revoke_fee_grant(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RevokeFeeGrantSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/QueryBalance" => {
+                    #[allow(non_camel_case_types)]
+                    struct QueryBalanceSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::QueryBalanceRequest>
+                    for QueryBalanceSvc<T> {
+                        type Response = super::QueryBalanceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::QueryBalanceRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::query_balance(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = QueryBalanceSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListSdlTemplates" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListSdlTemplatesSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ListSdlTemplatesRequest>
+                    for ListSdlTemplatesSvc<T> {
+                        type Response = super::ListSdlTemplatesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListSdlTemplatesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_sdl_templates(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListSdlTemplatesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RegisterSdlTemplate" => {
+                    #[allow(non_camel_case_types)]
+                    struct RegisterSdlTemplateSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RegisterSdlTemplateRequest>
+                    for RegisterSdlTemplateSvc<T> {
+                        type Response = super::RegisterSdlTemplateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RegisterSdlTemplateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::register_sdl_template(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RegisterSdlTemplateSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/GetSdlTemplate" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetSdlTemplateSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::GetSdlTemplateRequest>
+                    for GetSdlTemplateSvc<T> {
+                        type Response = super::GetSdlTemplateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetSdlTemplateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::get_sdl_template(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetSdlTemplateSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/GetSdlDefaults" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetSdlDefaultsSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::GetSdlDefaultsRequest>
+                    for GetSdlDefaultsSvc<T> {
+                        type Response = super::GetSdlDefaultsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetSdlDefaultsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::get_sdl_defaults(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetSdlDefaultsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RenderSdlTemplate" => {
+                    #[allow(non_camel_case_types)]
+                    struct RenderSdlTemplateSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RenderSdlTemplateRequest>
+                    for RenderSdlTemplateSvc<T> {
+                        type Response = super::RenderSdlTemplateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RenderSdlTemplateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::render_sdl_template(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RenderSdlTemplateSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

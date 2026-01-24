@@ -7,6 +7,7 @@ mod workspace;
 
 use anyhow::Result;
 use clap::Subcommand;
+use std::collections::HashMap;
 
 use crate::client::{
     format_engine_state, format_uptime, ManagementClient, NodeTypeProto as NodeType,
@@ -557,4 +558,113 @@ impl ProviderCmd {
             }
         }
     }
+}
+
+// ============ SDL Template Commands ============
+
+#[derive(Subcommand)]
+pub enum SdlCmd {
+    /// List deployed SDL template contracts
+    List,
+    /// Get SDL template from contract
+    GetTemplate {
+        /// Contract address
+        contract_address: String,
+    },
+    /// Get variable defaults from contract
+    GetDefaults {
+        /// Contract address
+        contract_address: String,
+    },
+    /// Render SDL template with variables
+    Render {
+        /// Contract address
+        contract_address: String,
+        /// Variable values (key=value pairs)
+        #[arg(short = 'v', long = "var", value_parser = parse_key_val)]
+        vars: Vec<(String, String)>,
+    },
+}
+
+impl SdlCmd {
+    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+        match self {
+            SdlCmd::List => {
+                // Query list of SDL template contracts from engine
+                let list = client.list_sdl_templates().await?;
+
+                if cli.json {
+                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+                        "templates": list.templates,
+                    }))?);
+                } else {
+                    println!("SDL Template Contracts");
+                    println!("======================");
+                    for template in &list.templates {
+                        println!("  {} - {}", template.contract_address, template.label.as_ref().unwrap_or(&"(no label)".to_string()));
+                    }
+                }
+                Ok(())
+            }
+            SdlCmd::GetTemplate { contract_address } => {
+                let template = client.get_sdl_template(contract_address).await?;
+
+                if cli.json {
+                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+                        "sdl_template": template.sdl_template,
+                        "template_json": template.template_json,
+                    }))?);
+                } else {
+                    println!("SDL Template from {}", contract_address);
+                    println!("==========================================");
+                    println!("{}", template.sdl_template);
+                }
+                Ok(())
+            }
+            SdlCmd::GetDefaults { contract_address } => {
+                let defaults = client.get_sdl_defaults(contract_address).await?;
+
+                if cli.json {
+                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+                        "defaults": defaults.defaults,
+                    }))?);
+                } else {
+                    println!("Variable Defaults from {}", contract_address);
+                    println!("==========================================");
+                    for (key, value) in &defaults.defaults {
+                        println!("  {} = {}", key, value);
+                    }
+                }
+                Ok(())
+            }
+            SdlCmd::Render { contract_address, vars } => {
+                let variables: HashMap<String, String> = vars.iter().cloned().collect();
+                let rendered = client.render_sdl_template(contract_address, variables).await?;
+
+                if cli.json {
+                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+                        "rendered_sdl": rendered.rendered_sdl,
+                        "used_variables": rendered.used_variables,
+                    }))?);
+                } else {
+                    println!("Rendered SDL from {}", contract_address);
+                    println!("==========================================");
+                    println!("{}", rendered.rendered_sdl);
+                    println!("\nUsed Variables:");
+                    for (key, value) in &rendered.used_variables {
+                        println!("  {} = {}", key, value);
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Parse a single key-value pair
+fn parse_key_val(s: &str) -> Result<(String, String), String> {
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid KEY=value: no `=` found in `{s}`"))?;
+    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
 }

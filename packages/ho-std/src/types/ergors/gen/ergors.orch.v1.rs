@@ -2627,6 +2627,12 @@ pub struct EncryptedCosmosMnemonic {
     pub last_used_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(uint32, tag = "12")]
     pub version: u32,
+    /// Human-readable label for this key (e.g. "my-akash-deployer")
+    #[prost(string, tag = "13")]
+    pub label: ::prost::alloc::string::String,
+    /// Whether this is the default funding key for deployments
+    #[prost(bool, tag = "14")]
+    pub is_default: bool,
 }
 impl ::prost::Name for EncryptedCosmosMnemonic {
     const NAME: &'static str = "EncryptedCosmosMnemonic";
@@ -2675,6 +2681,9 @@ pub struct CosmosKeyStore {
     pub derived_accounts: ::prost::alloc::vec::Vec<CosmosAccount>,
     #[prost(message, optional, tag = "4")]
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Name of the default key for auto-selection during deployments
+    #[prost(string, tag = "5")]
+    pub default_key_name: ::prost::alloc::string::String,
 }
 impl ::prost::Name for CosmosKeyStore {
     const NAME: &'static str = "CosmosKeyStore";
@@ -2723,6 +2732,60 @@ impl ::prost::Name for AkashDeployConfig {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.AkashDeployConfig".into()
+    }
+}
+/// Configuration for dynamic LLM proxy routing
+/// Stored in cnidarium for deterministic, immutable logging of endpoint changes
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProxyRouterConfig {
+    /// Override base URL for Anthropic API requests
+    #[prost(string, tag = "1")]
+    pub anthropic_base_url: ::prost::alloc::string::String,
+    /// Override base URL for OpenAI API requests
+    #[prost(string, tag = "2")]
+    pub openai_base_url: ::prost::alloc::string::String,
+    /// Override base URL for Ollama API requests
+    #[prost(string, tag = "3")]
+    pub ollama_base_url: ::prost::alloc::string::String,
+    /// Model-specific routing rules (glob patterns -> URLs)
+    /// e.g., "claude-*" -> "<https://api.anthropic.com">
+    /// e.g., "llama-*" -> "<http://localhost:11434">
+    #[prost(map = "string, string", tag = "4")]
+    pub model_routes: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    /// API key overrides per upstream URL
+    #[prost(map = "string, string", tag = "5")]
+    pub api_keys: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    /// Default API keys by provider type
+    #[prost(map = "string, string", tag = "6")]
+    pub provider_api_keys: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    /// Timestamp when this config was set/updated
+    #[prost(message, optional, tag = "7")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Version number for this configuration (increments on each update)
+    #[prost(uint64, tag = "8")]
+    pub version: u64,
+    /// Optional description/reason for this configuration change
+    #[prost(string, tag = "9")]
+    pub change_reason: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ProxyRouterConfig {
+    const NAME: &'static str = "ProxyRouterConfig";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ProxyRouterConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ProxyRouterConfig".into()
     }
 }
 /// Authz grant tracking for workflow permissions

@@ -122,6 +122,18 @@ impl EncryptedCosmosKeyManager {
         chain_id: &str,
         address_prefix: &str,
     ) -> Result<(EncryptedCosmosMnemonic, CosmosAccountInfo)> {
+        self.generate_key_with_label(key_name, chain_id, address_prefix, "", false)
+    }
+
+    /// Generate a new cosmos key with label and default designation
+    pub fn generate_key_with_label(
+        &mut self,
+        key_name: &str,
+        chain_id: &str,
+        address_prefix: &str,
+        label: &str,
+        is_default: bool,
+    ) -> Result<(EncryptedCosmosMnemonic, CosmosAccountInfo)> {
         let _key = self
             .derived_key
             .as_ref()
@@ -133,7 +145,9 @@ impl EncryptedCosmosKeyManager {
         let account_info = CosmosAccountInfo::from_keypair(&keypair, key_name, address_prefix)?;
 
         // Encrypt the mnemonic
-        let encrypted = self.encrypt_mnemonic(key_name, mnemonic.phrase(), chain_id, address_prefix)?;
+        let mut encrypted = self.encrypt_mnemonic(key_name, mnemonic.phrase(), chain_id, address_prefix)?;
+        encrypted.label = label.to_string();
+        encrypted.is_default = is_default;
 
         // Cache the mnemonic
         self.mnemonic_cache
@@ -150,6 +164,19 @@ impl EncryptedCosmosKeyManager {
         chain_id: &str,
         address_prefix: &str,
     ) -> Result<(EncryptedCosmosMnemonic, CosmosAccountInfo)> {
+        self.import_mnemonic_with_label(key_name, phrase, chain_id, address_prefix, "", false)
+    }
+
+    /// Import an existing mnemonic with a label and default designation
+    pub fn import_mnemonic_with_label(
+        &mut self,
+        key_name: &str,
+        phrase: &str,
+        chain_id: &str,
+        address_prefix: &str,
+        label: &str,
+        is_default: bool,
+    ) -> Result<(EncryptedCosmosMnemonic, CosmosAccountInfo)> {
         let _key = self
             .derived_key
             .as_ref()
@@ -161,7 +188,9 @@ impl EncryptedCosmosKeyManager {
         let account_info = CosmosAccountInfo::from_keypair(&keypair, key_name, address_prefix)?;
 
         // Encrypt the mnemonic
-        let encrypted = self.encrypt_mnemonic(key_name, phrase, chain_id, address_prefix)?;
+        let mut encrypted = self.encrypt_mnemonic(key_name, phrase, chain_id, address_prefix)?;
+        encrypted.label = label.to_string();
+        encrypted.is_default = is_default;
 
         // Cache the mnemonic
         self.mnemonic_cache
@@ -222,6 +251,8 @@ impl EncryptedCosmosKeyManager {
             created_at: timestamp,
             last_used_at: timestamp,
             version: STORE_VERSION,
+            label: String::new(),
+            is_default: false,
         })
     }
 
@@ -284,6 +315,7 @@ impl EncryptedCosmosKeyManager {
                 seconds: now.as_secs() as i64,
                 nanos: now.subsec_nanos() as i32,
             }),
+            default_key_name: String::new(),
         }
     }
 
@@ -294,8 +326,19 @@ impl EncryptedCosmosKeyManager {
         encrypted_key: EncryptedCosmosMnemonic,
         account_info: CosmosAccountInfo,
     ) {
+        let is_default = encrypted_key.is_default;
+        let key_name = encrypted_key.key_name.clone();
+
+        // If this key is marked as default, unmark all others
+        if is_default {
+            for k in store.keys.iter_mut() {
+                k.is_default = false;
+            }
+            store.default_key_name = key_name.clone();
+        }
+
         // Remove existing key with same name
-        store.keys.retain(|k| k.key_name != encrypted_key.key_name);
+        store.keys.retain(|k| k.key_name != key_name);
         store.keys.push(encrypted_key);
 
         // Add derived account info
@@ -318,6 +361,69 @@ impl EncryptedCosmosKeyManager {
             seconds: now.as_secs() as i64,
             nanos: now.subsec_nanos() as i32,
         });
+    }
+
+    /// Set a key as the default in the store, unmarking any previous default
+    pub fn set_default_key(store: &mut CosmosKeyStore, key_name: &str) -> Result<()> {
+        let key_exists = store.keys.iter().any(|k| k.key_name == key_name);
+        if !key_exists {
+            return Err(anyhow!("Key '{}' not found in store", key_name));
+        }
+
+        for k in store.keys.iter_mut() {
+            k.is_default = k.key_name == key_name;
+        }
+        store.default_key_name = key_name.to_string();
+        Ok(())
+    }
+
+    /// Get the default key name from the store
+    pub fn get_default_key_name(store: &CosmosKeyStore) -> Option<&str> {
+        if !store.default_key_name.is_empty() {
+            return Some(&store.default_key_name);
+        }
+        // Fallback: check is_default flag on individual keys
+        store.keys.iter()
+            .find(|k| k.is_default)
+            .map(|k| k.key_name.as_str())
+    }
+
+    /// Get the default key from the store
+    pub fn get_default_key(store: &CosmosKeyStore) -> Option<&EncryptedCosmosMnemonic> {
+        if !store.default_key_name.is_empty() {
+            return store.keys.iter().find(|k| k.key_name == store.default_key_name);
+        }
+        store.keys.iter().find(|k| k.is_default)
+    }
+
+    /// Check if an address already exists in the store (duplicate detection)
+    pub fn address_exists(store: &CosmosKeyStore, address: &str) -> bool {
+        store.derived_accounts.iter().any(|a| a.address == address)
+    }
+
+    /// Delete a key from the store by name
+    pub fn delete_key(store: &mut CosmosKeyStore, key_name: &str) -> Result<()> {
+        let key_exists = store.keys.iter().any(|k| k.key_name == key_name);
+        if !key_exists {
+            return Err(anyhow!("Key '{}' not found in store", key_name));
+        }
+
+        store.keys.retain(|k| k.key_name != key_name);
+        store.derived_accounts.retain(|a| a.key_name != key_name);
+
+        // Clear default if we just deleted the default key
+        if store.default_key_name == key_name {
+            store.default_key_name = String::new();
+        }
+
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        store.updated_at = Some(Timestamp {
+            seconds: now.as_secs() as i64,
+            nanos: now.subsec_nanos() as i32,
+        });
+        Ok(())
     }
 
     /// Serialize store to bytes (for Cnidarium storage)

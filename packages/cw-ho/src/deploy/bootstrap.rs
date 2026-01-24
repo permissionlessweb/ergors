@@ -16,6 +16,7 @@ pub async fn handle_bootstrap(
     let _id = uuid::Uuid::new_v4();
 
     // TODO: handle bootstrap via method:
+// clone and transport all binaries (ergors nengine node binary, any smart contract binaries) to envrioment. configure config files via calling binary commands from node thought connection
     // /ergors.network.v1.bootstrap.types: (transport connections for nodes,bootstrapping types used in functions for traits )
     // Create persistent SSH connection manager
     // info!("🚀 Starting bootstrap process for node: {}", target_node);

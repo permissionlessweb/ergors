@@ -27,6 +27,8 @@ const AKASH_WORKFLOW_PREFIX: &str = "akash_workflows/";
 // const HEADSTASH: &str = "headstash/";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions/";
 const PROXY_CLIENT_INDEX_PREFIX: &str = "proxy_sessions_by_client/";
+const PROXY_ROUTER_CONFIG_PREFIX: &str = "proxy_router_config/";
+const PROXY_ROUTER_CONFIG_KEY: &str = "proxy_router_config/current";
 
 // Git Workspace Storage Prefixes
 pub const WORKSPACE_PREFIX: &str = "workspaces/";
@@ -52,6 +54,9 @@ const OPEN_RESPONSE_PREFIX: &str = "open_responses/";
 // Custom Authenticator Storage Prefixes
 const AUTHENTICATOR_PREFIX: &str = "authenticators/";
 const AUTHENTICATOR_META_PREFIX: &str = "authenticators/metadata/";
+
+// SDL Template Contract Storage Prefix
+const SDL_TEMPLATE_CONTRACT_PREFIX: &str = "sdl_template_contracts/";
 
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
@@ -813,6 +818,115 @@ impl ErgorsStorage {
         self.cs.commit(delta).await?;
         info!("🗑️  Deleted Akash workflow: {}", session_id);
         Ok(())
+    }
+
+    // ========================================
+    // Proxy Router Configuration Storage
+    // ========================================
+
+    /// Store proxy router configuration (immutable audit log)
+    ///
+    /// This stores the current proxy router config in cnidarium, providing
+    /// a deterministic, immutable log of all endpoint configuration changes.
+    /// Each update increments the version number.
+    pub async fn put_proxy_router_config(
+        &self,
+        config: &ho_std::types::ergors::orch::v1::ProxyRouterConfig,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        // Store current config
+        let data = serde_json::to_vec(config)?;
+        delta.put_raw(PROXY_ROUTER_CONFIG_KEY.to_string(), data.clone());
+
+        // Also store versioned history entry for immutable audit trail
+        let version_key = format!("{}v{}", PROXY_ROUTER_CONFIG_PREFIX, config.version);
+        delta.put_raw(version_key.clone(), data);
+
+        self.cs.commit(delta).await?;
+        info!(
+            "🔧 Stored proxy router config version {} (anthropic={}, openai={}, ollama={})",
+            config.version,
+            config.anthropic_base_url,
+            config.openai_base_url,
+            config.ollama_base_url
+        );
+        Ok(())
+    }
+
+    /// Get the current proxy router configuration
+    pub async fn get_proxy_router_config(
+        &self,
+    ) -> HoResult<Option<ho_std::types::ergors::orch::v1::ProxyRouterConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+
+        match snapshot.get_raw(PROXY_ROUTER_CONFIG_KEY).await {
+            Ok(Some(data)) => {
+                let config: ho_std::types::ergors::orch::v1::ProxyRouterConfig =
+                    serde_json::from_slice(&data)?;
+                Ok(Some(config))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get proxy router config: {}", e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Get a specific version of the proxy router configuration (for audit)
+    pub async fn get_proxy_router_config_version(
+        &self,
+        version: u64,
+    ) -> HoResult<Option<ho_std::types::ergors::orch::v1::ProxyRouterConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}v{}", PROXY_ROUTER_CONFIG_PREFIX, version);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let config: ho_std::types::ergors::orch::v1::ProxyRouterConfig =
+                    serde_json::from_slice(&data)?;
+                Ok(Some(config))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get proxy router config version {}: {}", version, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// List all proxy router configuration versions (audit trail)
+    pub async fn list_proxy_router_config_history(
+        &self,
+    ) -> HoResult<Vec<ho_std::types::ergors::orch::v1::ProxyRouterConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut stream = snapshot.prefix_raw(PROXY_ROUTER_CONFIG_PREFIX);
+        let mut configs = Vec::new();
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok((key, value)) => {
+                    // Skip the "current" key, only get versioned entries
+                    if key == PROXY_ROUTER_CONFIG_KEY {
+                        continue;
+                    }
+
+                    if let Ok(config) =
+                        serde_json::from_slice::<ho_std::types::ergors::orch::v1::ProxyRouterConfig>(&value)
+                    {
+                        configs.push(config);
+                    }
+                }
+                Err(e) => {
+                    warn!("Error iterating proxy router config history: {}", e);
+                }
+            }
+        }
+
+        // Sort by version descending (newest first)
+        configs.sort_by(|a, b| b.version.cmp(&a.version));
+        Ok(configs)
     }
 
     // ========================================
@@ -1658,6 +1772,94 @@ impl ErgorsStorage {
             Ok(Some(_)) => true,
             _ => false,
         }
+    }
+
+    // ============================================
+    // SDL Template Contract Storage
+    // ============================================
+
+    /// Register an SDL template contract
+    pub async fn register_sdl_template_contract(
+        &self,
+        contract_address: &str,
+        label: Option<String>,
+        code_id: u64,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        // Store contract info as JSON
+        let contract_info = serde_json::json!({
+            "contract_address": contract_address,
+            "label": label,
+            "code_id": code_id,
+        });
+        let info_bytes = serde_json::to_vec(&contract_info)?;
+
+        let key = format!("{}{}", SDL_TEMPLATE_CONTRACT_PREFIX, contract_address);
+        delta.put_raw(key, info_bytes);
+
+        self.cs.commit(delta).await?;
+        info!("📝 Registered SDL template contract: {}", contract_address);
+        Ok(())
+    }
+
+    /// Get SDL template contract info by address
+    pub async fn get_sdl_template_contract(
+        &self,
+        contract_address: &str,
+    ) -> HoResult<Option<(String, Option<String>, u64)>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}{}", SDL_TEMPLATE_CONTRACT_PREFIX, contract_address);
+
+        match snapshot.get_raw(&key).await? {
+            Some(bytes) => {
+                let contract_info: serde_json::Value = serde_json::from_slice(&bytes)?;
+                let addr = contract_info["contract_address"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing contract_address"))?
+                    .to_string();
+                let label = contract_info["label"].as_str().map(|s| s.to_string());
+                let code_id = contract_info["code_id"]
+                    .as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Missing code_id"))?;
+                Ok(Some((addr, label, code_id)))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// List all registered SDL template contracts
+    pub async fn list_sdl_template_contracts(
+        &self,
+    ) -> HoResult<Vec<(String, Option<String>, u64)>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = SDL_TEMPLATE_CONTRACT_PREFIX;
+        let mut stream = snapshot.prefix_raw(prefix);
+        let mut results = Vec::new();
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok((_key, value)) => {
+                    // All entries under this prefix are SDL template contracts
+                    let contract_info: serde_json::Value = serde_json::from_slice(&value)?;
+                    let addr = contract_info["contract_address"]
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("Missing contract_address"))?
+                        .to_string();
+                    let label = contract_info["label"].as_str().map(|s| s.to_string());
+                    let code_id = contract_info["code_id"]
+                        .as_u64()
+                        .ok_or_else(|| anyhow::anyhow!("Missing code_id"))?;
+                    results.push((addr, label, code_id));
+                }
+                Err(e) => {
+                    warn!("Error reading SDL template contract stream: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        Ok(results)
     }
 }
 

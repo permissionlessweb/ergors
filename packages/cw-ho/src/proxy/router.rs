@@ -23,6 +23,7 @@ pub const DEFAULT_OPENAI_URL: &str = "https://api.openai.com";
 pub enum ProviderType {
     Anthropic,
     OpenAI,
+    Ollama,
     Custom,
 }
 
@@ -44,6 +45,10 @@ pub struct ProxyRouterConfig {
     /// Override base URL for OpenAI API requests
     #[serde(default)]
     pub openai_base_url: Option<String>,
+
+    /// Override base URL for Ollama API requests
+    #[serde(default)]
+    pub ollama_base_url: Option<String>,
 
     /// Model-specific routing rules (glob patterns supported)
     /// e.g., "claude-*" -> "https://api.anthropic.com"
@@ -221,6 +226,50 @@ impl ProxyRouter {
         Ok(response)
     }
 
+    /// Get the route target for an Ollama-format request
+    pub fn route_ollama(&self, model: &str) -> RouteTarget {
+        // Check model-specific routes first
+        if let Some(route) = self.match_model_route(model) {
+            return route;
+        }
+
+        // Use configured Ollama URL (no default - Ollama must be explicitly configured)
+        let base_url = self
+            .config
+            .ollama_base_url
+            .clone()
+            .unwrap_or_else(|| "http://localhost:11434".to_string());
+
+        RouteTarget {
+            base_url,
+            api_key: None,
+            provider_type: ProviderType::Ollama,
+        }
+    }
+
+    /// Forward request to Ollama (or configured upstream)
+    pub async fn forward_ollama(
+        &self,
+        body: Bytes,
+        model: &str,
+        path: &str,
+    ) -> Result<reqwest::Response> {
+        let target = self.route_ollama(model);
+        let url = format!("{}{}", target.base_url, path);
+
+        debug!("Routing Ollama request for model '{}' to {}", model, url);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+            .await?;
+
+        Ok(response)
+    }
+
     /// Get the HTTP client
     pub fn client(&self) -> &Client {
         &self.client
@@ -290,6 +339,8 @@ fn infer_provider_type(url: &str) -> ProviderType {
         ProviderType::Anthropic
     } else if url_lower.contains("openai") {
         ProviderType::OpenAI
+    } else if url_lower.contains("11434") || url_lower.contains("ollama") {
+        ProviderType::Ollama
     } else {
         ProviderType::Custom
     }

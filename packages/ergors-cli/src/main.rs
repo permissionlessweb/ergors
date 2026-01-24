@@ -12,7 +12,7 @@ mod client;
 mod commands;
 
 use client::ManagementClient;
-use commands::{ConfigCmd, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd, WorkspaceCmd};
+use commands::{ConfigCmd, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd, SdlCmd, WorkspaceCmd};
 
 /// Default gRPC address for the engine
 const DEFAULT_GRPC_ADDR: &str = "http://localhost:50051";
@@ -79,6 +79,10 @@ pub enum Commands {
     #[command(subcommand)]
     Deploy(DeployCmd),
 
+    /// SDL template management
+    #[command(subcommand)]
+    Sdl(SdlCmd),
+
     /// Show engine status (shortcut for engine status)
     Status,
 }
@@ -107,6 +111,7 @@ async fn main() -> Result<()> {
         Commands::Provider(cmd) => cmd.execute(&cli, client?).await?,
         Commands::Workspace(cmd) => cmd.execute(&cli, client?).await?,
         Commands::Deploy(cmd) => cmd.execute(&cli, client?).await?,
+        Commands::Sdl(cmd) => cmd.execute(&cli, client?).await?,
         Commands::Status => {
             // Shortcut for engine status
             EngineCmd::Status.execute(&cli, client).await?;

@@ -31,6 +31,6 @@ pub mod streaming;
 pub mod upstream;
 
 pub use capture::{create_capture_service, create_capture_service_with_sessions, CaptureMessage};
-pub use endpoints::{handle_anthropic_proxy, handle_openai_proxy};
-pub use endpoints::{handle_get_session, handle_query_sessions};
+pub use endpoints::{handle_anthropic_proxy, handle_ollama_proxy, handle_openai_proxy};
+pub use endpoints::{handle_get_proxy_config, handle_get_session, handle_query_sessions, handle_update_proxy_config};
 pub use router::{ProxyRouter, ProxyRouterConfig, ProviderType, RouteTarget};

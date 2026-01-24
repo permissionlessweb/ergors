@@ -11,13 +11,18 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use reqwest;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::time::sleep;
 
 // Import our API client and proto types
 use crate::deploy::api_client::{AkashApiClient, AkashApiConfig};
 use crate::deploy::transaction::{SimpleKeyring, TxBroadcaster, TxConfig};
-use ho_std::types::ergors::orch::v1::AkashDeployConfig;
+use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
+use ho_std::types::ergors::akash::market::v1beta4::LeaseId;
+use ho_std::types::ergors::akash::provider::lease::v1::{
+    lease_rpc_client::LeaseRpcClient, ServiceStatusRequest,
+};
+use ho_std::types::ergors::orch::v1::{AkashDeployConfig, CosmosKeyStore};
 
 #[derive(Debug, Clone)]
 pub struct AkashConfig {
@@ -121,6 +126,8 @@ pub struct AkashClient {
     api_client: Arc<tokio::sync::Mutex<AkashApiClient>>,
     tx_broadcaster: TxBroadcaster,
     keyring: SimpleKeyring,
+    /// Encrypted cosmos key store for real key resolution
+    cosmos_key_store: Option<CosmosKeyStore>,
 }
 
 impl AkashClient {
@@ -142,8 +149,7 @@ impl AkashClient {
         // Initialize API client - derive endpoints from node config
         let grpc_endpoint = config
             .node
-            .replace("https://rpc-", "https://grpc-")
-            .replace("http://", "http://");
+            .replace("https://rpc-", "https://grpc-");
         let rest_endpoint_derived = config
             .node
             .replace("https://rpc-", "https://rest-")
@@ -178,13 +184,47 @@ impl AkashClient {
             api_client,
             tx_broadcaster,
             keyring,
+            cosmos_key_store: None,
         })
+    }
+
+    /// Load the encrypted cosmos key store for real key resolution
+    pub fn with_cosmos_key_store(mut self, store: CosmosKeyStore) -> Self {
+        self.cosmos_key_store = Some(store);
+        self
     }
 
     async fn setup_keys(&mut self) -> Result<()> {
         println!("[INFO] Setting up keys...");
 
-        // Check if key exists in our keyring
+        // Try to resolve key from encrypted cosmos key store first
+        if let Some(ref store) = self.cosmos_key_store {
+            let key_name = if self.config.key_name.is_empty() || self.config.key_name == "default" {
+                // Use the default key from the store
+                EncryptedCosmosKeyManager::get_default_key_name(store)
+                    .unwrap_or(&self.config.key_name)
+                    .to_string()
+            } else {
+                self.config.key_name.clone()
+            };
+
+            if let Some(account) = store
+                .derived_accounts
+                .iter()
+                .find(|a| a.key_name == key_name)
+            {
+                self.config.account_address = account.address.clone();
+                self.config.key_name = key_name;
+                println!(
+                    "[INFO] Resolved key '{}' to address: {}",
+                    self.config.key_name, self.config.account_address
+                );
+                self.check_balance().await?;
+                return Ok(());
+            }
+        }
+
+        // Fallback to SimpleKeyring (placeholder behavior)
         let key_exists = self
             .keyring
             .list_keys()
@@ -193,8 +233,6 @@ impl AkashClient {
 
         if !key_exists {
             println!("[INFO] Creating key '{}'...", self.config.key_name);
-            // In a real implementation, this would generate a proper key
-            // For now, we'll use a placeholder
             let address = format!("akash1placeholder{}", self.config.key_name);
             self.keyring.add_key(&self.config.key_name, &address)?;
             println!(
@@ -349,8 +387,8 @@ impl AkashClient {
         println!("[INFO] Manifest sent, waiting for deployment to be ready...");
         sleep(Duration::from_secs(30)).await;
 
-        // Get lease status and extract node info
-        self.collect_node_info(step, &dseq, &provider).await?;
+        // Get lease status and save deployment info
+        self.collect_deployment_info(&dseq, &provider, "deployment_endpoints.env").await?;
 
         // Store deployment info
         self.deployments.insert(
@@ -407,211 +445,147 @@ impl AkashClient {
         }
     }
 
-    async fn collect_node_info(&self, step: u32, _dseq: &str, _provider: &str) -> Result<()> {
-        println!("[INFO] Checking lease status...");
+    /// Generic method to collect deployment information and save to a file
+    ///
+    /// This queries the lease status and stores discovered endpoints.
+    /// For workflow-specific logic, callers should use `query_lease_status` directly.
+    async fn collect_deployment_info(&self, dseq: &str, provider: &str, output_file: &str) -> Result<HashMap<String, String>> {
+        println!("[INFO] Checking lease status for deployment {}...", dseq);
 
-        // TODO: Implement lease status querying using akash.provider.lease.v1.LeaseRPC/ServiceStatus
-        // For now, simulate lease status response
-        let status_json = json!({
-            "services": {
-                "oline-a-snapshot": {
-                    "uris": ["http://localhost:26657"]
-                },
-                "oline-a-seed": {
-                    "uris": ["http://localhost:26656"]
-                }
-            },
-            "forwarded_ports": {}
-        });
-
-        // Define service names based on step
-        let service_names = match step {
-            1 => vec!["oline-a-snapshot", "oline-a-seed"],
-            2 => vec!["oline-b-left", "oline-b-right"],
-            3 => vec!["oline-forward-left", "oline-forward-right"],
-            _ => return Err(anyhow!("Invalid step number: {}", step)),
+        // Query actual lease status from provider
+        let dseq_u64 = dseq.parse::<u64>()?;
+        let lease_id = LeaseId {
+            owner: self.config.account_address.clone(),
+            dseq: dseq_u64,
+            gseq: 1,
+            oseq: 1,
+            provider: provider.to_string(),
         };
 
-        // Get node IDs for each service
-        for (i, service_name) in service_names.iter().enumerate() {
-            let node_id = self.get_node_peer_id(&status_json, service_name).await?;
-            let env_var_name = match (step, i) {
-                (1, 0) => "SNAPSHOT_NODE_PEER_ID",
-                (1, 1) => "SEED_NODE_PEER_ID",
-                (2, 0) => "LEFT_TACKLE_PEER_ID",
-                (2, 1) => "RIGHT_TACKLE_PEER_ID",
-                (3, 0) => "LEFT_FORWARD_PEER_ID",
-                (3, 1) => "RIGHT_FORWARD_PEER_ID",
-                _ => continue,
-            };
-
-            self.save_node_info(env_var_name, &node_id).await?;
-        }
-
-        Ok(())
-    }
-
-    async fn get_node_peer_id(&self, status_json: &Value, service_name: &str) -> Result<String> {
-        // Try to get URI from service
-        if let Some(uri) = status_json["services"][service_name]["uris"][0].as_str() {
-            let full_uri = format!("http://{}:26657", uri);
-            return self.fetch_node_id_from_rpc(&full_uri, service_name).await;
-        }
-
-        // Fallback to forwarded ports
-        if let Some(ports) = status_json["forwarded_ports"][service_name].as_array() {
-            for port_info in ports {
-                if port_info["port"] == 26657 {
-                    if let Some(host) = port_info["host"].as_str() {
-                        if let Some(port) = port_info["externalPort"].as_u64() {
-                            let uri = format!("http://{}:{}", host, port);
-                            return self.fetch_node_id_from_rpc(&uri, service_name).await;
-                        }
-                    }
-                }
-            }
-        }
-
-        Err(anyhow!(
-            "Could not retrieve URI or forwarded port for service: {}",
-            service_name
-        ))
-    }
-
-    async fn fetch_node_id_from_rpc(&self, uri: &str, service_name: &str) -> Result<String> {
-        println!(
-            "[INFO] Retrieving node-id for '{}' from endpoint '{}'...",
-            service_name, uri
-        );
-
-        for i in 1..=6 {
-            let sleep_seconds = i * 2;
-
-            // Try HTTP and HTTPS
-            for scheme in ["http", "https"].iter() {
-                let url = format!(
-                    "{}://{}/status",
-                    scheme,
-                    uri.trim_start_matches("http://")
-                        .trim_start_matches("https://")
-                );
-
-                let api_client = self.api_client.lock().await;
-                if let Ok(response) = api_client
-                    .http_client()
-                    .get(&url)
-                    .timeout(Duration::from_secs(5))
-                    .send()
-                    .await
-                {
-                    if let Ok(status_json) = response.json::<Value>().await {
-                        if let Some(node_id) = status_json["result"]["node_info"]["id"].as_str() {
-                            if !node_id.is_empty() {
-                                let peer_url = format!(
-                                    "{}@{}:443",
-                                    node_id,
-                                    uri.trim_start_matches("http://")
-                                        .trim_start_matches("https://")
-                                );
-                                println!("[INFO] Retrieved node ID: {}", peer_url);
-                                return Ok(peer_url);
-                            }
-                        }
-                    }
-                }
-            }
-
-            println!(
-                "[INFO] Attempt {} failed, retrying in {}s...",
-                i, sleep_seconds
-            );
-            sleep(Duration::from_secs(sleep_seconds as u64)).await;
-        }
-
-        Err(anyhow!(
-            "Failed to retrieve node_info.id from {} after 6 attempts",
-            uri
-        ))
-    }
-
-    async fn save_node_info(&self, key: &str, value: &str) -> Result<()> {
-        let env_content = format!("{}={}\n", key, value);
-        fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("deployment_uris.env")?
-            .write_all(env_content.as_bytes())?;
-
-        println!("[INFO] Saved {}={}", key, value);
-        Ok(())
-    }
-
-    async fn update_sdl_with_node_info(&self, step: u32, sdl_file: &str) -> Result<()> {
-        println!(
-            "[INFO] Updating {} with node info for step {}...",
-            sdl_file, step
-        );
-
-        // Read environment file
-        let env_content = fs::read_to_string("deployment_uris.env")?;
-        let mut env_vars = HashMap::new();
-
-        for line in env_content.lines() {
-            let parts: Vec<&str> = line.split('=').collect();
-            if parts.len() == 2 {
-                env_vars.insert(parts[0].to_string(), parts[1].to_string());
-            }
-        }
-
-        // Read and parse YAML
-        let yaml: Value = serde_yaml::from_str(&fs::read_to_string(sdl_file)?)?;
-
-        match step {
-            1 => {
-                if let Some(snapshot_peer) = env_vars.get("SNAPSHOT_NODE_PEER_ID") {
-                    // Update YAML with persistent peer
-                    // This is simplified - actual YAML manipulation would be more robust
-                    println!("[INFO] Setting persistent peer to: {}", snapshot_peer);
-                }
-
-                // Get private validator ID
-                let current_ip = self.get_public_ip().await?;
-                let private_peer = format!("abc123xyz987@{}:26656", current_ip);
-
-                println!("[INFO] Setting private peers to: {}", private_peer);
-            }
-            2 => {
-                if let Some(snapshot_peer) = env_vars.get("SNAPSHOT_NODE_PEER_ID") {
-                    println!("[INFO] Setting persistent peer to: {}", snapshot_peer);
-                }
-
-                if let (Some(left_tackle), Some(right_tackle)) = (
-                    env_vars.get("LEFT_TACKLE_PEER_ID"),
-                    env_vars.get("RIGHT_TACKLE_PEER_ID"),
-                ) {
-                    let private_peers = format!("{},{}", left_tackle, right_tackle);
-                    println!("[INFO] Setting private peers to: {}", private_peers);
-                }
-            }
-            _ => return Err(anyhow!("Unsupported step number: {}", step)),
-        }
-
-        // Write updated YAML back
-        let updated_yaml = serde_yaml::to_string(&yaml)?;
-        fs::write(sdl_file, updated_yaml)?;
-
-        println!("[INFO] Updated {} with node info successfully", sdl_file);
-        Ok(())
-    }
-
-    async fn get_public_ip(&self) -> Result<String> {
-        let api_client = self.api_client.lock().await;
-        let response = api_client
-            .http_client()
-            .get("https://api.ipify.org")
-            .send()
+        // Query all services (empty vec = all)
+        let endpoints = self
+            .query_lease_status(provider, lease_id, vec![])
             .await?;
-        Ok(response.text().await?.trim().to_string())
+
+        // Save endpoints to file
+        for (service_name, endpoint) in &endpoints {
+            let env_content = format!("{}={}\n", service_name.to_uppercase().replace("-", "_"), endpoint);
+            fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(output_file)?
+                .write_all(env_content.as_bytes())?;
+            println!("[INFO] Saved {} = {}", service_name, endpoint);
+        }
+
+        Ok(endpoints)
+    }
+
+
+
+    /// Query lease status from Akash provider to retrieve service endpoints
+    ///
+    /// This queries the provider's gRPC LeaseRPC/ServiceStatus endpoint to get
+    /// the actual deployed service URIs, ports, and IPs.
+    ///
+    /// # Arguments
+    /// * `provider_uri` - Provider gRPC endpoint (e.g., "https://provider.akash.host:8443")
+    /// * `lease_id` - The lease ID (owner, dseq, gseq, oseq, provider)
+    /// * `service_names` - Optional list of service names to query (empty = all services)
+    ///
+    /// # Returns
+    /// HashMap mapping service name -> endpoint URL (e.g., "web" -> "http://host:port")
+    pub async fn query_lease_status(
+        &self,
+        provider_uri: &str,
+        lease_id: LeaseId,
+        service_names: Vec<String>,
+    ) -> Result<HashMap<String, String>> {
+        tracing::info!(
+            "Querying lease status from provider {} for dseq {}",
+            provider_uri,
+            lease_id.dseq
+        );
+
+        // Connect to provider's gRPC endpoint
+        let mut client = LeaseRpcClient::connect(provider_uri.to_string())
+            .await
+            .map_err(|e| anyhow!("Failed to connect to provider {}: {}", provider_uri, e))?;
+
+        // Query service status
+        let request = ServiceStatusRequest {
+            lease_id: Some(lease_id.clone()),
+            services: service_names.clone(),
+        };
+
+        let response = client
+            .service_status(request)
+            .await
+            .map_err(|e| anyhow!("Failed to query service status: {}", e))?
+            .into_inner();
+
+        // Parse response to extract endpoints
+        let mut endpoints = HashMap::new();
+
+        for service in response.services {
+            let service_name = service.name.clone();
+
+            // Try to construct endpoint from forwarded ports
+            if let Some(port_status) = service.ports.first() {
+                // Use the external port (provider's forwarded port)
+                let endpoint = format!("http://{}:{}", port_status.host, port_status.external_port);
+                tracing::info!("Discovered endpoint for '{}': {}", service_name, endpoint);
+                endpoints.insert(service_name.clone(), endpoint);
+                continue;
+            }
+
+            // Fallback: try to construct from IPs
+            if let Some(ip_status) = service.ips.first() {
+                // Use the port from the IP status
+                let endpoint = format!("http://{}:{}", lease_id.provider, ip_status.port);
+                tracing::info!(
+                    "Discovered endpoint (via IP) for '{}': {}",
+                    service_name,
+                    endpoint
+                );
+                endpoints.insert(service_name.clone(), endpoint);
+                continue;
+            }
+
+            tracing::warn!(
+                "Could not determine endpoint for service '{}' - no ports or IPs in status",
+                service_name
+            );
+        }
+
+        if endpoints.is_empty() {
+            return Err(anyhow!(
+                "No service endpoints discovered from provider lease status"
+            ));
+        }
+
+        Ok(endpoints)
+    }
+
+    /// Convenience method to query all services for a deployment
+    pub async fn query_deployment_endpoints(
+        &self,
+        provider_uri: &str,
+        owner: &str,
+        dseq: u64,
+        gseq: u32,
+        oseq: u32,
+    ) -> Result<HashMap<String, String>> {
+        let lease_id = LeaseId {
+            owner: owner.to_string(),
+            dseq,
+            gseq,
+            oseq,
+            provider: provider_uri.to_string(),
+        };
+
+        self.query_lease_status(provider_uri, lease_id, vec![])
+            .await
     }
 }
 
@@ -627,51 +601,3 @@ async fn fetch_chain_id() -> Result<String> {
     Ok(response.trim().to_string())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    println!("[INFO] Starting Akash deployment process...");
-
-    // Initialize config
-    let config = AkashConfig::mainnet_defaults().await?;
-    let mut client = AkashClient::new(config).await?;
-
-    // 1. Setup
-    client.setup_keys().await?;
-    client.setup_certificate().await?;
-    client.check_existing_deployments().await?;
-
-    // SDL files (adjust paths as needed)
-    let sdl_files = [
-        "sdls/a.kickoff-special-teams.yml",
-        "sdls/b.left-and-right-tackle.yml",
-        "sdls/c.left-and-right-forwards.yml",
-    ];
-
-    // 2. Deploy snapshot & seed node
-    client.deploy_sdl(1, sdl_files[0]).await?;
-
-    // 3. Update SDL with node info
-    client.update_sdl_with_node_info(1, sdl_files[1]).await?;
-
-    // 4. Deploy L/R Tackles
-    client.deploy_sdl(2, sdl_files[1]).await?;
-
-    // 5. Update SDL with node info
-    client.update_sdl_with_node_info(2, sdl_files[2]).await?;
-
-    // 6. Deploy L/R Forwards
-    client.deploy_sdl(3, sdl_files[2]).await?;
-
-    // Print summary
-    println!("[INFO] All deployments completed successfully!");
-    println!("[INFO] Deployment Summary:");
-
-    for (sdl_file, info) in &client.deployments {
-        println!(
-            "  {}: DSEQ={}, Provider={}",
-            sdl_file, info.dseq, info.provider
-        );
-    }
-
-    Ok(())
-}

@@ -1030,6 +1030,10 @@ message EncryptedCosmosMnemonic {
   google.protobuf.Timestamp created_at = 10;
   google.protobuf.Timestamp last_used_at = 11;
   uint32 version = 12;
+  // Human-readable label for this key (e.g. "my-akash-deployer")
+  string label = 13;
+  // Whether this is the default funding key for deployments
+  bool is_default = 14;
 }
 
 // Derived account from HD path (non-sensitive)
@@ -1047,6 +1051,8 @@ message CosmosKeyStore {
   repeated EncryptedCosmosMnemonic keys = 2;
   repeated CosmosAccount derived_accounts = 3;
   google.protobuf.Timestamp updated_at = 4;
+  // Name of the default key for auto-selection during deployments
+  string default_key_name = 5;
 }
 
 // Configuration for Akash network deployment endpoints
@@ -1067,6 +1073,35 @@ message AkashDeployConfig {
   string default_key_name = 7;
   // Trusted provider addresses (optional whitelist)
   repeated string trusted_providers = 8;
+}
+
+// ==============================================
+// Proxy Router Configuration (Immutable Audit Log)
+// ==============================================
+
+// Configuration for dynamic LLM proxy routing
+// Stored in cnidarium for deterministic, immutable logging of endpoint changes
+message ProxyRouterConfig {
+  // Override base URL for Anthropic API requests
+  string anthropic_base_url = 1;
+  // Override base URL for OpenAI API requests
+  string openai_base_url = 2;
+  // Override base URL for Ollama API requests
+  string ollama_base_url = 3;
+  // Model-specific routing rules (glob patterns -> URLs)
+  // e.g., "claude-*" -> "https://api.anthropic.com"
+  // e.g., "llama-*" -> "http://localhost:11434"
+  map<string, string> model_routes = 4;
+  // API key overrides per upstream URL
+  map<string, string> api_keys = 5;
+  // Default API keys by provider type
+  map<string, string> provider_api_keys = 6;
+  // Timestamp when this config was set/updated
+  google.protobuf.Timestamp updated_at = 7;
+  // Version number for this configuration (increments on each update)
+  uint64 version = 8;
+  // Optional description/reason for this configuration change
+  string change_reason = 9;
 }
 
 // Workflow step enumeration for Akash deployment wizard

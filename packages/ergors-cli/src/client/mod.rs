@@ -11,7 +11,9 @@ use ho_std::types::ergors::management::v1::{
     // Akash deployment types
     AdvanceAkashDeploymentRequest,
     AdvanceAkashDeploymentResponse,
+    ApproveGrantRequest,
     CancelAkashDeploymentRequest,
+    ConfigureProxyRoutesRequest,
     CompleteTaskWorktreeRequest,
     CompleteTaskWorktreeResponse,
     ConfigData,
@@ -30,6 +32,8 @@ use ho_std::types::ergors::management::v1::{
     GetWorkspaceResponse,
     ListAkashDeploymentsRequest,
     ListAkashDeploymentsResponse,
+    ListGrantRequestsRequest,
+    ListGrantRequestsResponse,
     ListTaskWorktreesRequest,
     ListTaskWorktreesResponse,
     ListWorkspacesRequest,
@@ -44,9 +48,25 @@ use ho_std::types::ergors::management::v1::{
     ProviderTestResult,
     QueryAkashBidsRequest,
     QueryAkashBidsResponse,
+    QueryBalanceRequest,
+    QueryBalanceResponse,
     RemoveWorkspaceRequest,
+    // SDL template types
+    ListSdlTemplatesRequest,
+    ListSdlTemplatesResponse,
+    GetSdlTemplateRequest,
+    GetSdlTemplateResponse,
+    GetSdlDefaultsRequest,
+    GetSdlDefaultsResponse,
+    RenderSdlTemplateRequest,
+    RenderSdlTemplateResponse,
+    RequestGrantRequest,
+    RequestGrantResponse,
+    RevokeGrantRequest,
     SelectAkashProviderRequest,
     SelectAkashProviderResponse,
+    SetWorkflowEndpointsRequest,
+    SetWorkflowEndpointsResponse,
     ShutdownRequest,
     SyncWorkspaceRequest,
     SyncWorkspaceResponse,
@@ -574,6 +594,204 @@ impl ManagementClient {
             })
             .await
             .context("Failed to cancel Akash deployment")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Set discovered endpoints for a deployment workflow
+    pub async fn set_workflow_endpoints(
+        &mut self,
+        session_id: &str,
+        endpoints: std::collections::HashMap<String, String>,
+    ) -> Result<SetWorkflowEndpointsResponse> {
+        let response = self
+            .inner
+            .set_workflow_endpoints(SetWorkflowEndpointsRequest {
+                session_id: session_id.to_string(),
+                endpoints,
+            })
+            .await
+            .context("Failed to set workflow endpoints")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Configure proxy routing dynamically
+    pub async fn configure_proxy_routes(
+        &mut self,
+        openai_base_url: &str,
+        anthropic_base_url: &str,
+        ollama_base_url: &str,
+        model_routes: std::collections::HashMap<String, String>,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .configure_proxy_routes(ConfigureProxyRoutesRequest {
+                openai_base_url: openai_base_url.to_string(),
+                anthropic_base_url: anthropic_base_url.to_string(),
+                ollama_base_url: ollama_base_url.to_string(),
+                model_routes,
+            })
+            .await
+            .context("Failed to configure proxy routes")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Request authz grant from coordinator
+    pub async fn request_grant(
+        &mut self,
+        granter: &str,
+        grantee: &str,
+        msg_types: Vec<String>,
+        allowance_amount: u64,
+        reason: Option<&str>,
+    ) -> Result<RequestGrantResponse> {
+        let response = self
+            .inner
+            .request_grant(RequestGrantRequest {
+                granter_address: granter.to_string(),
+                grantee_address: grantee.to_string(),
+                msg_types,
+                allowance_amount,
+                expiration: None,
+                reason: reason.unwrap_or("").to_string(),
+            })
+            .await
+            .context("Failed to request grant")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Approve or reject pending grant request
+    pub async fn approve_grant(
+        &mut self,
+        request_id: &str,
+        approve: bool,
+        reason: Option<&str>,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .approve_grant(ApproveGrantRequest {
+                request_id: request_id.to_string(),
+                approve,
+                reason: reason.unwrap_or("").to_string(),
+            })
+            .await
+            .context("Failed to approve grant")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Revoke an existing grant
+    pub async fn revoke_grant(
+        &mut self,
+        granter: &str,
+        grantee: &str,
+        msg_type: Option<&str>,
+        revoke_feegrant: bool,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .revoke_grant(RevokeGrantRequest {
+                granter_address: granter.to_string(),
+                grantee_address: grantee.to_string(),
+                msg_type: msg_type.unwrap_or("").to_string(),
+                revoke_feegrant,
+            })
+            .await
+            .context("Failed to revoke grant")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// List pending grant requests
+    pub async fn list_grant_requests(
+        &mut self,
+        granter: Option<&str>,
+        grantee: Option<&str>,
+        status: Option<&str>,
+    ) -> Result<ListGrantRequestsResponse> {
+        let response = self
+            .inner
+            .list_grant_requests(ListGrantRequestsRequest {
+                granter_address: granter.unwrap_or("").to_string(),
+                grantee_address: grantee.unwrap_or("").to_string(),
+                status: status.unwrap_or("").to_string(),
+            })
+            .await
+            .context("Failed to list grant requests")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Query account balance
+    pub async fn query_balance(&mut self, address: &str, denom: &str) -> Result<QueryBalanceResponse> {
+        let response = self
+            .inner
+            .query_balance(QueryBalanceRequest {
+                address: address.to_string(),
+                denom: denom.to_string(),
+            })
+            .await
+            .context("Failed to query balance")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ SDL Template Management ============
+
+    /// List deployed SDL template contracts
+    pub async fn list_sdl_templates(&mut self) -> Result<ListSdlTemplatesResponse> {
+        let response = self
+            .inner
+            .list_sdl_templates(ListSdlTemplatesRequest {})
+            .await
+            .context("Failed to list SDL templates")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Get SDL template from contract
+    pub async fn get_sdl_template(&mut self, contract_address: &str) -> Result<GetSdlTemplateResponse> {
+        let response = self
+            .inner
+            .get_sdl_template(GetSdlTemplateRequest {
+                contract_address: contract_address.to_string(),
+            })
+            .await
+            .context("Failed to get SDL template")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Get variable defaults from contract
+    pub async fn get_sdl_defaults(&mut self, contract_address: &str) -> Result<GetSdlDefaultsResponse> {
+        let response = self
+            .inner
+            .get_sdl_defaults(GetSdlDefaultsRequest {
+                contract_address: contract_address.to_string(),
+            })
+            .await
+            .context("Failed to get SDL defaults")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Render SDL template with variables
+    pub async fn render_sdl_template(
+        &mut self,
+        contract_address: &str,
+        variables: std::collections::HashMap<String, String>,
+    ) -> Result<RenderSdlTemplateResponse> {
+        let response = self
+            .inner
+            .render_sdl_template(RenderSdlTemplateRequest {
+                contract_address: contract_address.to_string(),
+                variables,
+            })
+            .await
+            .context("Failed to render SDL template")?;
 
         Ok(response.into_inner())
     }

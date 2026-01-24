@@ -1,9 +1,9 @@
 //! HTTP endpoint handlers for the LLM proxy.
 
 use crate::proxy::capture::{create_capture_service, CaptureMessage};
+use crate::proxy::router::ProxyRouterConfig;
 use crate::proxy::session::{detect_client_type, extract_api_key, extract_session_id};
 use crate::proxy::streaming::{create_anthropic_sse_stream, create_openai_sse_stream};
-use crate::proxy::upstream::{create_upstream_client, forward_to_anthropic, forward_to_openai};
 use crate::ErgorsAppState;
 use axum::{
     body::Body,
@@ -122,16 +122,17 @@ pub async fn handle_anthropic_proxy(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    // Create upstream client and forward request
-    let client = create_upstream_client();
-    let response = match forward_to_anthropic(
-        &client,
-        body,
-        &api_key,
-        anthropic_version.as_deref(),
-        anthropic_beta.as_deref(),
-    )
-    .await
+    // Use ProxyRouter from app state for dynamic routing
+    let router = state.pr.read().await;
+    let response = match router
+        .forward_anthropic(
+            body,
+            &api_key,
+            &model,
+            anthropic_version.as_deref(),
+            anthropic_beta.as_deref(),
+        )
+        .await
     {
         Ok(resp) => resp,
         Err(e) => {
@@ -295,9 +296,12 @@ pub async fn handle_openai_proxy(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    // Create upstream client and forward request
-    let client = create_upstream_client();
-    let response = match forward_to_openai(&client, body, &api_key, organization.as_deref()).await {
+    // Use ProxyRouter from app state for dynamic routing
+    let router = state.pr.read().await;
+    let response = match router
+        .forward_openai(body, &api_key, &model, organization.as_deref())
+        .await
+    {
         Ok(resp) => resp,
         Err(e) => {
             error!("Failed to forward to OpenAI: {}", e);
@@ -431,6 +435,161 @@ pub async fn handle_query_sessions(
             }))
         }
     }
+}
+
+/// Handle Ollama API proxy requests (/api/chat, /api/generate).
+pub async fn handle_ollama_proxy(
+    State(state): State<ErgorsAppState>,
+    headers: HeaderMap,
+    axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
+    body: Bytes,
+) -> Response {
+    let session_id = extract_session_id(&headers);
+    let path = uri.path().to_string();
+    debug!("Ollama proxy request to {}, session: {}", path, session_id);
+
+    // Parse request to extract model
+    let model = match serde_json::from_slice::<serde_json::Value>(&body) {
+        Ok(json) => json
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("llama2")
+            .to_string(),
+        Err(e) => {
+            error!("Failed to parse Ollama request: {}", e);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": format!("Invalid request body: {}", e) })),
+            )
+                .into_response();
+        }
+    };
+
+    // Use ProxyRouter from app state
+    let router = state.pr.read().await;
+    let response = match router.forward_ollama(body, &model, &path).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            error!("Failed to forward to Ollama: {}", e);
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": format!("Upstream error: {}", e) })),
+            )
+                .into_response();
+        }
+    };
+
+    let status = response.status();
+    if !status.is_success() {
+        let error_body = response.bytes().await.unwrap_or_default();
+        return Response::builder()
+            .status(convert_status(status))
+            .header("content-type", "application/json")
+            .body(Body::from(error_body))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    }
+
+    let response_body = response.bytes().await.unwrap_or_default();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(response_body))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// Update proxy router configuration dynamically.
+pub async fn handle_update_proxy_config(
+    State(state): State<ErgorsAppState>,
+    Json(config): Json<ProxyRouterConfig>,
+) -> Json<serde_json::Value> {
+    info!("Updating proxy router config: anthropic={:?}, openai={:?}, ollama={:?}",
+        config.anthropic_base_url, config.openai_base_url, config.ollama_base_url);
+
+    // Load current config from storage to get version
+    let current_version = match state.s.get_proxy_router_config().await {
+        Ok(Some(c)) => c.version,
+        Ok(None) => 0,
+        Err(e) => {
+            error!("Failed to get current proxy config: {}", e);
+            return Json(serde_json::json!({
+                "success": false,
+                "error": format!("Failed to get current config: {}", e)
+            }));
+        }
+    };
+
+    // Create proto config for storage
+    let proto_config = ho_std::types::ergors::orch::v1::ProxyRouterConfig {
+        anthropic_base_url: config.anthropic_base_url.clone().unwrap_or_default(),
+        openai_base_url: config.openai_base_url.clone().unwrap_or_default(),
+        ollama_base_url: config.ollama_base_url.clone().unwrap_or_default(),
+        model_routes: config.model_routes.clone(),
+        api_keys: config.api_keys.clone(),
+        provider_api_keys: config.provider_api_keys.clone(),
+        updated_at: Some(pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        }),
+        version: current_version + 1,
+        change_reason: "Updated via REST API".to_string(),
+    };
+
+    // Persist to cnidarium
+    if let Err(e) = state.s.put_proxy_router_config(&proto_config).await {
+        error!("Failed to persist proxy config: {}", e);
+        return Json(serde_json::json!({
+            "success": false,
+            "error": format!("Failed to persist config: {}", e)
+        }));
+    }
+
+    // Update in-memory router
+    let mut router = state.pr.write().await;
+    router.update_config(config);
+
+    Json(serde_json::json!({
+        "success": true,
+        "message": format!("Proxy configuration updated (version {})", proto_config.version),
+        "version": proto_config.version
+    }))
+}
+
+/// Get current proxy router configuration.
+pub async fn handle_get_proxy_config(
+    State(state): State<ErgorsAppState>,
+) -> Json<serde_json::Value> {
+    // Get in-memory config
+    let router = state.pr.read().await;
+    let config = router.config();
+
+    // Get stored config for version/audit info
+    let stored_config = state.s.get_proxy_router_config().await.ok().flatten();
+
+    let mut response = serde_json::json!({
+        "anthropic_base_url": config.anthropic_base_url,
+        "openai_base_url": config.openai_base_url,
+        "ollama_base_url": config.ollama_base_url,
+        "model_routes": config.model_routes,
+    });
+
+    // Add version and audit info if available from storage
+    if let Some(stored) = stored_config {
+        response["version"] = serde_json::json!(stored.version);
+        if let Some(updated_at) = stored.updated_at {
+            response["updated_at"] = serde_json::json!(format!(
+                "{}.{}",
+                updated_at.seconds, updated_at.nanos
+            ));
+        }
+        if !stored.change_reason.is_empty() {
+            response["change_reason"] = serde_json::json!(stored.change_reason);
+        }
+    }
+
+    Json(response)
 }
 
 /// Get a specific proxy session by ID.

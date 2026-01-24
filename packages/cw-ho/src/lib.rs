@@ -3,6 +3,7 @@ pub mod bootstrap;
 pub mod call;
 pub mod config;
 pub mod config_cmd;
+pub mod keys;
 #[cfg(feature = "cw")]
 pub mod contracts;
 pub mod daemon;
@@ -28,7 +29,10 @@ pub mod cosmwasm;
 use ho_std::wasm::WasmRuntime;
 
 // Re-export the macro for external use
-use crate::{config::ErgorsConfig, network::manager::PeerInfo, storage::ErgorsStorage};
+use crate::{
+    config::ErgorsConfig, network::manager::PeerInfo, proxy::ProxyRouter,
+    storage::ErgorsStorage,
+};
 use ho_std::{llm::LlmRouter, types::ergors::network::v1::*};
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::sync::{mpsc, RwLock};
@@ -77,6 +81,8 @@ pub struct ErgorsAppState {
     pub t: Instant,
     /// c = variable config
     pub c: ErgorsConfig,
+    /// pr = proxy router (dynamic routing to upstream providers)
+    pub pr: Arc<RwLock<ProxyRouter>>,
     /// wasm = WASM runtime (when cw feature is enabled)
     #[cfg(feature = "cw")]
     pub wasm: Arc<WasmRuntime>,
@@ -89,6 +95,7 @@ impl ErgorsAppState {
         nm: Arc<tokio::sync::Mutex<ErgorsNetworkManifold>>,
         t: Instant,
         c: ErgorsConfig,
+        pr: Arc<RwLock<ProxyRouter>>,
         #[cfg(feature = "cw")] wasm: Arc<WasmRuntime>,
     ) -> Self {
         Self {
@@ -97,6 +104,7 @@ impl ErgorsAppState {
             nm,
             t,
             c,
+            pr,
             #[cfg(feature = "cw")]
             wasm,
         }

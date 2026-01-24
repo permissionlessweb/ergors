@@ -115,6 +115,44 @@ service ManagementService {
   rpc SelectAkashProvider(SelectAkashProviderRequest) returns (SelectAkashProviderResponse);
   // Cancel a deployment workflow
   rpc CancelAkashDeployment(CancelAkashDeploymentRequest) returns (OperationResult);
+  // Set discovered endpoints for a deployment workflow
+  rpc SetWorkflowEndpoints(SetWorkflowEndpointsRequest) returns (SetWorkflowEndpointsResponse);
+  // Configure proxy routing dynamically
+  rpc ConfigureProxyRoutes(ConfigureProxyRoutesRequest) returns (OperationResult);
+
+  // ============================================
+  // Authz/Feegrant Management
+  // ============================================
+
+  // Request authz grant from coordinator
+  rpc RequestGrant(RequestGrantRequest) returns (RequestGrantResponse);
+  // Approve pending grant request
+  rpc ApproveGrant(ApproveGrantRequest) returns (OperationResult);
+  // Revoke an existing grant
+  rpc RevokeGrant(RevokeGrantRequest) returns (OperationResult);
+  // List pending grant requests
+  rpc ListGrantRequests(ListGrantRequestsRequest) returns (ListGrantRequestsResponse);
+  // Create feegrant allowance
+  rpc CreateFeeGrant(CreateFeeGrantRequest) returns (OperationResult);
+  // Revoke feegrant allowance
+  rpc RevokeFeeGrant(RevokeFeeGrantRequest) returns (OperationResult);
+  // Query account balances
+  rpc QueryBalance(QueryBalanceRequest) returns (QueryBalanceResponse);
+
+  // ============================================
+  // SDL Template Management
+  // ============================================
+
+  // List deployed SDL template contracts
+  rpc ListSdlTemplates(ListSdlTemplatesRequest) returns (ListSdlTemplatesResponse);
+  // Register an SDL template contract
+  rpc RegisterSdlTemplate(RegisterSdlTemplateRequest) returns (RegisterSdlTemplateResponse);
+  // Get SDL template from contract
+  rpc GetSdlTemplate(GetSdlTemplateRequest) returns (GetSdlTemplateResponse);
+  // Get variable defaults from contract
+  rpc GetSdlDefaults(GetSdlDefaultsRequest) returns (GetSdlDefaultsResponse);
+  // Render SDL template with variables
+  rpc RenderSdlTemplate(RenderSdlTemplateRequest) returns (RenderSdlTemplateResponse);
 }
 
 // Common empty request
@@ -1036,4 +1074,195 @@ message SelectAkashProviderResponse {
 // Cancel deployment request
 message CancelAkashDeploymentRequest {
   string session_id = 1;
+}
+
+// Set workflow endpoints request
+message SetWorkflowEndpointsRequest {
+  string session_id = 1;
+  // Map of service name -> endpoint URI (e.g., "mock-inference" -> "http://host:port")
+  map<string, string> endpoints = 2;
+}
+
+message SetWorkflowEndpointsResponse {
+  bool success = 1;
+  ergors.orch.v1.AkashDeploymentWorkflow workflow = 2;
+  string error_message = 3;
+}
+
+// Configure proxy routes request
+message ConfigureProxyRoutesRequest {
+  // Override base URL for OpenAI API requests
+  string openai_base_url = 1;
+  // Override base URL for Anthropic API requests
+  string anthropic_base_url = 2;
+  // Override base URL for Ollama API requests
+  string ollama_base_url = 3;
+  // Model-specific routing rules (glob patterns -> URLs)
+  map<string, string> model_routes = 4;
+}
+
+// ============================================
+// Authz/Feegrant Management Messages
+// ============================================
+
+// Request grant from another node (coordinator)
+message RequestGrantRequest {
+  // Address of the granter (coordinator that will provide funds/permissions)
+  string granter_address = 1;
+  // Address of the grantee (executor requesting permissions)
+  string grantee_address = 2;
+  // Message types to grant authorization for (e.g., "/akash.deployment.v1beta3.MsgCreateDeployment")
+  repeated string msg_types = 3;
+  // Feegrant allowance amount in uakt (0 = no feegrant, only authz)
+  uint64 allowance_amount = 4;
+  // Grant expiration timestamp (optional)
+  google.protobuf.Timestamp expiration = 5;
+  // Reason for grant request
+  string reason = 6;
+}
+
+message RequestGrantResponse {
+  bool success = 1;
+  string message = 2;
+  // Unique request ID for tracking approval status
+  string request_id = 3;
+}
+
+// Approve pending grant request
+message ApproveGrantRequest {
+  // Request ID from RequestGrantResponse
+  string request_id = 1;
+  // Whether to approve (true) or reject (false)
+  bool approve = 2;
+  // Optional reason for decision
+  string reason = 3;
+}
+
+// Revoke an existing grant
+message RevokeGrantRequest {
+  // Address of the granter
+  string granter_address = 1;
+  // Address of the grantee
+  string grantee_address = 2;
+  // Message type to revoke (empty = revoke all)
+  string msg_type = 3;
+  // Whether to also revoke feegrant
+  bool revoke_feegrant = 4;
+}
+
+// List pending grant requests
+message ListGrantRequestsRequest {
+  // Filter by granter address (optional)
+  string granter_address = 1;
+  // Filter by grantee address (optional)
+  string grantee_address = 2;
+  // Filter by status (pending, approved, rejected)
+  string status = 3;
+}
+
+message ListGrantRequestsResponse {
+  repeated GrantRequest requests = 1;
+}
+
+message GrantRequest {
+  string request_id = 1;
+  string granter_address = 2;
+  string grantee_address = 3;
+  repeated string msg_types = 4;
+  uint64 allowance_amount = 5;
+  google.protobuf.Timestamp expiration = 6;
+  string reason = 7;
+  string status = 8;  // pending, approved, rejected
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// Create feegrant allowance
+message CreateFeeGrantRequest {
+  // Address of the granter (who pays fees)
+  string granter_address = 1;
+  // Address of the grantee (who can use the allowance)
+  string grantee_address = 2;
+  // Allowance amount in uakt
+  uint64 allowance_amount = 3;
+  // Grant expiration timestamp (optional)
+  google.protobuf.Timestamp expiration = 4;
+}
+
+// Revoke feegrant allowance
+message RevokeFeeGrantRequest {
+  // Address of the granter
+  string granter_address = 1;
+  // Address of the grantee
+  string grantee_address = 2;
+}
+
+// Query account balance
+message QueryBalanceRequest {
+  // Account address to query
+  string address = 1;
+  // Denom to query (default: uakt)
+  string denom = 2;
+}
+
+message QueryBalanceResponse {
+  // Account address
+  string address = 1;
+  // Denom
+  string denom = 2;
+  // Balance amount
+  string amount = 3;
+}
+
+// ============================================
+// SDL Template Management Messages
+// ============================================
+
+message ListSdlTemplatesRequest {}
+
+message SdlTemplateInfo {
+  string contract_address = 1;
+  optional string label = 2;
+  uint64 code_id = 3;
+}
+
+message ListSdlTemplatesResponse {
+  repeated SdlTemplateInfo templates = 1;
+}
+
+message GetSdlTemplateRequest {
+  string contract_address = 1;
+}
+
+message GetSdlTemplateResponse {
+  string sdl_template = 1;
+  google.protobuf.Struct template_json = 2;
+}
+
+message GetSdlDefaultsRequest {
+  string contract_address = 1;
+}
+
+message GetSdlDefaultsResponse {
+  map<string, string> defaults = 1;
+}
+
+message RenderSdlTemplateRequest {
+  string contract_address = 1;
+  map<string, string> variables = 2;
+}
+
+message RenderSdlTemplateResponse {
+  string rendered_sdl = 1;
+  map<string, string> used_variables = 2;
+}
+
+message RegisterSdlTemplateRequest {
+  string contract_address = 1;
+  optional string label = 2;
+  uint64 code_id = 3;
+}
+
+message RegisterSdlTemplateResponse {
+  bool success = 1;
+  string message = 2;
 }

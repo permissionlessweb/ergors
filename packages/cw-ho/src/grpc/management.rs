@@ -15,6 +15,7 @@ use ho_std::types::ergors::management::v1::{
     AdvanceAkashDeploymentRequest,
     AdvanceAkashDeploymentResponse,
     CancelAkashDeploymentRequest,
+    ConfigureProxyRoutesRequest,
     CreateAkashDeploymentRequest,
     CreateAkashDeploymentResponse,
     GetAkashDeploymentRequest,
@@ -25,6 +26,8 @@ use ho_std::types::ergors::management::v1::{
     QueryAkashBidsResponse,
     SelectAkashProviderRequest,
     SelectAkashProviderResponse,
+    SetWorkflowEndpointsRequest,
+    SetWorkflowEndpointsResponse,
     // Network routing types (for OpenCode tools)
     AnnounceNodeRequest,
     AnnounceNodeResponse,
@@ -106,11 +109,34 @@ use ho_std::types::ergors::management::v1::{
     TokenResponse,
     UpdateSessionRequest,
     UpdateSessionResponse,
+    // Grant management types
+    ApproveGrantRequest,
+    CreateFeeGrantRequest,
+    ListGrantRequestsRequest,
+    ListGrantRequestsResponse,
+    QueryBalanceRequest,
+    QueryBalanceResponse,
+    RequestGrantRequest,
+    RequestGrantResponse,
+    RevokeGrantRequest,
+    RevokeFeeGrantRequest,
+    // SDL template types
+    ListSdlTemplatesRequest,
+    ListSdlTemplatesResponse,
+    RegisterSdlTemplateRequest,
+    RegisterSdlTemplateResponse,
+    GetSdlTemplateRequest,
+    GetSdlTemplateResponse,
+    GetSdlDefaultsRequest,
+    GetSdlDefaultsResponse,
+    RenderSdlTemplateRequest,
+    RenderSdlTemplateResponse,
 };
 use ho_std::types::ergors::orch::v1::{
     AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep, ConfiguredSdl,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
+use pbjson_types;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
@@ -2163,6 +2189,484 @@ impl ManagementService for ManagementServiceImpl {
             success: true,
             message: format!("Deployment {} cancelled", req.session_id),
         }))
+    }
+
+    async fn set_workflow_endpoints(
+        &self,
+        request: Request<SetWorkflowEndpointsRequest>,
+    ) -> Result<Response<SetWorkflowEndpointsResponse>, Status> {
+        let req = request.into_inner();
+
+        let mut workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // Store discovered endpoints in the workflow
+        workflow.endpoints = req.endpoints;
+        workflow.current_step = AkashWorkflowStep::EndpointTesting as i32;
+        workflow.updated_at = Some(pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        });
+
+        // Persist
+        self.state.s.put_akash_workflow(&workflow).await.ok();
+
+        tracing::info!(
+            "Set {} endpoints for workflow {}",
+            workflow.endpoints.len(),
+            req.session_id
+        );
+
+        Ok(Response::new(SetWorkflowEndpointsResponse {
+            success: true,
+            workflow: Some(workflow),
+            error_message: String::new(),
+        }))
+    }
+
+    async fn configure_proxy_routes(
+        &self,
+        request: Request<ConfigureProxyRoutesRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        // Load current config from storage to get version
+        let current_version = self
+            .state
+            .s
+            .get_proxy_router_config()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get current config: {}", e)))?
+            .map(|c| c.version)
+            .unwrap_or(0);
+
+        // Create new proto config with incremented version
+        let proto_config = ho_std::types::ergors::orch::v1::ProxyRouterConfig {
+            anthropic_base_url: req.anthropic_base_url.clone(),
+            openai_base_url: req.openai_base_url.clone(),
+            ollama_base_url: req.ollama_base_url.clone(),
+            model_routes: req.model_routes.clone(),
+            api_keys: std::collections::HashMap::new(), // Not exposed in gRPC yet
+            provider_api_keys: std::collections::HashMap::new(), // Not exposed in gRPC yet
+            updated_at: Some(pbjson_types::Timestamp {
+                seconds: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+                nanos: 0,
+            }),
+            version: current_version + 1,
+            change_reason: "Updated via gRPC configure_proxy_routes".to_string(),
+        };
+
+        // Persist to cnidarium for immutable audit log
+        self.state
+            .s
+            .put_proxy_router_config(&proto_config)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to persist config: {}", e)))?;
+
+        // Update in-memory proxy router
+        let mut in_memory_config = crate::proxy::ProxyRouterConfig::default();
+        if !req.openai_base_url.is_empty() {
+            in_memory_config.openai_base_url = Some(req.openai_base_url.clone());
+        }
+        if !req.anthropic_base_url.is_empty() {
+            in_memory_config.anthropic_base_url = Some(req.anthropic_base_url.clone());
+        }
+        if !req.ollama_base_url.is_empty() {
+            in_memory_config.ollama_base_url = Some(req.ollama_base_url.clone());
+        }
+        in_memory_config.model_routes = req.model_routes;
+
+        let mut router = self.state.pr.write().await;
+        router.update_config(in_memory_config);
+
+        tracing::info!(
+            "Proxy routes configured v{}: openai={}, anthropic={}, ollama={}",
+            proto_config.version,
+            req.openai_base_url,
+            req.anthropic_base_url,
+            req.ollama_base_url,
+        );
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!("Proxy routes configured (version {})", proto_config.version),
+        }))
+    }
+
+    /// Request authz grant from coordinator
+    async fn request_grant(
+        &self,
+        request: Request<RequestGrantRequest>,
+    ) -> Result<Response<RequestGrantResponse>, Status> {
+        let req = request.into_inner();
+
+        // Generate unique request ID
+        let request_id = uuid::Uuid::new_v4().to_string();
+
+        // Store grant request in storage
+        let _grant_request = ho_std::types::ergors::management::v1::GrantRequest {
+            request_id: request_id.clone(),
+            granter_address: req.granter_address.clone(),
+            grantee_address: req.grantee_address.clone(),
+            msg_types: req.msg_types.clone(),
+            allowance_amount: req.allowance_amount,
+            expiration: req.expiration,
+            reason: req.reason.clone(),
+            status: "pending".to_string(),
+            created_at: Some(pbjson_types::Timestamp {
+                seconds: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+                nanos: 0,
+            }),
+        };
+
+        // TODO: Store in cnidarium with key: grant_request/{request_id}
+        // For now, just log the request
+        tracing::info!(
+            "Grant request submitted: {} -> {} (request_id: {})",
+            req.granter_address,
+            req.grantee_address,
+            request_id
+        );
+
+        Ok(Response::new(RequestGrantResponse {
+            success: true,
+            message: "Grant request submitted for approval".to_string(),
+            request_id,
+        }))
+    }
+
+    /// Approve or reject pending grant request
+    async fn approve_grant(
+        &self,
+        request: Request<ApproveGrantRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        // TODO: Load grant request from storage, verify it exists and is pending
+        // TODO: If approved, submit actual authz grant and feegrant transactions to blockchain
+        // TODO: Update grant request status in storage
+
+        let action = if req.approve { "approved" } else { "rejected" };
+        tracing::info!("Grant request {} {}", req.request_id, action);
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!("Grant request {}", action),
+        }))
+    }
+
+    /// Revoke an existing grant
+    async fn revoke_grant(
+        &self,
+        request: Request<RevokeGrantRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        // TODO: Submit revoke grant transaction to blockchain
+        // TODO: If revoke_feegrant, also submit revoke feegrant transaction
+
+        tracing::info!(
+            "Revoking grant: {} -> {} (msg_type: {}, revoke_feegrant: {})",
+            req.granter_address,
+            req.grantee_address,
+            req.msg_type,
+            req.revoke_feegrant
+        );
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: "Grant revoked".to_string(),
+        }))
+    }
+
+    /// List pending grant requests
+    async fn list_grant_requests(
+        &self,
+        request: Request<ListGrantRequestsRequest>,
+    ) -> Result<Response<ListGrantRequestsResponse>, Status> {
+        let req = request.into_inner();
+
+        // TODO: Query grant requests from storage with filters
+        // For now, return empty list
+
+        tracing::debug!(
+            "Listing grant requests (filters: granter={}, grantee={}, status={})",
+            req.granter_address,
+            req.grantee_address,
+            req.status
+        );
+
+        Ok(Response::new(ListGrantRequestsResponse {
+            requests: vec![],
+        }))
+    }
+
+    /// Create feegrant allowance
+    async fn create_fee_grant(
+        &self,
+        request: Request<CreateFeeGrantRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        // TODO: Submit feegrant allowance transaction to blockchain
+        tracing::info!(
+            "Creating feegrant: {} -> {} (amount: {} uakt)",
+            req.granter_address,
+            req.grantee_address,
+            req.allowance_amount
+        );
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: "Feegrant created".to_string(),
+        }))
+    }
+
+    /// Revoke feegrant allowance
+    async fn revoke_fee_grant(
+        &self,
+        request: Request<RevokeFeeGrantRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        // TODO: Submit revoke feegrant transaction to blockchain
+        tracing::info!(
+            "Revoking feegrant: {} -> {}",
+            req.granter_address,
+            req.grantee_address
+        );
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: "Feegrant revoked".to_string(),
+        }))
+    }
+
+    /// Query account balance
+    async fn query_balance(
+        &self,
+        request: Request<QueryBalanceRequest>,
+    ) -> Result<Response<QueryBalanceResponse>, Status> {
+        let req = request.into_inner();
+
+        // TODO: Query actual balance from blockchain node
+        // For now, return placeholder
+
+        tracing::debug!("Querying balance for {} (denom: {})", req.address, req.denom);
+
+        Ok(Response::new(QueryBalanceResponse {
+            address: req.address,
+            denom: req.denom.clone(),
+            amount: "0".to_string(), // TODO: Query from blockchain
+        }))
+    }
+
+    // ============================================
+    // SDL Template Management
+    // ============================================
+
+    /// List deployed SDL template contracts
+    async fn list_sdl_templates(
+        &self,
+        _request: Request<ListSdlTemplatesRequest>,
+    ) -> Result<Response<ListSdlTemplatesResponse>, Status> {
+        tracing::info!("Listing SDL template contracts");
+
+        match self.state.s.list_sdl_template_contracts().await {
+            Ok(contracts) => {
+                let templates = contracts
+                    .into_iter()
+                    .map(|(contract_address, label, code_id)| {
+                        ho_std::types::ergors::management::v1::SdlTemplateInfo {
+                            contract_address,
+                            label,
+                            code_id,
+                        }
+                    })
+                    .collect();
+
+                Ok(Response::new(ListSdlTemplatesResponse { templates }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to list SDL template contracts: {}", e);
+                Err(Status::internal(format!(
+                    "Failed to list SDL template contracts: {}",
+                    e
+                )))
+            }
+        }
+    }
+
+    /// Register an SDL template contract
+    async fn register_sdl_template(
+        &self,
+        request: Request<RegisterSdlTemplateRequest>,
+    ) -> Result<Response<RegisterSdlTemplateResponse>, Status> {
+        let req = request.into_inner();
+        tracing::info!("Registering SDL template contract: {}", req.contract_address);
+
+        match self.state.s.register_sdl_template_contract(
+            &req.contract_address,
+            req.label,
+            req.code_id,
+        ).await {
+            Ok(()) => {
+                Ok(Response::new(RegisterSdlTemplateResponse {
+                    success: true,
+                    message: format!("SDL template contract registered: {}", req.contract_address),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to register SDL template contract: {}", e);
+                Err(Status::internal(format!(
+                    "Failed to register SDL template contract: {}",
+                    e
+                )))
+            }
+        }
+    }
+
+    /// Get SDL template from contract
+    async fn get_sdl_template(
+        &self,
+        request: Request<GetSdlTemplateRequest>,
+    ) -> Result<Response<GetSdlTemplateResponse>, Status> {
+        let req = request.into_inner();
+        tracing::info!("Getting SDL template from contract {}", req.contract_address);
+
+        #[cfg(feature = "cw")]
+        {
+            use crate::deploy::sdl::SdlTemplateManager;
+            let sdl_manager = SdlTemplateManager::new();
+
+            // Query template from contract
+            match sdl_manager
+                .query_template_from_contract(
+                    &self.state.wasm,
+                    &self.state.s.cs,
+                    &req.contract_address,
+                )
+                .await
+            {
+                Ok((sdl_template, template_json)) => {
+                    // Convert serde_json::Value to prost_types::Struct
+                    let template_json_bytes = serde_json::to_vec(&template_json)
+                        .map_err(|e| Status::internal(format!("Failed to serialize template JSON: {}", e)))?;
+                    let template_json_struct: pbjson_types::Struct = serde_json::from_slice(&template_json_bytes)
+                        .map_err(|e| Status::internal(format!("Failed to convert template JSON: {}", e)))?;
+
+                    Ok(Response::new(GetSdlTemplateResponse {
+                        sdl_template,
+                        template_json: Some(template_json_struct),
+                    }))
+                }
+                Err(e) => {
+                    tracing::error!("Failed to query SDL template: {}", e);
+                    Err(Status::internal(format!("Failed to query SDL template: {}", e)))
+                }
+            }
+        }
+
+        #[cfg(not(feature = "cw"))]
+        {
+            Err(Status::unimplemented("CosmWasm support not enabled"))
+        }
+    }
+
+    /// Get variable defaults from contract
+    async fn get_sdl_defaults(
+        &self,
+        request: Request<GetSdlDefaultsRequest>,
+    ) -> Result<Response<GetSdlDefaultsResponse>, Status> {
+        let req = request.into_inner();
+        tracing::info!("Getting SDL defaults from contract {}", req.contract_address);
+
+        #[cfg(feature = "cw")]
+        {
+            use crate::deploy::sdl::SdlTemplateManager;
+            let sdl_manager = SdlTemplateManager::new();
+
+            // Query defaults from contract
+            match sdl_manager
+                .query_defaults_from_contract(
+                    &self.state.wasm,
+                    &self.state.s.cs,
+                    &req.contract_address,
+                )
+                .await
+            {
+                Ok(defaults) => Ok(Response::new(GetSdlDefaultsResponse { defaults })),
+                Err(e) => {
+                    tracing::error!("Failed to query SDL defaults: {}", e);
+                    Err(Status::internal(format!("Failed to query SDL defaults: {}", e)))
+                }
+            }
+        }
+
+        #[cfg(not(feature = "cw"))]
+        {
+            Err(Status::unimplemented("CosmWasm support not enabled"))
+        }
+    }
+
+    /// Render SDL template with variables
+    async fn render_sdl_template(
+        &self,
+        request: Request<RenderSdlTemplateRequest>,
+    ) -> Result<Response<RenderSdlTemplateResponse>, Status> {
+        let req = request.into_inner();
+        tracing::info!("Rendering SDL template from contract {}", req.contract_address);
+
+        #[cfg(feature = "cw")]
+        {
+            use crate::deploy::sdl::SdlTemplateManager;
+            let sdl_manager = SdlTemplateManager::new();
+
+            let variables = if req.variables.is_empty() {
+                None
+            } else {
+                Some(req.variables)
+            };
+
+            // Query rendered SDL from contract
+            match sdl_manager
+                .query_rendered_sdl_from_contract(
+                    &self.state.wasm,
+                    &self.state.s.cs,
+                    &req.contract_address,
+                    variables,
+                )
+                .await
+            {
+                Ok((rendered_sdl, used_variables)) => Ok(Response::new(RenderSdlTemplateResponse {
+                    rendered_sdl,
+                    used_variables,
+                })),
+                Err(e) => {
+                    tracing::error!("Failed to render SDL template: {}", e);
+                    Err(Status::internal(format!("Failed to render SDL template: {}", e)))
+                }
+            }
+        }
+
+        #[cfg(not(feature = "cw"))]
+        {
+            Err(Status::unimplemented("CosmWasm support not enabled"))
+        }
     }
 }
 

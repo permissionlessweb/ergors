@@ -55,6 +55,9 @@ impl Server {
                 // Proxy endpoints for CLI tools (Claude Code, opencode)
                 { path: "/v1/messages", method: post, handler: crate::proxy::handle_anthropic_proxy },
                 { path: "/v1/chat/completions", method: post, handler: crate::proxy::handle_openai_proxy },
+                // Ollama-compatible proxy endpoint
+                { path: "/api/chat", method: post, handler: crate::proxy::handle_ollama_proxy },
+                { path: "/api/generate", method: post, handler: crate::proxy::handle_ollama_proxy },
                 // { path: "/orchestrate/bootstrap", method: post, handler: crate::deploy::handle_bootstrap },
                 // { path: "/headstash/cosmwasm", method: get, handler: crate::cosmwasm::handle_cosmwasm_action },
                 { path: "/health", method: get, handler: handle_health },
@@ -63,6 +66,8 @@ impl Server {
                 { path: "/api/prompts", method: get, handler: handle_query },
                 { path: "/api/proxy/sessions", method: get, handler: crate::proxy::handle_query_sessions },
                 { path: "/api/proxy/sessions/{id}", method: get, handler: crate::proxy::handle_get_session },
+                { path: "/api/proxy/config", method: post, handler: crate::proxy::handle_update_proxy_config },
+                { path: "/api/proxy/config", method: get, handler: crate::proxy::handle_get_proxy_config },
                 { path: "/orchestrate/fractal", method: post, handler: crate::orchestrator::handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: crate::storage::handle_prune },
                 // Authenticator management endpoints
@@ -146,6 +151,39 @@ impl Server {
             contract_manager.deploy_required_contracts(&c).await?;
         }
 
+        // Load proxy router config from storage (or use default if none stored)
+        let proxy_router_config = match storage_arc.get_proxy_router_config().await {
+            Ok(Some(stored_config)) => {
+                tracing::info!(
+                    "📍 Loaded proxy router config from storage (version {})",
+                    stored_config.version
+                );
+                // Convert proto config to in-memory config
+                let mut config = crate::proxy::ProxyRouterConfig::default();
+                if !stored_config.anthropic_base_url.is_empty() {
+                    config.anthropic_base_url = Some(stored_config.anthropic_base_url);
+                }
+                if !stored_config.openai_base_url.is_empty() {
+                    config.openai_base_url = Some(stored_config.openai_base_url);
+                }
+                if !stored_config.ollama_base_url.is_empty() {
+                    config.ollama_base_url = Some(stored_config.ollama_base_url);
+                }
+                config.model_routes = stored_config.model_routes;
+                config.api_keys = stored_config.api_keys;
+                config.provider_api_keys = stored_config.provider_api_keys;
+                config
+            }
+            Ok(None) => {
+                tracing::info!("📍 No stored proxy router config found, using defaults");
+                crate::proxy::ProxyRouterConfig::default()
+            }
+            Err(e) => {
+                tracing::warn!("⚠️  Failed to load proxy router config from storage: {}, using defaults", e);
+                crate::proxy::ProxyRouterConfig::default()
+            }
+        };
+
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
@@ -158,6 +196,10 @@ impl Server {
                 Instant::now(),
                 // c == config
                 c.clone(),
+                // pr == proxy router (loaded from storage or default)
+                Arc::new(tokio::sync::RwLock::new(
+                    crate::proxy::ProxyRouter::new(proxy_router_config),
+                )),
                 // wasm == WASM runtime
                 #[cfg(feature = "cw")]
                 wasm_runtime,

@@ -13,6 +13,7 @@ use ergors::{
     daemon::{Daemon, SignalHandler},
     grpc::management::{start_grpc_server, ManagementServiceImpl},
     init::InitCmd,
+    keys::KeysCmd,
     server::Server as CwHoServer,
 };
 use ho_std::{
@@ -57,6 +58,8 @@ pub enum Commands {
     Config(ConfigCmd),
     /// register/revoke
     ManageAuth(AuthCmd),
+    /// Manage cosmos funding keys (import mnemonic, list, set-default)
+    Keys(KeysCmd),
     /// register/revoke
     Call(CallCmd),
 }
@@ -82,6 +85,7 @@ fn main() -> Result<()> {
         Commands::Config(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::Start { grpc_port } => start(cli, grpc_port)?,
         Commands::ManageAuth(cmd) => cmd.exec(cli.home.as_path())?,
+        Commands::Keys(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::Call(_) => todo!(),
     }
 

@@ -79,6 +79,93 @@ pub enum DeployCmd {
         /// Session ID
         session_id: String,
     },
+    /// Set discovered endpoints for a deployment workflow
+    SetEndpoints {
+        /// Session ID
+        session_id: String,
+        /// Endpoints as key=value pairs (service_name=url)
+        #[arg(long, value_parser = parse_key_val)]
+        endpoint: Vec<(String, String)>,
+    },
+    /// Configure proxy routing to discovered services
+    ConfigureProxy {
+        /// OpenAI-compatible API base URL
+        #[arg(long)]
+        openai_url: Option<String>,
+        /// Anthropic-compatible API base URL
+        #[arg(long)]
+        anthropic_url: Option<String>,
+        /// Ollama-compatible API base URL
+        #[arg(long)]
+        ollama_url: Option<String>,
+        /// Model routing rules (glob=url pairs)
+        #[arg(long, value_parser = parse_key_val)]
+        route: Vec<(String, String)>,
+    },
+    /// Request authz grant from coordinator
+    RequestGrant {
+        /// Granter address (coordinator who provides funds/permissions)
+        #[arg(long)]
+        granter: String,
+        /// Grantee address (executor requesting permissions)
+        #[arg(long)]
+        grantee: String,
+        /// Message types to grant (e.g., /akash.deployment.v1beta3.MsgCreateDeployment)
+        #[arg(long)]
+        msg_type: Vec<String>,
+        /// Feegrant allowance amount in uakt (0 = no feegrant, only authz)
+        #[arg(long, default_value = "0")]
+        allowance: u64,
+        /// Reason for grant request
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Approve pending grant request
+    ApproveGrant {
+        /// Request ID to approve
+        request_id: String,
+        /// Reject instead of approve
+        #[arg(long)]
+        reject: bool,
+        /// Reason for decision
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Revoke an existing grant
+    RevokeGrant {
+        /// Granter address
+        #[arg(long)]
+        granter: String,
+        /// Grantee address
+        #[arg(long)]
+        grantee: String,
+        /// Message type to revoke (empty = revoke all)
+        #[arg(long)]
+        msg_type: Option<String>,
+        /// Also revoke feegrant
+        #[arg(long)]
+        revoke_feegrant: bool,
+    },
+    /// List pending grant requests
+    ListGrants {
+        /// Filter by granter address
+        #[arg(long)]
+        granter: Option<String>,
+        /// Filter by grantee address
+        #[arg(long)]
+        grantee: Option<String>,
+        /// Filter by status (pending, approved, rejected)
+        #[arg(long)]
+        status: Option<String>,
+    },
+    /// Query account balance
+    QueryBalance {
+        /// Account address to query
+        address: String,
+        /// Denom to query (default: uakt)
+        #[arg(long, default_value = "uakt")]
+        denom: String,
+    },
 }
 
 /// Parse a key=value pair
@@ -374,6 +461,239 @@ impl DeployCmd {
                     println!("Deployment cancelled: {}", session_id);
                 } else {
                     eprintln!("Failed to cancel: {}", result.message);
+                }
+                Ok(())
+            }
+            DeployCmd::SetEndpoints {
+                session_id,
+                endpoint,
+            } => {
+                let endpoints: HashMap<String, String> = endpoint.iter().cloned().collect();
+                let response = client
+                    .set_workflow_endpoints(session_id, endpoints)
+                    .await?;
+
+                if cli.json {
+                    let mut json = serde_json::json!({
+                        "success": response.success,
+                    });
+                    if let Some(wf) = &response.workflow {
+                        json["current_step"] = serde_json::json!(format_step(wf.current_step));
+                        json["endpoints"] = serde_json::json!(&wf.endpoints);
+                    }
+                    if !response.error_message.is_empty() {
+                        json["error"] = serde_json::json!(&response.error_message);
+                    }
+                    println!("{}", serde_json::to_string_pretty(&json)?);
+                } else if response.success {
+                    println!("Endpoints set for workflow {}", session_id);
+                    if let Some(wf) = &response.workflow {
+                        for (name, uri) in &wf.endpoints {
+                            println!("  {} -> {}", name, uri);
+                        }
+                    }
+                } else {
+                    eprintln!("Failed to set endpoints: {}", response.error_message);
+                }
+                Ok(())
+            }
+            DeployCmd::ConfigureProxy {
+                openai_url,
+                anthropic_url,
+                ollama_url,
+                route,
+            } => {
+                let model_routes: HashMap<String, String> = route.iter().cloned().collect();
+                let result = client
+                    .configure_proxy_routes(
+                        openai_url.as_deref().unwrap_or(""),
+                        anthropic_url.as_deref().unwrap_or(""),
+                        ollama_url.as_deref().unwrap_or(""),
+                        model_routes,
+                    )
+                    .await?;
+
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": result.success,
+                            "message": result.message,
+                        }))?
+                    );
+                } else if result.success {
+                    println!("Proxy routes configured");
+                    if let Some(url) = openai_url {
+                        println!("  OpenAI:    {}", url);
+                    }
+                    if let Some(url) = anthropic_url {
+                        println!("  Anthropic: {}", url);
+                    }
+                    if let Some(url) = ollama_url {
+                        println!("  Ollama:    {}", url);
+                    }
+                } else {
+                    eprintln!("Failed to configure proxy: {}", result.message);
+                }
+                Ok(())
+            }
+            DeployCmd::RequestGrant {
+                granter,
+                grantee,
+                msg_type,
+                allowance,
+                reason,
+            } => {
+                let response = client
+                    .request_grant(
+                        granter,
+                        grantee,
+                        msg_type.clone(),
+                        *allowance,
+                        reason.as_deref(),
+                    )
+                    .await?;
+
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": response.success,
+                            "message": response.message,
+                            "request_id": response.request_id,
+                        }))?
+                    );
+                } else if response.success {
+                    println!("Grant request submitted");
+                    println!("  Request ID: {}", response.request_id);
+                    println!("  Message:    {}", response.message);
+                } else {
+                    eprintln!("Failed to request grant: {}", response.message);
+                }
+                Ok(())
+            }
+            DeployCmd::ApproveGrant {
+                request_id,
+                reject,
+                reason,
+            } => {
+                let result = client
+                    .approve_grant(request_id, !reject, reason.as_deref())
+                    .await?;
+
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": result.success,
+                            "message": result.message,
+                        }))?
+                    );
+                } else if result.success {
+                    if *reject {
+                        println!("Grant request rejected: {}", request_id);
+                    } else {
+                        println!("Grant request approved: {}", request_id);
+                    }
+                } else {
+                    eprintln!("Failed to process grant: {}", result.message);
+                }
+                Ok(())
+            }
+            DeployCmd::RevokeGrant {
+                granter,
+                grantee,
+                msg_type,
+                revoke_feegrant,
+            } => {
+                let result = client
+                    .revoke_grant(granter, grantee, msg_type.as_deref(), *revoke_feegrant)
+                    .await?;
+
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": result.success,
+                            "message": result.message,
+                        }))?
+                    );
+                } else if result.success {
+                    println!("Grant revoked");
+                    if *revoke_feegrant {
+                        println!("  Feegrant also revoked");
+                    }
+                } else {
+                    eprintln!("Failed to revoke grant: {}", result.message);
+                }
+                Ok(())
+            }
+            DeployCmd::ListGrants {
+                granter,
+                grantee,
+                status,
+            } => {
+                let response = client
+                    .list_grant_requests(
+                        granter.as_deref(),
+                        grantee.as_deref(),
+                        status.as_deref(),
+                    )
+                    .await?;
+
+                if cli.json {
+                    let requests: Vec<_> = response
+                        .requests
+                        .iter()
+                        .map(|r| {
+                            serde_json::json!({
+                                "request_id": r.request_id,
+                                "granter": r.granter_address,
+                                "grantee": r.grantee_address,
+                                "msg_types": r.msg_types,
+                                "allowance": r.allowance_amount,
+                                "status": r.status,
+                            })
+                        })
+                        .collect();
+                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({"requests": requests}))?);
+                } else {
+                    println!("Grant Requests ({} total)", response.requests.len());
+                    println!("=======================");
+                    if response.requests.is_empty() {
+                        println!("No grant requests found.");
+                    } else {
+                        for req in &response.requests {
+                            println!(
+                                "  {} | {} -> {} | {} | {}",
+                                &req.request_id[..8.min(req.request_id.len())],
+                                &req.granter_address[..12],
+                                &req.grantee_address[..12],
+                                req.status,
+                                req.allowance_amount
+                            );
+                        }
+                    }
+                }
+                Ok(())
+            }
+            DeployCmd::QueryBalance { address, denom } => {
+                let response = client.query_balance(address, denom).await?;
+
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "address": response.address,
+                            "denom": response.denom,
+                            "amount": response.amount,
+                        }))?
+                    );
+                } else {
+                    println!("Account Balance:");
+                    println!("  Address: {}", response.address);
+                    println!("  Denom:   {}", response.denom);
+                    println!("  Amount:  {}", response.amount);
                 }
                 Ok(())
             }

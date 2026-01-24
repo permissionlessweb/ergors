@@ -422,6 +422,24 @@ impl ContractManager {
             .await
             .map_err(|e| ContractError::Storage(format!("Failed to store contract address: {}", e)))?;
 
+        // Automatically register SDL template contracts
+        if contract.name.contains("sdl") && contract.name.contains("template") {
+            info!("Automatically registering SDL template contract: {}", contract.name);
+            // Use the original label from config or name
+            let sdl_label = if contract.label.is_empty() {
+                Some(contract.name.clone())
+            } else {
+                Some(contract.label.clone())
+            };
+            if let Err(e) = self.storage.register_sdl_template_contract(
+                &address,
+                sdl_label,
+                code_id,
+            ).await {
+                warn!("Failed to register SDL template contract: {}", e);
+            }
+        }
+
         Ok(address)
     }
 
