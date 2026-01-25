@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 //! Storage Integration Tests
 //!
 //! Tests for real ErgorsStorage with Cnidarium backend.
@@ -62,17 +63,28 @@ async fn test_akash_workflow_crud() {
 
     // PUT
     let put_result = storage.put_akash_workflow(&workflow).await;
-    assert!(put_result.is_ok(), "Failed to put workflow: {:?}", put_result);
+    assert!(
+        put_result.is_ok(),
+        "Failed to put workflow: {:?}",
+        put_result
+    );
 
     // GET
     let get_result = storage.get_akash_workflow(session_id).await;
-    assert!(get_result.is_ok(), "Failed to get workflow: {:?}", get_result);
+    assert!(
+        get_result.is_ok(),
+        "Failed to get workflow: {:?}",
+        get_result
+    );
     let retrieved = get_result.unwrap();
     assert!(retrieved.is_some(), "Workflow not found after put");
     let retrieved = retrieved.unwrap();
     assert_eq!(retrieved.session_id, session_id);
     assert_eq!(retrieved.selected_key_name, "test-key");
-    assert_eq!(retrieved.current_step, AkashWorkflowStep::KeySelection as i32);
+    assert_eq!(
+        retrieved.current_step,
+        AkashWorkflowStep::KeySelection as i32
+    );
 
     // UPDATE
     let mut updated = retrieved.clone();
@@ -80,13 +92,24 @@ async fn test_akash_workflow_crud() {
     updated.status = AkashWorkflowStatus::Running as i32;
     storage.put_akash_workflow(&updated).await.unwrap();
 
-    let after_update = storage.get_akash_workflow(session_id).await.unwrap().unwrap();
-    assert_eq!(after_update.current_step, AkashWorkflowStep::BalanceCheck as i32);
+    let after_update = storage
+        .get_akash_workflow(session_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        after_update.current_step,
+        AkashWorkflowStep::BalanceCheck as i32
+    );
     assert_eq!(after_update.status, AkashWorkflowStatus::Running as i32);
 
     // DELETE
     let delete_result = storage.delete_akash_workflow(session_id).await;
-    assert!(delete_result.is_ok(), "Failed to delete workflow: {:?}", delete_result);
+    assert!(
+        delete_result.is_ok(),
+        "Failed to delete workflow: {:?}",
+        delete_result
+    );
 
     let after_delete = storage.get_akash_workflow(session_id).await.unwrap();
     assert!(after_delete.is_none(), "Workflow still exists after delete");
@@ -117,11 +140,19 @@ async fn test_akash_workflow_list() {
 
     // List all
     let all_workflows = storage.list_akash_workflows().await.unwrap();
-    assert_eq!(all_workflows.len(), 5, "Expected 5 workflows, got {}", all_workflows.len());
+    assert_eq!(
+        all_workflows.len(),
+        5,
+        "Expected 5 workflows, got {}",
+        all_workflows.len()
+    );
 
     // Verify all workflows are retrievable
     for workflow in &all_workflows {
-        let retrieved = storage.get_akash_workflow(&workflow.session_id).await.unwrap();
+        let retrieved = storage
+            .get_akash_workflow(&workflow.session_id)
+            .await
+            .unwrap();
         assert!(retrieved.is_some());
     }
 }
@@ -159,8 +190,8 @@ async fn test_fractal_session_crud() {
         owner_node_id: "test-node".to_string(),
         owner_node_type: 0,
         participants: vec![],
-        created_at: Some(now.clone()),
-        updated_at: Some(now.clone()),
+        created_at: Some(now),
+        updated_at: Some(now),
         started_at: None,
         paused_at: None,
         completed_at: None,
@@ -175,30 +206,54 @@ async fn test_fractal_session_crud() {
 
     // PUT
     let put_result = storage.put_fractal_session(&session).await;
-    assert!(put_result.is_ok(), "Failed to put session: {:?}", put_result);
+    assert!(
+        put_result.is_ok(),
+        "Failed to put session: {:?}",
+        put_result
+    );
 
     // GET
     let get_result = storage.get_fractal_session(session_id).await;
-    assert!(get_result.is_ok(), "Failed to get session: {:?}", get_result);
+    assert!(
+        get_result.is_ok(),
+        "Failed to get session: {:?}",
+        get_result
+    );
     let retrieved = get_result.unwrap();
     assert!(retrieved.is_some(), "Session not found after put");
     let retrieved = retrieved.unwrap();
     assert_eq!(retrieved.session_id, session_id);
-    assert_eq!(retrieved.labels.get("name"), Some(&"Test Session".to_string()));
+    assert_eq!(
+        retrieved.labels.get("name"),
+        Some(&"Test Session".to_string())
+    );
 
     // UPDATE
     let mut updated = retrieved.clone();
     updated.status = SessionStatus::Active as i32;
-    updated.labels.insert("updated".to_string(), "true".to_string());
+    updated
+        .labels
+        .insert("updated".to_string(), "true".to_string());
     storage.put_fractal_session(&updated).await.unwrap();
 
-    let after_update = storage.get_fractal_session(session_id).await.unwrap().unwrap();
+    let after_update = storage
+        .get_fractal_session(session_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(after_update.status, SessionStatus::Active as i32);
-    assert_eq!(after_update.labels.get("updated"), Some(&"true".to_string()));
+    assert_eq!(
+        after_update.labels.get("updated"),
+        Some(&"true".to_string())
+    );
 
     // DELETE
     let delete_result = storage.delete_fractal_session(session_id).await;
-    assert!(delete_result.is_ok(), "Failed to delete session: {:?}", delete_result);
+    assert!(
+        delete_result.is_ok(),
+        "Failed to delete session: {:?}",
+        delete_result
+    );
 
     let after_delete = storage.get_fractal_session(session_id).await.unwrap();
     assert!(after_delete.is_none(), "Session still exists after delete");
@@ -207,7 +262,9 @@ async fn test_fractal_session_crud() {
 #[tokio::test]
 async fn test_fractal_session_parent_child_hierarchy() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("session_hierarchy").await.unwrap();
+    let harness = IntegrationTestHarness::new("session_hierarchy")
+        .await
+        .unwrap();
     let storage = harness.storage();
 
     let now = pbjson_types::Timestamp {
@@ -227,8 +284,8 @@ async fn test_fractal_session_parent_child_hierarchy() {
         root_session_id: "root-session".to_string(),
         owner_node_id: "coordinator".to_string(),
         owner_node_type: 1,
-        created_at: Some(now.clone()),
-        updated_at: Some(now.clone()),
+        created_at: Some(now),
+        updated_at: Some(now),
         ..Default::default()
     };
     storage.put_fractal_session(&root_session).await.unwrap();
@@ -246,20 +303,33 @@ async fn test_fractal_session_parent_child_hierarchy() {
             root_session_id: "root-session".to_string(),
             owner_node_id: format!("executor-{}", i),
             owner_node_type: 2,
-            created_at: Some(now.clone()),
-            updated_at: Some(now.clone()),
+            created_at: Some(now),
+            updated_at: Some(now),
             ..Default::default()
         };
         storage.put_fractal_session(&child).await.unwrap();
     }
 
     // Query by parent
-    let children = storage.get_sessions_by_parent("root-session").await.unwrap();
-    assert_eq!(children.len(), 2, "Expected 2 children, got {}", children.len());
+    let children = storage
+        .get_sessions_by_parent("root-session")
+        .await
+        .unwrap();
+    assert_eq!(
+        children.len(),
+        2,
+        "Expected 2 children, got {}",
+        children.len()
+    );
 
     // Query by root (includes root session itself + 2 children)
     let by_root = storage.get_sessions_by_root("root-session").await.unwrap();
-    assert_eq!(by_root.len(), 3, "Expected 3 sessions by root (root + 2 children), got {}", by_root.len());
+    assert_eq!(
+        by_root.len(),
+        3,
+        "Expected 3 sessions by root (root + 2 children), got {}",
+        by_root.len()
+    );
 
     // Verify hierarchy
     for child in &children {
@@ -272,7 +342,9 @@ async fn test_fractal_session_parent_child_hierarchy() {
 #[tokio::test]
 async fn test_fractal_session_query_by_status() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("session_query_status").await.unwrap();
+    let harness = IntegrationTestHarness::new("session_query_status")
+        .await
+        .unwrap();
     let storage = harness.storage();
 
     let now = pbjson_types::Timestamp {
@@ -298,8 +370,8 @@ async fn test_fractal_session_query_by_status() {
             fractal_depth: 0,
             root_session_id: format!("status-test-{}", i),
             owner_node_id: "test-node".to_string(),
-            created_at: Some(now.clone()),
-            updated_at: Some(now.clone()),
+            created_at: Some(now),
+            updated_at: Some(now),
             ..Default::default()
         };
         storage.put_fractal_session(&session).await.unwrap();
@@ -311,7 +383,12 @@ async fn test_fractal_session_query_by_status() {
         ..Default::default()
     };
     let active_sessions = storage.query_fractal_sessions(&query).await.unwrap();
-    assert_eq!(active_sessions.len(), 2, "Expected 2 active sessions, got {}", active_sessions.len());
+    assert_eq!(
+        active_sessions.len(),
+        2,
+        "Expected 2 active sessions, got {}",
+        active_sessions.len()
+    );
 
     for session in &active_sessions {
         assert_eq!(session.status, SessionStatus::Active as i32);
@@ -321,7 +398,9 @@ async fn test_fractal_session_query_by_status() {
 #[tokio::test]
 async fn test_multiple_sequential_workflow_writes() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("sequential_writes").await.unwrap();
+    let harness = IntegrationTestHarness::new("sequential_writes")
+        .await
+        .unwrap();
     let storage = harness.storage().clone();
 
     // Write multiple workflows sequentially
@@ -339,11 +418,19 @@ async fn test_multiple_sequential_workflow_writes() {
 
     // Verify all workflows exist
     let workflows = storage.list_akash_workflows().await.unwrap();
-    assert_eq!(workflows.len(), 10, "Expected 10 workflows after sequential writes, got {}", workflows.len());
+    assert_eq!(
+        workflows.len(),
+        10,
+        "Expected 10 workflows after sequential writes, got {}",
+        workflows.len()
+    );
 
     // Verify each one is retrievable
     for i in 0..10 {
-        let workflow = storage.get_akash_workflow(&format!("sequential-{}", i)).await.unwrap();
+        let workflow = storage
+            .get_akash_workflow(&format!("sequential-{}", i))
+            .await
+            .unwrap();
         assert!(workflow.is_some(), "Workflow sequential-{} should exist", i);
     }
 }

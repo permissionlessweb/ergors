@@ -18,6 +18,7 @@ pub mod network;
 pub mod open_responses;
 pub mod orchestrator;
 pub mod proxy;
+pub mod rag;
 pub mod server;
 pub mod session;
 pub mod storage;

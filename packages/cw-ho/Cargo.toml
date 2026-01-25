@@ -20,6 +20,7 @@ path = "src/main.rs"
 zk-headstash  = { workspace = true }
 ho-std  = { workspace = true, features = ["rpc"] }
 ergors-proto = { path = "../../proto" }
+ergors-rag = { path = "../ergors-rag", features = ["openai"] }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 axum = { workspace = true }

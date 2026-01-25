@@ -477,7 +477,7 @@ impl ErgorsStorage {
         session_id: Option<String>,
     ) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let op_key = storage_key(OP_PREFIX, &id);
+        let op_key = storage_key(OP_PREFIX, id);
         let operation = OperationRecord {
             id: op_key.to_string(),
             operation_type: operation_type.to_string(),

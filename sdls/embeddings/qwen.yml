@@ -2,7 +2,7 @@
 version: "2.0"
 services:
   sglang:
-    image: lmsysorg/sglang:v0.4.6.post1-cu125-srt
+    image: lmsysorg/sglang:dev-cu13
     expose:
       - port: 8000
         as: 8000
@@ -13,7 +13,7 @@ services:
       - "-c"
     args:
       - >- 
-        python3 -m sglang.launch_server --model-path Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 --tp 4 --context-length 262144 --host 0.0.0.0 --port 8000
+        python3 -m sglang.launch_server --model-path Qwen/Qwen3-VL-Embedding-8B --tensor-parallel-size 2 --host 0.0.0.0 --port 8000 --is-embedding --trust-remote-code --mem-fraction-static 0.87
     params:
       storage:
         shm:
@@ -26,9 +26,9 @@ profiles:
     sglang:
       resources:
         cpu:
-          units: 64
+          units: 32
         memory:
-          size: 128Gi
+          size: 64Gi
         storage:
           - size: 50Gi
           - name: data
@@ -42,14 +42,14 @@ profiles:
               class: ram
               persistent: false
         gpu:
-          units: 4
+          units: 2
           attributes:
             vendor:
               nvidia:
                 - model: h100
                   ram: 80Gi
                 - model: a100
-                  ram: 80Gi
+                  ram: 40Gi
   placement:
     dcloud:
       pricing:

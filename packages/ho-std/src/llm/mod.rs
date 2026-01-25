@@ -1,5 +1,6 @@
 mod api_keys;
 mod cost;
+pub mod embed;
 mod encrypted_keys;
 mod joints;
 mod macros;

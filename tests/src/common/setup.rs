@@ -51,6 +51,9 @@ pub const STORAGE_PREFIXES: &[&str] = &[
     "fractal_sessions",
     "open_responses",
     "sdl_template_contracts",
+    // RAG prefixes
+    "rag_source_index",
+    "rag_chunks",
 ];
 
 /// Test context encapsulating temporary directories and configuration

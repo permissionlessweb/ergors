@@ -1,544 +1,628 @@
-# Ragamuffin: RAG Embedding Pipeline
+# Ragamuffin: Repository RAG with ERGORS
 
-Ragamuffin generates semantic embeddings from code repositories and stores them in a FAISS index for retrieval-augmented generation. It deploys a SentenceTransformer-based inference provider on Akash Network via ergors, formats source repositories with githem, and produces a queryable vector store.
+A step-by-step tutorial for creating a RAG knowledge base from any Git repository using ERGORS and Akash-deployed embeddings.
 
-**Pipeline:** `Repository → githem (format) → Akash Provider (embed) → FAISS Store (retrieve)`
+**What you'll learn:**
+
+1. Import a funded mnemonic for Akash deployments
+2. Use githem to convert a repository into a single LLM-ready file
+3. Deploy an embedding model to Akash
+4. Create a RAG knowledge base from the githem output
+5. Query your repository with semantic search
 
 ---
 
 ## Prerequisites
 
-- ERGORS engine installed and running (`ergors start`)
-- Python 3.10+ with pip
-- [githem](https://github.com/githem/githem) (optional, for remote repo formatting)
-- Akash account with funded wallet (for cloud deployment)
+### 1. Install githem
+
+Githem transforms Git repositories into LLM-ready text files.
 
 ```bash
-# Install Python dependencies
-pip install -r tools/python/requirements.txt
+curl -sL https://get.githem.com | bash
+```
 
-# For local-only mode (no Akash needed)
-pip install sentence-transformers torch
+Verify installation:
+
+```bash
+githem --version
+```
+
+### 2. ERGORS Engine
+
+Ensure you have the ERGORS engine built:
+
+```bash
+cd /path/to/CW-AGENT
+cargo build --release -p ergors
+```
+
+### 3. Funded Akash Wallet
+
+You need a BIP-39 mnemonic seed phrase for an Akash wallet funded with AKT tokens.
+
+**Getting AKT:**
+- Purchase AKT on exchanges (Osmosis, Kraken, etc.)
+- Transfer to your Akash address
+
+---
+
+## Step 1: Import Your Mnemonic
+
+Before deploying to Akash, import your funded wallet's mnemonic seed phrase:
+
+```bash
+# Import your 24-word mnemonic (will prompt for encryption password)
+ergors keys import-mnemonic \
+  --phrase "your twenty four word mnemonic seed phrase goes here ..." \
+  --label "My Akash Wallet" \
+  --key-name default \
+  --chain-id akashnet-2 \
+  --address-prefix akash \
+  --make-default
+```
+
+**Security notes:**
+- You'll be prompted to create an encryption password
+- The mnemonic is encrypted at rest using Argon2id + ChaCha20Poly1305
+- Never share your mnemonic or store it in plain text
+
+Verify the import:
+
+```bash
+# List all keys
+ergors keys list
+
+# Should show:
+# Key Name: default
+# Label: My Akash Wallet
+# Address: akash1...
+# Default: true
 ```
 
 ---
 
-## Quick Start
+## Step 2: Convert Repository with Githem
 
-### Local Mode (No Akash)
+Use githem to create a single file containing the entire repository content in an optimized format.
 
-Embed a local repository using your machine's CPU:
-
-```bash
-./tools/raggamuffin.sh ~/projects/my-repo --local
-```
-
-Query results:
+### Basic Usage
 
 ```bash
-python3 tools/python/rag-retriever.py --store ./rag-store --local --query "how does authentication work"
+# Current directory
+githem . -o repo.md
+
+# GitHub repository
+githem anthropics/claude-code -o claude-code.md
+
+# With code-only preset (excludes docs, configs)
+githem . --preset code-only -o repo-code.md
+
+# Specific branch
+githem owner/repo --branch develop -o develop.md
+
+# Include only Rust files
+githem . --include "*.rs,*.toml" -o rust-only.md
 ```
 
-### Akash Mode (Cloud Deployment)
-
-Deploy an embedding provider to Akash and process a remote repo:
+### Example: Process CW-AGENT Repository
 
 ```bash
-./tools/raggamuffin.sh https://github.com/user/repo
+# Full repository with standard filtering
+githem /Users/returniflost/CW-AGENT -o cw-agent.md --preset standard
+
+# Check the output
+wc -l cw-agent.md  # See line count
+head -100 cw-agent.md  # Preview content
 ```
+
+### Githem Presets
+
+| Preset | Description | Best For |
+|--------|-------------|----------|
+| `raw` | No filtering | Complete backup |
+| `standard` | Smart filtering (default) | LLM analysis |
+| `code-only` | Source code only | Code review |
+| `minimal` | Basic filtering | Quick scan |
+
+**Output:** A single `.md` file ready for RAG ingestion.
 
 ---
 
-## Pipeline Walkthrough
+## Step 3: Deploy Embedding Model to Akash
 
-### Step 1: Deploy Embedding Provider
+Deploy a Qwen3-VL-Embedding model to Akash for generating embeddings.
 
-Ragamuffin deploys a containerized SentenceTransformer model to Akash Network as an EXECUTOR node. The container exposes OpenAI-compatible `/v1/embeddings` and Ollama-compatible `/api/embeddings` endpoints.
+### SDL Configuration
+
+The embedding deployment SDL is located at:
+
+```
+sdls/embeddings/qwen.yml
+```
+
+**Model:** `Qwen/Qwen3-VL-Embedding-8B`
+**Endpoint:** OpenAI-compatible `/v1/embeddings`
+**Requirements:** 2x H100 or A100 GPUs
+
+### Deploy
 
 ```bash
-# CPU deployment (all-MiniLM-L6-v2, 384d, ~80MB model)
-ergors-cli deploy create \
-  --sdl sdls/embeddings/embedding-provider.yml \
-  --var EMBEDDING_MODEL=all-MiniLM-L6-v2
-
-# GPU deployment (bge-large-en-v1.5, 1024d, larger models)
-ergors-cli deploy create \
-  --sdl sdls/embeddings/embedding-provider-gpu.yml \
-  --var EMBEDDING_MODEL=BAAI/bge-large-en-v1.5
+# Deploy the embedding service
+ergors deploy create \
+  --sdl sdls/embeddings/qwen.yml \
+  --key-name default \
+  --auto
 ```
 
-The deployment progresses through ergors' workflow steps:
-
-```
-key_selection → balance_check → grant_request → sdl_configuration →
-certificate_setup → deployment_create → bid_wait → provider_selection →
-lease_create → manifest_send → endpoint_retrieval → endpoint_testing → complete
-```
-
-Advance the workflow:
+### Monitor Deployment
 
 ```bash
-ergors deploy advance --name embedding-provider --wait
+# Get the session ID from the deploy output, then:
+ergors deploy get <session-id>
+
+# Wait for status: "running"
+# Note the endpoint URL (e.g., http://provider.akash.network:8000)
 ```
 
-Retrieve the endpoint:
+### Verify Endpoint
+
+Once deployed, test the endpoint:
 
 ```bash
-ergors deploy get --name embedding-provider
-```
-
-Verify health:
-
-```bash
-curl http://<akash-endpoint>:8080/health
-# {"status":"healthy","model":"all-MiniLM-L6-v2","dimension":384,"max_batch_size":256}
-```
-
-### Step 2: Format Repository
-
-Ragamuffin uses [githem](https://github.com/githem/githem) to consolidate a repository into a single LLM-ready document. This strips noise, respects `.gitignore`, and produces clean structured text.
-
-```bash
-# Remote repo via githem
-githem https://github.com/user/repo --preset standard --output formatted_repo.txt
-
-# Or use a local repo directly (raggamuffin handles this automatically)
-./tools/raggamuffin.sh ~/projects/my-repo --skip-format
-```
-
-If githem is not installed, the pipeline falls back to cloning the repo and scanning files directly by extension.
-
-**Supported file extensions:**
-`.go` `.js` `.py` `.ts` `.java` `.c` `.cpp` `.h` `.hpp` `.php` `.sql` `.rs` `.rb` `.swift` `.kt` `.scala` `.zig` `.md` `.toml` `.yaml` `.yml` `.json`
-
-### Step 3: Generate Embeddings
-
-The embedding script chunks source text (default 500 chars, line-boundary aligned) and sends batches to the provider:
-
-```bash
-# Using remote Akash provider
-python3 tools/python/rag-embedding.py \
-  --input formatted_repo.txt \
-  --provider-url http://<akash-endpoint>:8080 \
-  --output ./rag-store
-
-# Using local model
-python3 tools/python/rag-embedding.py \
-  --repo ~/projects/my-repo \
-  --local \
-  --output ./rag-store
-
-# Custom chunk and batch sizes
-python3 tools/python/rag-embedding.py \
-  --input formatted_repo.txt \
-  --provider-url http://host:8080 \
-  --chunk-size 1000 \
-  --batch-size 128 \
-  --model BAAI/bge-large-en-v1.5
-```
-
-Output structure:
-
-```
-rag-store/
-├── index.faiss       # FAISS inner-product index (normalized vectors)
-├── chunks.pkl        # Chunk text + source metadata (pickle)
-└── manifest.json     # Index info (dimension, count, timestamps)
-```
-
-### Step 4: Query Embeddings
-
-The retriever client embeds your query using the same model/provider and searches the FAISS index for semantically similar chunks:
-
-```bash
-# Single query
-python3 tools/python/rag-retriever.py \
-  --store ./rag-store \
-  --provider-url http://<akash-endpoint>:8080 \
-  --query "error handling in the auth module"
-
-# Interactive mode
-python3 tools/python/rag-retriever.py \
-  --store ./rag-store \
-  --provider-url http://<akash-endpoint>:8080
-
-# JSON output (for piping to other tools)
-python3 tools/python/rag-retriever.py \
-  --store ./rag-store \
-  --local \
-  --query "database connection" \
-  --json \
-  --top-k 10
-```
-
-Example output:
-
-```
-[1] Score: 0.8234 | Source: src/auth/handler.rs
-    pub async fn verify_token(token: &str) -> Result<Claims> {
-        let decoded = decode::<Claims>(token, &KEYS.decoding, &Validation::default())
-            .map_err(|e| AuthError::InvalidToken(e.to_string()))?;
-    ...
-
-[2] Score: 0.7891 | Source: src/auth/middleware.rs
-    pub async fn auth_middleware(req: Request, next: Next) -> Response {
-        let token = req.headers().get("authorization")
-    ...
-```
-
----
-
-## Orchestration Script
-
-`tools/raggamuffin.sh` combines all steps into a single command:
-
-```bash
-./tools/raggamuffin.sh <repo-url-or-path> [options]
-```
-
-### Options
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--model MODEL` | `all-MiniLM-L6-v2` | Embedding model name |
-| `--output DIR` | `./rag-store` | Output directory |
-| `--chunk-size N` | `500` | Characters per chunk |
-| `--batch-size N` | `64` | Texts per API request |
-| `--gpu` | off | Use GPU-accelerated Akash SDL |
-| `--local` | off | Skip Akash, use local SentenceTransformer |
-| `--provider-url URL` | — | Use an existing provider endpoint |
-| `--deploy-name NAME` | `embedding-provider` | Akash deployment name |
-| `--skip-format` | off | Skip githem, scan repo files directly |
-
-### Environment Variables
-
-| Variable | Purpose |
-|----------|---------|
-| `EMBEDDING_MODEL` | Override default model |
-| `ERGORS_HOST` | Ergors daemon address (default: `localhost:50051`) |
-| `GITHEM_PRESET` | Githem formatting preset (default: `standard`) |
-
----
-
-## Deployment Profiles
-
-### CPU — Lightweight (default)
-
-Best for: `all-MiniLM-L6-v2`, `bge-small-en-v1.5`, `EmbeddingGemma-300M`
-
-| Resource | Allocation |
-|----------|-----------|
-| CPU | 4 units |
-| Memory | 4 GB |
-| Storage | 2 GB ephemeral + 10 GB persistent cache |
-| GPU | None |
-| Cost | ~100,000 uakt/block |
-
-```bash
-./tools/raggamuffin.sh https://github.com/user/repo --model all-MiniLM-L6-v2
-```
-
-### GPU — High Throughput
-
-Best for: `bge-large-en-v1.5`, `jina-embeddings-v3`, `Qwen3-Embedding-0.6B`
-
-| Resource | Allocation |
-|----------|-----------|
-| CPU | 8 units |
-| Memory | 16 GB |
-| Storage | 5 GB ephemeral + 50 GB persistent cache |
-| GPU | 1x RTX 4090 or A100 (40GB) |
-| Cost | ~500,000 uakt/block |
-
-```bash
-./tools/raggamuffin.sh https://github.com/user/repo --model BAAI/bge-large-en-v1.5 --gpu
-```
-
----
-
-## Provider API Reference
-
-The deployed container exposes these endpoints:
-
-### `POST /v1/embeddings` (OpenAI-compatible)
-
-```bash
-curl -X POST http://<endpoint>:8080/v1/embeddings \
+curl -X POST http://<provider-endpoint>:8000/v1/embeddings \
   -H "Content-Type: application/json" \
   -d '{
-    "input": ["function authenticate(user, pass) { ... }"],
-    "model": "all-MiniLM-L6-v2"
+    "input": ["Hello, world!"],
+    "model": "Qwen/Qwen3-VL-Embedding-8B"
   }'
 ```
 
-Response:
+Expected response:
 
 ```json
 {
-  "object": "list",
   "data": [
-    {"object": "embedding", "embedding": [0.023, -0.114, ...], "index": 0}
+    {
+      "embedding": [0.123, -0.456, ...],
+      "index": 0
+    }
   ],
-  "model": "all-MiniLM-L6-v2",
-  "usage": {"prompt_tokens": 12, "total_tokens": 12}
+  "model": "Qwen/Qwen3-VL-Embedding-8B"
 }
 ```
 
-### `POST /api/embeddings` (Ollama-compatible)
+**Save the endpoint URL** - you'll need it for the next steps.
 
-```bash
-curl -X POST http://<endpoint>:8080/api/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{"model": "all-MiniLM-L6-v2", "prompt": "hello world"}'
+---
+
+## Step 4: Create RAG Knowledge Base
+
+Now create a RAG instance and ingest the githem output.
+
+### Option A: Using Rust Code
+
+Create a file `ingest.rs`:
+
+```rust
+use ergors::rag;
+use ergors::storage::ErgorsStorage;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Configuration
+    let embedding_endpoint = "http://<your-akash-provider>:8000";
+    let model = "Qwen/Qwen3-VL-Embedding-8B";
+    let dimension = 3584;  // Qwen embedding dimension
+    let githem_file = "./cw-agent.md";
+
+    // Initialize storage with RAG prefixes
+    let prefixes = vec![
+        "rag_chunks".to_string(),
+        "rag_source_index".to_string(),
+    ];
+    let storage = ErgorsStorage::new("./rag-data", prefixes).await?;
+
+    // Create RAG with remote embedder pointing to Akash
+    let rag = rag::new_remote(&storage, embedding_endpoint, model, dimension)?;
+
+    // Read githem output
+    let content = std::fs::read_to_string(githem_file)?;
+    println!("Loaded {} bytes from {}", content.len(), githem_file);
+
+    // Create document
+    let doc = rag::Document {
+        content,
+        uri: githem_file.to_string(),
+        doc_type: "markdown".to_string(),
+        tags: vec!["repository".to_string(), "code".to_string()],
+    };
+
+    // Ingest (this calls the Akash embedding endpoint)
+    println!("Ingesting document (this may take a while for large files)...");
+    let chunk_ids = rag.ingest(doc, Some("githem".to_string())).await?;
+
+    println!("Ingested {} chunks", chunk_ids.len());
+    println!("RAG index size: {}", rag.size());
+    println!("Storage: ./rag-data");
+
+    Ok(())
+}
 ```
 
-### `GET /health`
+### Option B: Using the Embedding API Directly
 
-```json
-{"status": "healthy", "model": "all-MiniLM-L6-v2", "dimension": 384, "max_batch_size": 256}
-```
+For more control, use the standalone embedding API:
 
-### `GET /info`
+```rust
+use ho_std::llm::embed;
 
-```json
-{"model": "all-MiniLM-L6-v2", "dimension": 384, "max_batch_size": 256, "max_tokens": 512, "normalize": true}
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let endpoint = "http://<your-akash-provider>:8000";
+    let model = "Qwen/Qwen3-VL-Embedding-8B";
+
+    // Test embedding
+    let texts = &["Hello world", "Rust programming"];
+    let embeddings = embed::generate(endpoint, texts, model, None).await?;
+
+    println!("Generated {} embeddings", embeddings.len());
+    println!("Dimension: {}", embeddings[0].len());
+
+    Ok(())
+}
 ```
 
 ---
 
-## Model Selection Guide
+## Step 5: Query the Knowledge Base
 
-| Model | Dimensions | Size | Best For |
-|-------|-----------|------|----------|
-| `all-MiniLM-L6-v2` | 384 | ~80 MB | Fast, lightweight, good baseline |
-| `bge-small-en-v1.5` | 384 | ~130 MB | Better quality, still small |
-| `bge-large-en-v1.5` | 1024 | ~1.3 GB | High quality, needs GPU |
-| `Qwen3-Embedding-0.6B` | 1024 | ~1.2 GB | Multilingual, long context |
-| `jina-embeddings-v3` | 1024 | ~570 MB | 8K context, multilingual |
+Once ingestion is complete, query your repository.
 
-Use `--model` to specify. Ensure the deployed provider matches (models are downloaded on first use and cached persistently).
+### Basic Query
 
----
+```rust
+use ergors::rag;
+use ergors::storage::ErgorsStorage;
 
-## Building the Container
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Connect to existing RAG storage
+    let prefixes = vec!["rag_chunks".into(), "rag_source_index".into()];
+    let storage = ErgorsStorage::new("./rag-data", prefixes).await?;
 
-To build and push the embedding provider image:
+    let rag = rag::new_remote(
+        &storage,
+        "http://<your-akash-provider>:8000",
+        "Qwen/Qwen3-VL-Embedding-8B",
+        3584,
+    )?;
 
-```bash
-cd docker/embedding-provider
+    // Query
+    let query = "How does the RAG system handle embeddings?";
+    let results = rag.query(query, 5, rag::QueryOptions::default()).await?;
 
-# Build for CPU
-docker build -t ghcr.io/ergors/embedding-provider:latest .
+    match results {
+        rag::QueryResult::Standard(chunks) => {
+            println!("Query: {}\n", query);
+            for (i, chunk) in chunks.iter().enumerate() {
+                println!("[{}] Score: {:.3}", i + 1, chunk.similarity);
+                println!("    Preview: {}", chunk.metadata.preview);
+                println!();
+            }
+        }
+        _ => {}
+    }
 
-# Build with GPU support (use a CUDA base image)
-docker build -t ghcr.io/ergors/embedding-provider:latest-gpu \
-  --build-arg BASE_IMAGE=pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime .
-
-# Push to registry
-docker push ghcr.io/ergors/embedding-provider:latest
+    Ok(())
+}
 ```
 
-### Container Configuration
+### Verified Query (with Provenance)
 
-| Env Variable | Default | Description |
-|-------------|---------|-------------|
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Model to load at startup |
-| `PORT` | `8080` | Server port |
-| `HOST` | `0.0.0.0` | Bind address |
-| `MAX_BATCH_SIZE` | `256` | Max texts per request |
+```rust
+let options = rag::QueryOptions {
+    verify: true,
+    include_proof: false,
+    filters: Default::default(),
+};
 
----
+let results = rag.query("error handling", 5, options).await?;
 
-## Integration with ERGORS Workflows
-
-### Agentic Retrieval
-
-Wire ragamuffin into ergors task workflows for context-aware code generation:
-
-```bash
-# 1. Generate embeddings for the workspace
-./tools/raggamuffin.sh . --local --output .ergors/rag-store
-
-# 2. Query during task execution
-CONTEXT=$(python3 tools/python/rag-retriever.py \
-  --store .ergors/rag-store \
-  --local \
-  --query "implement authentication middleware" \
-  --json \
-  --top-k 3)
-
-# 3. Feed context to LLM via ergors prompt
-ergors-cli prompt --context "$CONTEXT" --message "implement auth middleware based on existing patterns"
+match results {
+    rag::QueryResult::Verified(chunks) => {
+        for chunk in chunks {
+            println!("Source: {}", chunk.provenance.source_uri);
+            println!("Ingested: {:?}", chunk.provenance.ingested_at);
+            println!("Content: {}", chunk.content);
+            println!("Hash valid: {}", chunk.hash_valid);
+        }
+    }
+    _ => {}
+}
 ```
 
-### Iterative Re-embedding
+### Query with Filters
 
-Re-run after code changes to keep the store current:
+```rust
+use ergors_rag::MetadataFilters;
 
-```bash
-# Re-embed after significant changes
-./tools/raggamuffin.sh . --local --output .ergors/rag-store
+let options = rag::QueryOptions {
+    verify: false,
+    include_proof: false,
+    filters: MetadataFilters {
+        tags: vec!["code".to_string()],
+        source_uri_prefix: Some("src/".to_string()),
+        ..Default::default()
+    },
+};
 
-# Or target specific directories
-python3 tools/python/rag-embedding.py --repo ./src --local --output .ergors/rag-store
-```
-
-### Multi-Repo Aggregation
-
-Embed multiple repos into a single store:
-
-```bash
-# Format multiple repos
-githem https://github.com/org/repo-a --output /tmp/repo-a.txt
-githem https://github.com/org/repo-b --output /tmp/repo-b.txt
-cat /tmp/repo-a.txt /tmp/repo-b.txt > /tmp/combined.txt
-
-# Embed combined
-python3 tools/python/rag-embedding.py \
-  --input /tmp/combined.txt \
-  --provider-url http://akash-endpoint:8080 \
-  --output ./multi-rag-store
+let results = rag.query("authentication", 10, options).await?;
 ```
 
 ---
 
-## File Reference
+## Complete Example Script
 
+Here's a complete script that does everything:
+
+```rust
+//! Repository RAG with Githem and Akash
+//!
+//! Usage:
+//!   1. Run githem to create repo file: githem . -o repo.md
+//!   2. Deploy embedding service: ergors deploy create --sdl sdls/embeddings/qwen.yml
+//!   3. Run this script with the endpoint URL
+
+use ergors::rag;
+use ergors::storage::ErgorsStorage;
+use std::io::{self, BufRead, Write};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Parse args
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 3 {
+        eprintln!("Usage: {} <githem-file> <akash-endpoint>", args[0]);
+        eprintln!("Example: {} cw-agent.md http://provider:8000", args[0]);
+        std::process::exit(1);
+    }
+
+    let githem_file = &args[1];
+    let endpoint = &args[2];
+    let model = "Qwen/Qwen3-VL-Embedding-8B";
+    let dimension = 3584;
+
+    // Initialize storage
+    println!("Initializing RAG storage...");
+    let prefixes = vec!["rag_chunks".into(), "rag_source_index".into()];
+    let storage = ErgorsStorage::new("./rag-data", prefixes).await?;
+
+    // Create RAG
+    let rag = rag::new_remote(&storage, endpoint, model, dimension)?;
+
+    // Check if we need to ingest
+    if rag.size() == 0 {
+        println!("Loading {}...", githem_file);
+        let content = std::fs::read_to_string(githem_file)?;
+        println!("Loaded {} bytes", content.len());
+
+        let doc = rag::Document {
+            content,
+            uri: githem_file.to_string(),
+            doc_type: "markdown".to_string(),
+            tags: vec!["repository".to_string()],
+        };
+
+        println!("Ingesting (calling Akash embedding service)...");
+        let chunks = rag.ingest(doc, Some("githem".to_string())).await?;
+        println!("Created {} chunks\n", chunks.len());
+    } else {
+        println!("Using existing index ({} chunks)\n", rag.size());
+    }
+
+    // Interactive query loop
+    println!("=== Repository RAG ===");
+    println!("Enter queries (Ctrl-D to exit):\n");
+
+    let stdin = io::stdin();
+    print!("> ");
+    io::stdout().flush()?;
+
+    for line in stdin.lock().lines() {
+        let query = line?;
+        if query.is_empty() {
+            print!("> ");
+            io::stdout().flush()?;
+            continue;
+        }
+
+        let results = rag.query(&query, 5, rag::QueryOptions::default()).await?;
+
+        match results {
+            rag::QueryResult::Standard(chunks) => {
+                println!("\n--- Results ---");
+                for (i, chunk) in chunks.iter().enumerate() {
+                    println!("\n[{}] Score: {:.3}", i + 1, chunk.similarity);
+                    println!("{}", chunk.metadata.preview);
+                }
+            }
+            _ => {}
+        }
+
+        print!("\n> ");
+        io::stdout().flush()?;
+    }
+
+    println!("\nGoodbye!");
+    Ok(())
+}
 ```
-tools/
-├── raggamuffin.sh                      # Orchestration script
-└── python/
-    ├── rag-embedding.py                # Embedding generator (local + remote)
-    ├── rag-retriever.py                # Semantic search client
-    └── requirements.txt                # Python dependencies
 
-docker/
-└── embedding-provider/
-    ├── server.py                       # FastAPI embedding server
-    ├── Dockerfile                      # Container build
-    └── requirements.txt                # Server dependencies
+---
 
-sdls/embeddings/
-├── embedding-provider.yml              # Akash SDL (CPU)
-├── embedding-provider-gpu.yml          # Akash SDL (GPU)
-└── qwen.yml                            # Large-scale Qwen SDL
+## Deployment SDL Reference
+
+The Qwen embedding SDL (`sdls/embeddings/qwen.yml`):
+
+```yaml
+version: "2.0"
+services:
+  sglang:
+    image: lmsysorg/sglang:dev-cu13
+    expose:
+      - port: 8000
+        as: 8000
+        to:
+          - global: true
+    command:
+      - bash
+      - "-c"
+    args:
+      - >-
+        python3 -m sglang.launch_server
+        --model-path Qwen/Qwen3-VL-Embedding-8B
+        --tensor-parallel-size 2
+        --host 0.0.0.0
+        --port 8000
+        --is-embedding
+        --trust-remote-code
+        --mem-fraction-static 0.87
+
+profiles:
+  compute:
+    sglang:
+      resources:
+        cpu:
+          units: 32
+        memory:
+          size: 64Gi
+        storage:
+          - size: 50Gi
+          - name: data
+            size: 300Gi
+            attributes:
+              persistent: true
+              class: beta3
+          - name: shm
+            size: 10Gi
+            attributes:
+              class: ram
+              persistent: false
+        gpu:
+          units: 2
+          attributes:
+            vendor:
+              nvidia:
+                - model: h100
+                  ram: 80Gi
+                - model: a100
+                  ram: 40Gi
+  placement:
+    dcloud:
+      pricing:
+        sglang:
+          denom: uakt
+          amount: 1000000
+
+deployment:
+  sglang:
+    dcloud:
+      profile: sglang
+      count: 1
 ```
+
+### Alternative: Lighter Model (all-MiniLM-L6-v2)
+
+For testing or lower resource requirements, use `sdls/embeddings/embedding-provider.yml`:
+
+- Model: `all-MiniLM-L6-v2` (384 dimensions)
+- Resources: 4 CPU, 4Gi RAM (no GPU required)
 
 ---
 
 ## Troubleshooting
 
-### Provider Not Responding
+### Deployment not starting
 
 ```bash
-# Check deployment status
-ergors deploy get --name embedding-provider
+# Check deployment logs
+ergors deploy get <session-id>
 
-# Check provider health directly
-curl http://<endpoint>:8080/health
-
-# View deployment logs (if available)
-ergors deploy logs --name embedding-provider
+# Common issues:
+# - Insufficient AKT balance
+# - No providers with required GPU
+# - SDL syntax errors
 ```
 
-### Embedding Dimension Mismatch
-
-The query model must match the embedding model. If you embedded with `bge-large-en-v1.5` (1024d), you must query with the same model:
+### Embedding request failing
 
 ```bash
-python3 tools/python/rag-retriever.py \
-  --store ./rag-store \
-  --provider-url http://host:8080 \
-  --model BAAI/bge-large-en-v1.5 \
-  --query "your question"
+# Test endpoint directly
+curl http://<endpoint>:8000/health
+
+# Check if model is loaded (may take a few minutes after deployment)
+curl http://<endpoint>:8000/v1/models
 ```
 
-### Out of Memory (Local Mode)
+### Large file ingestion slow
 
-For large repos, reduce batch size:
+- The embedding service processes text in batches
+- Large files (>1MB) may take several minutes
+- Consider using `--preset code-only` with githem to reduce size
 
-```bash
-./tools/raggamuffin.sh ~/large-repo --local --batch-size 16 --chunk-size 300
+### Memory issues
+
+- Qwen3-VL-Embedding-8B requires 2x GPUs with 40GB+ VRAM
+- For smaller deployments, use `all-MiniLM-L6-v2` instead
+
+---
+
+## Architecture Summary
+
 ```
-
-### githem Not Found
-
-Install githem or use `--skip-format` to scan files directly:
-
-```bash
-# Skip githem, process repo files by extension
-./tools/raggamuffin.sh https://github.com/user/repo --skip-format
-
-# Or install githem
-curl -sL https://get.githem.com | bash
-```
-
-### FAISS Import Error
-
-```bash
-# Install faiss-cpu (no GPU needed for indexing/search)
-pip install faiss-cpu
-
-# On Apple Silicon
-pip install faiss-cpu --no-cache-dir
+┌─────────────────────────────────────────────────────────────────┐
+│                         Workflow                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  [1] Git Repository                                             │
+│       │                                                         │
+│       ▼ githem                                                  │
+│  [2] Single .md File (LLM-ready format)                        │
+│       │                                                         │
+│       ▼ ergors ingest                                           │
+│  [3] ERGORS Engine                                              │
+│       │                                                         │
+│       ├──► HNSW Vector Index (local, fast search)              │
+│       │                                                         │
+│       ├──► Cnidarium Storage (verifiable provenance)           │
+│       │                                                         │
+│       └──► Akash Embedding Service (GPU inference)             │
+│             │                                                   │
+│             ▼                                                   │
+│       [4] Qwen3-VL-Embedding-8B                                │
+│            - 3584 dimensions                                    │
+│            - OpenAI-compatible API                              │
+│            - /v1/embeddings endpoint                            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Quick Reference
+## Next Steps
 
-| Task | Command |
-|------|---------|
-| Embed local repo | `./tools/raggamuffin.sh ~/repo --local` |
-| Embed via Akash | `./tools/raggamuffin.sh https://github.com/user/repo` |
-| Embed with GPU | `./tools/raggamuffin.sh ~/repo --gpu --model bge-large-en-v1.5` |
-| Use existing provider | `./tools/raggamuffin.sh ~/repo --provider-url http://host:8080` |
-| Single query | `python3 tools/python/rag-retriever.py -s ./rag-store --local -q "query"` |
-| Interactive search | `python3 tools/python/rag-retriever.py -s ./rag-store --local` |
-| JSON results | `python3 tools/python/rag-retriever.py -s ./rag-store --local -q "query" --json` |
-| Check provider | `curl http://<endpoint>:8080/health` |
-| Deploy provider | `ergors deploy create --sdl sdls/embeddings/embedding-provider.yml` |
-| Check deployment | `ergors deploy get --name embedding-provider` |
+- **Add more repositories**: Ingest multiple githem outputs with different URIs
+- **Filter by source**: Use `source_uri_prefix` in queries
+- **Production deployment**: Set up persistent storage and monitoring
+- **Multi-tenant**: Use `uploader_id` for attribution
 
+---
 
-# raggamuffin: generate rag via embedding llm deployed from akash
+## References
 
-1. deploy embedding inference provider on akash
-2. format repository using <https://github.com/rotkonetworks/githem>
-3. generate rag embeddings using: /Users/returniflost/CW-AGENT/tools/python/rag-embedding.py
-4. wire in client to allow agentic retrieval of rags
-
-Here is a comprehensive Markdown table summarizing many of the most notable **open-source embedding models** (as of early 2026). It draws from the MTEB leaderboard trends, popular usage, and recent benchmarks. I've focused on models that are openly available (e.g., Apache 2.0, MIT, or similar permissive licenses) with weights on Hugging Face.
-
-| Model Name (Hugging Face path)              | Approx. Size | Dimensions | Max Tokens (approx.) | Multilingual? | Notable Features / Best For                  | Approx. MTEB Avg. Score (recent refs) | License     |
-|---------------------------------------------|--------------|------------|----------------------|---------------|----------------------------------------------|---------------------------------------|-------------|
-| Qwen/Qwen3-Embedding-8B                     | 8B          | 4096      | 8192+               | Yes          | Currently top open-source; instruction-aware, strong multilingual | ~70.5                                 | Apache 2.0 |
-| nvidia/llama-embed-nemotron-8b              | 8B          | 4096      | 32768               | Yes          | Excellent retrieval; high Top-1 accuracy in benchmarks | ~69–70                                | Restrictive (non-commercial in base) |
-| Qwen/Qwen3-Embedding-4B                     | 4B          | 4096?     | High                | Yes          | Balanced size/performance in Qwen3 family    | High (close to 8B)                    | Apache 2.0 |
-| dunzhang/stella_en_1.5B_v5                  | 1.5B        | 1024      | Varies              | English-only | Very strong compact English model            | Top-tier in mid-size                  | Open       |
-| google/embeddinggemma-300m (or -1b variants)| 300M–1B     | Varies    | Moderate            | Yes          | On-device / mobile friendly; efficient       | Strong for size                       | Open       |
-| BAAI/bge-m3                                 | ~0.5–1B     | 1024      | 8192                | Yes (100+ lang) | Multi-functional (dense + sparse + ColBERT); long context | ~63–64                                | MIT        |
-| Alibaba-NLP/gte-Qwen2-7B-instruct           | 7B          | 3584      | 32768               | Yes          | High performance, instruction-tuned          | Very high                             | Apache 2.0 |
-| BAAI/bge-large-en-v1.5                      | ~335M       | 1024      | 512                 | English-only | Classic battle-tested English model          | ~64–65                                | MIT        |
-| BAAI/bge-base-en-v1.5                       | ~110M       | 768       | 512                 | English-only | Great speed/quality balance                  | ~63–64                                | MIT        |
-| BAAI/bge-small-en-v1.5                      | ~33M        | 384       | 512                 | English-only | Very fast, low-resource                      | Good for size                         | MIT        |
-| intfloat/e5-large                           | ~560M       | 1024      | 512                 | Yes (multilingual variants) | Contrastive style, strong retrieval          | ~65+ (instruct variants higher)      | MIT        |
-| intfloat/e5-base-v2                         | ~110M       | 768       | 512                 | Yes          | Reliable mid-size                            | Strong                                | MIT        |
-| intfloat/multilingual-e5-large              | ~560M       | 1024      | 512                 | Yes          | Solid multilingual baseline                  | Good                                  | MIT        |
-| nomic-ai/nomic-embed-text-v1.5              | ~137M       | 768       | 8192                | Yes          | Long context, good general performance       | Competitive                           | Apache 2.0 |
-| nomic-ai/nomic-embed-text-v2                | Varies      | Varies    | High                | Yes          | Recent iteration, improved                   | Improved over v1                      | Apache 2.0 |
-| jinaai/jina-embeddings-v3                   | Varies      | 1024      | 8192+               | Yes          | Very long context support                    | Strong                                | Open       |
-| mixedbread-ai/mxbai-embed-large-v1          | ~335M       | 1024      | 512+                | Yes          | High quality, popular choice                 | Very competitive                      | Apache 2.0 |
-| sentence-transformers/all-mpnet-base-v2     | ~110M       | 768       | 384                 | English-heavy| Extremely popular & fast baseline            | ~63–64                                | Apache 2.0 |
-| sentence-transformers/all-MiniLM-L6-v2      | ~22M        | 384       | 256                 | English-heavy| Tiny & blazing fast                          | Good for size                         | Apache 2.0 |
-| Alibaba-NLP/gte-large-en-v1.5               | ~335M       | 1024      | 512                 | English-only | Strong English general-purpose               | High                                  | Open       |
-
-### Quick Notes (as of Jan 2026)
-
-- **Top overall open-source performer** → Qwen3-Embedding-8B family (often leading or near-leading MTEB among permissively licensed models).
-- **Best compact/efficient** → EmbeddingGemma-300M, Qwen3-Embedding-0.6B, bge-small-en-v1.5, nomic-embed-text.
-- **Long context / multilingual** → bge-m3, Qwen3 family, jina-embeddings-v3, llama-embed-nemotron-8b.
-- Scores fluctuate; check the live [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard) (filter for open models) for the absolute latest rankings.
-- Most are runnable via `sentence-transformers`, Hugging Face Transformers, or Ollama.
-
-Let me know if you'd like columns added (e.g., specific retrieval score, license link, or domain specialization like code/biomedical), or if you want this filtered to English-only, small models (<1B), etc.!
+- [RAG Specification](/docs/specs/rag.md)
+- [Githem Documentation](https://githem.com)
+- [Akash Deployment Guide](https://akash.network/docs)
+- [Qwen Embedding Models](https://huggingface.co/Qwen)

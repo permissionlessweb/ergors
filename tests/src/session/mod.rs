@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 //! Session Integration Tests
 //!
 //! Tests for session management using real Cnidarium storage.
@@ -19,7 +20,9 @@ use ho_std::types::ergors::management::v1::{
 #[tokio::test]
 async fn test_session_create_and_retrieve() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("session_create_retrieve").await.unwrap();
+    let harness = IntegrationTestHarness::new("session_create_retrieve")
+        .await
+        .unwrap();
     let storage = harness.storage();
 
     let now = pbjson_types::Timestamp {
@@ -43,7 +46,7 @@ async fn test_session_create_and_retrieve() {
         owner_node_id: "test-node".to_string(),
         owner_node_type: 0,
         participants: vec![],
-        created_at: Some(now.clone()),
+        created_at: Some(now),
         updated_at: Some(now),
         started_at: None,
         paused_at: None,
@@ -61,19 +64,30 @@ async fn test_session_create_and_retrieve() {
     storage.put_fractal_session(&session).await.unwrap();
 
     // Retrieve and verify
-    let retrieved = storage.get_fractal_session("session-int-001").await.unwrap();
+    let retrieved = storage
+        .get_fractal_session("session-int-001")
+        .await
+        .unwrap();
     assert!(retrieved.is_some());
     let retrieved = retrieved.unwrap();
     assert_eq!(retrieved.session_id, "session-int-001");
-    assert_eq!(retrieved.labels.get("name"), Some(&"Integration Test Session".to_string()));
-    assert_eq!(retrieved.tags, vec!["integration".to_string(), "test".to_string()]);
+    assert_eq!(
+        retrieved.labels.get("name"),
+        Some(&"Integration Test Session".to_string())
+    );
+    assert_eq!(
+        retrieved.tags,
+        vec!["integration".to_string(), "test".to_string()]
+    );
 }
 
 /// Test session lifecycle transitions
 #[tokio::test]
 async fn test_session_lifecycle_transitions() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("session_lifecycle").await.unwrap();
+    let harness = IntegrationTestHarness::new("session_lifecycle")
+        .await
+        .unwrap();
     let storage = harness.storage();
 
     let now = pbjson_types::Timestamp {
@@ -90,22 +104,26 @@ async fn test_session_lifecycle_transitions() {
         fractal_depth: 0,
         root_session_id: "lifecycle-test".to_string(),
         owner_node_id: "test-node".to_string(),
-        created_at: Some(now.clone()),
-        updated_at: Some(now.clone()),
+        created_at: Some(now),
+        updated_at: Some(now),
         ..Default::default()
     };
     storage.put_fractal_session(&session).await.unwrap();
 
     // Transition to Active
     session.status = SessionStatus::Active as i32;
-    session.started_at = Some(now.clone());
+    session.started_at = Some(now);
     session.updated_at = Some(pbjson_types::Timestamp {
         seconds: now.seconds + 1,
         nanos: 0,
     });
     storage.put_fractal_session(&session).await.unwrap();
 
-    let active = storage.get_fractal_session("lifecycle-test").await.unwrap().unwrap();
+    let active = storage
+        .get_fractal_session("lifecycle-test")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(active.status, SessionStatus::Active as i32);
     assert!(active.started_at.is_some());
 
@@ -117,7 +135,11 @@ async fn test_session_lifecycle_transitions() {
     });
     storage.put_fractal_session(&session).await.unwrap();
 
-    let completed = storage.get_fractal_session("lifecycle-test").await.unwrap().unwrap();
+    let completed = storage
+        .get_fractal_session("lifecycle-test")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(completed.status, SessionStatus::Completed as i32);
     assert!(completed.completed_at.is_some());
 }
@@ -126,7 +148,9 @@ async fn test_session_lifecycle_transitions() {
 #[tokio::test]
 async fn test_fractal_hierarchy_creation() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("fractal_hierarchy").await.unwrap();
+    let harness = IntegrationTestHarness::new("fractal_hierarchy")
+        .await
+        .unwrap();
     let storage = harness.storage();
 
     let now = pbjson_types::Timestamp {
@@ -146,8 +170,8 @@ async fn test_fractal_hierarchy_creation() {
         root_session_id: "root".to_string(),
         owner_node_id: "coordinator".to_string(),
         owner_node_type: 1,
-        created_at: Some(now.clone()),
-        updated_at: Some(now.clone()),
+        created_at: Some(now),
+        updated_at: Some(now),
         ..Default::default()
     };
     storage.put_fractal_session(&root).await.unwrap();
@@ -165,8 +189,8 @@ async fn test_fractal_hierarchy_creation() {
             root_session_id: "root".to_string(),
             owner_node_id: format!("executor-{}", id),
             owner_node_type: 2,
-            created_at: Some(now.clone()),
-            updated_at: Some(now.clone()),
+            created_at: Some(now),
+            updated_at: Some(now),
             ..Default::default()
         };
         storage.put_fractal_session(&child).await.unwrap();
@@ -181,10 +205,15 @@ async fn test_fractal_hierarchy_creation() {
     assert_eq!(all_from_root.len(), 3); // root + 2 children
 
     // Verify the root session is included with depth 0
-    assert!(all_from_root.iter().any(|s| s.session_id == "root" && s.fractal_depth == 0));
+    assert!(all_from_root
+        .iter()
+        .any(|s| s.session_id == "root" && s.fractal_depth == 0));
 
     // Verify children have depth 1
-    let children: Vec<_> = all_from_root.iter().filter(|s| s.fractal_depth == 1).collect();
+    let children: Vec<_> = all_from_root
+        .iter()
+        .filter(|s| s.fractal_depth == 1)
+        .collect();
     assert_eq!(children.len(), 2);
 }
 
@@ -192,7 +221,9 @@ async fn test_fractal_hierarchy_creation() {
 #[tokio::test]
 async fn test_session_complex_query() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("session_complex_query").await.unwrap();
+    let harness = IntegrationTestHarness::new("session_complex_query")
+        .await
+        .unwrap();
     let storage = harness.storage();
 
     let now = pbjson_types::Timestamp {
@@ -219,8 +250,8 @@ async fn test_session_complex_query() {
             fractal_depth: 0,
             root_session_id: id.to_string(),
             owner_node_id: "test-node".to_string(),
-            created_at: Some(now.clone()),
-            updated_at: Some(now.clone()),
+            created_at: Some(now),
+            updated_at: Some(now),
             ..Default::default()
         };
         storage.put_fractal_session(&session).await.unwrap();

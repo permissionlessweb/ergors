@@ -1,3 +1,4 @@
+#![allow(unused_imports)] 
 //! Full Integration Tests
 //!
 //! End-to-end integration tests that exercise the complete node engine stack:
