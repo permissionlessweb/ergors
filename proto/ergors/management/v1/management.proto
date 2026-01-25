@@ -19,6 +19,9 @@ service ManagementService {
   rpc GenerateNodeIdentity(NodeTypeRequest) returns (IdentityResponse);
   rpc ImportNodeIdentity(ImportIdentityRequest) returns (OperationResult);
 
+  // Cosmos Key Address Query - derive bech32 address for any cosmos chain
+  rpc GetKeyAddress(GetKeyAddressRequest) returns (GetKeyAddressResponse);
+
   // Configuration - returns raw TOML or JSON
   rpc GetConfig(Empty) returns (ConfigData);
   rpc UpdateConfig(ConfigUpdate) returns (OperationResult);
@@ -207,6 +210,35 @@ message ImportIdentityRequest {
     bytes private_key = 2;
   }
   ergors.network.v1.NodeType node_type = 3;
+}
+
+// Get bech32 address for a stored key with custom prefix and coin type
+// Allows querying the same mnemonic's address for any cosmos chain
+message GetKeyAddressRequest {
+  // Key name to query (default: "default")
+  string key_name = 1;
+  // Bech32 address prefix (e.g., "akash", "cosmos", "osmo", "juno")
+  string address_prefix = 2;
+  // BIP-44 coin type (e.g., 118 for Cosmos/Akash, 330 for Terra)
+  // Default: 118 (Cosmos)
+  uint32 coin_type = 3;
+  // HD account index (default: 0)
+  uint32 account_index = 4;
+}
+
+message GetKeyAddressResponse {
+  // The derived bech32 address
+  string address = 1;
+  // The public key (compressed secp256k1, 33 bytes)
+  bytes public_key = 2;
+  // The HD derivation path used (e.g., "m/44'/118'/0'/0/0")
+  string hd_path = 3;
+  // Key name that was queried
+  string key_name = 4;
+  // Address prefix used
+  string address_prefix = 5;
+  // Coin type used
+  uint32 coin_type = 6;
 }
 
 // Config

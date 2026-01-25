@@ -65,9 +65,24 @@ impl CosmosMnemonic {
         self.phrase.split_whitespace().count()
     }
 
-    /// Derive a keypair at the given account index
+    /// Derive a keypair at the given account index using default coin type (118)
     pub fn derive_keypair(&self, account_index: u32) -> Result<CosmosKeyPair> {
-        let path_str = format!("{}{}", COSMOS_HD_PATH_PREFIX, account_index);
+        self.derive_keypair_with_coin_type(account_index, 118)
+    }
+
+    /// Derive a keypair with custom coin type
+    ///
+    /// Common coin types:
+    /// - 118: Cosmos/Akash (default)
+    /// - 330: Terra
+    /// - 60: Ethereum (for EVM chains)
+    /// - 529: Secret Network
+    pub fn derive_keypair_with_coin_type(
+        &self,
+        account_index: u32,
+        coin_type: u32,
+    ) -> Result<CosmosKeyPair> {
+        let path_str = format!("m/44'/{}'/{}'/{}/{}", coin_type, 0, 0, account_index);
         let path = DerivationPath::from_str(&path_str)
             .map_err(|e| anyhow!("Invalid derivation path: {}", e))?;
 

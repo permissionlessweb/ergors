@@ -204,6 +204,21 @@ pub enum NodeCmd {
         #[arg(long)]
         public_only: bool,
     },
+    /// Get cosmos address for a stored key (any chain)
+    Address {
+        /// Key name (uses default key if not specified)
+        #[arg(short = 'k', long)]
+        key_name: Option<String>,
+        /// Address prefix (bech32 hrp) - e.g., "akash", "cosmos", "osmo"
+        #[arg(short = 'p', long, default_value = "akash")]
+        prefix: String,
+        /// Coin type (BIP-44) - e.g., 118 for Cosmos, 330 for Terra, 60 for ETH
+        #[arg(short = 'c', long, default_value = "118")]
+        coin_type: u32,
+        /// Account index (HD derivation)
+        #[arg(short = 'i', long, default_value = "0")]
+        account_index: u32,
+    },
 }
 
 impl NodeCmd {
@@ -272,6 +287,45 @@ impl NodeCmd {
                             "public_key": identity.public_key.as_ref().map(hex::encode),
                         }))?
                     );
+                }
+                Ok(())
+            }
+            NodeCmd::Address {
+                key_name,
+                prefix,
+                coin_type,
+                account_index,
+            } => {
+                let response = client
+                    .get_key_address(
+                        key_name.as_deref().unwrap_or(""),
+                        prefix,
+                        *coin_type,
+                        *account_index,
+                    )
+                    .await?;
+
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "address": response.address,
+                            "public_key": hex::encode(&response.public_key),
+                            "hd_path": response.hd_path,
+                            "key_name": response.key_name,
+                            "address_prefix": response.address_prefix,
+                            "coin_type": response.coin_type,
+                        }))?
+                    );
+                } else {
+                    println!("Cosmos Address");
+                    println!("==============");
+                    println!("Address:    {}", response.address);
+                    println!("Key Name:   {}", response.key_name);
+                    println!("HD Path:    {}", response.hd_path);
+                    println!("Prefix:     {}", response.address_prefix);
+                    println!("Coin Type:  {}", response.coin_type);
+                    println!("Public Key: {}", hex::encode(&response.public_key));
                 }
                 Ok(())
             }

@@ -148,6 +148,67 @@ impl ::prost::Name for ImportIdentityRequest {
         "/ergors.management.v1.ImportIdentityRequest".into()
     }
 }
+/// Get bech32 address for a stored key with custom prefix and coin type
+/// Allows querying the same mnemonic's address for any cosmos chain
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetKeyAddressRequest {
+    /// Key name to query (default: "default")
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+    /// Bech32 address prefix (e.g., "akash", "cosmos", "osmo", "juno")
+    #[prost(string, tag = "2")]
+    pub address_prefix: ::prost::alloc::string::String,
+    /// BIP-44 coin type (e.g., 118 for Cosmos/Akash, 330 for Terra)
+    /// Default: 118 (Cosmos)
+    #[prost(uint32, tag = "3")]
+    pub coin_type: u32,
+    /// HD account index (default: 0)
+    #[prost(uint32, tag = "4")]
+    pub account_index: u32,
+}
+impl ::prost::Name for GetKeyAddressRequest {
+    const NAME: &'static str = "GetKeyAddressRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetKeyAddressRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetKeyAddressRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetKeyAddressResponse {
+    /// The derived bech32 address
+    #[prost(string, tag = "1")]
+    pub address: ::prost::alloc::string::String,
+    /// The public key (compressed secp256k1, 33 bytes)
+    #[prost(bytes = "vec", tag = "2")]
+    pub public_key: ::prost::alloc::vec::Vec<u8>,
+    /// The HD derivation path used (e.g., "m/44'/118'/0'/0/0")
+    #[prost(string, tag = "3")]
+    pub hd_path: ::prost::alloc::string::String,
+    /// Key name that was queried
+    #[prost(string, tag = "4")]
+    pub key_name: ::prost::alloc::string::String,
+    /// Address prefix used
+    #[prost(string, tag = "5")]
+    pub address_prefix: ::prost::alloc::string::String,
+    /// Coin type used
+    #[prost(uint32, tag = "6")]
+    pub coin_type: u32,
+}
+impl ::prost::Name for GetKeyAddressResponse {
+    const NAME: &'static str = "GetKeyAddressResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetKeyAddressResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetKeyAddressResponse".into()
+    }
+}
 /// Config
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -3637,6 +3698,36 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Cosmos Key Address Query - derive bech32 address for any cosmos chain
+        pub async fn get_key_address(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetKeyAddressRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetKeyAddressResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/GetKeyAddress",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "GetKeyAddress",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Configuration - returns raw TOML or JSON
         pub async fn get_config(
             &mut self,
@@ -5525,6 +5616,14 @@ pub mod management_service_server {
             &self,
             request: tonic::Request<super::ImportIdentityRequest>,
         ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Cosmos Key Address Query - derive bech32 address for any cosmos chain
+        async fn get_key_address(
+            &self,
+            request: tonic::Request<super::GetKeyAddressRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetKeyAddressResponse>,
+            tonic::Status,
+        >;
         /// Configuration - returns raw TOML or JSON
         async fn get_config(
             &self,
@@ -6250,6 +6349,52 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ImportNodeIdentitySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/GetKeyAddress" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetKeyAddressSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::GetKeyAddressRequest>
+                    for GetKeyAddressSvc<T> {
+                        type Response = super::GetKeyAddressResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetKeyAddressRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::get_key_address(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetKeyAddressSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

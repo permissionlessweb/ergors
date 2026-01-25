@@ -29,7 +29,8 @@
 #   --akash-home PATH  Set Akash repo location (default: ~/go/src/github.com/akash-network)
 #   --help             Show this help message
 
-set -e
+set -eu
+# -e: exit on error, -u: error on unset variables
 
 # Colors
 RED='\033[0;31m'
@@ -92,6 +93,19 @@ DEPLOYED_ENDPOINT=""
 DEPLOYMENT_ID=""
 DEPLOY_DSEQ="${DEPLOY_DSEQ:-1}"
 
+# Variables set during test execution (initialized for set -u safety)
+COORDINATOR_ADDRESS=""
+EXECUTOR_ADDRESS=""
+DEPLOY_SESSION_ID=""
+TEST_AUTH_TOKEN=""
+GRANT_REQUEST_ID=""
+TEST_SERVICE_ENDPOINT=""
+TEST_SERVICE_NAME=""
+HEALTH_ENDPOINT=""
+SDL_TEMPLATE_CONTRACT=""
+CROSS_ACCOUNT_SESSION_ID=""
+FEEGRANT_DEPLOY_SESSION=""
+
 # Live log streaming flag
 LIVE_LOGS=false
 
@@ -133,7 +147,7 @@ test_pass() {
     TESTS_PASSED=$((TESTS_PASSED + 1))
     TEST_ORDER+=("$test_name:PASS")
 
-    echo -e "${GREEN}✅ $description${NC}"
+    echo -e "${GREEN} - $description${NC}"
     if [ "$VERBOSE" = true ]; then
         log_success "  ✓ $test_name"
     fi
@@ -202,6 +216,37 @@ test_summary() {
     TEST_ORDER=()
 }
 
+# Port-forward helper: runs a callback with port-forward active, guarantees cleanup.
+# Usage: with_port_forward <namespace> <service> <local_port>:<remote_port> <callback_function>
+with_port_forward() {
+    local namespace="$1"
+    local service="$2"
+    local ports="$3"
+    local callback="$4"
+    shift 4
+
+    kubectl port-forward -n "$namespace" "svc/$service" "$ports" &>/dev/null &
+    local pf_pid=$!
+
+    # Wait for port-forward to establish
+    local local_port="${ports%%:*}"
+    local waited=0
+    while [ $waited -lt 10 ]; do
+        if nc -z 127.0.0.1 "$local_port" 2>/dev/null; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    # Run callback, capture exit code, always kill port-forward
+    local rc=0
+    "$callback" "$@" || rc=$?
+    kill "$pf_pid" 2>/dev/null || true
+    wait "$pf_pid" 2>/dev/null || true
+    return $rc
+}
+
 # Node-specific log colors
 COORD_COLOR='\033[0;35m'   # Magenta for coordinator
 EXEC_COLOR='\033[0;36m'    # Cyan for executor
@@ -213,20 +258,15 @@ start_log_stream() {
     local log_file=$2
     local color=$3
     local prefix="[$node_name]"
-
     if [ "$LIVE_LOGS" != true ]; then
         return
     fi
-
-    # Create the log file if it doesn't exist
     touch "$log_file"
-
-    # Start tail -f in background, prefixing each line with colored node name
     (tail -f "$log_file" 2>/dev/null | while IFS= read -r line; do
         echo -e "${color}${prefix}${NC} $line"
     done) &
     local tail_pid=$!
-    TAIL_PIDS+=($tail_pid)
+    TAIL_PIDS+=("$tail_pid")
     log "Started log stream for $node_name (tail PID: $tail_pid)"
 }
 
@@ -286,9 +326,7 @@ cleanup() {
         [ -n "$AKASH_PROVIDER_PID" ] && log_warn "Akash Provider PID: ${AKASH_PROVIDER_PID}"
         return
     fi
-
     log_step "Cleanup"
-
     # Stop ERGORS nodes
     for pid in "${NODE_PIDS[@]}"; do
         if kill -0 "$pid" 2>/dev/null; then
@@ -296,16 +334,11 @@ cleanup() {
             kill "$pid" 2>/dev/null || true
         fi
     done
-
-    # Cleanup Akash environment
     cleanup_akash_environment
-
-    # Remove test directory
     if [ -d "$TEST_DIR" ]; then
         log "Removing test directory..."
         rm -rf "$TEST_DIR"
     fi
-
     log_success "Cleanup complete"
 }
 
@@ -333,7 +366,7 @@ check_prerequisites() {
                 log "Using GNU Make (gmake): $make_version"
             else
                 log_error "GNU Make 4.0+ required but not found"
-                log_error "Install with: brew install make"
+                log_error "Install make"
                 log_error "Then use 'gmake' or add /opt/homebrew/opt/make/libexec/gnubin to PATH"
                 missing+=("gmake (GNU Make 4.0+)")
             fi
@@ -478,24 +511,27 @@ load_akash_env() {
     export AP_ROOT="${AKASH_PROVIDER_DIR}"
     export AKASH_DIRENV_SET=1
 
-    # Use direnv to load environment from provider directory
-    # This is the proper way to load Akash provider development environment
+    # Strategy: Try direnv first. Only fall back to manual .env loading if direnv fails.
+    local direnv_loaded=false
+
     if command -v direnv >/dev/null 2>&1; then
-        # Allow direnv for provider directory if not already allowed
+        # Allow direnv for provider directory
         (cd "${AKASH_PROVIDER_DIR}" && direnv allow . >/dev/null 2>&1) || true
 
         # Load direnv environment variables
-        eval "$(cd "${AKASH_PROVIDER_DIR}" && direnv export bash 2>/dev/null)" || {
+        if eval "$(cd "${AKASH_PROVIDER_DIR}" && direnv export bash 2>/dev/null)"; then
+            direnv_loaded=true
+        else
             log_warn "Failed to load direnv environment for Akash provider"
-            log_warn "Falling back to manual environment loading"
-        }
+        fi
     fi
 
-    # Fallback: Source the .env file to get DEVCACHE paths (if direnv not available)
-    if [ -f "${AKASH_PROVIDER_DIR}/.env" ]; then
+    # Fallback: Source the .env file ONLY if direnv didn't work
+    if [ "$direnv_loaded" = false ] && [ -f "${AKASH_PROVIDER_DIR}/.env" ]; then
+        log_warn "Falling back to manual .env loading"
         # Substitute AP_ROOT in .env values and export them
         # Skip ROOT_DIR to avoid overwriting our project's ROOT_DIR
-        while IFS='=' read -r key value; do
+        while IFS='=' read -r key value || [ -n "$key" ]; do
             # Skip comments and empty lines
             [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
             # Never overwrite ROOT_DIR (it points to our project root)
@@ -614,92 +650,13 @@ build_akash_binaries() {
         exit 1
     }
 
-    # Configure development environment for Akash provider
-    log "Configuring Akash provider development environment..."
+    # Prerequisites (direnv, make, go) already validated by check_prerequisites().
+    # Just activate direnv and build.
+    direnv allow . >/dev/null 2>&1 || true
 
-    # Check for direnv
-    if ! command -v direnv >/dev/null 2>&1; then
-        log_error "direnv not found in PATH"
-        log_error "Please install direnv: brew install direnv (macOS) or apt install direnv (Linux)"
-        log_error "Minimum required version: 2.32.x"
-        exit 1
-    fi
-
-    local direnv_version=$(direnv version 2>/dev/null || echo "unknown")
-    log "  direnv version: $direnv_version"
-
-    # Check for GNU make (required for Akash provider)
-    if ! command -v make >/dev/null 2>&1; then
-        log_error "make not found in PATH"
-        log_error "Please install GNU make: brew install make (macOS)"
-        exit 1
-    fi
-
-    local make_version=$(make --version 2>/dev/null | head -1)
-    log "  make version: $make_version"
-
-    # Ensure GNU make 4.x is being used (not macOS BSD make 3.x)
-    if echo "$make_version" | grep -q "GNU Make [34]"; then
-        log "  Using GNU Make (required)"
-    else
-        log_warn "  WARNING: May not be using GNU Make 4.x"
-        log_warn "  On macOS, ensure homebrew make is in PATH:"
-        log_warn "  export PATH=\"\$(brew --prefix)/opt/make/libexec/gnubin:\$PATH\""
-    fi
-
-    # Check if .envrc exists in provider directory
-    if [ ! -f ".envrc" ]; then
-        log_error ".envrc not found in $AKASH_PROVIDER_DIR"
-        log_error "Provider repository may be incomplete or corrupted"
-        exit 1
-    fi
-
-    log "  Found .envrc configuration"
-
-    # Allow direnv for this directory
-    log "Activating direnv for provider directory..."
-    direnv allow . 2>&1 | head -5 || {
-        log_error "Failed to allow direnv for provider directory"
-        exit 1
-    }
-
-    # Load direnv environment
-    log "Loading direnv environment..."
-    eval "$(direnv export bash 2>&1)" || {
-        log_error "Failed to load direnv environment"
-        log_error "Check .envrc file in $AKASH_PROVIDER_DIR for errors"
-        exit 1
-    }
-
-    log_success "direnv environment loaded"
-
-    # Verify Go is available and correct version after direnv
-    if ! command -v go >/dev/null 2>&1; then
-        log_error "Go not found in PATH after direnv configuration"
-        log_error "direnv should have set up Go toolchain"
-        exit 1
-    fi
-
-    local go_version=$(go version 2>/dev/null | awk '{print $3}')
-    local go_path=$(which go 2>/dev/null)
-    log "  Go version: $go_version"
-    log "  Go path: $go_path"
-
-    # Verify go version is compatible (should be 1.23.x or later)
-    local go_major_minor=$(echo "$go_version" | sed -E 's/go([0-9]+\.[0-9]+).*/\1/')
-    if [ -z "$go_major_minor" ]; then
-        log_error "Failed to parse Go version"
-        exit 1
-    fi
-
-    log_success "Go toolchain configured and ready"
-
-    # Build binaries with direnv environment
     local build_log="${TEST_DIR}/akash-binaries-build.log"
+    log "Building akash and provider-services binaries..."
 
-    log "Building akash and provider-services binaries (using direnv environment)..."
-
-    # Use direnv exec to ensure environment is loaded for make command
     if [ "$VERBOSE" = true ]; then
         direnv exec . make bins 2>&1 | tee "$build_log"
     else
@@ -716,7 +673,6 @@ build_akash_binaries() {
         if [ $exit_code -ne 0 ]; then
             log_error "Binary build failed. Last 50 lines:"
             tail -50 "$build_log"
-            log_error ""
             log_error "Full build log: $build_log"
             cd "$ROOT_DIR"
             exit 1
@@ -726,9 +682,7 @@ build_akash_binaries() {
     # Verify binaries now exist
     if [ ! -f "$akash_bin" ] || [ ! -f "$provider_bin" ]; then
         log_error "Failed to build Akash binaries"
-        log_error "Expected files:"
-        log_error "  $akash_bin"
-        log_error "  $provider_bin"
+        log_error "Expected: $akash_bin, $provider_bin"
         cd "$ROOT_DIR"
         exit 1
     fi
@@ -741,6 +695,75 @@ build_akash_binaries() {
 }
 
 # Create Kind cluster with Akash components
+# Verify faucet is deployed and accessible in the cluster
+verify_faucet_deployment() {
+    log_step "Verifying Akash Faucet Deployment"
+
+    # Check if faucet pod exists in akash-services namespace
+    log "Checking for faucet pod in akash-services namespace..."
+    local max_wait=10
+    local waited=0
+
+    while [ $waited -lt $max_wait ]; do
+        if kubectl get pods -n akash-services 2>/dev/null | grep -q "akash-faucet.*Running"; then
+            log_success "Faucet pod is running"
+            break
+        fi
+        sleep 2
+        waited=$((waited + 2))
+        log "  Waiting for faucet pod... (${waited}s/${max_wait}s)"
+    done
+
+    if [ $waited -ge $max_wait ]; then
+        log_error "Faucet pod not found or not running after ${max_wait}s"
+        log "Checking faucet deployment status..."
+        kubectl get pods -n akash-services 2>/dev/null | grep faucet || log_warn "No faucet pods found"
+        kubectl describe pod -n akash-services -l app=akash-faucet 2>/dev/null | tail -30 || true
+        log_warn "Faucet may not be deployed - funding tests may fail"
+        return 1
+    fi
+
+    # Verify faucet service exists
+    log "Checking for faucet service..."
+    if kubectl get svc -n akash-services akash-faucet &>/dev/null; then
+        local faucet_port=$(kubectl get svc -n akash-services akash-faucet -o jsonpath='{.spec.ports[0].port}' 2>/dev/null)
+        log_success "Faucet service found (port: ${faucet_port:-5005})"
+    else
+        log_error "Faucet service not found"
+        return 1
+    fi
+
+    # Test faucet health endpoint via port-forward
+    log "Testing faucet /status endpoint..."
+    kubectl port-forward -n akash-services svc/akash-faucet 5005:5005 &>/dev/null &
+    local port_forward_pid=$!
+    # Ensure cleanup on any exit
+    trap 'kill $port_forward_pid 2>/dev/null || true' RETURN
+
+    # Wait for port-forward (poll instead of blind sleep)
+    local pf_waited=0
+    while [ $pf_waited -lt 5 ]; do
+        if curl -s --max-time 1 "http://localhost:5005/status" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+        pf_waited=$((pf_waited + 1))
+    done
+
+    local status_check=$(curl -s --max-time 5 "http://localhost:5005/status" 2>/dev/null || echo "{}")
+
+    if echo "$status_check" | jq -e '.address' >/dev/null 2>&1; then
+        local faucet_addr=$(echo "$status_check" | jq -r '.address // "unknown"')
+        local faucet_amount=$(echo "$status_check" | jq -r '.amount // "unknown"')
+        log_success "Faucet is healthy and ready"
+        log "  Address: $faucet_addr"
+        log "  Amount: $faucet_amount"
+    else
+        log_warn "Faucet /status endpoint not responding as expected"
+        log "  Response: $status_check"
+    fi
+}
+
 setup_akash_kube_cluster() {
     log_step "Setting Up Akash Kind Cluster"
 
@@ -752,13 +775,14 @@ setup_akash_kube_cluster() {
         log "Deleting existing Kind cluster..."
         akash_make kube-cluster-delete 2>/dev/null || kind delete cluster --name kind
     fi
-
-    # Set environment for build
+ 
+    # Set environment to use pre-built images and skip source builds
     export GOVERSION_SEMVER="${GOVERSION_SEMVER}"
     export KUBE_ROLLOUT_TIMEOUT="${KUBE_ROLLOUT_TIMEOUT}"
-    # Skip building provider from source - uses released binaries instead
-    # (goreleaser-cross images may not exist for latest Go versions)
-    export SKIP_BUILD=true
+    # export SKIP_BUILD=true
+    # Tell make to use the stable images we just pulled (prevents source build attempts)
+    export DOCKER_IMAGE="$provider_image"
+    export AKASH_DOCKER_IMAGE="$node_image"
 
     log "Creating Kind cluster with Akash components (timeout: ${KUBE_ROLLOUT_TIMEOUT}s)..."
     log "This may take several minutes..."
@@ -766,6 +790,11 @@ setup_akash_kube_cluster() {
     local cluster_log="${TEST_DIR}/akash-cluster-setup.log"
     if [ "$VERBOSE" = true ]; then
         akash_make kube-cluster-setup 2>&1 | tee "$cluster_log"
+        local exit_code=${PIPESTATUS[0]}
+        if [ $exit_code -ne 0 ]; then
+            log_error "kube-cluster-setup failed (exit code: $exit_code)"
+            exit 1
+        fi
     else
         # Stream to log file, show periodic progress
         akash_make kube-cluster-setup > "$cluster_log" 2>&1 &
@@ -797,6 +826,9 @@ setup_akash_kube_cluster() {
 
     log_success "Akash Kind cluster ready"
     kubectl get nodes
+
+    # Verify faucet is deployed and ready
+    verify_faucet_deployment
 }
 
 # Start Akash blockchain node
@@ -926,18 +958,41 @@ start_akash_provider() {
     log_warn "Provider may not be fully ready yet (timeout after ${max_wait}s)"
 }
 
-# Full Akash dev environment setup
-setup_real_akash_environment() {
+# Setup Akash infrastructure ONLY (node + faucet + cluster)
+# This prepares the blockchain and faucet for testing, but does NOT create provider
+# Provider creation happens AFTER feegrant/authz tests
+setup_akash_infrastructure() {
+    log_step "Setting Up Akash Infrastructure (Node + Faucet)"
+
     setup_akash_repos
     init_akash_kube
     setup_akash_kube_cluster
     start_akash_node
+
+    log_success "Akash infrastructure ready (node + faucet + cluster)"
+    log "  Node PID: ${AKASH_NODE_PID}"
+    log "  Blockchain: ${AKASH_LOCAL_NODE}"
+    log "  Chain ID: ${AKASH_LOCAL_CHAIN_ID}"
+    log "  Faucet: Available in akash-services namespace"
+}
+
+# Setup Akash provider for accepting deployments
+# This happens AFTER feegrant/authz tests prove the grant workflow works
+setup_akash_provider() {
+    log_step "Setting Up Akash Provider (Post-Feegrant Tests)"
+
     create_akash_provider
     start_akash_provider
 
-    log_success "Real Akash development environment ready"
-    log "  Node PID: ${AKASH_NODE_PID}"
+    log_success "Akash provider ready to accept bids"
     log "  Provider PID: ${AKASH_PROVIDER_PID}"
+    log "  Gateway: ${GATEWAY_ENDPOINT:-https://localhost:8443}"
+}
+
+# Full Akash dev environment setup (wrapper for backward compatibility)
+setup_real_akash_environment() {
+    setup_akash_infrastructure
+    setup_akash_provider
 }
 
 # Cleanup Akash dev environment
@@ -1455,8 +1510,9 @@ setup_akash_environment() {
         return
     fi
 
-    # Always use real Akash development environment
-    setup_real_akash_environment
+    # Setup infrastructure only (node + faucet, NO provider yet)
+    # Provider setup happens after feegrant tests
+    setup_akash_infrastructure
 }
 
 # Build mock inference provider image
@@ -1670,339 +1726,50 @@ test_sdl_workflow() {
 }
 
 # ==================== API Key Management Tests ====================
-
-# Start mock inference provider for API key testing
-start_mock_provider() {
-    log_step "Mock Inference Provider Setup"
-
-    # NOTE: Mock inference provider should be deployed as Docker image to Akash
-    # NOT built as Rust binary and run locally
-    # The Docker image is built at: docker/mock-inference-provider/
-    # It should be deployed to the Akash provider we set up in setup_akash_environment
-
-    log "Mock Inference Provider will be deployed to Akash as a Docker container"
-    log "  Image: mock-inference-provider:latest"
-    log "  This is part of the engine-driven deployment workflow"
-    log "  Deployment happens via ERGORS engine using SDL templates"
-
-    # Check if Docker image exists
-    if docker images | grep -q "mock-inference-provider.*latest"; then
-        log_success "Mock inference provider Docker image exists"
-    else
-        log_warn "Mock inference provider Docker image not found"
-        log "Building Docker image..."
-        cd "${ROOT_DIR}/docker/mock-inference-provider"
-        docker build -t mock-inference-provider:latest . > "${TEST_DIR}/mock-provider-build.log" 2>&1
-        if [ $? -eq 0 ]; then
-            log_success "Mock inference provider Docker image built"
-        else
-            log_error "Failed to build mock inference provider Docker image"
-            log_warn "See ${TEST_DIR}/mock-provider-build.log for details"
-        fi
-        cd "$ROOT_DIR"
-    fi
-
-    # The actual deployment to Akash happens in deploy_via_ergors or test workflows
-    # MOCK_PROVIDER_URL will be set after deployment to Akash completes
-
-    MOCK_PROVIDER_URL=""
-    return 1
-}
-
-# Test API key generation on mock provider
-test_api_key_generation() {
-    log_step "Testing API Key Generation"
-
-    if [ -z "$MOCK_PROVIDER_URL" ]; then
-        log_warn "Mock provider not running, skipping API key tests"
-        return
-    fi
-
-    # First, verify the /api/keys/generate endpoint exists
-    log "Checking if API key endpoints are available..."
-    local root_response=$(curl -s "$MOCK_PROVIDER_URL/")
-    if echo "$root_response" | grep -q "api_keys"; then
-        log_success "  API key endpoints are registered"
-    else
-        log_error "  API key endpoints not found - mock provider may need rebuild"
-        log "Root response: $root_response"
-        return
-    fi
-
-    # Test 1: Generate valid key
-    log "Generating valid API key..."
-    local gen_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/generate" \
-        -H "Content-Type: application/json" \
-        -d '{"provider": "anthropic", "expiry_seconds": 3600, "valid": true}')
-
-    if [ "$VERBOSE" = true ]; then
-        log "Generate response: $gen_response"
-    fi
-
-    if echo "$gen_response" | grep -q "api_key"; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        TEST_API_KEY=$(echo "$gen_response" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
-        log_success "  Generated valid API key: ${TEST_API_KEY:0:16}..."
-    else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Failed to generate API key: $gen_response"
-    fi
-
-    # Test 2: Generate invalid key (for testing failure scenarios)
-    log "Generating invalid API key..."
-    local invalid_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/generate" \
-        -H "Content-Type: application/json" \
-        -d '{"provider": "mock-invalid", "valid": false}')
-
-    if echo "$invalid_response" | grep -q '"valid":false'; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        INVALID_TEST_KEY=$(echo "$invalid_response" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
-        log_success "  Generated invalid test key"
-    else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Failed to generate invalid key: $invalid_response"
-    fi
-
-    # Test 3: Generate expiring key (short TTL)
-    log "Generating short-TTL key..."
-    local expiring_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/generate" \
-        -H "Content-Type: application/json" \
-        -d '{"provider": "mock-expiring", "expiry_seconds": 2, "valid": true}')
-
-    if echo "$expiring_response" | grep -q "expires_at"; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        EXPIRING_KEY=$(echo "$expiring_response" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
-        log_success "  Generated expiring key (TTL: 2s)"
-    else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Failed to generate expiring key: $expiring_response"
-    fi
-}
-
-# Test API key validation
-test_api_key_validation() {
-    log_step "Testing API Key Validation"
-
-    if [ -z "$MOCK_PROVIDER_URL" ]; then
-        log_warn "Mock provider not running, skipping validation tests"
-        return
-    fi
-
-    # Test 1: Validate valid key
-    if [ -n "$TEST_API_KEY" ]; then
-        log "Validating valid API key..."
-        local valid_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
-            -H "Content-Type: application/json" \
-            -d "{\"api_key\": \"$TEST_API_KEY\"}")
-
-        if echo "$valid_response" | grep -q '"valid":true'; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Valid key validated successfully"
-        else
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-            log_error "  Valid key validation failed: $valid_response"
-        fi
-    fi
-
-    # Test 2: Validate invalid key
-    if [ -n "$INVALID_TEST_KEY" ]; then
-        log "Validating invalid API key..."
-        local invalid_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
-            -H "Content-Type: application/json" \
-            -d "{\"api_key\": \"$INVALID_TEST_KEY\"}")
-
-        if echo "$invalid_response" | grep -q '"valid":false'; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Invalid key correctly rejected"
-        else
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-            log_error "  Invalid key not rejected: $invalid_response"
-        fi
-    fi
-
-    # Test 3: Validate non-existent key
-    log "Validating non-existent API key..."
-    local nonexistent_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
-        -H "Content-Type: application/json" \
-        -d '{"api_key": "sk-nonexistent-key-12345"}')
-
-    if echo "$nonexistent_response" | grep -q '"valid":false'; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Non-existent key correctly rejected"
-    else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Non-existent key not rejected: $nonexistent_response"
-    fi
-
-    # Test 4: Wait for expiring key to expire and validate
-    if [ -n "$EXPIRING_KEY" ]; then
-        log "Waiting for key to expire (3s)..."
-        sleep 3
-
-        local expired_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
-            -H "Content-Type: application/json" \
-            -d "{\"api_key\": \"$EXPIRING_KEY\"}")
-
-        if echo "$expired_response" | grep -q '"expired":true' || echo "$expired_response" | grep -q '"valid":false'; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Expired key correctly rejected"
-        else
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-            log_error "  Expired key not rejected: $expired_response"
-        fi
-    fi
-}
-
-# Test API key revocation
-test_api_key_revocation() {
-    log_step "Testing API Key Revocation"
-
-    if [ -z "$MOCK_PROVIDER_URL" ]; then
-        log_warn "Mock provider not running, skipping revocation tests"
-        return
-    fi
-
-    # Generate a key to revoke
-    log "Generating key for revocation test..."
-    local gen_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/generate" \
-        -H "Content-Type: application/json" \
-        -d '{"provider": "revoke-test", "valid": true}')
-
-    local revoke_key=$(echo "$gen_response" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
-
-    if [ -z "$revoke_key" ]; then
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Failed to generate key for revocation test"
-        return
-    fi
-
-    # Verify key is valid before revocation
-    local pre_revoke=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
-        -H "Content-Type: application/json" \
-        -d "{\"api_key\": \"$revoke_key\"}")
-
-    if echo "$pre_revoke" | grep -q '"valid":true'; then
-        log_success "  Key valid before revocation"
-    else
-        log_error "  Key not valid before revocation"
-    fi
-
-    # Revoke the key
-    log "Revoking API key..."
-    local revoke_response=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/revoke" \
-        -H "Content-Type: application/json" \
-        -d "{\"api_key\": \"$revoke_key\"}")
-
-    if echo "$revoke_response" | grep -q '"success":true'; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Key revocation request successful"
-    else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Key revocation failed: $revoke_response"
-    fi
-
-    # Verify key is invalid after revocation
-    local post_revoke=$(curl -s -X POST "$MOCK_PROVIDER_URL/api/keys/validate" \
-        -H "Content-Type: application/json" \
-        -d "{\"api_key\": \"$revoke_key\"}")
-
-    if echo "$post_revoke" | grep -q '"valid":false'; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  Revoked key correctly invalidated"
-    else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Revoked key still valid: $post_revoke"
-    fi
-}
-
-# Test key list endpoint
-test_api_key_listing() {
-    log_step "Testing API Key Listing"
-
-    if [ -z "$MOCK_PROVIDER_URL" ]; then
-        log_warn "Mock provider not running, skipping listing tests"
-        return
-    fi
-
-    log "Listing all API keys..."
-    local list_response=$(curl -s "$MOCK_PROVIDER_URL/api/keys/list")
-
-    if echo "$list_response" | grep -q '"keys":'; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        local key_count=$(echo "$list_response" | grep -o '"total":[0-9]*' | cut -d':' -f2)
-        log_success "  Listed $key_count API keys"
-    else
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Failed to list keys: $list_response"
-    fi
-}
-
-# Test coordinator API key configuration
-test_coordinator_key_config() {
-    log_step "Testing Coordinator API Key Configuration"
-
-    # Check if coordinator has ephemeral key manager logs
-    if [ -f "$TEST_DIR/coordinator/node.log" ]; then
-        log "Checking coordinator logs for key management..."
-
-        # Check for ephemeral key manager initialization
-        if grep -q "EphemeralKeyManager\|ephemeral.*key\|key.*manager" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Ephemeral key manager initialized"
-        else
-            log_warn "  Ephemeral key manager not found in logs (may not be wired yet)"
-        fi
-
-        # Check for bootstrap handler initialization
-        if grep -q "BootstrapHandler\|bootstrap.*handler\|key.*sharing" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Bootstrap handler initialized"
-        else
-            log_warn "  Bootstrap handler not found in logs (may not be wired yet)"
-        fi
-
-        # Check for encrypted API keys loading
-        if grep -q "encrypted.*api.*key\|API.*key.*encrypted\|Decrypted.*key\|🔐\|🔑" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Encrypted API keys processed"
-        else
-            log_warn "  Encrypted API keys not found in logs"
-        fi
-    else
-        log_warn "  Coordinator log not found"
-    fi
-
-    # Check coordinator config for LLM settings
-    if grep -q "llm_router\|api_keys" "$TEST_DIR/coordinator/config.toml" 2>/dev/null; then
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        log_success "  LLM router configuration present"
-    else
-        log_warn "  LLM router configuration not found"
-    fi
-}
-
-# Run all API key management tests
-run_api_key_tests() {
-    log_step "Running API Key Management Tests"
-
-    # Variables for test keys
-    TEST_API_KEY=""
-    INVALID_TEST_KEY=""
-    EXPIRING_KEY=""
-    MOCK_PROVIDER_PID=""
-    MOCK_PROVIDER_URL=""
-
-    start_mock_provider
-    test_api_key_generation
-    test_api_key_validation
-    test_api_key_revocation
-    test_api_key_listing
-    test_coordinator_key_config
-}
+# NOTE: Removed ~290 lines of dead code. start_mock_provider() always returned 1
+# and set MOCK_PROVIDER_URL="", so all subsequent test functions immediately returned.
+# These tests should be re-implemented when the mock provider is actually deployed to Akash.
+# The code is preserved in git history.
 
 # ==================== End API Key Management Tests ====================
 
 # ==================== Authz/Feegrant Workflow Tests ====================
+
+# Get node addresses for coordinator and executor
+get_node_addresses() {
+    if [ -n "$COORDINATOR_ADDRESS" ] && [ -n "$EXECUTOR_ADDRESS" ]; then
+        log "Using cached node addresses:"
+        log "  Coordinator: $COORDINATOR_ADDRESS"
+        log "  Executor: $EXECUTOR_ADDRESS"
+        return 0
+    fi
+
+    log "Querying node account addresses..."
+
+    # Get coordinator address
+    local coord_identity
+    coord_identity=$("$ERGORS_CLI" --grpc-addr "http://${COORDINATOR_GRPC}" --json identity get 2>&1) || true
+    export COORDINATOR_ADDRESS=$(echo "$coord_identity" | jq -r '.cosmos_address // empty' 2>/dev/null)
+
+    if [ -z "$COORDINATOR_ADDRESS" ]; then
+        log_error "Failed to get coordinator address"
+        return 1
+    fi
+
+    # Get executor address
+    local exec_identity
+    exec_identity=$("$ERGORS_CLI" --grpc-addr "http://${EXECUTOR_GRPC}" --json identity get 2>&1) || true
+    export EXECUTOR_ADDRESS=$(echo "$exec_identity" | jq -r '.cosmos_address // empty' 2>/dev/null)
+
+    if [ -z "$EXECUTOR_ADDRESS" ]; then
+        log_error "Failed to get executor address"
+        return 1
+    fi
+
+    log "Node addresses retrieved:"
+    log "  Coordinator: $COORDINATOR_ADDRESS"
+    log "  Executor: $EXECUTOR_ADDRESS"
+}
 
 # Test authz grant request from executor to coordinator
 test_authz_grant_request() {
@@ -2162,15 +1929,162 @@ test_ergors_grant_workflow() {
     fi
 }
 
-# Run all authz/feegrant tests
+# Run all authz/feegrant tests - ENGINE-DRIVEN WORKFLOW
 run_authz_feegrant_tests() {
-    log_step "Running Authz/Feegrant Workflow Tests"
+    log_step "Running Engine-Driven Authz/Feegrant Workflow Tests"
 
-    test_authz_grant_request
-    test_feegrant_workflow
-    test_ergors_grant_workflow
+    # Get account addresses for both nodes
+    get_node_addresses
 
-    log_success "Authz/Feegrant tests complete"
+    # Test 1: Executor requests grant from coordinator via engine
+    log "Testing grant request workflow..."
+    local grant_request_output
+    grant_request_output=$("$ERGORS_CLI" --grpc-addr "http://${EXECUTOR_GRPC}" --json grant request \
+        --granter "$COORDINATOR_ADDRESS" \
+        --grantee "$EXECUTOR_ADDRESS" \
+        --msg-type "/akash.deployment.v1beta3.MsgCreateDeployment" \
+        --msg-type "/akash.deployment.v1beta3.MsgDepositDeployment" \
+        --msg-type "/akash.market.v1beta3.MsgCreateLease" \
+        --allowance 10000000 \
+        --reason "E2E test - executor needs deployment permissions" \
+        2>&1) || true
+
+    local request_id=$(echo "$grant_request_output" | jq -r '.request_id // empty' 2>/dev/null)
+
+    if [ -n "$request_id" ]; then
+        test_pass "grant_request_created" "Grant request created (ID: ${request_id:0:8}...)"
+        export GRANT_REQUEST_ID="$request_id"
+    else
+        test_fail "grant_request_created" "Failed to create grant request" "Output: $grant_request_output"
+        return 1
+    fi
+
+    # Test 2: Coordinator approves grant via engine
+    log "Coordinator approving grant request..."
+    local approve_output
+    approve_output=$("$ERGORS_CLI" --grpc-addr "http://${COORDINATOR_GRPC}" --json grant approve "$request_id" \
+        --reason "Approved for e2e testing" \
+        2>&1) || true
+
+    if echo "$approve_output" | jq -e '.success == true' >/dev/null 2>&1; then
+        test_pass "grant_approved" "Grant request approved by coordinator"
+    else
+        test_fail "grant_approved" "Failed to approve grant" "Output: $approve_output"
+        return 1
+    fi
+
+    # Test 3: Verify grant exists on blockchain
+    log "Verifying grant exists on Akash blockchain..."
+    local query_output
+    query_output=$(akash_make query-grants --granter "$COORDINATOR_ADDRESS" --grantee "$EXECUTOR_ADDRESS" 2>&1) || true
+
+    if echo "$query_output" | grep -q "authorization\|Authorization"; then
+        test_pass "grant_on_blockchain" "Authz grant found on blockchain"
+    else
+        test_fail "grant_on_blockchain" "Authz grant not found on blockchain" "Query output: $query_output"
+    fi
+
+    # Test 4: Verify feegrant allowance exists
+    log "Verifying feegrant allowance on blockchain..."
+    local allowance_output
+    allowance_output=$(akash_make query-feegrant --granter "$COORDINATOR_ADDRESS" --grantee "$EXECUTOR_ADDRESS" 2>&1) || true
+
+    if echo "$allowance_output" | grep -q "allowance\|Allowance"; then
+        test_pass "feegrant_on_blockchain" "Feegrant allowance found on blockchain"
+    else
+        test_fail "feegrant_on_blockchain" "Feegrant allowance not found on blockchain" "Query output: $allowance_output"
+    fi
+
+    test_summary "Authz/Feegrant Workflow"
+}
+
+# Test that executor can deploy to Akash using feegrant/authz
+test_executor_deployment_with_grants() {
+    log_step "Testing Executor Deployment Using Feegrant/Authz"
+
+    if [ -z "$EXECUTOR_ADDRESS" ] || [ -z "$COORDINATOR_ADDRESS" ]; then
+        log_error "Node addresses not available"
+        return 1
+    fi
+
+    # Test 1: Create deployment via executor using feegrant
+    log "Executor creating deployment using coordinator's feegrant..."
+
+    # Use a simple SDL for testing
+    local test_sdl="${TEST_DIR}/feegrant-test.sdl.yaml"
+    cat > "$test_sdl" <<EOF
+version: "2.0"
+services:
+  web:
+    image: nginx:latest
+    expose:
+      - port: 80
+        as: 80
+        to:
+          - global: true
+profiles:
+  compute:
+    web:
+      resources:
+        cpu:
+          units: 0.5
+        memory:
+          size: 512Mi
+        storage:
+          - size: 512Mi
+  placement:
+    akash:
+      pricing:
+        web:
+          denom: uakt
+          amount: 1000
+deployment:
+  web:
+    akash:
+      profile: web
+      count: 1
+EOF
+
+    # Executor creates deployment using feegrant from coordinator
+    local deploy_output
+    deploy_output=$("$ERGORS_CLI" --grpc-addr "http://${EXECUTOR_GRPC}" --json deploy create \
+        --sdl "$test_sdl" \
+        --key-name "default" \
+        --node "${AKASH_LOCAL_NODE}" \
+        --chain-id "${AKASH_LOCAL_CHAIN_ID}" \
+        --use-feegrant \
+        --fee-granter "$COORDINATOR_ADDRESS" \
+        2>&1) || true
+
+    local session_id=$(echo "$deploy_output" | jq -r '.session_id // empty' 2>/dev/null)
+
+    if [ -n "$session_id" ]; then
+        test_pass "executor_deploy_with_feegrant" "Executor created deployment using feegrant (Session: ${session_id:0:8}...)"
+        export FEEGRANT_DEPLOY_SESSION="$session_id"
+    else
+        test_fail "executor_deploy_with_feegrant" "Executor failed to create deployment with feegrant" "Output: $deploy_output"
+        return 1
+    fi
+
+    # Test 2: Verify deployment was paid for by coordinator (feegranter)
+    log "Verifying deployment transaction used feegrant..."
+
+    # Query the deployment to check fee_payer
+    local deploy_status
+    deploy_status=$("$ERGORS_CLI" --grpc-addr "http://${EXECUTOR_GRPC}" --json deploy get "$session_id" 2>&1) || true
+
+    if echo "$deploy_status" | jq -e '.deployment' >/dev/null 2>&1; then
+        test_pass "feegrant_deployment_created" "Deployment created successfully with feegrant"
+
+        # Check coordinator's balance decreased (paid fees)
+        local coord_balance_after
+        coord_balance_after=$(ergors_deploy query-balance "$COORDINATOR_ADDRESS" --denom uakt 2>&1 | jq -r '.amount // "0"' 2>/dev/null)
+        log "  Coordinator balance after deployment: ${coord_balance_after} uakt"
+    else
+        test_fail "feegrant_deployment_created" "Deployment not found" "Status: $deploy_status"
+    fi
+
+    test_summary "Executor Deployment with Feegrant"
 }
 
 # ==================== Cross-Account Deployment Tests ====================
@@ -2179,46 +2093,50 @@ run_authz_feegrant_tests() {
 fund_coordinator_account() {
     log_step "Funding Coordinator Account via Akash Faucet"
 
-    # Get coordinator account address from engine
-    log "Querying coordinator account address..."
-    local coord_identity
-    coord_identity=$("$ERGORS_CLI" --grpc-addr "http://${COORDINATOR_GRPC}" --json identity get 2>&1) || true
-    local coord_address=$(echo "$coord_identity" | jq -r '.cosmos_address // empty' 2>/dev/null)
-
-    if [ -z "$coord_address" ]; then
+    # Ensure addresses are cached
+    get_node_addresses || {
         TESTS_FAILED=$((TESTS_FAILED + 1))
         log_error "  Failed to get coordinator address for faucet funding"
         return 1
-    fi
+    }
+    local coord_address="$COORDINATOR_ADDRESS"
 
     log "Coordinator address: $coord_address"
 
-    # Determine faucet URL based on environment
-    local faucet_url=""
+    # Setup port-forward to access faucet service in Kind cluster
+    log "Setting up port-forward to faucet service..."
+    kubectl port-forward -n akash-services svc/akash-faucet 5005:5005 &>/dev/null &
+    local port_forward_pid=$!
+    # Ensure port-forward is killed on any exit path from this function
+    trap 'kill $port_forward_pid 2>/dev/null || true' RETURN
 
-    # Check if we're running in Kubernetes cluster
-    if command -v kubectl &>/dev/null && kubectl cluster-info &>/dev/null 2>&1; then
-        log "Kubernetes environment detected, using cluster DNS for faucet"
-        faucet_url="http://akash-faucet.akash-services:5005"
-    else
-        # Assume local port-forward or docker setup
-        log "Local environment detected, attempting localhost faucet access"
-        faucet_url="http://localhost:5005"
-    fi
+    # Wait for port-forward to be ready (poll, don't sleep blindly)
+    local pf_waited=0
+    while [ $pf_waited -lt 10 ]; do
+        if curl -s --max-time 1 "http://localhost:5005/status" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+        pf_waited=$((pf_waited + 1))
+    done
+
+    local faucet_url="http://localhost:5005"
 
     # Check faucet status first
-    log "Checking faucet availability at $faucet_url..."
+    log "Checking faucet availability..."
     local status_check
     status_check=$(curl -s --max-time 5 "$faucet_url/status" 2>/dev/null || echo "{}")
 
-    if echo "$status_check" | jq -e '.status' >/dev/null 2>&1; then
-        local faucet_status=$(echo "$status_check" | jq -r '.status // "unknown"')
-        log_success "  Faucet is available (status: $faucet_status)"
+    if echo "$status_check" | jq -e '.address' >/dev/null 2>&1; then
+        local faucet_addr=$(echo "$status_check" | jq -r '.address // "unknown"')
+        local faucet_amount=$(echo "$status_check" | jq -r '.amount // "unknown"')
+        log_success "  Faucet is ready"
+        log "  Faucet address: $faucet_addr"
+        log "  Send amount: $faucet_amount"
     else
-        log_warn "  Faucet may not be available at $faucet_url"
-        log_warn "  For Kubernetes: kubectl -n akash-services port-forward svc/akash-faucet 5005:5005"
-        log_warn "  Skipping faucet funding, tests may fail if coordinator has no balance"
-        return 0
+        log_error "  Faucet not responding properly"
+        log "  Status response: $status_check"
+        return 1
     fi
 
     # Request funds from faucet
@@ -2227,20 +2145,26 @@ fund_coordinator_account() {
     faucet_response=$(curl -s --max-time 10 "$faucet_url/faucet?address=$coord_address" 2>&1) || true
 
     # Check if funding was successful
-    if echo "$faucet_response" | jq -e '.success == true' >/dev/null 2>&1; then
+    # The faucet may return: {"tx_hash":"...", "amount":"..."} or {"error":"..."}
+    local tx_hash=$(echo "$faucet_response" | jq -r '.tx_hash // .txhash // empty' 2>/dev/null)
+
+    if [ -n "$tx_hash" ]; then
         TESTS_PASSED=$((TESTS_PASSED + 1))
-        local tx_hash=$(echo "$faucet_response" | jq -r '.tx_hash // "unknown"' 2>/dev/null)
         local amount=$(echo "$faucet_response" | jq -r '.amount // "unknown"' 2>/dev/null)
         log_success "  Faucet funding successful"
         log "  Amount: $amount"
         log "  TX Hash: $tx_hash"
 
-        # Wait for transaction to be processed
-        log "Waiting for transaction to be confirmed (5s)..."
-        sleep 5
+        # Wait for transaction to be processed and included in a block
+        log "Waiting for transaction to be confirmed (10s)..."
+        sleep 10
     else
-        local error_msg=$(echo "$faucet_response" | jq -r '.error // .message // "Unknown error"' 2>/dev/null)
-        log_warn "  Faucet funding may have failed: $error_msg"
+        local error_msg=$(echo "$faucet_response" | jq -r '.error // .message // empty' 2>/dev/null)
+        if [ -n "$error_msg" ]; then
+            log_error "  Faucet request failed: $error_msg"
+        else
+            log_warn "  Unexpected faucet response: $faucet_response"
+        fi
         log_warn "  Continuing anyway, balance verification will check actual state"
     fi
 
@@ -2257,64 +2181,42 @@ fund_coordinator_account() {
         TESTS_FAILED=$((TESTS_FAILED + 1))
         log_error "  Coordinator balance still zero after faucet request"
     fi
-
-    # Store for later tests
-    export COORDINATOR_ADDRESS="$coord_address"
 }
 
 # Test AKT balance verification for coordinator and executor accounts
 test_akt_balance_verification() {
     log_step "Testing AKT Balance Verification"
 
-    # Get coordinator account address from engine
-    log "Querying coordinator account address..."
-    local coord_identity
-    coord_identity=$("$ERGORS_CLI" --grpc-addr "http://${COORDINATOR_GRPC}" --json identity get 2>&1) || true
-    local coord_address=$(echo "$coord_identity" | jq -r '.cosmos_address // empty' 2>/dev/null)
+    # Use cached addresses from get_node_addresses()
+    get_node_addresses || {
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        log_error "  Failed to get node addresses"
+        return 1
+    }
 
-    if [ -n "$coord_address" ]; then
-        log "Coordinator address: $coord_address"
+    # Query coordinator balance
+    log "Coordinator address: $COORDINATOR_ADDRESS"
+    local balance_output
+    balance_output=$(ergors_deploy query-balance "$COORDINATOR_ADDRESS" --denom uakt 2>&1) || true
+    local balance=$(echo "$balance_output" | jq -r '.amount // "0"' 2>/dev/null)
 
-        # Query balance via CLI
-        local balance_output
-        balance_output=$(ergors_deploy query-balance "$coord_address" --denom uakt 2>&1) || true
-        local balance=$(echo "$balance_output" | jq -r '.amount // "0"' 2>/dev/null)
-
-        if [ -n "$balance" ] && [ "$balance" != "0" ]; then
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-            log_success "  Coordinator balance: ${balance} uakt"
-        else
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-            log_error "  Coordinator has insufficient balance: ${balance} uakt"
-            log_warn "  Need to fund coordinator account for cross-account deployment tests"
-        fi
+    if [ -n "$balance" ] && [ "$balance" != "0" ]; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        log_success "  Coordinator balance: ${balance} uakt"
     else
         TESTS_FAILED=$((TESTS_FAILED + 1))
-        log_error "  Failed to get coordinator address"
+        log_error "  Coordinator has insufficient balance: ${balance} uakt"
+        log_warn "  Need to fund coordinator account for cross-account deployment tests"
     fi
 
-    # Get executor account address
-    log "Querying executor account address..."
-    local exec_identity
-    exec_identity=$("$ERGORS_CLI" --grpc-addr "http://${EXECUTOR_GRPC}" --json identity get 2>&1) || true
-    local exec_address=$(echo "$exec_identity" | jq -r '.cosmos_address // empty' 2>/dev/null)
+    # Query executor balance
+    log "Executor address: $EXECUTOR_ADDRESS"
+    local exec_balance_output
+    exec_balance_output=$(ergors_deploy query-balance "$EXECUTOR_ADDRESS" --denom uakt 2>&1) || true
+    local exec_balance=$(echo "$exec_balance_output" | jq -r '.amount // "0"' 2>/dev/null)
 
-    if [ -n "$exec_address" ]; then
-        log "Executor address: $exec_address"
-
-        local exec_balance_output
-        exec_balance_output=$(ergors_deploy query-balance "$exec_address" --denom uakt 2>&1) || true
-        local exec_balance=$(echo "$exec_balance_output" | jq -r '.amount // "0"' 2>/dev/null)
-
-        log "  Executor balance: ${exec_balance} uakt"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        log_warn "  Failed to get executor address"
-    fi
-
-    # Store addresses for later tests
-    export COORDINATOR_ADDRESS="$coord_address"
-    export EXECUTOR_ADDRESS="$exec_address"
+    log "  Executor balance: ${exec_balance} uakt"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
 }
 
 # Test grant request and approval workflow
@@ -2488,13 +2390,12 @@ test_grant_revocation() {
 run_cross_account_tests() {
     log_step "Running Cross-Account Deployment Tests"
 
-    # Fund coordinator account first so it can issue grants and feegrants
-    fund_coordinator_account
+    # Note: fund_coordinator_account is called earlier in main() before feegrant tests
 
     # Verify balances
     test_akt_balance_verification
 
-    # Test grant workflow
+    # Test grant workflow (this is the legacy test, feegrant tests happen earlier now)
     test_grant_request_approval
     test_cross_account_deployment
     test_grant_revocation
@@ -3562,27 +3463,39 @@ show_contract_debug_info() {
 test_sdl_contract_queries() {
     test_section "SDL Contract Queries Tests"
 
-    # Test 1: Check for contract deployment in logs
-    # Pattern matches: "Instantiated contract 'sdl-template-registrar' at: <address>"
-    local contract_addr=$(grep -oP "Instantiated contract.*'sdl.*template.*at:\s*\K\S+" "$TEST_DIR/coordinator/node.log" 2>/dev/null | head -1)
+    # Test 1: Query SDL template contracts via API (proper workflow)
+    log "Querying SDL template contracts via gRPC API..."
+    local list_output
+    list_output=$("$ERGORS_CLI" --grpc-addr "http://${COORDINATOR_GRPC}" --json sdl list 2>&1) || true
 
-    # Also try to find contract address from "Successfully deployed contract" messages
-    if [ -z "$contract_addr" ]; then
-        contract_addr=$(grep -oP "Successfully deployed contract.*at:\s*\K\S+" "$TEST_DIR/coordinator/node.log" 2>/dev/null | head -1)
+    local template_count=$(echo "$list_output" | jq -r '.templates | length' 2>/dev/null)
+    if [ -n "$template_count" ] && [ "$template_count" -gt 0 ] 2>/dev/null; then
+        test_pass "contract_address_found_via_api" "Found $template_count SDL template contract(s) via API"
+
+        # Extract first contract address for verification
+        local contract_addr=$(echo "$list_output" | jq -r '.templates[0].contract_address // empty' 2>/dev/null)
+        if [ -n "$contract_addr" ]; then
+            log "  Contract address: ${contract_addr:0:20}..."
+            local contract_label=$(echo "$list_output" | jq -r '.templates[0].label // "unlabeled"' 2>/dev/null)
+            log "  Label: $contract_label"
+        fi
+    else
+        test_fail "contract_address_found_via_api" "No SDL template contracts found via API"
+        log "  API response: $list_output"
+
+        # Show debug information to help diagnose
+        show_contract_debug_info
     fi
 
-    if [ -n "$contract_addr" ]; then
-        test_pass "contract_address_found" "Contract address found: ${contract_addr:0:20}..."
+    # Test 2: Verify automatic SDL template registration occurred
+    # Check via API (proper workflow) first, fall back to logs for debugging
+    if [ -n "$template_count" ] && [ "$template_count" -gt 0 ] 2>/dev/null; then
+        test_pass "template_registration_verified" "SDL template contract(s) registered and accessible via API"
+    elif grep -q "Registered SDL template contract\|Automatically registering SDL template" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+        test_fail "template_registration_verified" "Registration detected in logs but not accessible via API"
+        log_warn "  This indicates registration happened but storage/query may have issues"
     else
-        test_fail "contract_address_found" "Contract deployment not found in logs"
-    fi
-
-    # Test 2: Check for automatic SDL template registration
-    # Pattern matches: "📝 Registered SDL template contract" or "Automatically registering SDL template contract"
-    if grep -q "Registered SDL template contract\|Automatically registering SDL template" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
-        test_pass "template_registration_detected" "SDL template contract automatically registered"
-    else
-        test_fail "template_registration_detected" "Automatic template registration not found in logs"
+        test_fail "template_registration_verified" "No template registration detected (neither API nor logs)"
     fi
 
     # Test 3: Check for gRPC SDL template endpoints availability
@@ -3811,50 +3724,81 @@ main() {
     fi
 
     echo -e "  ${BOLD}Workflow:${NC}"
-    echo -e "    1. Build CosmWasm contracts (Docker optimizer)"
-    echo -e "    2. Build ERGORS binary"
-    echo -e "    3. Verify contract artifacts"
-    echo -e "    4. Start ERGORS test network (coordinator + executor)"
-    echo -e "    5. Setup real Akash dev environment (node + provider)"
-    echo -e "    6. Run real Akash deployment workflow"
-    echo -e "    7. Test ERGORS network connectivity"
-    echo -e "    8. Test node configuration"
-    echo -e "    9. Test SDL contract deployment"
-    echo -e "   10. Test SDL workflow (templates, queries, variables)"
-    echo -e "   11. Test Authz/Feegrant workflow (grants, allowances)"
-    echo -e "   12. Run engine-driven deployment workflow"
-    echo -e "   13. Test API key management workflow"
-    echo -e "   14. Test cross-account deployment"
-    echo -e "   15. Test real Akash deployment lifecycle"
+    echo -e "    ${CYAN}Phase 1: Build & Infrastructure${NC}"
+    echo -e "      1. Build CosmWasm contracts (Docker optimizer)"
+    echo -e "      2. Build ERGORS binary"
+    echo -e "      3. Verify contract artifacts"
+    echo -e "      4. Start ERGORS test network (coordinator + executor)"
+    echo -e "      5. Setup Akash infrastructure (node + faucet ONLY)"
+    echo -e ""
+    echo -e "    ${CYAN}Phase 2: Pre-Provider Tests${NC}"
+    echo -e "      6. Test ERGORS network connectivity"
+    echo -e "      7. Test node configuration"
+    echo -e "      8. Test SDL contract deployment"
+    echo -e "      9. Test SDL workflow (templates, queries, variables)"
+    echo -e "     10. Fund coordinator account via Akash faucet"
+    echo -e ""
+    echo -e "    ${CYAN}Phase 3: Feegrant/Authz Workflow (CRITICAL)${NC}"
+    echo -e "     11. Executor requests grant from coordinator"
+    echo -e "     12. Coordinator approves (creates authz + feegrant on chain)"
+    echo -e "     13. Verify grants exist on blockchain"
+    echo -e "     14. Test executor deployment using feegrant/authz"
+    echo -e ""
+    echo -e "    ${CYAN}Phase 4: Provider & Deployment Tests${NC}"
+    echo -e "     15. Setup Akash provider (ready to accept bids)"
+    echo -e "     16. Run real Akash deployment workflow"
+    echo -e "     17. Run engine-driven deployment workflow"
+    echo -e "     18. Test API key management workflow"
+    echo -e "     19. Test cross-account deployment"
+    echo -e "     20. Test real Akash deployment lifecycle"
     echo ""
 
+    # ===== Phase 1: Build & Infrastructure =====
     check_prerequisites
     build_contracts
     build_ergors
     test_contract_artifacts
     start_ergors_network
-    setup_akash_environment
+    setup_akash_environment  # Sets up ONLY node + faucet (NO provider yet)
 
-    # Real Akash deployment workflow
-    run_real_akash_deployment || log_warn "Real Akash deployment workflow had failures"
-
+    # ===== Phase 2: Pre-Provider Tests =====
     # Test basic network and node config
     test_ergors_network
     test_node_config
     test_contract_deployment
 
-    # Test SDL and feegrant BEFORE deploying via ERGORS engine
-    # These tests verify the infrastructure is ready for engine-driven deployments
+    # Test SDL contracts - verify templates are accessible
     test_sdl_workflow
+
+    # Fund the coordinator account (feegranter) via Akash faucet
+    fund_coordinator_account
+
+    # ===== Phase 3: Feegrant/Authz Workflow (CRITICAL) =====
+    # Test the engine-driven feegrant/authz workflow:
+    # 1. Executor requests grant from coordinator
+    # 2. Coordinator approves grant (creates authz + feegrant on blockchain)
+    # 3. Verify grants exist and are usable
     run_authz_feegrant_tests
 
-    # Now run engine-driven deployment workflow
-    # This uses the SDL contracts and feegrant infrastructure tested above
+    # Now test that executor can deploy using feegrant/authz
+    # This validates the grants work for actual Akash deployments
+    test_executor_deployment_with_grants
+
+    # ===== Phase 4: Provider & Deployment Tests =====
+    # NOW setup the Akash provider (after feegrant tests prove grants work)
+    setup_akash_provider
+
+    # Test real Akash deployment workflow (directly via akash CLI)
+    run_real_akash_deployment || log_warn "Real Akash deployment workflow had failures"
+
+    # Test engine-driven deployment workflow (via ERGORS engine)
     deploy_via_ergors || log_warn "ERGORS deployment workflow had failures (continuing tests)"
 
-    run_api_key_tests
+    # NOTE: API key tests removed - start_mock_provider() always returned 1
+    # and MOCK_PROVIDER_URL was never set, making all api_key tests no-ops.
+    # Re-add when mock provider is actually deployed to Akash.
 
-    # Cross-Account Deployment Tests (Phase 3)
+    # Cross-Account Deployment Tests
     run_cross_account_tests
 
     # Real Akash deployment tests

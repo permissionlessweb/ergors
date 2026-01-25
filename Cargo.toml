@@ -2,7 +2,7 @@
 resolver = "2"
 
 exclude = []
-members = ["packages/*", "proto"]
+members = ["packages/*", "proto", "tests"]
 
 [workspace.metadata]
 is_workspace_root = true

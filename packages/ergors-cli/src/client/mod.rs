@@ -60,6 +60,9 @@ use ho_std::types::ergors::management::v1::{
     GetSdlDefaultsResponse,
     RenderSdlTemplateRequest,
     RenderSdlTemplateResponse,
+    // Key address query types
+    GetKeyAddressRequest,
+    GetKeyAddressResponse,
     RequestGrantRequest,
     RequestGrantResponse,
     RevokeGrantRequest,
@@ -145,6 +148,28 @@ impl ManagementClient {
 
         let inner = response.into_inner();
         Ok((inner.public_key, inner.node_id, inner.mnemonic_phrase))
+    }
+
+    /// Get cosmos bech32 address for a stored key
+    pub async fn get_key_address(
+        &mut self,
+        key_name: &str,
+        address_prefix: &str,
+        coin_type: u32,
+        account_index: u32,
+    ) -> Result<GetKeyAddressResponse> {
+        let response = self
+            .inner
+            .get_key_address(GetKeyAddressRequest {
+                key_name: key_name.to_string(),
+                address_prefix: address_prefix.to_string(),
+                coin_type,
+                account_index,
+            })
+            .await
+            .context("Failed to get key address")?;
+
+        Ok(response.into_inner())
     }
 
     // ============ Configuration ============

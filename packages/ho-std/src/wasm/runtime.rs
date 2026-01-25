@@ -302,8 +302,6 @@ impl WasmRuntime {
         contract_address: String,
         msg: Vec<u8>,
     ) -> HoResult<cosmwasm_std::ContractResult<cosmwasm_std::Binary>> {
-        
-
         // Acquire shared read lock for concurrent queries
         let _node_lock = self.state_lock.read().await;
 
@@ -326,7 +324,7 @@ impl WasmRuntime {
         // Save WASM to cache filesystem so get_instance can find it
         let checksum = self
             .cache
-            .save_wasm(&wasm_code)
+            .store_code(&wasm_code, true, true)
             .map_err(|e| HoError::Wasm(format!("Failed to save WASM to cache: {}", e)))?;
 
         // Create state reader for querier
@@ -384,8 +382,6 @@ impl WasmRuntime {
         funds: Vec<Coin>,
         node_id: &str,
     ) -> HoResult<(String, cosmwasm_std::ContractResult<cosmwasm_std::Response>)> {
-        
-
         // Acquire node-wide exclusive lock for state consistency
         let _node_lock = self.state_lock.write().await;
 
@@ -407,7 +403,7 @@ impl WasmRuntime {
         // Note: save_wasm persists the source, while store_code only caches compiled modules
         let checksum = self
             .cache
-            .save_wasm(&wasm_code)
+            .store_code(&wasm_code, true, true)
             .map_err(|e| HoError::Wasm(format!("Failed to save WASM to cache: {}", e)))?;
 
         // Create state reader for querier
@@ -491,8 +487,6 @@ impl WasmRuntime {
         msg: Vec<u8>,
         funds: Vec<Coin>,
     ) -> HoResult<cosmwasm_std::ContractResult<cosmwasm_std::Response>> {
-        
-
         // Acquire node-wide exclusive lock for state consistency
         let _node_lock = self.state_lock.write().await;
 
@@ -517,7 +511,7 @@ impl WasmRuntime {
         // Save WASM to cache filesystem so get_instance can find it
         let checksum = self
             .cache
-            .save_wasm(&wasm_code)
+            .store_code(&wasm_code, true, true)
             .map_err(|e| HoError::Wasm(format!("Failed to save WASM to cache: {}", e)))?;
 
         // Create state reader for querier

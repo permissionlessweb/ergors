@@ -131,11 +131,16 @@ use ho_std::types::ergors::management::v1::{
     GetSdlDefaultsResponse,
     RenderSdlTemplateRequest,
     RenderSdlTemplateResponse,
+    // Key address query types
+    GetKeyAddressRequest,
+    GetKeyAddressResponse,
 };
 use ho_std::types::ergors::orch::v1::{
     AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep, ConfiguredSdl,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
+use ho_std::keys::cosmos::cosmos_address_from_pubkey;
+use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use pbjson_types;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -331,6 +336,79 @@ impl ManagementService for ManagementServiceImpl {
         Err(Status::unimplemented(
             "Key import not yet implemented via gRPC",
         ))
+    }
+
+    /// Get a cosmos bech32 address for a stored key with custom prefix and coin type
+    async fn get_key_address(
+        &self,
+        request: Request<GetKeyAddressRequest>,
+    ) -> Result<Response<GetKeyAddressResponse>, Status> {
+        let req = request.into_inner();
+
+        // Get the key store from storage
+        let key_store = self
+            .state
+            .s
+            .get_cosmos_key_store()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to access key store: {}", e)))?
+            .ok_or_else(|| {
+                Status::not_found("No key store found. Import a key with `ergors keys import-mnemonic`")
+            })?;
+
+        // Determine which key to use
+        let key_name = if req.key_name.is_empty() {
+            EncryptedCosmosKeyManager::get_default_key_name(&key_store)
+                .ok_or_else(|| Status::not_found("No default key configured"))?
+                .to_string()
+        } else {
+            req.key_name.clone()
+        };
+
+        // Get the encrypted key
+        let encrypted_key = EncryptedCosmosKeyManager::get_key_by_name(&key_store, &key_name)
+            .ok_or_else(|| Status::not_found(format!("Key '{}' not found", key_name)))?;
+
+        // Get custody password from environment
+        let password = std::env::var("ERGORS_CUSTODY_PASSWORD").map_err(|_| {
+            Status::failed_precondition(
+                "ERGORS_CUSTODY_PASSWORD environment variable not set",
+            )
+        })?;
+
+        // Create key manager from store and unlock
+        let mut manager = EncryptedCosmosKeyManager::from_store(&key_store);
+        manager.unlock(&password).map_err(|e| {
+            Status::internal(format!("Failed to unlock key manager: {}", e))
+        })?;
+
+        // Determine coin type (default to 118 for cosmos)
+        let coin_type = if req.coin_type == 0 { 118 } else { req.coin_type };
+
+        // Determine address prefix (default to original key's prefix)
+        let address_prefix = if req.address_prefix.is_empty() {
+            encrypted_key.address_prefix.clone()
+        } else {
+            req.address_prefix.clone()
+        };
+
+        // Derive keypair with custom coin type
+        let keypair = manager
+            .get_keypair_with_coin_type(encrypted_key, req.account_index, coin_type)
+            .map_err(|e| Status::internal(format!("Failed to derive keypair: {}", e)))?;
+
+        // Generate address with custom prefix
+        let address = cosmos_address_from_pubkey(keypair.public_key(), &address_prefix)
+            .map_err(|e| Status::internal(format!("Failed to generate address: {}", e)))?;
+
+        Ok(Response::new(GetKeyAddressResponse {
+            address,
+            public_key: keypair.public_key().to_vec(),
+            hd_path: keypair.hd_path().to_string(),
+            key_name,
+            address_prefix,
+            coin_type,
+        }))
     }
 
     // ============ Configuration ============

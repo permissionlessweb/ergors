@@ -16,47 +16,85 @@ use std::path::Path;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-const PROMPT_PREFIX: &str = "prompts/";
-const SESSION_INDEX_PREFIX: &str = "sessions/";
-const USER_INDEX_PREFIX: &str = "users/";
-const TIMESTAMP_INDEX_PREFIX: &str = "timestamps/";
-const OP_PREFIX: &str = "operations/";
-const API_KEY_PREFIX: &str = "custody/api_keys/";
+// NOTE: Cnidarium prefixes must NOT have trailing slashes.
+// The delimiter '/' is added when constructing full keys using the helper functions below.
+
+/// Constructs a storage key from a prefix and a single key component.
+/// Example: `storage_key("prompts", "abc123")` -> `"prompts/abc123"`
+#[inline]
+fn storage_key(prefix: &str, key: &str) -> String {
+    format!("{}/{}", prefix, key)
+}
+
+/// Constructs a storage key from a prefix and two key components separated by `:`.
+/// Example: `storage_key2("sessions", "sid", "pid")` -> `"sessions/sid:pid"`
+#[inline]
+fn storage_key2(prefix: &str, key1: &str, key2: &str) -> String {
+    format!("{}/{}:{}", prefix, key1, key2)
+}
+
+/// Constructs a storage key from a prefix and three key components separated by `:`.
+/// Example: `storage_key3("labels", "env", "prod", "sid")` -> `"labels/env:prod:sid"`
+#[inline]
+fn storage_key3(prefix: &str, key1: &str, key2: &str, key3: &str) -> String {
+    format!("{}/{}:{}:{}", prefix, key1, key2, key3)
+}
+
+/// Constructs a query prefix for prefix iteration (ends with the separator).
+/// Example: `query_prefix("sessions_by_parent", "root")` -> `"sessions_by_parent/root:"`
+#[inline]
+fn query_prefix(prefix: &str, key: &str) -> String {
+    format!("{}/{}:", prefix, key)
+}
+
+/// Constructs a query prefix with two key components.
+/// Example: `query_prefix2("labels", "env", "prod")` -> `"labels/env:prod:"`
+#[inline]
+fn query_prefix2(prefix: &str, key1: &str, key2: &str) -> String {
+    format!("{}/{}:{}:", prefix, key1, key2)
+}
+
+const PROMPT_PREFIX: &str = "prompts";
+const SESSION_INDEX_PREFIX: &str = "sessions";
+const USER_INDEX_PREFIX: &str = "users";
+const TIMESTAMP_INDEX_PREFIX: &str = "timestamps";
+const OP_PREFIX: &str = "operations";
+const API_KEY_PREFIX: &str = "custody/api_keys";
 const COSMOS_KEY_STORE_KEY: &str = "custody/cosmos_key_store";
-const AKASH_WORKFLOW_PREFIX: &str = "akash_workflows/";
-// const HEADSTASH: &str = "headstash/";
-const PROXY_SESSION_PREFIX: &str = "proxy_sessions/";
-const PROXY_CLIENT_INDEX_PREFIX: &str = "proxy_sessions_by_client/";
-const PROXY_ROUTER_CONFIG_PREFIX: &str = "proxy_router_config/";
+const AKASH_WORKFLOW_PREFIX: &str = "akash_workflows";
+// const HEADSTASH: &str = "headstash";
+const PROXY_SESSION_PREFIX: &str = "proxy_sessions";
+const PROXY_CLIENT_INDEX_PREFIX: &str = "proxy_sessions_by_client";
+const PROXY_ROUTER_CONFIG_PREFIX: &str = "proxy_router_config";
 const PROXY_ROUTER_CONFIG_KEY: &str = "proxy_router_config/current";
 
 // Git Workspace Storage Prefixes
-pub const WORKSPACE_PREFIX: &str = "workspaces/";
-pub const TASK_WORKTREE_PREFIX: &str = "task_worktrees/";
-pub const WORKTREE_BY_WORKSPACE_PREFIX: &str = "worktrees_by_workspace/";
-pub const WORKTREE_BY_NODE_PREFIX: &str = "worktrees_by_node/";
+pub const WORKSPACE_PREFIX: &str = "workspaces";
+pub const TASK_WORKTREE_PREFIX: &str = "task_worktrees";
+pub const WORKTREE_BY_WORKSPACE_PREFIX: &str = "worktrees_by_workspace";
+pub const WORKTREE_BY_NODE_PREFIX: &str = "worktrees_by_node";
 
 // Fractal Session Storage Prefixes
-const FRACTAL_SESSION_PREFIX: &str = "fractal_sessions/";
-const SESSION_BY_PARENT_PREFIX: &str = "sessions_by_parent/";
-const SESSION_BY_ROOT_PREFIX: &str = "sessions_by_root/";
-const SESSION_BY_OWNER_PREFIX: &str = "sessions_by_owner/";
-const SESSION_BY_STATUS_PREFIX: &str = "sessions_by_status/";
-const SESSION_BY_TYPE_PREFIX: &str = "sessions_by_type/";
-const SESSION_BY_LABEL_PREFIX: &str = "sessions_by_label/";
-const SESSION_BY_TAG_PREFIX: &str = "sessions_by_tag/";
-const SESSION_STATE_PREFIX: &str = "session_states/";
-const SESSION_LOCK_PREFIX: &str = "session_locks/";
+const FRACTAL_SESSION_PREFIX: &str = "fractal_sessions";
+const SESSION_BY_PARENT_PREFIX: &str = "sessions_by_parent";
+const SESSION_BY_ROOT_PREFIX: &str = "sessions_by_root";
+const SESSION_BY_OWNER_PREFIX: &str = "sessions_by_owner";
+const SESSION_BY_STATUS_PREFIX: &str = "sessions_by_status";
+const SESSION_BY_TYPE_PREFIX: &str = "sessions_by_type";
+const SESSION_BY_LABEL_PREFIX: &str = "sessions_by_label";
+const SESSION_BY_TAG_PREFIX: &str = "sessions_by_tag";
+const SESSION_STATE_PREFIX: &str = "session_states";
+const SESSION_LOCK_PREFIX: &str = "session_locks";
 
 // Open Responses Storage Prefix
-const OPEN_RESPONSE_PREFIX: &str = "open_responses/";
+const OPEN_RESPONSE_PREFIX: &str = "open_responses";
 
 // Custom Authenticator Storage Prefixes
-const AUTHENTICATOR_PREFIX: &str = "authenticators/";
-const AUTHENTICATOR_META_PREFIX: &str = "authenticators/metadata/";
+const AUTHENTICATOR_PREFIX: &str = "authenticators";
+const AUTHENTICATOR_META_PREFIX: &str = "authenticators/metadata";
 
 // SDL Template Contract Storage Prefix
-const SDL_TEMPLATE_CONTRACT_PREFIX: &str = "sdl_template_contracts/";
+const SDL_TEMPLATE_CONTRACT_PREFIX: &str = "sdl_template_contracts";
 
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
@@ -82,7 +120,7 @@ impl ErgorsStorage {
         let id = hex::encode(prompt.id.clone());
         // Serialize the prompt response
         let prompt_data = serde_json::to_vec(prompt)?;
-        let prompt_key = format!("{}{}", PROMPT_PREFIX, id.clone());
+        let prompt_key = storage_key(PROMPT_PREFIX, &id);
 
         // Store the main prompt record
         delta.put_raw(prompt_key.clone(), prompt_data);
@@ -106,13 +144,13 @@ impl ErgorsStorage {
                 let sid = context.session_id.clone();
                 let uid = context.user_id.clone();
 
-                let session_key = format!("{}{}:{}", SESSION_INDEX_PREFIX, sid, id);
+                let session_key = storage_key2(SESSION_INDEX_PREFIX, &sid, &id);
                 delta.put_raw(session_key, prompt.id.clone());
                 debug!("Created session index for {}: {}", sid, id);
 
                 // Index by user_id
 
-                let user_key = format!("{}{}:{}", USER_INDEX_PREFIX, uid, id);
+                let user_key = storage_key2(USER_INDEX_PREFIX, &uid, &id);
                 delta.put_raw(user_key, prompt.id.clone());
                 debug!("Created user index for {}: {}", uid, id);
             }
@@ -148,7 +186,7 @@ impl ErgorsStorage {
 
     pub async fn get_prompt(&self, id: &Uuid) -> HoResult<Option<PromptResponse>> {
         let snapshot = self.cs.latest_snapshot();
-        let prompt_key = format!("{}{}", PROMPT_PREFIX, id);
+        let prompt_key = storage_key(PROMPT_PREFIX, &id.to_string());
 
         match snapshot.get_raw(&prompt_key).await {
             Ok(Some(data)) => {
@@ -270,7 +308,7 @@ impl ErgorsStorage {
             "system": request.system,
         });
 
-        let key = format!("{}{}", OPEN_RESPONSE_PREFIX, response_id);
+        let key = storage_key(OPEN_RESPONSE_PREFIX, response_id);
         delta.put_raw(key, serde_json::to_vec(&session_data)?);
         self.cs.commit(delta).await?;
 
@@ -285,7 +323,7 @@ impl ErgorsStorage {
         response_id: &str,
     ) -> HoResult<Vec<PromptMessage>> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}{}", OPEN_RESPONSE_PREFIX, response_id);
+        let key = storage_key(OPEN_RESPONSE_PREFIX, response_id);
 
         match snapshot.get_raw(&key).await {
             Ok(Some(data)) => {
@@ -439,7 +477,7 @@ impl ErgorsStorage {
         session_id: Option<String>,
     ) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let op_key = format!("{}{}", OP_PREFIX, id);
+        let op_key = storage_key(OP_PREFIX, &id);
         let operation = OperationRecord {
             id: op_key.to_string(),
             operation_type: operation_type.to_string(),
@@ -476,7 +514,7 @@ impl ErgorsStorage {
     /// Update operation record with response
     pub async fn op_res(&self, id: &str, response_data: Vec<u8>) -> HoResult<()> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}{}", OP_PREFIX, id);
+        let key = storage_key(OP_PREFIX, id);
 
         // Get existing operation
         let existing_data = snapshot
@@ -512,7 +550,7 @@ impl ErgorsStorage {
         stack_trace: Option<String>,
     ) -> HoResult<()> {
         let snapshot = self.cs.latest_snapshot();
-        let op_key = format!("{}{}", OP_PREFIX, id);
+        let op_key = storage_key(OP_PREFIX, id);
 
         // Get existing operation
         let existing_data = snapshot
@@ -599,7 +637,7 @@ impl ErgorsStorage {
     /// Get a specific operation by ID
     pub async fn q_op(&self, id: &str) -> HoResult<Option<OperationRecord>> {
         let snapshot = self.cs.latest_snapshot();
-        let op_key = format!("{}{}", OP_PREFIX, id);
+        let op_key = storage_key(OP_PREFIX, id);
 
         match snapshot.get_raw(&op_key).await {
             Ok(Some(data)) => {
@@ -621,7 +659,7 @@ impl ErgorsStorage {
         encrypted_key: &ho_std::types::ergors::storage::v1::EncryptedApiKey,
     ) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let key = format!("{}{}", API_KEY_PREFIX, provider_name);
+        let key = storage_key(API_KEY_PREFIX, provider_name);
 
         let data = serde_json::to_vec(encrypted_key)?;
         delta.put_raw(key.clone(), data);
@@ -640,7 +678,7 @@ impl ErgorsStorage {
         provider_name: &str,
     ) -> HoResult<Option<ho_std::types::ergors::storage::v1::EncryptedApiKey>> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}{}", API_KEY_PREFIX, provider_name);
+        let key = storage_key(API_KEY_PREFIX, provider_name);
 
         match snapshot.get_raw(&key).await {
             Ok(Some(data)) => {
@@ -662,7 +700,7 @@ impl ErgorsStorage {
     /// Delete encrypted API key
     pub async fn delete_encrypted_api_key(&self, provider_name: &str) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let key = format!("{}{}", API_KEY_PREFIX, provider_name);
+        let key = storage_key(API_KEY_PREFIX, provider_name);
 
         delta.delete(key);
         self.cs.commit(delta).await?;
@@ -747,7 +785,7 @@ impl ErgorsStorage {
     /// Store an Akash deployment workflow
     pub async fn put_akash_workflow(&self, workflow: &AkashDeploymentWorkflow) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let key = format!("{}{}", AKASH_WORKFLOW_PREFIX, workflow.session_id);
+        let key = storage_key(AKASH_WORKFLOW_PREFIX, &workflow.session_id);
         let data = serde_json::to_vec(workflow)?;
         delta.put_raw(key.clone(), data);
         self.cs.commit(delta).await?;
@@ -764,7 +802,7 @@ impl ErgorsStorage {
         session_id: &str,
     ) -> HoResult<Option<AkashDeploymentWorkflow>> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}{}", AKASH_WORKFLOW_PREFIX, session_id);
+        let key = storage_key(AKASH_WORKFLOW_PREFIX, session_id);
 
         match snapshot.get_raw(&key).await {
             Ok(Some(data)) => {
@@ -813,7 +851,7 @@ impl ErgorsStorage {
     /// Delete an Akash workflow
     pub async fn delete_akash_workflow(&self, session_id: &str) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let key = format!("{}{}", AKASH_WORKFLOW_PREFIX, session_id);
+        let key = storage_key(AKASH_WORKFLOW_PREFIX, session_id);
         delta.delete(key);
         self.cs.commit(delta).await?;
         info!("🗑️  Deleted Akash workflow: {}", session_id);
@@ -840,7 +878,7 @@ impl ErgorsStorage {
         delta.put_raw(PROXY_ROUTER_CONFIG_KEY.to_string(), data.clone());
 
         // Also store versioned history entry for immutable audit trail
-        let version_key = format!("{}v{}", PROXY_ROUTER_CONFIG_PREFIX, config.version);
+        let version_key = storage_key(PROXY_ROUTER_CONFIG_PREFIX, &format!("v{}", config.version));
         delta.put_raw(version_key.clone(), data);
 
         self.cs.commit(delta).await?;
@@ -880,7 +918,7 @@ impl ErgorsStorage {
         version: u64,
     ) -> HoResult<Option<ho_std::types::ergors::orch::v1::ProxyRouterConfig>> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}v{}", PROXY_ROUTER_CONFIG_PREFIX, version);
+        let key = storage_key(PROXY_ROUTER_CONFIG_PREFIX, &format!("v{}", version));
 
         match snapshot.get_raw(&key).await {
             Ok(Some(data)) => {
@@ -938,7 +976,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
 
         // Main session record
-        let session_key = format!("{}{}", PROXY_SESSION_PREFIX, session.session_id);
+        let session_key = storage_key(PROXY_SESSION_PREFIX, &session.session_id);
         let session_data = serde_json::to_vec(session)?;
         delta.put_raw(session_key.clone(), session_data);
 
@@ -951,10 +989,7 @@ impl ErgorsStorage {
             4 => "custom",
             _ => "unknown",
         };
-        let client_index_key = format!(
-            "{}{}:{}",
-            PROXY_CLIENT_INDEX_PREFIX, client_type_name, session.session_id
-        );
+        let client_index_key = storage_key2(PROXY_CLIENT_INDEX_PREFIX, client_type_name, &session.session_id);
         delta.put_raw(client_index_key, session.session_id.as_bytes().to_vec());
 
         // Index by timestamp for efficient time-range queries
@@ -979,7 +1014,7 @@ impl ErgorsStorage {
     /// Get a proxy session by ID.
     pub async fn get_proxy_session(&self, session_id: &str) -> HoResult<Option<ProxySession>> {
         let snapshot = self.cs.latest_snapshot();
-        let session_key = format!("{}{}", PROXY_SESSION_PREFIX, session_id);
+        let session_key = storage_key(PROXY_SESSION_PREFIX, session_id);
 
         match snapshot.get_raw(&session_key).await {
             Ok(Some(data)) => {
@@ -1067,7 +1102,7 @@ impl ErgorsStorage {
     /// Delete a proxy session.
     pub async fn delete_proxy_session(&self, session_id: &str) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let session_key = format!("{}{}", PROXY_SESSION_PREFIX, session_id);
+        let session_key = storage_key(PROXY_SESSION_PREFIX, session_id);
         delta.delete(session_key);
         self.cs.commit(delta).await?;
         info!("🗑️  Deleted proxy session: {}", session_id);
@@ -1083,37 +1118,27 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
 
         // Main session record
-        let session_key = format!("{}{}", FRACTAL_SESSION_PREFIX, session.session_id);
+        let session_key = storage_key(FRACTAL_SESSION_PREFIX, &session.session_id);
         let session_data = serde_json::to_vec(session)?;
         delta.put_raw(session_key.clone(), session_data);
 
         // Index by parent (for hierarchy traversal)
         if !session.parent_session_id.is_empty() {
-            let parent_index_key = format!(
-                "{}{}:{}",
-                SESSION_BY_PARENT_PREFIX, session.parent_session_id, session.session_id
-            );
+            let parent_index_key = storage_key2(SESSION_BY_PARENT_PREFIX, &session.parent_session_id, &session.session_id);
             delta.put_raw(parent_index_key, session.session_id.as_bytes().to_vec());
         }
 
         // Index by root (for full hierarchy queries)
+        // Format: prefix/root_id:depth(4-digit padded):session_id
         if !session.root_session_id.is_empty() {
-            let root_index_key = format!(
-                "{}{}:{:04}:{}",
-                SESSION_BY_ROOT_PREFIX,
-                session.root_session_id,
-                session.fractal_depth,
-                session.session_id
-            );
+            let depth_str = format!("{:04}", session.fractal_depth);
+            let root_index_key = storage_key3(SESSION_BY_ROOT_PREFIX, &session.root_session_id, &depth_str, &session.session_id);
             delta.put_raw(root_index_key, session.session_id.as_bytes().to_vec());
         }
 
         // Index by owner node
         if !session.owner_node_id.is_empty() {
-            let owner_index_key = format!(
-                "{}{}:{}",
-                SESSION_BY_OWNER_PREFIX, session.owner_node_id, session.session_id
-            );
+            let owner_index_key = storage_key2(SESSION_BY_OWNER_PREFIX, &session.owner_node_id, &session.session_id);
             delta.put_raw(owner_index_key, session.session_id.as_bytes().to_vec());
         }
 
@@ -1122,10 +1147,7 @@ impl ErgorsStorage {
             Ok(s) => format!("{:?}", s).to_lowercase(),
             Err(_) => "unknown".to_string(),
         };
-        let status_index_key = format!(
-            "{}{}:{}",
-            SESSION_BY_STATUS_PREFIX, status_name, session.session_id
-        );
+        let status_index_key = storage_key2(SESSION_BY_STATUS_PREFIX, &status_name, &session.session_id);
         delta.put_raw(status_index_key, session.session_id.as_bytes().to_vec());
 
         // Index by type
@@ -1133,24 +1155,18 @@ impl ErgorsStorage {
             Ok(t) => format!("{:?}", t).to_lowercase(),
             Err(_) => "unknown".to_string(),
         };
-        let type_index_key = format!(
-            "{}{}:{}",
-            SESSION_BY_TYPE_PREFIX, type_name, session.session_id
-        );
+        let type_index_key = storage_key2(SESSION_BY_TYPE_PREFIX, &type_name, &session.session_id);
         delta.put_raw(type_index_key, session.session_id.as_bytes().to_vec());
 
         // Index by labels
         for (key, value) in &session.labels {
-            let label_index_key = format!(
-                "{}{}:{}:{}",
-                SESSION_BY_LABEL_PREFIX, key, value, session.session_id
-            );
+            let label_index_key = storage_key3(SESSION_BY_LABEL_PREFIX, key, value, &session.session_id);
             delta.put_raw(label_index_key, session.session_id.as_bytes().to_vec());
         }
 
         // Index by tags
         for tag in &session.tags {
-            let tag_index_key = format!("{}{}:{}", SESSION_BY_TAG_PREFIX, tag, session.session_id);
+            let tag_index_key = storage_key2(SESSION_BY_TAG_PREFIX, tag, &session.session_id);
             delta.put_raw(tag_index_key, session.session_id.as_bytes().to_vec());
         }
 
@@ -1183,7 +1199,7 @@ impl ErgorsStorage {
     /// Get a fractal session by ID.
     pub async fn get_fractal_session(&self, session_id: &str) -> HoResult<Option<FractalSession>> {
         let snapshot = self.cs.latest_snapshot();
-        let session_key = format!("{}{}", FRACTAL_SESSION_PREFIX, session_id);
+        let session_key = storage_key(FRACTAL_SESSION_PREFIX, session_id);
 
         match snapshot.get_raw(&session_key).await {
             Ok(Some(data)) => {
@@ -1201,7 +1217,7 @@ impl ErgorsStorage {
     /// Get sessions by parent ID (direct children only).
     pub async fn get_sessions_by_parent(&self, parent_id: &str) -> HoResult<Vec<FractalSession>> {
         let snapshot = self.cs.latest_snapshot();
-        let prefix = format!("{}{}:", SESSION_BY_PARENT_PREFIX, parent_id);
+        let prefix = query_prefix(SESSION_BY_PARENT_PREFIX, parent_id);
         let mut results = Vec::new();
 
         let mut stream = snapshot.prefix_raw(&prefix);
@@ -1225,7 +1241,7 @@ impl ErgorsStorage {
     /// Get all sessions in a hierarchy by root ID.
     pub async fn get_sessions_by_root(&self, root_id: &str) -> HoResult<Vec<FractalSession>> {
         let snapshot = self.cs.latest_snapshot();
-        let prefix = format!("{}{}:", SESSION_BY_ROOT_PREFIX, root_id);
+        let prefix = query_prefix(SESSION_BY_ROOT_PREFIX, root_id);
         let mut results = Vec::new();
 
         let mut stream = snapshot.prefix_raw(&prefix);
@@ -1254,7 +1270,7 @@ impl ErgorsStorage {
         owner_node_id: &str,
     ) -> HoResult<Vec<FractalSession>> {
         let snapshot = self.cs.latest_snapshot();
-        let prefix = format!("{}{}:", SESSION_BY_OWNER_PREFIX, owner_node_id);
+        let prefix = query_prefix(SESSION_BY_OWNER_PREFIX, owner_node_id);
         let mut results = Vec::new();
 
         let mut stream = snapshot.prefix_raw(&prefix);
@@ -1282,7 +1298,7 @@ impl ErgorsStorage {
     ) -> HoResult<Vec<FractalSession>> {
         let snapshot = self.cs.latest_snapshot();
         let status_name = format!("{:?}", status).to_lowercase();
-        let prefix = format!("{}{}:", SESSION_BY_STATUS_PREFIX, status_name);
+        let prefix = query_prefix(SESSION_BY_STATUS_PREFIX, &status_name);
         let mut results = Vec::new();
 
         let mut stream = snapshot.prefix_raw(&prefix);
@@ -1310,7 +1326,7 @@ impl ErgorsStorage {
         value: &str,
     ) -> HoResult<Vec<FractalSession>> {
         let snapshot = self.cs.latest_snapshot();
-        let prefix = format!("{}{}:{}:", SESSION_BY_LABEL_PREFIX, key, value);
+        let prefix = query_prefix2(SESSION_BY_LABEL_PREFIX, key, value);
         let mut results = Vec::new();
 
         let mut stream = snapshot.prefix_raw(&prefix);
@@ -1334,7 +1350,7 @@ impl ErgorsStorage {
     /// Get sessions by tag.
     pub async fn get_sessions_by_tag(&self, tag: &str) -> HoResult<Vec<FractalSession>> {
         let snapshot = self.cs.latest_snapshot();
-        let prefix = format!("{}{}:", SESSION_BY_TAG_PREFIX, tag);
+        let prefix = query_prefix(SESSION_BY_TAG_PREFIX, tag);
         let mut results = Vec::new();
 
         let mut stream = snapshot.prefix_raw(&prefix);
@@ -1486,33 +1502,25 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
 
         // Delete main record
-        let session_key = format!("{}{}", FRACTAL_SESSION_PREFIX, session_id);
+        let session_key = storage_key(FRACTAL_SESSION_PREFIX, session_id);
         delta.delete(session_key);
 
         // Delete parent index
         if !session.parent_session_id.is_empty() {
-            let parent_index_key = format!(
-                "{}{}:{}",
-                SESSION_BY_PARENT_PREFIX, session.parent_session_id, session_id
-            );
+            let parent_index_key = storage_key2(SESSION_BY_PARENT_PREFIX, &session.parent_session_id, session_id);
             delta.delete(parent_index_key);
         }
 
         // Delete root index
         if !session.root_session_id.is_empty() {
-            let root_index_key = format!(
-                "{}{}:{:04}:{}",
-                SESSION_BY_ROOT_PREFIX, session.root_session_id, session.fractal_depth, session_id
-            );
+            let depth_str = format!("{:04}", session.fractal_depth);
+            let root_index_key = storage_key3(SESSION_BY_ROOT_PREFIX, &session.root_session_id, &depth_str, session_id);
             delta.delete(root_index_key);
         }
 
         // Delete owner index
         if !session.owner_node_id.is_empty() {
-            let owner_index_key = format!(
-                "{}{}:{}",
-                SESSION_BY_OWNER_PREFIX, session.owner_node_id, session_id
-            );
+            let owner_index_key = storage_key2(SESSION_BY_OWNER_PREFIX, &session.owner_node_id, session_id);
             delta.delete(owner_index_key);
         }
 
@@ -1522,7 +1530,7 @@ impl ErgorsStorage {
             Err(_) => "unknown".to_string(),
         };
         let status_index_key =
-            format!("{}{}:{}", SESSION_BY_STATUS_PREFIX, status_name, session_id);
+            storage_key2(SESSION_BY_STATUS_PREFIX, &status_name, session_id);
         delta.delete(status_index_key);
 
         // Delete type index
@@ -1530,21 +1538,18 @@ impl ErgorsStorage {
             Ok(t) => format!("{:?}", t).to_lowercase(),
             Err(_) => "unknown".to_string(),
         };
-        let type_index_key = format!("{}{}:{}", SESSION_BY_TYPE_PREFIX, type_name, session_id);
+        let type_index_key = storage_key2(SESSION_BY_TYPE_PREFIX, &type_name, session_id);
         delta.delete(type_index_key);
 
         // Delete label indices
         for (key, value) in &session.labels {
-            let label_index_key = format!(
-                "{}{}:{}:{}",
-                SESSION_BY_LABEL_PREFIX, key, value, session_id
-            );
+            let label_index_key = storage_key3(SESSION_BY_LABEL_PREFIX, key, value, session_id);
             delta.delete(label_index_key);
         }
 
         // Delete tag indices
         for tag in &session.tags {
-            let tag_index_key = format!("{}{}:{}", SESSION_BY_TAG_PREFIX, tag, session_id);
+            let tag_index_key = storage_key2(SESSION_BY_TAG_PREFIX, tag, session_id);
             delta.delete(tag_index_key);
         }
 
@@ -1561,15 +1566,12 @@ impl ErgorsStorage {
     ) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
 
-        let key = format!(
-            "{}{}:{}",
-            SESSION_STATE_PREFIX, session_id, snapshot.state_version
-        );
+        let key = storage_key2(SESSION_STATE_PREFIX, session_id, &snapshot.state_version.to_string());
         let data = serde_json::to_vec(snapshot)?;
         delta.put_raw(key.clone(), data);
 
         // Also store as "latest" for quick access
-        let latest_key = format!("{}{}:latest", SESSION_STATE_PREFIX, session_id);
+        let latest_key = storage_key2(SESSION_STATE_PREFIX, session_id, "latest");
         let latest_data = serde_json::to_vec(snapshot)?;
         delta.put_raw(latest_key, latest_data);
 
@@ -1587,7 +1589,7 @@ impl ErgorsStorage {
         session_id: &str,
     ) -> HoResult<Option<SessionStateSnapshot>> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}{}:latest", SESSION_STATE_PREFIX, session_id);
+        let key = storage_key2(SESSION_STATE_PREFIX, session_id, "latest");
 
         match snapshot.get_raw(&key).await {
             Ok(Some(data)) => {
@@ -1609,7 +1611,7 @@ impl ErgorsStorage {
         version: u64,
     ) -> HoResult<Option<SessionStateSnapshot>> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}{}:{}", SESSION_STATE_PREFIX, session_id, version);
+        let key = storage_key2(SESSION_STATE_PREFIX, session_id, &version.to_string());
 
         match snapshot.get_raw(&key).await {
             Ok(Some(data)) => {
@@ -1647,7 +1649,7 @@ impl ErgorsStorage {
         contract_address: &str,
     ) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let key = format!("{}{}", AUTHENTICATOR_PREFIX, endpoint_label);
+        let key = storage_key(AUTHENTICATOR_PREFIX, endpoint_label);
         delta.put_raw(key.clone(), contract_address.as_bytes().to_vec());
         self.cs.commit(delta).await?;
         info!(
@@ -1661,7 +1663,7 @@ impl ErgorsStorage {
     /// Returns None if no authenticator is registered for this endpoint.
     pub async fn get_authenticator(&self, endpoint_label: &str) -> HoResult<Option<String>> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}{}", AUTHENTICATOR_PREFIX, endpoint_label);
+        let key = storage_key(AUTHENTICATOR_PREFIX, endpoint_label);
 
         match snapshot.get_raw(&key).await {
             Ok(Some(data)) => {
@@ -1683,11 +1685,11 @@ impl ErgorsStorage {
     /// Remove the authenticator for an endpoint label.
     pub async fn delete_authenticator(&self, endpoint_label: &str) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let key = format!("{}{}", AUTHENTICATOR_PREFIX, endpoint_label);
+        let key = storage_key(AUTHENTICATOR_PREFIX, endpoint_label);
         delta.delete(key);
 
         // Also delete metadata if it exists
-        let meta_key = format!("{}{}", AUTHENTICATOR_META_PREFIX, endpoint_label);
+        let meta_key = storage_key(AUTHENTICATOR_META_PREFIX, endpoint_label);
         delta.delete(meta_key);
 
         self.cs.commit(delta).await?;
@@ -1702,7 +1704,7 @@ impl ErgorsStorage {
         metadata: &str,
     ) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let key = format!("{}{}", AUTHENTICATOR_META_PREFIX, endpoint_label);
+        let key = storage_key(AUTHENTICATOR_META_PREFIX, endpoint_label);
         delta.put_raw(key, metadata.as_bytes().to_vec());
         self.cs.commit(delta).await?;
         debug!(
@@ -1718,7 +1720,7 @@ impl ErgorsStorage {
         endpoint_label: &str,
     ) -> HoResult<Option<String>> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}{}", AUTHENTICATOR_META_PREFIX, endpoint_label);
+        let key = storage_key(AUTHENTICATOR_META_PREFIX, endpoint_label);
 
         match snapshot.get_raw(&key).await {
             Ok(Some(data)) => {
@@ -1795,7 +1797,7 @@ impl ErgorsStorage {
         });
         let info_bytes = serde_json::to_vec(&contract_info)?;
 
-        let key = format!("{}{}", SDL_TEMPLATE_CONTRACT_PREFIX, contract_address);
+        let key = storage_key(SDL_TEMPLATE_CONTRACT_PREFIX, contract_address);
         delta.put_raw(key, info_bytes);
 
         self.cs.commit(delta).await?;
@@ -1809,7 +1811,7 @@ impl ErgorsStorage {
         contract_address: &str,
     ) -> HoResult<Option<(String, Option<String>, u64)>> {
         let snapshot = self.cs.latest_snapshot();
-        let key = format!("{}{}", SDL_TEMPLATE_CONTRACT_PREFIX, contract_address);
+        let key = storage_key(SDL_TEMPLATE_CONTRACT_PREFIX, contract_address);
 
         match snapshot.get_raw(&key).await? {
             Some(bytes) => {

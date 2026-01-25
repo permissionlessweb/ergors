@@ -302,6 +302,24 @@ impl EncryptedCosmosKeyManager {
         mnemonic.derive_keypair(account_index)
     }
 
+    /// Get a keypair from an encrypted mnemonic with custom coin type
+    ///
+    /// This allows deriving addresses for different cosmos chains:
+    /// - 118: Cosmos/Akash (default)
+    /// - 330: Terra
+    /// - 60: Ethereum (for EVM chains)
+    /// - 529: Secret Network
+    pub fn get_keypair_with_coin_type(
+        &mut self,
+        encrypted: &EncryptedCosmosMnemonic,
+        account_index: u32,
+        coin_type: u32,
+    ) -> Result<CosmosKeyPair> {
+        let phrase = self.decrypt_mnemonic(encrypted)?;
+        let mnemonic = CosmosMnemonic::from_phrase(&phrase)?;
+        mnemonic.derive_keypair_with_coin_type(account_index, coin_type)
+    }
+
     /// Create an empty key store
     pub fn create_empty_store() -> CosmosKeyStore {
         let now = SystemTime::now()

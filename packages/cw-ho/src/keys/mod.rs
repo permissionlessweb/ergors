@@ -121,21 +121,30 @@ impl KeysCmd {
         address_prefix: &str,
         make_default: bool,
     ) -> Result<()> {
-        // Prompt for password
-        let password = rpassword::prompt_password("Enter encryption password: ")
-            .map_err(|e| anyhow!("Failed to read password: {}", e))?;
+        // Check for password in environment variable first (for automation/scripting)
+        let password = if let Ok(env_password) = std::env::var("ERGORS_CUSTODY_PASSWORD") {
+            if env_password.is_empty() {
+                return Err(anyhow!("ERGORS_CUSTODY_PASSWORD is set but empty"));
+            }
+            env_password
+        } else {
+            // Prompt for password interactively
+            let password = rpassword::prompt_password("Enter encryption password: ")
+                .map_err(|e| anyhow!("Failed to read password: {}", e))?;
 
-        if password.is_empty() {
-            return Err(anyhow!("Password cannot be empty"));
-        }
+            if password.is_empty() {
+                return Err(anyhow!("Password cannot be empty"));
+            }
 
-        // Confirm password for new stores
-        let confirm = rpassword::prompt_password("Confirm password: ")
-            .map_err(|e| anyhow!("Failed to read password confirmation: {}", e))?;
+            // Confirm password for new stores
+            let confirm = rpassword::prompt_password("Confirm password: ")
+                .map_err(|e| anyhow!("Failed to read password confirmation: {}", e))?;
 
-        if password != confirm {
-            return Err(anyhow!("Passwords do not match"));
-        }
+            if password != confirm {
+                return Err(anyhow!("Passwords do not match"));
+            }
+            password
+        };
 
         // Load or create key store
         let mut store = match storage.get_cosmos_key_store().await {
