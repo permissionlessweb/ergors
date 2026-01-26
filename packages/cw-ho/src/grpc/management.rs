@@ -142,6 +142,10 @@ use ho_std::types::ergors::orch::v1::{
     CloseAkashLeaseRequest, GetLeaseStatusRequest, LeaseStatusResponse,
     AddTrustedProviderRequest, RemoveTrustedProviderRequest,
     ListTrustedProvidersRequest, ListTrustedProvidersResponse, AkashWorkflowOptions, AkashLeaseInfo, AkashLeaseState,
+    // RAG types
+    RagIngestRequest, RagIngestResponse, RagQueryRequest, RagQueryResponse,
+    RagStatusRequest, RagStatusResponse, RagDeleteRequest, RagOperationResult,
+    RagListSourcesRequest, RagListSourcesResponse, RagConfigureRequest, RagSearchResult, RagSourceInfo,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
 use ho_std::keys::cosmos::cosmos_address_from_pubkey;
@@ -2394,15 +2398,36 @@ impl ManagementService for ManagementServiceImpl {
         }))
     }
 
-    /// Run automated deployment workflow using WorkflowEngine
+    /// Run automated deployment workflow using AutomatedDeployer.
+    ///
+    /// This is the main entry point for fully automated Akash deployments.
+    /// It executes all steps without user intervention:
+    /// 1. Check balance
+    /// 2. Setup/verify certificate
+    /// 3. Create deployment transaction
+    /// 4. Wait for and collect bids
+    /// 5. Select provider (cheapest from trusted list)
+    /// 6. Create lease
+    /// 7. Send manifest
+    /// 8. Retrieve and save endpoints
     async fn run_akash_deployment(
         &self,
         request: Request<RunAkashDeploymentRequest>,
     ) -> Result<Response<RunAkashDeploymentResponse>, Status> {
         let req = request.into_inner();
 
+        // Check if Akash context is available
+        let akash_ctx = self
+            .state
+            .akash
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition(
+                "Akash deployment context not initialized. \
+                 Ensure Akash config is present and keys are imported."
+            ))?;
+
         // Get the workflow
-        let workflow = self
+        let mut workflow = self
             .state
             .s
             .get_akash_workflow(&req.session_id)
@@ -2413,7 +2438,7 @@ impl ManagementService for ManagementServiceImpl {
         // Apply options if provided
         let options = req.options.unwrap_or_else(|| AkashWorkflowOptions {
             skip_grants: false,
-            auto_select_bid: false,
+            auto_select_bid: true, // Default to auto-select for automated flow
             min_balance_uakt: 5_000_000,
             bid_wait_blocks: 2,
             trusted_providers: vec![],
@@ -2427,36 +2452,65 @@ impl ManagementService for ManagementServiceImpl {
             options.auto_select_bid
         );
 
-        // TODO: Integrate with WorkflowEngine when all components are ready
-        // For now, return the workflow with options stored
+        // Create deployer from context
+        let deployer = akash_ctx.create_deployer(self.state.s.clone());
 
-        let mut updated_workflow = workflow;
-        updated_workflow.options = Some(options);
-        updated_workflow.status = AkashWorkflowStatus::Running as i32;
-        updated_workflow.updated_at = Some(pbjson_types::Timestamp {
-            seconds: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64,
-            nanos: 0,
-        });
+        // Run the automated deployment
+        match deployer.deploy(&mut workflow, &options).await {
+            Ok(result) => {
+                tracing::info!(
+                    "Deployment completed successfully: session={}, dseq={}, provider={}, endpoints={}",
+                    result.session_id,
+                    result.dseq,
+                    result.provider,
+                    result.endpoints.len()
+                );
 
-        // Persist updated workflow
-        self.state.s.put_akash_workflow(&updated_workflow).await.ok();
+                Ok(Response::new(RunAkashDeploymentResponse {
+                    workflow: Some(workflow),
+                    completed: true,
+                    input_required: None,
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Automated deployment failed: {}", e);
 
-        Ok(Response::new(RunAkashDeploymentResponse {
-            workflow: Some(updated_workflow),
-            completed: false,
-            input_required: None, // Will be set when workflow engine runs
-        }))
+                // Update workflow status to failed
+                workflow.status = AkashWorkflowStatus::Failed as i32;
+                workflow.last_error = e.to_string();
+                workflow.updated_at = Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                });
+                self.state.s.put_akash_workflow(&workflow).await.ok();
+
+                Ok(Response::new(RunAkashDeploymentResponse {
+                    workflow: Some(workflow),
+                    completed: false,
+                    input_required: None,
+                }))
+            }
+        }
     }
 
-    /// Close an active lease
+    /// Close an active lease by submitting MsgCloseDeployment transaction.
     async fn close_akash_lease(
         &self,
         request: Request<CloseAkashLeaseRequest>,
     ) -> Result<Response<OperationResult>, Status> {
         let req = request.into_inner();
+
+        // Check if Akash context is available
+        let akash_ctx = self
+            .state
+            .akash
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition(
+                "Akash deployment context not initialized"
+            ))?;
 
         let workflow = self
             .state
@@ -2476,25 +2530,36 @@ impl ManagementService for ManagementServiceImpl {
 
         tracing::info!("Closing lease for session {}", req.session_id);
 
-        // TODO: Submit MsgCloseLease transaction via TxLifecycle
-        // For now, just mark the workflow as cancelled
+        // Create deployer and close the deployment
+        let deployer = akash_ctx.create_deployer(self.state.s.clone());
 
-        let mut updated_workflow = workflow;
-        updated_workflow.status = AkashWorkflowStatus::Cancelled as i32;
-        updated_workflow.updated_at = Some(pbjson_types::Timestamp {
-            seconds: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64,
-            nanos: 0,
-        });
+        match deployer.close_deployment(&workflow).await {
+            Ok(()) => {
+                // Update workflow status
+                let mut updated_workflow = workflow;
+                updated_workflow.status = AkashWorkflowStatus::Cancelled as i32;
+                updated_workflow.updated_at = Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                });
+                self.state.s.put_akash_workflow(&updated_workflow).await.ok();
 
-        self.state.s.put_akash_workflow(&updated_workflow).await.ok();
-
-        Ok(Response::new(OperationResult {
-            success: true,
-            message: format!("Lease close initiated for session {}", req.session_id),
-        }))
+                Ok(Response::new(OperationResult {
+                    success: true,
+                    message: format!("Lease closed successfully for session {}", req.session_id),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to close lease: {}", e);
+                Ok(Response::new(OperationResult {
+                    success: false,
+                    message: format!("Failed to close lease: {}", e),
+                }))
+            }
+        }
     }
 
     /// Get lease status
@@ -2643,6 +2708,273 @@ impl ManagementService for ManagementServiceImpl {
             Err(e) => {
                 tracing::error!("Failed to list trusted providers: {}", e);
                 Err(Status::internal(format!("Failed to list trusted providers: {}", e)))
+            }
+        }
+    }
+
+    // ============ RAG Vector Database Handlers ============
+
+    /// Ingest document into vector database
+    async fn rag_ingest(
+        &self,
+        request: Request<RagIngestRequest>,
+    ) -> Result<Response<RagIngestResponse>, Status> {
+        let req = request.into_inner();
+
+        // Check if embedder is configured
+        let rag_config = match self.state.s.get_rag_config().await {
+            Ok(Some(config)) => config,
+            Ok(None) => {
+                return Ok(Response::new(RagIngestResponse {
+                    success: false,
+                    chunk_count: 0,
+                    chunk_ids: vec![],
+                    message: "Embedder not configured. Use 'ergors rag configure' first.".to_string(),
+                }));
+            }
+            Err(e) => {
+                return Err(Status::internal(format!("Failed to get RAG config: {}", e)));
+            }
+        };
+
+        // Create document
+        let doc = ergors_rag::Document {
+            content: req.content,
+            uri: req.uri,
+            doc_type: req.doc_type,
+            tags: req.tags,
+        };
+
+        // Get storage and create RAG instance
+        match crate::rag::new_remote(
+            &self.state.s,
+            &rag_config.endpoint,
+            &rag_config.model,
+            rag_config.dimension as usize,
+        ) {
+            Ok(rag) => {
+                match rag.ingest(doc, None).await {
+                    Ok(chunk_ids) => {
+                        let ids: Vec<String> = chunk_ids.iter().map(|id| id.to_string()).collect();
+                        Ok(Response::new(RagIngestResponse {
+                            success: true,
+                            chunk_count: ids.len() as u32,
+                            chunk_ids: ids,
+                            message: "Document ingested successfully".to_string(),
+                        }))
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to ingest document: {}", e);
+                        Ok(Response::new(RagIngestResponse {
+                            success: false,
+                            chunk_count: 0,
+                            chunk_ids: vec![],
+                            message: format!("Failed to ingest: {}", e),
+                        }))
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to create RAG instance: {}", e);
+                Ok(Response::new(RagIngestResponse {
+                    success: false,
+                    chunk_count: 0,
+                    chunk_ids: vec![],
+                    message: format!("Failed to initialize RAG: {}", e),
+                }))
+            }
+        }
+    }
+
+    /// Query vector database
+    async fn rag_query(
+        &self,
+        request: Request<RagQueryRequest>,
+    ) -> Result<Response<RagQueryResponse>, Status> {
+        let req = request.into_inner();
+
+        // Check if embedder is configured
+        let rag_config = match self.state.s.get_rag_config().await {
+            Ok(Some(config)) => config,
+            Ok(None) => {
+                return Ok(Response::new(RagQueryResponse {
+                    results: vec![],
+                    verified: false,
+                }));
+            }
+            Err(e) => {
+                return Err(Status::internal(format!("Failed to get RAG config: {}", e)));
+            }
+        };
+
+        match crate::rag::new_remote(
+            &self.state.s,
+            &rag_config.endpoint,
+            &rag_config.model,
+            rag_config.dimension as usize,
+        ) {
+            Ok(rag) => {
+                let options = ergors_rag::QueryOptions {
+                    verify: req.verify,
+                    ..Default::default()
+                };
+
+                match rag.query(&req.query, req.top_k as usize, options).await {
+                    Ok(result) => {
+                        let (results, verified) = match result {
+                            ergors_rag::QueryResult::Standard(results) => {
+                                let mapped: Vec<RagSearchResult> = results
+                                    .iter()
+                                    .map(|r| RagSearchResult {
+                                        chunk_id: r.chunk_id.to_string(),
+                                        similarity: r.similarity,
+                                        content_preview: r.metadata.preview.clone(),
+                                        source_uri: r.metadata.source_type.clone(), // Use source_type for standard results
+                                    })
+                                    .collect();
+                                (mapped, false)
+                            }
+                            ergors_rag::QueryResult::Verified(results) => {
+                                let mapped: Vec<RagSearchResult> = results
+                                    .iter()
+                                    .map(|r| RagSearchResult {
+                                        chunk_id: r.chunk_id.to_string(),
+                                        similarity: r.similarity,
+                                        content_preview: r.content[..r.content.len().min(200)].to_string(),
+                                        source_uri: r.provenance.source_uri.clone(),
+                                    })
+                                    .collect();
+                                (mapped, true)
+                            }
+                        };
+                        Ok(Response::new(RagQueryResponse { results, verified }))
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to query RAG: {}", e);
+                        Err(Status::internal(format!("Query failed: {}", e)))
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to create RAG instance: {}", e);
+                Err(Status::internal(format!("Failed to initialize RAG: {}", e)))
+            }
+        }
+    }
+
+    /// Get RAG status
+    async fn rag_status(
+        &self,
+        _request: Request<RagStatusRequest>,
+    ) -> Result<Response<RagStatusResponse>, Status> {
+        let (embedder_configured, endpoint, model, dimension) = match self.state.s.get_rag_config().await {
+            Ok(Some(config)) => (true, config.endpoint, config.model, config.dimension),
+            Ok(None) => (false, String::new(), String::new(), 0),
+            Err(e) => {
+                tracing::error!("Failed to get RAG config: {}", e);
+                (false, String::new(), String::new(), 0)
+            }
+        };
+
+        // Get chunk count from storage
+        let (total_chunks, total_sources) = match self.state.s.get_rag_stats().await {
+            Ok((chunks, sources)) => (chunks, sources),
+            Err(_) => (0, 0),
+        };
+
+        Ok(Response::new(RagStatusResponse {
+            total_chunks,
+            total_sources,
+            embedder_configured,
+            embedder_endpoint: endpoint,
+            embedder_model: model,
+            embedding_dimension: dimension,
+        }))
+    }
+
+    /// Delete chunks by source URI
+    async fn rag_delete(
+        &self,
+        request: Request<RagDeleteRequest>,
+    ) -> Result<Response<RagOperationResult>, Status> {
+        let req = request.into_inner();
+
+        match self.state.s.delete_rag_source(&req.source_uri).await {
+            Ok(count) => {
+                Ok(Response::new(RagOperationResult {
+                    success: true,
+                    message: format!("Deleted {} chunks from source '{}'", count, req.source_uri),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to delete RAG source: {}", e);
+                Ok(Response::new(RagOperationResult {
+                    success: false,
+                    message: format!("Failed to delete: {}", e),
+                }))
+            }
+        }
+    }
+
+    /// List ingested sources
+    async fn rag_list_sources(
+        &self,
+        request: Request<RagListSourcesRequest>,
+    ) -> Result<Response<RagListSourcesResponse>, Status> {
+        let req = request.into_inner();
+
+        match self.state.s.list_rag_sources(req.limit as usize).await {
+            Ok((sources, total)) => {
+                let mapped: Vec<RagSourceInfo> = sources
+                    .into_iter()
+                    .map(|s| RagSourceInfo {
+                        uri: s.uri,
+                        chunk_count: s.chunk_count,
+                        doc_type: s.doc_type,
+                        ingested_at: s.ingested_at,
+                    })
+                    .collect();
+                Ok(Response::new(RagListSourcesResponse {
+                    sources: mapped,
+                    total_count: total as u32,
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to list RAG sources: {}", e);
+                Err(Status::internal(format!("Failed to list sources: {}", e)))
+            }
+        }
+    }
+
+    /// Configure embedder endpoint
+    async fn rag_configure(
+        &self,
+        request: Request<RagConfigureRequest>,
+    ) -> Result<Response<RagOperationResult>, Status> {
+        let req = request.into_inner();
+
+        // Validate endpoint URL
+        if !req.endpoint.starts_with("http://") && !req.endpoint.starts_with("https://") {
+            return Ok(Response::new(RagOperationResult {
+                success: false,
+                message: "Endpoint must start with http:// or https://".to_string(),
+            }));
+        }
+
+        // Store configuration
+        match self.state.s.set_rag_config(&req.endpoint, &req.model, req.dimension).await {
+            Ok(()) => {
+                Ok(Response::new(RagOperationResult {
+                    success: true,
+                    message: format!("Embedder configured: {} ({}, {} dims)", req.endpoint, req.model, req.dimension),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to configure RAG: {}", e);
+                Ok(Response::new(RagOperationResult {
+                    success: false,
+                    message: format!("Failed to configure: {}", e),
+                }))
             }
         }
     }

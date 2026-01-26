@@ -7,7 +7,7 @@ use clap::Subcommand;
 use std::collections::HashMap;
 
 use crate::client::ManagementClient;
-use crate::Cli;
+use super::CliContext;
 
 /// Akash deployment management commands
 #[derive(Subcommand)]
@@ -228,7 +228,7 @@ fn parse_key_val(s: &str) -> Result<(String, String), String> {
 }
 
 impl DeployCmd {
-    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+    pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
             DeployCmd::Create {
                 sdl,
@@ -271,7 +271,7 @@ impl DeployCmd {
                 if response.success {
                     let session_id = response.workflow.as_ref().map(|wf| wf.session_id.clone()).unwrap_or_default();
 
-                    if !cli.json {
+                    if !ctx.json {
                         println!("Deployment workflow created!");
                         if let Some(wf) = &response.workflow {
                             println!("  Session ID: {}", wf.session_id);
@@ -285,7 +285,7 @@ impl DeployCmd {
 
                     // If auto mode, run the automated workflow
                     if *auto && !session_id.is_empty() {
-                        if !cli.json {
+                        if !ctx.json {
                             println!("\nRunning automated workflow...");
                         }
 
@@ -309,7 +309,7 @@ impl DeployCmd {
                             )
                             .await?;
 
-                        if cli.json {
+                        if ctx.json {
                             let mut json = serde_json::json!({
                                 "session_id": session_id,
                                 "completed": run_response.completed,
@@ -333,7 +333,7 @@ impl DeployCmd {
                                 println!("  Needs:   {}", input.message);
                             }
                         }
-                    } else if cli.json {
+                    } else if ctx.json {
                         if let Some(wf) = &response.workflow {
                             println!(
                                 "{}",
@@ -371,7 +371,7 @@ impl DeployCmd {
                     .list_akash_deployments(status_filter, *limit)
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     let workflows: Vec<_> = response
                         .workflows
                         .iter()
@@ -415,7 +415,7 @@ impl DeployCmd {
                 let response = client.get_akash_deployment(session_id).await?;
 
                 if let Some(wf) = &response.workflow {
-                    if cli.json {
+                    if ctx.json {
                         println!(
                             "{}",
                             serde_json::to_string_pretty(&serde_json::json!({
@@ -465,7 +465,7 @@ impl DeployCmd {
             DeployCmd::Advance { session_id } => {
                 let response = client.advance_akash_deployment(session_id).await?;
 
-                if cli.json {
+                if ctx.json {
                     let mut json = serde_json::json!({
                         "success": response.success,
                     });
@@ -494,7 +494,7 @@ impl DeployCmd {
             DeployCmd::Bids { session_id } => {
                 let response = client.query_akash_bids(session_id).await?;
 
-                if cli.json {
+                if ctx.json {
                     let bids: Vec<_> = response
                         .bids
                         .iter()
@@ -538,7 +538,7 @@ impl DeployCmd {
                     .select_akash_provider(session_id, provider, *price)
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     let mut json = serde_json::json!({
                         "success": response.success,
                         "provider": provider,
@@ -581,7 +581,7 @@ impl DeployCmd {
                     .set_workflow_endpoints(session_id, endpoints)
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     let mut json = serde_json::json!({
                         "success": response.success,
                     });
@@ -621,7 +621,7 @@ impl DeployCmd {
                     )
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -662,7 +662,7 @@ impl DeployCmd {
                     )
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -689,7 +689,7 @@ impl DeployCmd {
                     .approve_grant(request_id, !reject, reason.as_deref())
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -718,7 +718,7 @@ impl DeployCmd {
                     .revoke_grant(granter, grantee, msg_type.as_deref(), *revoke_feegrant)
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -749,7 +749,7 @@ impl DeployCmd {
                     )
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     let requests: Vec<_> = response
                         .requests
                         .iter()
@@ -788,7 +788,7 @@ impl DeployCmd {
             DeployCmd::QueryBalance { address, denom } => {
                 let response = client.query_balance(address, denom).await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -831,7 +831,7 @@ impl DeployCmd {
                     )
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     let mut json = serde_json::json!({
                         "completed": response.completed,
                     });
@@ -866,7 +866,7 @@ impl DeployCmd {
             DeployCmd::CloseLease { session_id } => {
                 let result = client.close_akash_lease(session_id).await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -885,7 +885,7 @@ impl DeployCmd {
                 loop {
                     let response = client.get_lease_status(session_id).await?;
 
-                    if cli.json {
+                    if ctx.json {
                         let mut json = serde_json::json!({
                             "deployment_status": response.deployment_status,
                             "balance_remaining_uakt": response.balance_remaining_uakt,
@@ -934,7 +934,7 @@ impl DeployCmd {
             DeployCmd::TrustedProviders => {
                 let response = client.list_trusted_providers().await?;
 
-                if cli.json {
+                if ctx.json {
                     let providers: Vec<_> = response
                         .providers
                         .iter()
@@ -967,7 +967,7 @@ impl DeployCmd {
             DeployCmd::AddProvider { address, label } => {
                 let result = client.add_trusted_provider(address, label).await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -985,7 +985,7 @@ impl DeployCmd {
             DeployCmd::RemoveProvider { address } => {
                 let result = client.remove_trusted_provider(address).await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({

@@ -1722,3 +1722,94 @@ message AuthorizationCheckResponse {
 // JSON: {"add_address": {"address": "ergors{node_id}_{pubkey_hash}"}}
 // JSON: {"remove_address": {"address": "ergors{node_id}_{pubkey_hash}"}}
 
+// ========================================
+// RAG Vector Database Types
+// ========================================
+
+// Ingest document request
+message RagIngestRequest {
+  string content = 1;
+  string uri = 2;
+  string doc_type = 3;
+  repeated string tags = 4;
+}
+
+// Ingest document response
+message RagIngestResponse {
+  bool success = 1;
+  uint32 chunk_count = 2;
+  repeated string chunk_ids = 3;
+  string message = 4;
+}
+
+// Query vector database request
+message RagQueryRequest {
+  string query = 1;
+  uint32 top_k = 2;
+  bool verify = 3;
+}
+
+// Single search result
+message RagSearchResult {
+  string chunk_id = 1;
+  float similarity = 2;
+  string content_preview = 3;
+  string source_uri = 4;
+}
+
+// Query response
+message RagQueryResponse {
+  repeated RagSearchResult results = 1;
+  bool verified = 2;
+}
+
+// RAG status request
+message RagStatusRequest {}
+
+// RAG status response
+message RagStatusResponse {
+  uint64 total_chunks = 1;
+  uint64 total_sources = 2;
+  bool embedder_configured = 3;
+  string embedder_endpoint = 4;
+  string embedder_model = 5;
+  uint32 embedding_dimension = 6;
+}
+
+// Delete chunks by source request
+message RagDeleteRequest {
+  string source_uri = 1;
+}
+
+// Source info for listing
+message RagSourceInfo {
+  string uri = 1;
+  uint32 chunk_count = 2;
+  string doc_type = 3;
+  string ingested_at = 4;
+}
+
+// List sources request
+message RagListSourcesRequest {
+  uint32 limit = 1;
+}
+
+// List sources response
+message RagListSourcesResponse {
+  repeated RagSourceInfo sources = 1;
+  uint32 total_count = 2;
+}
+
+// Configure embedder request
+message RagConfigureRequest {
+  string endpoint = 1;
+  string model = 2;
+  uint32 dimension = 3;
+}
+
+// Generic RAG operation result
+message RagOperationResult {
+  bool success = 1;
+  string message = 2;
+}
+

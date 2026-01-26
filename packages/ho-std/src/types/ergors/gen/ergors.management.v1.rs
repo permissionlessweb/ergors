@@ -5404,6 +5404,195 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Ingest document into vector database
+        pub async fn rag_ingest(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RagIngestRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagIngestResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RagIngest",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RagIngest",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Query vector database
+        pub async fn rag_query(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RagQueryRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagQueryResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RagQuery",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("ergors.management.v1.ManagementService", "RagQuery"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get RAG status
+        pub async fn rag_status(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RagStatusRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RagStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RagStatus",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Delete chunks by source URI
+        pub async fn rag_delete(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RagDeleteRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagOperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RagDelete",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RagDelete",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List ingested sources
+        pub async fn rag_list_sources(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RagListSourcesRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagListSourcesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RagListSources",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RagListSources",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Configure embedder endpoint
+        pub async fn rag_configure(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RagConfigureRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagOperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RagConfigure",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RagConfigure",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Request authz grant from coordinator
         pub async fn request_grant(
             &mut self,
@@ -6210,6 +6399,54 @@ pub mod management_service_server {
             >,
         ) -> std::result::Result<
             tonic::Response<super::super::super::orch::v1::ListTrustedProvidersResponse>,
+            tonic::Status,
+        >;
+        /// Ingest document into vector database
+        async fn rag_ingest(
+            &self,
+            request: tonic::Request<super::super::super::orch::v1::RagIngestRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagIngestResponse>,
+            tonic::Status,
+        >;
+        /// Query vector database
+        async fn rag_query(
+            &self,
+            request: tonic::Request<super::super::super::orch::v1::RagQueryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagQueryResponse>,
+            tonic::Status,
+        >;
+        /// Get RAG status
+        async fn rag_status(
+            &self,
+            request: tonic::Request<super::super::super::orch::v1::RagStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagStatusResponse>,
+            tonic::Status,
+        >;
+        /// Delete chunks by source URI
+        async fn rag_delete(
+            &self,
+            request: tonic::Request<super::super::super::orch::v1::RagDeleteRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagOperationResult>,
+            tonic::Status,
+        >;
+        /// List ingested sources
+        async fn rag_list_sources(
+            &self,
+            request: tonic::Request<super::super::super::orch::v1::RagListSourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagListSourcesResponse>,
+            tonic::Status,
+        >;
+        /// Configure embedder endpoint
+        async fn rag_configure(
+            &self,
+            request: tonic::Request<super::super::super::orch::v1::RagConfigureRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagOperationResult>,
             tonic::Status,
         >;
         /// Request authz grant from coordinator
@@ -9340,6 +9577,296 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListTrustedProvidersSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RagIngest" => {
+                    #[allow(non_camel_case_types)]
+                    struct RagIngestSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RagIngestRequest,
+                    > for RagIngestSvc<T> {
+                        type Response = super::super::super::orch::v1::RagIngestResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RagIngestRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::rag_ingest(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RagIngestSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RagQuery" => {
+                    #[allow(non_camel_case_types)]
+                    struct RagQuerySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RagQueryRequest,
+                    > for RagQuerySvc<T> {
+                        type Response = super::super::super::orch::v1::RagQueryResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RagQueryRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::rag_query(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RagQuerySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RagStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct RagStatusSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RagStatusRequest,
+                    > for RagStatusSvc<T> {
+                        type Response = super::super::super::orch::v1::RagStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RagStatusRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::rag_status(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RagStatusSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RagDelete" => {
+                    #[allow(non_camel_case_types)]
+                    struct RagDeleteSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RagDeleteRequest,
+                    > for RagDeleteSvc<T> {
+                        type Response = super::super::super::orch::v1::RagOperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RagDeleteRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::rag_delete(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RagDeleteSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RagListSources" => {
+                    #[allow(non_camel_case_types)]
+                    struct RagListSourcesSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RagListSourcesRequest,
+                    > for RagListSourcesSvc<T> {
+                        type Response = super::super::super::orch::v1::RagListSourcesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RagListSourcesRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::rag_list_sources(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RagListSourcesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RagConfigure" => {
+                    #[allow(non_camel_case_types)]
+                    struct RagConfigureSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RagConfigureRequest,
+                    > for RagConfigureSvc<T> {
+                        type Response = super::super::super::orch::v1::RagOperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RagConfigureRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::rag_configure(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RagConfigureSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

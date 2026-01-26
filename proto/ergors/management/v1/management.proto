@@ -136,6 +136,23 @@ service ManagementService {
   rpc ListTrustedProviders(ergors.orch.v1.ListTrustedProvidersRequest) returns (ergors.orch.v1.ListTrustedProvidersResponse);
 
   // ============================================
+  // RAG Vector Database
+  // ============================================
+
+  // Ingest document into vector database
+  rpc RagIngest(ergors.orch.v1.RagIngestRequest) returns (ergors.orch.v1.RagIngestResponse);
+  // Query vector database
+  rpc RagQuery(ergors.orch.v1.RagQueryRequest) returns (ergors.orch.v1.RagQueryResponse);
+  // Get RAG status
+  rpc RagStatus(ergors.orch.v1.RagStatusRequest) returns (ergors.orch.v1.RagStatusResponse);
+  // Delete chunks by source URI
+  rpc RagDelete(ergors.orch.v1.RagDeleteRequest) returns (ergors.orch.v1.RagOperationResult);
+  // List ingested sources
+  rpc RagListSources(ergors.orch.v1.RagListSourcesRequest) returns (ergors.orch.v1.RagListSourcesResponse);
+  // Configure embedder endpoint
+  rpc RagConfigure(ergors.orch.v1.RagConfigureRequest) returns (ergors.orch.v1.RagOperationResult);
+
+  // ============================================
   // Authz/Feegrant Management
   // ============================================
 

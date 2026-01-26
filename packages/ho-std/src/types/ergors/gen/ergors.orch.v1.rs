@@ -4020,6 +4020,272 @@ impl ::prost::Name for AuthorizationCheckResponse {
         "/ergors.orch.v1.AuthorizationCheckResponse".into()
     }
 }
+/// Ingest document request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagIngestRequest {
+    #[prost(string, tag = "1")]
+    pub content: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub uri: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub doc_type: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "4")]
+    pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for RagIngestRequest {
+    const NAME: &'static str = "RagIngestRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagIngestRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagIngestRequest".into()
+    }
+}
+/// Ingest document response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagIngestResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(uint32, tag = "2")]
+    pub chunk_count: u32,
+    #[prost(string, repeated, tag = "3")]
+    pub chunk_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag = "4")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RagIngestResponse {
+    const NAME: &'static str = "RagIngestResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagIngestResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagIngestResponse".into()
+    }
+}
+/// Query vector database request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagQueryRequest {
+    #[prost(string, tag = "1")]
+    pub query: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub top_k: u32,
+    #[prost(bool, tag = "3")]
+    pub verify: bool,
+}
+impl ::prost::Name for RagQueryRequest {
+    const NAME: &'static str = "RagQueryRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagQueryRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagQueryRequest".into()
+    }
+}
+/// Single search result
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RagSearchResult {
+    #[prost(string, tag = "1")]
+    pub chunk_id: ::prost::alloc::string::String,
+    #[prost(float, tag = "2")]
+    pub similarity: f32,
+    #[prost(string, tag = "3")]
+    pub content_preview: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub source_uri: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RagSearchResult {
+    const NAME: &'static str = "RagSearchResult";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagSearchResult".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagSearchResult".into()
+    }
+}
+/// Query response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RagQueryResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub results: ::prost::alloc::vec::Vec<RagSearchResult>,
+    #[prost(bool, tag = "2")]
+    pub verified: bool,
+}
+impl ::prost::Name for RagQueryResponse {
+    const NAME: &'static str = "RagQueryResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagQueryResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagQueryResponse".into()
+    }
+}
+/// RAG status request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagStatusRequest {}
+impl ::prost::Name for RagStatusRequest {
+    const NAME: &'static str = "RagStatusRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagStatusRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagStatusRequest".into()
+    }
+}
+/// RAG status response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagStatusResponse {
+    #[prost(uint64, tag = "1")]
+    pub total_chunks: u64,
+    #[prost(uint64, tag = "2")]
+    pub total_sources: u64,
+    #[prost(bool, tag = "3")]
+    pub embedder_configured: bool,
+    #[prost(string, tag = "4")]
+    pub embedder_endpoint: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub embedder_model: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "6")]
+    pub embedding_dimension: u32,
+}
+impl ::prost::Name for RagStatusResponse {
+    const NAME: &'static str = "RagStatusResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagStatusResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagStatusResponse".into()
+    }
+}
+/// Delete chunks by source request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagDeleteRequest {
+    #[prost(string, tag = "1")]
+    pub source_uri: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RagDeleteRequest {
+    const NAME: &'static str = "RagDeleteRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagDeleteRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagDeleteRequest".into()
+    }
+}
+/// Source info for listing
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagSourceInfo {
+    #[prost(string, tag = "1")]
+    pub uri: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub chunk_count: u32,
+    #[prost(string, tag = "3")]
+    pub doc_type: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub ingested_at: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RagSourceInfo {
+    const NAME: &'static str = "RagSourceInfo";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagSourceInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagSourceInfo".into()
+    }
+}
+/// List sources request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagListSourcesRequest {
+    #[prost(uint32, tag = "1")]
+    pub limit: u32,
+}
+impl ::prost::Name for RagListSourcesRequest {
+    const NAME: &'static str = "RagListSourcesRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagListSourcesRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagListSourcesRequest".into()
+    }
+}
+/// List sources response
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RagListSourcesResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub sources: ::prost::alloc::vec::Vec<RagSourceInfo>,
+    #[prost(uint32, tag = "2")]
+    pub total_count: u32,
+}
+impl ::prost::Name for RagListSourcesResponse {
+    const NAME: &'static str = "RagListSourcesResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagListSourcesResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagListSourcesResponse".into()
+    }
+}
+/// Configure embedder request
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagConfigureRequest {
+    #[prost(string, tag = "1")]
+    pub endpoint: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub model: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub dimension: u32,
+}
+impl ::prost::Name for RagConfigureRequest {
+    const NAME: &'static str = "RagConfigureRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagConfigureRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagConfigureRequest".into()
+    }
+}
+/// Generic RAG operation result
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RagOperationResult {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RagOperationResult {
+    const NAME: &'static str = "RagOperationResult";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RagOperationResult".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RagOperationResult".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

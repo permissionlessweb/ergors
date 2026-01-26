@@ -97,6 +97,9 @@ const AUTHENTICATOR_META_PREFIX: &str = "authenticators/metadata";
 // SDL Template Contract Storage Prefix
 const SDL_TEMPLATE_CONTRACT_PREFIX: &str = "sdl_template_contracts";
 
+// RAG vector database prefixes
+const RAG_CONFIG_PREFIX: &str = "rag_config/";
+
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
     pub cs: CnidariumStorage,
@@ -1974,6 +1977,89 @@ impl ErgorsStorage {
 
         Ok(results)
     }
+
+    // ===== RAG Vector Database Storage Methods =====
+
+    /// Get RAG embedder configuration
+    pub async fn get_rag_config(&self) -> HoResult<Option<RagConfigStored>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = format!("{}embedder", RAG_CONFIG_PREFIX);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let config: RagConfigStored = serde_json::from_slice(&data)?;
+                Ok(Some(config))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Error getting RAG config: {}", e);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Set RAG embedder configuration
+    pub async fn set_rag_config(&self, endpoint: &str, model: &str, dimension: u32) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = format!("{}embedder", RAG_CONFIG_PREFIX);
+
+        let config = RagConfigStored {
+            endpoint: endpoint.to_string(),
+            model: model.to_string(),
+            dimension,
+        };
+
+        delta.put_raw(key, serde_json::to_vec(&config)?);
+        self.cs.commit(delta).await?;
+
+        info!("RAG embedder configured: {} ({}, {} dims)", endpoint, model, dimension);
+        Ok(())
+    }
+
+    /// Get RAG statistics
+    pub async fn get_rag_stats(&self) -> HoResult<(u64, u64)> {
+        // TODO: Implement actual chunk/source counting from rag_chunks prefix
+        // For now, return zeros since we haven't ingested anything yet
+        Ok((0, 0))
+    }
+
+    /// Delete chunks by source URI
+    pub async fn delete_rag_source(&self, source_uri: &str) -> HoResult<u64> {
+        // TODO: Implement actual deletion from rag storage
+        // This would need to:
+        // 1. Find all chunks with this source_uri
+        // 2. Delete them from the vector index
+        // 3. Delete them from cnidarium storage
+        info!("Deleting RAG chunks for source: {}", source_uri);
+        Ok(0)
+    }
+
+    /// List ingested sources
+    pub async fn list_rag_sources(&self, limit: usize) -> HoResult<(Vec<RagSourceInfoStored>, usize)> {
+        // TODO: Implement actual source listing from rag_source_index prefix
+        // For now, return empty list
+        let _ = limit;
+        Ok((vec![], 0))
+    }
+}
+
+// ===== RAG Storage Types (outside impl block) =====
+
+/// RAG configuration stored in storage
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RagConfigStored {
+    pub endpoint: String,
+    pub model: String,
+    pub dimension: u32,
+}
+
+/// RAG source info for listing
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RagSourceInfoStored {
+    pub uri: String,
+    pub chunk_count: u32,
+    pub doc_type: String,
+    pub ingested_at: String,
 }
 
 pub async fn handle_prune(

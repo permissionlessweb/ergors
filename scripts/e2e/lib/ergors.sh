@@ -12,7 +12,7 @@ _E2E_ERGORS_LOADED=1
 # Configuration
 # =============================================================================
 ERGORS_BIN="${ERGORS_BIN:-${ROOT_DIR}/target/release/ergors}"
-ERGORS_CLI="${ERGORS_CLI:-${ROOT_DIR}/target/release/ergors-cli}"
+# ERGORS_CLI="${ERGORS_CLI:-${ROOT_DIR}/target/release/ergors-cli}"
 TEST_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD:-e2e-test-password-12345}"
 
 # Network config
@@ -38,19 +38,19 @@ ergors_build() {
 
     log "Building ergors binaries..."
     log_verbose "ERGORS_BIN=$ERGORS_BIN"
-    log_verbose "ERGORS_CLI=$ERGORS_CLI"
+    # log_verbose "ERGORS_CLI=$ERGORS_CLI"
 
-    if ! run_cmd_tail 10 cargo build --release -p ergors -p ergors-cli; then
+    if ! run_cmd_tail 10 cargo build --release -p ergors; then
         log_error "Build failed"
         return 1
     fi
 
-    if [[ ! -f "$ERGORS_BIN" ]] || [[ ! -f "$ERGORS_CLI" ]]; then
+    if [[ ! -f "$ERGORS_BIN" ]]; then
         log_error "Binaries not found after build"
         return 1
     fi
 
-    log_verbose "Binary sizes: $(ls -lh "$ERGORS_BIN" "$ERGORS_CLI" 2>/dev/null | awk '{print $5, $9}' | tr '\n' ' ')"
+    log_verbose "Binary sizes: $(ls -lh "$ERGORS_BIN" 2>/dev/null | awk '{print $5, $9}' | tr '\n' ' ')"
     log_success "ERGORS binaries built"
 }
 
@@ -322,24 +322,24 @@ ergors_all_nodes_running() {
 # =============================================================================
 
 # Run ergors-cli command against coordinator
-ergors_cli() {
-    if [[ ! -f "$ERGORS_CLI" ]]; then
-        echo '{"error":"ergors-cli not found"}'
-        return 1
-    fi
+# ergors_cli() {
+#     if [[ ! -f "$ERGORS_CLI" ]]; then
+#         echo '{"error":"ergors-cli not found"}'
+#         return 1
+#     fi
 
-    "$ERGORS_CLI" --grpc-addr "http://${COORDINATOR_GRPC}" --json "$@"
-}
+#     "$ERGORS_CLI" --grpc-addr "http://${COORDINATOR_GRPC}" --json "$@"
+# }
 
 # Run ergors-cli command against executor
-ergors_cli_executor() {
-    if [[ ! -f "$ERGORS_CLI" ]]; then
-        echo '{"error":"ergors-cli not found"}'
-        return 1
-    fi
+# ergors_cli_executor() {
+#     if [[ ! -f "$ERGORS_CLI" ]]; then
+#         echo '{"error":"ergors-cli not found"}'
+#         return 1
+#     fi
 
-    "$ERGORS_CLI" --grpc-addr "http://${EXECUTOR_GRPC}" --json "$@"
-}
+#     "$ERGORS_CLI" --grpc-addr "http://${EXECUTOR_GRPC}" --json "$@"
+# }
 
 # =============================================================================
 # Identity Management

@@ -6,7 +6,7 @@ use anyhow::Result;
 use clap::Subcommand;
 
 use crate::client::ManagementClient;
-use crate::Cli;
+use super::CliContext;
 
 /// Workspace management commands
 #[derive(Subcommand)]
@@ -105,13 +105,13 @@ pub enum TaskCmd {
 }
 
 impl WorkspaceCmd {
-    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+    pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
             WorkspaceCmd::Add { name, remote } => {
                 let response = client.add_workspace(name, remote.as_deref()).await?;
 
                 if response.success {
-                    if cli.json {
+                    if ctx.json {
                         if let Some(ws) = &response.workspace {
                             println!(
                                 "{}",
@@ -142,7 +142,7 @@ impl WorkspaceCmd {
             WorkspaceCmd::List { limit } => {
                 let response = client.list_workspaces(*limit).await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -181,7 +181,7 @@ impl WorkspaceCmd {
                 let response = client.get_workspace(workspace_id).await?;
 
                 if let Some(ws) = &response.workspace {
-                    if cli.json {
+                    if ctx.json {
                         let head_hex = if ws.head_commit.is_empty() {
                             None
                         } else {
@@ -253,7 +253,7 @@ impl WorkspaceCmd {
                     .await?;
 
                 if response.success {
-                    if cli.json {
+                    if ctx.json {
                         let new_head_hex = if response.new_head_commit.is_empty() {
                             None
                         } else {
@@ -278,13 +278,13 @@ impl WorkspaceCmd {
                 }
                 Ok(())
             }
-            WorkspaceCmd::Task(task_cmd) => task_cmd.execute(cli, client).await,
+            WorkspaceCmd::Task(task_cmd) => task_cmd.execute(ctx, client).await,
         }
     }
 }
 
 impl TaskCmd {
-    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+    pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
             TaskCmd::Create {
                 workspace_id,
@@ -299,7 +299,7 @@ impl TaskCmd {
                     .await?;
 
                 if response.success {
-                    if cli.json {
+                    if ctx.json {
                         if let Some(wt) = &response.worktree {
                             println!(
                                 "{}",
@@ -332,7 +332,7 @@ impl TaskCmd {
                     .list_task_worktrees(workspace.as_deref(), node.as_deref())
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -379,7 +379,7 @@ impl TaskCmd {
                     .await?;
 
                 if response.success {
-                    if cli.json {
+                    if ctx.json {
                         println!(
                             "{}",
                             serde_json::to_string_pretty(&serde_json::json!({

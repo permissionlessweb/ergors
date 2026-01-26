@@ -8,7 +8,6 @@ install_dir := env_var_or_default("CARGO_HOME", env_var("HOME") + "/.cargo") + "
 
 # Package names
 engine := "ergors"
-cli := "ergors-cli"
 lib := "ho-std"
 proto := "ergors-proto"
 
@@ -20,9 +19,8 @@ proto := "ergors-proto"
 install: build-release
     @echo "📦 Installing binaries to {{install_dir}}"
     @cp target/release/{{engine}} {{install_dir}}/{{engine}}
-    @cp target/release/{{cli}} {{install_dir}}/{{cli}}
-    @echo "✅ Installed: {{engine}}, {{cli}}"
-    @echo "   Run 'ergors --help' or 'ergors-cli --help'"
+    @echo "✅ Installed: {{engine}}"
+    @echo "   Run 'ergors --help'"
 
 # Install only the engine
 install-engine: (build-pkg engine "release")
@@ -30,14 +28,14 @@ install-engine: (build-pkg engine "release")
     @echo "✅ Installed: {{engine}}"
 
 # Install only the CLI
-install-cli: (build-pkg cli "release")
-    @cp target/release/{{cli}} {{install_dir}}/{{cli}}
-    @echo "✅ Installed: {{cli}}"
+# install-cli: (build-pkg cli "release")
+#    @cp target/release/{{cli}} {{install_dir}}/{{cli}}
+#     @echo "✅ Installed: {{cli}}"
 
 # Uninstall binaries
 uninstall:
-    @rm -f {{install_dir}}/{{engine}} {{install_dir}}/{{cli}}
-    @echo "🗑️  Uninstalled: {{engine}}, {{cli}}"
+    @rm -f {{install_dir}}/{{engine}}
+    @echo "🗑️  Uninstalled: {{engine}}"
 
 # ════════════════════════════════════════════════════════════════════════════
 # Building
@@ -46,12 +44,11 @@ uninstall:
 # Build all packages in release mode
 build-release:
     @echo "🔨 Building release binaries..."
-    cargo build --release -p {{engine}} -p {{cli}}
+    cargo build --release -p {{engine}} 
 
 # Build all packages in debug mode
 build:
-    cargo build -p {{engine}} -p {{cli}}
-
+    cargo build -p {{engine}}
 # Build specific package
 build-pkg pkg mode="debug":
     @if [ "{{mode}}" = "release" ]; then \
@@ -62,7 +59,7 @@ build-pkg pkg mode="debug":
 
 # Build with all features
 build-all-features:
-    cargo build --release --all-features -p {{engine}} -p {{cli}}
+    cargo build --release --all-features -p {{engine}}
 
 # ════════════════════════════════════════════════════════════════════════════
 # Development
@@ -72,9 +69,9 @@ build-all-features:
 dev *args:
     RUST_BACKTRACE=1 cargo run -p {{engine}} -- {{args}}
 
-# Run CLI in development mode
-cli *args:
-    RUST_BACKTRACE=1 cargo run -p {{cli}} -- {{args}}
+# # Run CLI in development mode
+# cli *args:
+#     RUST_BACKTRACE=1 cargo run -p {{cli}} -- {{args}}
 
 # Initialize a new node (dev mode)
 init:
@@ -90,7 +87,7 @@ start:
 
 # Watch and rebuild on changes (requires cargo-watch)
 watch:
-    cargo watch -x "build -p {{engine}} -p {{cli}}"
+    cargo watch -x "build -p {{engine}}"
 
 # ════════════════════════════════════════════════════════════════════════════
 # Proto generation
@@ -180,11 +177,11 @@ rebuild: clean build-release
 # Create release build with optimizations
 release: proto build-release
     @echo "📦 Release build complete"
-    @ls -lh target/release/{{engine}} target/release/{{cli}}
+    @ls -lh target/release/{{engine}}
 
 # Build for distribution (uses dist profile)
 dist:
-    cargo build --profile dist -p {{engine}} -p {{cli}}
+    cargo build --profile dist -p {{engine}}
 
 # ════════════════════════════════════════════════════════════════════════════
 # CosmWasm Contracts
@@ -252,19 +249,16 @@ contracts-clean:
 version:
     @echo "Engine version:"
     @cargo run -p {{engine}} -q -- --version 2>/dev/null || echo "  (not built)"
-    @echo "CLI version:"
-    @cargo run -p {{cli}} -q -- --version 2>/dev/null || echo "  (not built)"
 
 # Show installed binary locations
 which:
     @echo "Installed binaries:"
     @which {{engine}} 2>/dev/null || echo "  {{engine}}: not found in PATH"
-    @which {{cli}} 2>/dev/null || echo "  {{cli}}: not found in PATH"
 
 # Print environment info
 env:
     @echo "Install directory: {{install_dir}}"
-    @echo "Packages: {{engine}}, {{cli}}, {{lib}}"
+    @echo "Packages: {{engine}}, {{lib}}"
     @echo "Rust version: $(rustc --version)"
     @echo "Cargo version: $(cargo --version)"
 

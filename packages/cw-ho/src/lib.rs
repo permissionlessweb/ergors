@@ -1,6 +1,8 @@
 pub mod auth;
 pub mod bootstrap;
 pub mod call;
+pub mod client;
+pub mod commands;
 pub mod config;
 pub mod config_cmd;
 pub mod keys;
@@ -31,10 +33,20 @@ use ho_std::wasm::WasmRuntime;
 
 // Re-export the macro for external use
 use crate::{
-    config::ErgorsConfig, network::manager::PeerInfo, proxy::ProxyRouter,
+    config::ErgorsConfig,
+    deploy::{
+        automated::AutomatedDeployer, certificate::CertificateManager,
+        cosmos_client::CosmosClient, signer::TxSigner, tx_lifecycle::TxLifecycle,
+    },
+    network::manager::PeerInfo,
+    proxy::ProxyRouter,
     storage::ErgorsStorage,
 };
-use ho_std::{llm::LlmRouter, types::ergors::network::v1::*};
+use ho_std::{
+    keys::encrypted_cosmos::EncryptedCosmosKeyManager,
+    llm::LlmRouter,
+    types::ergors::{network::v1::*, orch::v1::CosmosKeyStore},
+};
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::sync::{mpsc, RwLock};
 use {
@@ -64,11 +76,45 @@ pub struct ErgorsNetworkManifold {
     /// Our node identity
     identity: NodeIdentity,
 }
+
+/// Akash deployment context containing all components needed for automated deployments.
+///
+/// This is initialized lazily when Akash config is present and a key store exists.
+#[derive(Clone)]
+pub struct AkashDeploymentContext {
+    /// CosmosClient for chain queries
+    pub cosmos: Arc<CosmosClient>,
+    /// Transaction signer
+    pub signer: Arc<TxSigner>,
+    /// Transaction lifecycle manager
+    pub tx_lifecycle: Arc<TxLifecycle>,
+    /// Certificate manager
+    pub cert_manager: Arc<CertificateManager>,
+    /// Key manager (unlocked with password)
+    pub key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
+    /// Key store
+    pub key_store: Arc<RwLock<CosmosKeyStore>>,
+}
+
+impl AkashDeploymentContext {
+    /// Create automated deployer from this context.
+    pub fn create_deployer(&self, storage: Arc<ErgorsStorage>) -> AutomatedDeployer {
+        AutomatedDeployer::new(
+            storage,
+            self.cosmos.clone(),
+            self.cert_manager.clone(),
+            self.tx_lifecycle.clone(),
+            self.signer.clone(),
+        )
+    }
+}
+
 /// `r` = router\
 /// `s` = storage\
 /// `nm` = network manifold\
 /// `t` = time\
 /// `c` = variable config\
+/// `akash` = Akash deployment context (optional)\
 /// `wasm` = WASM runtime (optional)
 #[derive(Clone)]
 pub struct ErgorsAppState {
@@ -84,19 +130,22 @@ pub struct ErgorsAppState {
     pub c: ErgorsConfig,
     /// pr = proxy router (dynamic routing to upstream providers)
     pub pr: Arc<RwLock<ProxyRouter>>,
+    /// akash = Akash deployment context (when Akash config + key store present)
+    pub akash: Option<AkashDeploymentContext>,
     /// wasm = WASM runtime (when cw feature is enabled)
     #[cfg(feature = "cw")]
     pub wasm: Arc<WasmRuntime>,
 }
 
 impl ErgorsAppState {
-    fn new(
+    pub fn new(
         r: Arc<LlmRouter>,
         s: Arc<ErgorsStorage>,
         nm: Arc<tokio::sync::Mutex<ErgorsNetworkManifold>>,
         t: Instant,
         c: ErgorsConfig,
         pr: Arc<RwLock<ProxyRouter>>,
+        akash: Option<AkashDeploymentContext>,
         #[cfg(feature = "cw")] wasm: Arc<WasmRuntime>,
     ) -> Self {
         Self {
@@ -106,6 +155,7 @@ impl ErgorsAppState {
             t,
             c,
             pr,
+            akash,
             #[cfg(feature = "cw")]
             wasm,
         }

@@ -91,6 +91,18 @@ use ho_std::types::ergors::orch::v1::{
     // Automated workflow types
     RunAkashDeploymentRequest,
     RunAkashDeploymentResponse,
+    // RAG types
+    RagIngestRequest,
+    RagIngestResponse,
+    RagQueryRequest,
+    RagQueryResponse,
+    RagStatusRequest,
+    RagStatusResponse,
+    RagDeleteRequest,
+    RagOperationResult,
+    RagListSourcesRequest,
+    RagListSourcesResponse,
+    RagConfigureRequest,
 };
 use tonic::transport::Channel;
 
@@ -932,6 +944,105 @@ impl ManagementClient {
             .list_trusted_providers(ListTrustedProvidersRequest {})
             .await
             .context("Failed to list trusted providers")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ RAG Vector Database Methods ============
+
+    /// Ingest document into vector database
+    pub async fn rag_ingest(
+        &mut self,
+        content: &str,
+        uri: &str,
+        doc_type: &str,
+        tags: Vec<String>,
+    ) -> Result<RagIngestResponse> {
+        let response = self
+            .inner
+            .rag_ingest(RagIngestRequest {
+                content: content.to_string(),
+                uri: uri.to_string(),
+                doc_type: doc_type.to_string(),
+                tags,
+            })
+            .await
+            .context("Failed to ingest document")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Query vector database
+    pub async fn rag_query(
+        &mut self,
+        query: &str,
+        top_k: usize,
+        verify: bool,
+    ) -> Result<RagQueryResponse> {
+        let response = self
+            .inner
+            .rag_query(RagQueryRequest {
+                query: query.to_string(),
+                top_k: top_k as u32,
+                verify,
+            })
+            .await
+            .context("Failed to query vector database")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Get RAG status
+    pub async fn rag_status(&mut self) -> Result<RagStatusResponse> {
+        let response = self
+            .inner
+            .rag_status(RagStatusRequest {})
+            .await
+            .context("Failed to get RAG status")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Delete chunks by source URI
+    pub async fn rag_delete(&mut self, source_uri: &str) -> Result<RagOperationResult> {
+        let response = self
+            .inner
+            .rag_delete(RagDeleteRequest {
+                source_uri: source_uri.to_string(),
+            })
+            .await
+            .context("Failed to delete chunks")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// List ingested sources
+    pub async fn rag_list_sources(&mut self, limit: u32) -> Result<RagListSourcesResponse> {
+        let response = self
+            .inner
+            .rag_list_sources(RagListSourcesRequest { limit })
+            .await
+            .context("Failed to list sources")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Configure embedder endpoint
+    pub async fn rag_configure(
+        &mut self,
+        endpoint: &str,
+        model: &str,
+        dimension: u32,
+    ) -> Result<RagOperationResult> {
+        let response = self
+            .inner
+            .rag_configure(RagConfigureRequest {
+                endpoint: endpoint.to_string(),
+                model: model.to_string(),
+                dimension,
+            })
+            .await
+            .context("Failed to configure embedder")?;
 
         Ok(response.into_inner())
     }

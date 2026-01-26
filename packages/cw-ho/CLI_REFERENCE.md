@@ -248,6 +248,161 @@ ERGORS uses PID file locking to prevent multiple instances:
 
 ---
 
+## Deploy Commands
+
+Akash deployment management for automated service provisioning.
+
+### Create Deployment
+
+```bash
+ergors deploy create --sdl <path> [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--sdl <PATH>` | Path to SDL YAML file | Required (or --sdl-content) |
+| `--sdl-content <YAML>` | Raw SDL YAML content | - |
+| `--key-name <NAME>` | Key name for signing | `default` |
+| `--account-index <N>` | HD account index | `0` |
+| `--node <URL>` | Akash RPC endpoint | env: `AKASH_NODE` |
+| `--chain-id <ID>` | Chain ID | env: `AKASH_CHAIN_ID` |
+| `--auto` | Run automated deployment | - |
+| `--skip-grants` | Skip authz/feegrant setup | - |
+| `--auto-select-bid` | Auto-select cheapest trusted provider | - |
+| `--min-balance <UAKT>` | Minimum balance required | `5000000` |
+| `--var <KEY=VALUE>` | SDL template variables | - |
+
+**Automated Deployment Flow (--auto):**
+
+1. Check wallet balance (fails if < min-balance)
+2. Check/create Akash certificate
+3. Create deployment on chain (MsgCreateDeployment)
+4. Poll for provider bids (~12-30s)
+5. Select provider (cheapest or from trusted list)
+6. Create lease (MsgCreateLease)
+7. Send manifest to provider
+8. Retrieve and save service endpoints
+
+**Example:**
+
+```bash
+# Fully automated deployment
+ergors deploy create \
+  --sdl sdls/embeddings/qwen.yml \
+  --key-name default \
+  --auto \
+  --auto-select-bid \
+  --min-balance 10000000
+```
+
+### Run Deployment
+
+Run automated workflow on existing session:
+
+```bash
+ergors deploy run <session-id> [OPTIONS]
+```
+
+### List Deployments
+
+```bash
+ergors deploy list [--status <STATUS>] [--limit <N>]
+```
+
+### Get Deployment
+
+```bash
+ergors deploy get <session-id>
+```
+
+### Query Bids
+
+```bash
+ergors deploy bids <session-id>
+```
+
+### Select Provider
+
+```bash
+ergors deploy select <session-id> --provider <address> [--price <uakt>]
+```
+
+### Close Lease
+
+```bash
+ergors deploy close-lease <session-id>
+```
+
+### Deployment Status
+
+```bash
+ergors deploy status <session-id> [--follow]
+```
+
+### Trusted Providers
+
+```bash
+# List trusted providers
+ergors deploy trusted-providers
+
+# Add trusted provider
+ergors deploy add-provider <address> [--label <name>]
+
+# Remove trusted provider
+ergors deploy remove-provider <address>
+```
+
+### Grant Management
+
+```bash
+# Request authz grant from coordinator
+ergors deploy request-grant \
+  --granter <address> \
+  --grantee <address> \
+  --msg-type /akash.deployment.v1beta3.MsgCreateDeployment \
+  --allowance 10000000
+
+# Approve/reject grant request
+ergors deploy approve-grant <request-id> [--reject] [--reason <text>]
+
+# Revoke existing grant
+ergors deploy revoke-grant --granter <addr> --grantee <addr> [--msg-type <type>]
+
+# List grant requests
+ergors deploy list-grants [--granter <addr>] [--grantee <addr>] [--status <pending|approved>]
+```
+
+### Query Balance
+
+```bash
+ergors deploy query-balance <address> [--denom uakt]
+```
+
+---
+
+## RAG Commands
+
+RAG (Retrieval-Augmented Generation) vector database management.
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `rag ingest <file>` | Ingest file into vector DB | `ergors rag ingest docs.md --doc-type markdown` |
+| `rag query <query>` | Search vector DB | `ergors rag query "API endpoints" --top-k 5` |
+| `rag status` | Show RAG system status | `ergors rag status` |
+| `rag list` | List ingested sources | `ergors rag list --limit 50` |
+| `rag delete <uri>` | Delete source from DB | `ergors rag delete file://docs.md` |
+| `rag configure` | Configure embedder endpoint | `ergors rag configure --endpoint http://... --model qwen` |
+
+**Ingest Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--uri <URI>` | Source URI (default: file path) |
+| `--doc-type <TYPE>` | Document type (markdown, code, text) |
+| `--tags <TAGS>` | Comma-separated tags |
+
+---
+
 ## Quick Start
 
 ```bash

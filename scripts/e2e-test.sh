@@ -50,7 +50,7 @@ MOCK_IMAGE="mock-inference-provider:e2e"
 
 # ERGORS Network Config
 ERGORS_BIN="${ROOT_DIR}/target/release/ergors"
-ERGORS_CLI="${ROOT_DIR}/target/release/ergors-cli"
+# ERGORS_CLI="${ROOT_DIR}/target/release/ergors-cli"
 BASE_PORT=50100
 EXECUTOR_COUNT=2
 TEST_CUSTODY_PASSWORD="e2e-test-password-12345"
@@ -1026,10 +1026,10 @@ ergors_deploy() {
     local subcommand="$1"
     shift
 
-    if [ ! -f "$ERGORS_CLI" ]; then
-        echo '{"error": "ergors-cli binary not found at '"$ERGORS_CLI"'"}'
-        return 1
-    fi
+    # if [ ! -f "$ERGORS_CLI" ]; then
+    #     echo '{"error": "ergors-cli binary not found at '"$ERGORS_CLI"'"}'
+    #     return 1
+    # fi
 
     if [ -z "$COORDINATOR_GRPC" ]; then
         echo '{"error": "COORDINATOR_GRPC not set"}'
@@ -1306,9 +1306,9 @@ build_ergors() {
 
     log "Building ergors binary..."
     if [ "$VERBOSE" = true ]; then
-        cargo build --release -p ergors -p ergors-cli
+        cargo build --release -p ergors  
     else
-        cargo build --release -p ergors -p ergors-cli 2>&1 | tail -5
+        cargo build --release -p ergors 2>&1 | tail -5
     fi
 
     if [ ! -f "$ERGORS_BIN" ]; then
@@ -1316,10 +1316,10 @@ build_ergors() {
         exit 1
     fi
 
-    if [ ! -f "$ERGORS_CLI" ]; then
-        log_error "Failed to build ergors-cli binary"
-        exit 1
-    fi
+    # if [ ! -f "$ERGORS_CLI" ]; then
+    #     log_error "Failed to build ergors-cli binary"
+    #     exit 1
+    # fi
 
     log_success "ERGORS binaries built: $ERGORS_BIN, $ERGORS_CLI"
 }

@@ -29,6 +29,7 @@ bytes = { workspace = true }
 camino = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
+dirs = { workspace = true }
 cnidarium = { workspace = true }
 commonware-codec = { workspace = true }
 cosmwasm-std = { workspace = true }
@@ -49,6 +50,7 @@ sha2 = { workspace = true }
 rpassword = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }

@@ -1,9 +1,12 @@
-//! CLI command implementations
+//! CLI command implementations for gRPC-based operations
 //!
-//! Each command module handles its own subcommands and output formatting.
+//! These commands require the daemon to be running and communicate via gRPC.
+//! For local operations (without daemon), use the direct command modules
+//! (e.g., config_cmd, keys, init).
 
-mod deploy;
-mod workspace;
+pub mod deploy;
+pub mod rag;
+pub mod workspace;
 
 use anyhow::Result;
 use clap::Subcommand;
@@ -12,8 +15,16 @@ use std::collections::HashMap;
 use crate::client::{
     format_engine_state, format_uptime, ManagementClient, NodeTypeProto as NodeType,
 };
-use crate::Cli;
+
+/// CLI context passed to command executors
+pub struct CliContext {
+    pub home: camino::Utf8PathBuf,
+    pub grpc_addr: String,
+    pub json: bool,
+}
+
 pub use deploy::DeployCmd;
+pub use rag::RagCmd;
 pub use workspace::WorkspaceCmd;
 
 // ============ Engine Commands ============
@@ -47,16 +58,16 @@ pub enum EngineCmd {
 }
 
 impl EngineCmd {
-    pub async fn execute(&self, cli: &Cli, client: Result<ManagementClient>) -> Result<()> {
+    pub async fn execute(&self, ctx: &CliContext, client: Result<ManagementClient>) -> Result<()> {
         match self {
             EngineCmd::Start {
                 foreground,
                 grpc_port,
             } => {
                 // Check if engine is already running
-                if let Ok(mut c) = ManagementClient::connect(&cli.grpc_addr).await {
+                if let Ok(mut c) = ManagementClient::connect(&ctx.grpc_addr).await {
                     if c.get_status().await.is_ok() {
-                        println!("Engine is already running at {}", cli.grpc_addr);
+                        println!("Engine is already running at {}", ctx.grpc_addr);
                         return Ok(());
                     }
                 }
@@ -99,7 +110,7 @@ impl EngineCmd {
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
                     // Verify it's running
-                    match ManagementClient::connect(&cli.grpc_addr).await {
+                    match ManagementClient::connect(&ctx.grpc_addr).await {
                         Ok(mut c) => {
                             if c.get_status().await.is_ok() {
                                 println!("Engine is running. Use 'ergors-cli status' for details.");
@@ -130,7 +141,7 @@ impl EngineCmd {
                     Ok(mut c) => {
                         let status = c.get_status().await?;
 
-                        if cli.json {
+                        if ctx.json {
                             println!(
                                 "{}",
                                 serde_json::to_string_pretty(&serde_json::json!({
@@ -156,7 +167,7 @@ impl EngineCmd {
                         }
                     }
                     Err(_) => {
-                        if cli.json {
+                        if ctx.json {
                             println!(
                                 "{}",
                                 serde_json::to_string_pretty(&serde_json::json!({
@@ -166,7 +177,7 @@ impl EngineCmd {
                             );
                         } else {
                             println!("Engine Status: NOT RUNNING");
-                            println!("Cannot connect to engine at {}", cli.grpc_addr);
+                            println!("Cannot connect to engine at {}", ctx.grpc_addr);
                         }
                     }
                 }
@@ -222,12 +233,12 @@ pub enum NodeCmd {
 }
 
 impl NodeCmd {
-    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+    pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
             NodeCmd::Info => {
                 let identity = client.get_node_identity().await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -305,7 +316,7 @@ impl NodeCmd {
                     )
                     .await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -333,18 +344,18 @@ impl NodeCmd {
     }
 }
 
-// ============ Config Commands ============
+// ============ Remote Config Commands (via gRPC) ============
 
 #[derive(Subcommand)]
-pub enum ConfigCmd {
-    /// Show full configuration
+pub enum RemoteConfigCmd {
+    /// Show full configuration (from running daemon)
     Show,
-    /// Get a specific config value
+    /// Get a specific config value (from running daemon)
     Get {
         /// Config key (dot-separated path)
         key: String,
     },
-    /// Set a config value
+    /// Set a config value (on running daemon)
     Set {
         /// Config key
         key: String,
@@ -353,16 +364,16 @@ pub enum ConfigCmd {
     },
 }
 
-impl ConfigCmd {
-    pub async fn execute(&self, _cli: &Cli, mut client: ManagementClient) -> Result<()> {
+impl RemoteConfigCmd {
+    pub async fn execute(&self, _ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
-            ConfigCmd::Show => {
+            RemoteConfigCmd::Show => {
                 let config = client.get_config().await?;
                 let content = String::from_utf8_lossy(&config.data);
                 println!("{}", content);
                 Ok(())
             }
-            ConfigCmd::Get { key } => {
+            RemoteConfigCmd::Get { key } => {
                 let config = client.get_config().await?;
                 let content = String::from_utf8_lossy(&config.data);
 
@@ -384,7 +395,7 @@ impl ConfigCmd {
                 }
                 Ok(())
             }
-            ConfigCmd::Set { key, value } => {
+            RemoteConfigCmd::Set { key, value } => {
                 let result = client.update_config(key, value).await?;
 
                 if result.success {
@@ -419,12 +430,12 @@ pub enum NetworkCmd {
 }
 
 impl NetworkCmd {
-    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+    pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
             NetworkCmd::Peers | NetworkCmd::Topology => {
                 let topology = client.get_network_topology().await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -503,12 +514,12 @@ pub enum ProviderCmd {
 }
 
 impl ProviderCmd {
-    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+    pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
             ProviderCmd::List => {
                 let list = client.list_providers().await?;
 
-                if cli.json {
+                if ctx.json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -641,13 +652,13 @@ pub enum SdlCmd {
 }
 
 impl SdlCmd {
-    pub async fn execute(&self, cli: &Cli, mut client: ManagementClient) -> Result<()> {
+    pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
             SdlCmd::List => {
                 // Query list of SDL template contracts from engine
                 let list = client.list_sdl_templates().await?;
 
-                if cli.json {
+                if ctx.json {
                     println!("{}", serde_json::to_string_pretty(&serde_json::json!({
                         "templates": list.templates,
                     }))?);
@@ -663,7 +674,7 @@ impl SdlCmd {
             SdlCmd::GetTemplate { contract_address } => {
                 let template = client.get_sdl_template(contract_address).await?;
 
-                if cli.json {
+                if ctx.json {
                     println!("{}", serde_json::to_string_pretty(&serde_json::json!({
                         "sdl_template": template.sdl_template,
                         "template_json": template.template_json,
@@ -678,7 +689,7 @@ impl SdlCmd {
             SdlCmd::GetDefaults { contract_address } => {
                 let defaults = client.get_sdl_defaults(contract_address).await?;
 
-                if cli.json {
+                if ctx.json {
                     println!("{}", serde_json::to_string_pretty(&serde_json::json!({
                         "defaults": defaults.defaults,
                     }))?);
@@ -695,7 +706,7 @@ impl SdlCmd {
                 let variables: HashMap<String, String> = vars.iter().cloned().collect();
                 let rendered = client.render_sdl_template(contract_address, variables).await?;
 
-                if cli.json {
+                if ctx.json {
                     println!("{}", serde_json::to_string_pretty(&serde_json::json!({
                         "rendered_sdl": rendered.rendered_sdl,
                         "used_variables": rendered.used_variables,

@@ -43,12 +43,6 @@ profiles:
 
   placement:
     dcloud:
-      attributes:
-        host: akash
-      signedBy:
-        anyOf:
-          - akash1365ez32a3v6f08m4v05tn6jdnfhv6v5rxukgdt
-          - akash18qa2a2ltfyvkyj0ggj3hkvuj6twzy8eddrq5he
       pricing:
         mock-inference:
           denom: uakt

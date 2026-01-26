@@ -50,6 +50,7 @@ ergors akash key generate --name <key-name> [--hd-index 0]
 ```
 
 **Output:**
+
 ```
 Key 'deployer' created successfully
 Address: akash1abc123...
@@ -68,6 +69,7 @@ ergors akash key import --name <key-name> --mnemonic "<24 words>"
 ```
 
 **Security Notes:**
+
 - Mnemonics are encrypted with Argon2id + ChaCha20Poly1305
 - Stored in Cnidarium merkle tree storage
 - Zeroized from memory after use
@@ -80,6 +82,7 @@ ergors akash key list
 ```
 
 **Output:**
+
 ```
 Name        Address                                    HD Index  Chain
 deployer    akash1abc123def456...                      0         akashnet-2
@@ -103,6 +106,7 @@ ergors akash deploy <provider-type> [options]
 ```
 
 **Provider Types:**
+
 - `ollama` - Ollama inference server
 - `vllm` - vLLM OpenAI-compatible server
 - `tgi` - HuggingFace Text Generation Inference
@@ -133,6 +137,7 @@ ergors akash deploy <provider-type> [options]
 | `--grant-purpose` | Purpose/reason for the grant | - |
 
 **Example:**
+
 ```bash
 ergors akash deploy vllm \
   --key deployer \
@@ -143,6 +148,7 @@ ergors akash deploy vllm \
 ```
 
 **Example with Grant Request:**
+
 ```bash
 # Deploy with authz/feegrant from another node
 ergors akash deploy ollama \
@@ -189,6 +195,7 @@ ergors akash logs --session <session-id>
 ```
 
 **Status Output:**
+
 ```
 Session: a1b2c3d4-e5f6-7890-abcd-ef1234567890
 Status: Running
@@ -210,6 +217,7 @@ Selected: akash1provider1... (best reputation)
 ### Built-in Templates
 
 **Ollama:**
+
 ```yaml
 services:
   ollama:
@@ -240,6 +248,7 @@ profiles:
 ```
 
 **vLLM:**
+
 ```yaml
 services:
   vllm:
@@ -351,6 +360,7 @@ ergors akash list
 ```
 
 **Output:**
+
 ```
 Session ID                            Status     Provider              Endpoint                    Created
 a1b2c3d4-e5f6-7890-abcd-ef1234567890  Running    akash1provider1...    http://xyz.akash.network    2h ago
@@ -364,6 +374,7 @@ ergors akash info --session <session-id>
 ```
 
 **Output:**
+
 ```
 Session: a1b2c3d4-e5f6-7890-abcd-ef1234567890
 Status: Complete
@@ -470,27 +481,35 @@ The workflow manager tracks endpoint availability and can automatically failover
 ### Common Issues
 
 **Insufficient Balance:**
+
 ```
 Error: Account has no AKT balance. Please fund the account first.
 ```
+
 Solution: Send AKT to your account address.
 
 **No Bids Received:**
+
 ```
 Error: No bids received after 12 attempts
 ```
+
 Solution: Increase `--max-price` or reduce resource requirements.
 
 **Provider Selection Failed:**
+
 ```
 Error: No providers match the selection criteria
 ```
+
 Solution: Relax criteria (lower `--min-reputation`, remove `--trusted-only`).
 
 **Deployment Failed:**
+
 ```
 Error: Workflow failed at step DeploymentCreate: insufficient funds
 ```
+
 Solution: Ensure sufficient AKT for escrow (typically 5 AKT minimum).
 
 ### View Logs
@@ -599,6 +618,7 @@ Costs vary by provider and market conditions. Use `--max-price` to cap spending.
 ERGORS provides a comprehensive testing suite for validating Akash deployments without production costs.
 
 **Components:**
+
 - **Kind Cluster**: Local Kubernetes with Akash node/provider
 - **Mock Inference Provider**: Simulates Ollama/OpenAI/TGI APIs without GPU
 - **Test Wallet Manager**: Pre-funded accounts for testing
@@ -683,3 +703,354 @@ async fn test_deployment_with_grants() {
 ```
 
 See [Akash Deployment Testing Plan](../akash-deployment-testing-plan.md) for complete documentation.
+
+---
+
+## Architecture: Automated Deployment Engine
+
+This section documents the internal implementation of the automated deployment system.
+
+### Overview
+
+The ERGORS engine provides fully automated Akash deployments through the `AutomatedDeployer` component. When `--auto` flag is used (or `run_akash_deployment` gRPC is called), the entire deployment flow executes without user intervention.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      ErgorsAppState                             │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │            AkashDeploymentContext (optional)            │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌────────────────┐  │   │
+│  │  │ CosmosClient│  │  TxSigner   │  │ TxLifecycle    │  │   │
+│  │  │  (queries)  │  │  (signing)  │  │ (broadcast)    │  │   │
+│  │  └─────────────┘  └─────────────┘  └────────────────┘  │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌────────────────┐  │   │
+│  │  │CertManager  │  │ KeyManager  │  │   KeyStore     │  │   │
+│  │  │ (certs)     │  │ (unlocked)  │  │  (encrypted)   │  │   │
+│  │  └─────────────┘  └─────────────┘  └────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                   ┌─────────────────────┐
+                   │ AutomatedDeployer   │
+                   │  .deploy(workflow)  │
+                   └─────────────────────┘
+                              │
+        ┌─────────────────────┴─────────────────────┐
+        ▼                                           ▼
+  ┌──────────────┐                          ┌──────────────┐
+  │ Workflow     │◄────────────────────────►│  Cnidarium   │
+  │ State Machine│    persist/load state    │   Storage    │
+  └──────────────┘                          └──────────────┘
+```
+
+### Components
+
+#### AkashDeploymentContext
+
+Holds all components required for automated deployments. Initialized at server startup when:
+
+- Akash config exists in `config.toml`
+- Cosmos key store present in storage
+- Custody password available (for key manager unlock)
+
+**Location:** `packages/cw-ho/src/lib.rs`
+
+```rust
+pub struct AkashDeploymentContext {
+    pub cosmos: Arc<CosmosClient>,        // Chain queries (balances, bids, leases)
+    pub signer: Arc<TxSigner>,            // Transaction signing with KeyStore
+    pub tx_lifecycle: Arc<TxLifecycle>,   // Sign → broadcast → finality polling
+    pub cert_manager: Arc<CertificateManager>, // Certificate get/create
+    pub key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
+    pub key_store: Arc<RwLock<CosmosKeyStore>>,
+}
+```
+
+#### TxSigner
+
+Signs Cosmos SDK transactions using keys from the encrypted KeyStore.
+
+**Location:** `packages/cw-ho/src/deploy/signer.rs`
+
+```rust
+impl TxSigner {
+    /// Sign a message and return base64-encoded tx bytes
+    pub async fn sign_msg(
+        &self,
+        key_name: &str,
+        account_index: u32,
+        msg: Any,
+        gas_limit: u64,
+        gas_price_uakt: u64,
+        memo: Option<&str>,
+    ) -> Result<String>
+}
+```
+
+**Features:**
+
+- HD derivation path: `m/44'/118'/0'/0/{account_index}`
+- Automatic account info query (number, sequence)
+- Support for multi-message transactions
+- Uses cosmrs for transaction building
+
+#### TxLifecycle
+
+Manages the full transaction lifecycle: sign → broadcast → poll → finality.
+
+**Location:** `packages/cw-ho/src/deploy/tx_lifecycle.rs`
+
+```rust
+impl TxLifecycle {
+    /// Sign, broadcast, and wait for finality (~6s blocks on Akash)
+    pub async fn sign_broadcast_wait(
+        &self,
+        key_name: &str,
+        account_index: u32,
+        msg: Any,
+        gas_limit: u64,
+        gas_price: u64,
+        memo: Option<&str>,
+    ) -> Result<TxResult>
+}
+
+pub struct TxResult {
+    pub hash: String,
+    pub height: u64,
+    pub code: u32,        // 0 = success
+    pub gas_used: u64,
+    pub raw_log: String,
+    pub events: Vec<TxEvent>,
+}
+```
+
+**Transaction Flow:**
+
+1. Sign transaction with TxSigner
+2. POST to `/cosmos/tx/v1beta1/txs` (BROADCAST_MODE_SYNC)
+3. Check immediate response (code 0 = accepted to mempool)
+4. Poll `/cosmos/tx/v1beta1/txs/{hash}` every 2s (max 60s)
+5. Parse events to extract dseq, lease_id, etc.
+
+#### CertificateManager
+
+Handles Akash mTLS certificate lifecycle.
+
+**Location:** `packages/cw-ho/src/deploy/certificate.rs`
+
+```rust
+impl CertificateManager {
+    /// Get existing valid certificate or create new one
+    pub async fn get_or_create(
+        &self,
+        key_name: &str,
+        account_index: u32,
+        address: &str,
+    ) -> Result<AkashCertificateInfo>
+}
+```
+
+**Workflow:**
+
+1. Query chain for existing valid certificate
+2. If none, generate secp256k1 keypair
+3. Build certificate data structure
+4. Broadcast MsgCreateCertificate
+5. Return certificate info
+
+#### AutomatedDeployer
+
+Orchestrates the full deployment workflow.
+
+**Location:** `packages/cw-ho/src/deploy/automated.rs`
+
+```rust
+impl AutomatedDeployer {
+    /// Run full automated deployment
+    pub async fn deploy(
+        &self,
+        workflow: &mut AkashDeploymentWorkflow,
+        opts: &AkashWorkflowOptions,
+    ) -> Result<DeploymentResult>
+
+    /// Close an active deployment
+    pub async fn close_deployment(
+        &self,
+        workflow: &AkashDeploymentWorkflow,
+    ) -> Result<()>
+}
+```
+
+### Automated Deployment Steps
+
+When `deploy()` is called, it executes these steps sequentially:
+
+| Step | Method | Description |
+|------|--------|-------------|
+| 1 | `step_check_balance` | Query account balance, verify >= min_balance_uakt |
+| 2 | `step_setup_certificate` | Get or create Akash mTLS certificate |
+| 3 | `step_create_deployment` | Build SDL → MsgCreateDeployment → broadcast |
+| 4 | `step_wait_for_bids` | Poll for provider bids (~12-30s) |
+| 5 | `step_select_provider` | Select cheapest from trusted_providers (or all) |
+| 6 | `step_create_lease` | MsgCreateLease → broadcast |
+| 7 | `step_send_manifest` | POST manifest JSON to provider REST API |
+| 8 | `step_retrieve_endpoints` | Query provider for service endpoints |
+| 9 | `step_save_endpoints` | Persist endpoints to Cnidarium storage |
+
+**Step Details:**
+
+```
+step_check_balance
+    └── CosmosClient.query_balance() → verify >= 5 AKT
+
+step_setup_certificate
+    └── CertificateManager.get_or_create()
+        ├── query_valid_certificate() → found? return
+        └── create_certificate() → MsgCreateCertificate tx
+
+step_create_deployment
+    ├── get_next_dseq() → query current + 1
+    ├── DeploymentBuilder.build_from_sdl()
+    └── TxLifecycle.sign_broadcast_wait(MsgCreateDeployment)
+
+step_wait_for_bids
+    ├── sleep(bid_wait_blocks * 6s)
+    └── poll CosmosClient.query_open_bids() (max 10 attempts)
+
+step_select_provider
+    ├── filter by trusted_providers (if non-empty)
+    └── select min(price_amount)
+
+step_create_lease
+    └── TxLifecycle.sign_broadcast_wait(MsgCreateLease)
+
+step_send_manifest
+    └── ManifestSender.send_manifest_from_sdl()
+        └── POST https://{provider}:8443/deployment/{dseq}/manifest
+
+step_retrieve_endpoints
+    └── query_service_endpoints() with retries
+        └── GET https://{provider}:8443/lease/{dseq}/{gseq}/{oseq}/status
+```
+
+### gRPC Integration
+
+The automated workflow is triggered via gRPC:
+
+**`run_akash_deployment` handler:**
+
+```rust
+async fn run_akash_deployment(&self, request: Request<RunAkashDeploymentRequest>)
+    -> Result<Response<RunAkashDeploymentResponse>, Status>
+{
+    // 1. Get AkashDeploymentContext from app state
+    let akash_ctx = self.state.akash.as_ref()
+        .ok_or_else(|| Status::failed_precondition("..."))?;
+
+    // 2. Load workflow from storage
+    let mut workflow = self.state.s.get_akash_workflow(&session_id).await?;
+
+    // 3. Create deployer from context
+    let deployer = akash_ctx.create_deployer(self.state.s.clone());
+
+    // 4. Run automated deployment
+    let result = deployer.deploy(&mut workflow, &options).await?;
+
+    // 5. Return completed workflow with endpoints
+    Ok(Response::new(RunAkashDeploymentResponse {
+        workflow: Some(workflow),
+        completed: true,
+        ..
+    }))
+}
+```
+
+### Workflow Options
+
+```protobuf
+message AkashWorkflowOptions {
+    bool skip_grants = 1;           // Skip authz/feegrant steps
+    bool auto_select_bid = 2;       // Auto-select cheapest provider
+    uint64 min_balance_uakt = 3;    // Minimum balance required (default: 5M)
+    uint32 bid_wait_blocks = 4;     // Blocks to wait for bids (default: 2)
+    repeated string trusted_providers = 5;  // Filter bids to these providers
+    uint32 max_retries = 6;         // Max retry attempts per step
+}
+```
+
+### Storage Keys
+
+Workflow state persisted to Cnidarium:
+
+| Key Pattern | Content |
+|-------------|---------|
+| `akash_workflows/{session_id}` | Full AkashDeploymentWorkflow proto |
+| `deployment_endpoints/{owner}/{dseq}/{provider}` | Service endpoints JSON |
+| `custody/cosmos_key_store` | Encrypted CosmosKeyStore proto |
+
+### CLI Usage
+
+```bash
+# Fully automated deployment
+ergors deploy create \
+  --sdl sdls/embeddings/qwen.yml \
+  --key-name default \
+  --auto \
+  --auto-select-bid \
+  --min-balance 10000000
+
+# Check status
+ergors deploy status <session-id>
+
+# Close deployment
+ergors deploy close-lease <session-id>
+```
+
+### Error Handling
+
+Each step can fail independently. On failure:
+
+1. Workflow status set to `Failed`
+2. `last_error` field populated with error message
+3. Current step preserved for retry/debugging
+4. Partial state (dseq, certificate, etc.) retained
+
+**Common Errors:**
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| `Insufficient balance` | < min_balance_uakt | Fund account with AKT |
+| `No bids received` | No providers available | Increase max price or wait |
+| `Certificate creation failed` | Invalid key or network | Check key permissions |
+| `Deployment tx failed` | Invalid SDL or escrow | Verify SDL syntax |
+| `Lease creation failed` | Bid expired or invalid | Retry with fresh bids |
+| `Manifest send failed` | Provider unreachable | Check provider status |
+
+### Monitoring
+
+```bash
+# View logs
+RUST_LOG=ergors::deploy=debug ergors start
+
+# Workflow state inspection
+ergors deploy get <session-id>
+
+# Active deployments
+ergors deploy list --status running
+```
+
+### Files Reference
+
+| File | Purpose |
+|------|---------|
+| `lib.rs` | `AkashDeploymentContext` struct and `ErgorsAppState` |
+| `server.rs` | `init_akash_context()` initialization |
+| `deploy/signer.rs` | Transaction signing with KeyStore |
+| `deploy/tx_lifecycle.rs` | Sign → broadcast → finality polling |
+| `deploy/certificate.rs` | Certificate management |
+| `deploy/automated.rs` | Full automation orchestration |
+| `deploy/deployment_builder.rs` | SDL → MsgCreateDeployment |
+| `deploy/manifest.rs` | Manifest building and provider REST |
+| `deploy/cosmos_client.rs` | Chain queries (balances, bids, leases) |
+| `grpc/management.rs` | gRPC handlers for deployment operations |
