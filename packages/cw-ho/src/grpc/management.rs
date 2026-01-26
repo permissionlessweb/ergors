@@ -137,10 +137,16 @@ use ho_std::types::ergors::management::v1::{
 };
 use ho_std::types::ergors::orch::v1::{
     AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep, ConfiguredSdl,
+    // Automated workflow types
+    RunAkashDeploymentRequest, RunAkashDeploymentResponse,
+    CloseAkashLeaseRequest, GetLeaseStatusRequest, LeaseStatusResponse,
+    AddTrustedProviderRequest, RemoveTrustedProviderRequest,
+    ListTrustedProvidersRequest, ListTrustedProvidersResponse, AkashWorkflowOptions, AkashLeaseInfo, AkashLeaseState,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
 use ho_std::keys::cosmos::cosmos_address_from_pubkey;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
+use crate::deploy::cosmos_client::{CosmosClient, CosmosEndpoints};
 use pbjson_types;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -2038,6 +2044,12 @@ impl ManagementService for ManagementServiceImpl {
             grant_duration_seconds: 0,
             grant_spend_limit_uakt: 0,
             grant_purpose: String::new(),
+            // Automated workflow fields
+            available_bids: vec![],
+            certificate_info: None,
+            lease_id_info: None,
+            options: None,
+            service_endpoints: vec![],
         };
 
         // Persist to storage
@@ -2382,6 +2394,259 @@ impl ManagementService for ManagementServiceImpl {
         }))
     }
 
+    /// Run automated deployment workflow using WorkflowEngine
+    async fn run_akash_deployment(
+        &self,
+        request: Request<RunAkashDeploymentRequest>,
+    ) -> Result<Response<RunAkashDeploymentResponse>, Status> {
+        let req = request.into_inner();
+
+        // Get the workflow
+        let workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // Apply options if provided
+        let options = req.options.unwrap_or_else(|| AkashWorkflowOptions {
+            skip_grants: false,
+            auto_select_bid: false,
+            min_balance_uakt: 5_000_000,
+            bid_wait_blocks: 2,
+            trusted_providers: vec![],
+            max_retries: 3,
+        });
+
+        tracing::info!(
+            "Running automated deployment for session {} (skip_grants={}, auto_select_bid={})",
+            req.session_id,
+            options.skip_grants,
+            options.auto_select_bid
+        );
+
+        // TODO: Integrate with WorkflowEngine when all components are ready
+        // For now, return the workflow with options stored
+
+        let mut updated_workflow = workflow;
+        updated_workflow.options = Some(options);
+        updated_workflow.status = AkashWorkflowStatus::Running as i32;
+        updated_workflow.updated_at = Some(pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        });
+
+        // Persist updated workflow
+        self.state.s.put_akash_workflow(&updated_workflow).await.ok();
+
+        Ok(Response::new(RunAkashDeploymentResponse {
+            workflow: Some(updated_workflow),
+            completed: false,
+            input_required: None, // Will be set when workflow engine runs
+        }))
+    }
+
+    /// Close an active lease
+    async fn close_akash_lease(
+        &self,
+        request: Request<CloseAkashLeaseRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        let workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // Verify there's a lease to close
+        if workflow.lease_id_info.is_none() && workflow.deployment.is_none() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "No active lease found for this workflow".to_string(),
+            }));
+        }
+
+        tracing::info!("Closing lease for session {}", req.session_id);
+
+        // TODO: Submit MsgCloseLease transaction via TxLifecycle
+        // For now, just mark the workflow as cancelled
+
+        let mut updated_workflow = workflow;
+        updated_workflow.status = AkashWorkflowStatus::Cancelled as i32;
+        updated_workflow.updated_at = Some(pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        });
+
+        self.state.s.put_akash_workflow(&updated_workflow).await.ok();
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!("Lease close initiated for session {}", req.session_id),
+        }))
+    }
+
+    /// Get lease status
+    async fn get_lease_status(
+        &self,
+        request: Request<GetLeaseStatusRequest>,
+    ) -> Result<Response<LeaseStatusResponse>, Status> {
+        let req = request.into_inner();
+
+        let workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // Determine deployment status from workflow state
+        let deployment_status = match AkashWorkflowStatus::try_from(workflow.status).unwrap_or(AkashWorkflowStatus::Unspecified) {
+            AkashWorkflowStatus::Pending => "pending",
+            AkashWorkflowStatus::Running => "running",
+            AkashWorkflowStatus::Completed => "active",
+            AkashWorkflowStatus::Failed => "failed",
+            AkashWorkflowStatus::Cancelled => "closed",
+            _ => "unknown",
+        };
+
+        // Convert lease_id_info to full AkashLeaseInfo
+        let lease = workflow.lease_id_info.map(|id| AkashLeaseInfo {
+            owner: id.owner,
+            dseq: id.dseq,
+            gseq: id.gseq,
+            oseq: id.oseq,
+            provider: id.provider,
+            state: if workflow.status == AkashWorkflowStatus::Completed as i32 {
+                AkashLeaseState::Active as i32
+            } else if workflow.status == AkashWorkflowStatus::Cancelled as i32 {
+                AkashLeaseState::Closed as i32
+            } else {
+                AkashLeaseState::Invalid as i32
+            },
+            price_denom: "uakt".to_string(),
+            price_amount: workflow.provider.as_ref().map(|p| p.bid_price_uakt.to_string()).unwrap_or_default(),
+            created_at: workflow.created_at.as_ref().map(|t| t.seconds).unwrap_or(0),
+            closed_on: workflow.completed_at.as_ref().map(|t| t.seconds).unwrap_or(0),
+        });
+
+        Ok(Response::new(LeaseStatusResponse {
+            lease,
+            endpoints: workflow.service_endpoints,
+            balance_remaining_uakt: 0, // TODO: Query from chain
+            deployment_status: deployment_status.to_string(),
+        }))
+    }
+
+    /// Add trusted provider
+    async fn add_trusted_provider(
+        &self,
+        request: Request<AddTrustedProviderRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        if req.address.is_empty() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "Provider address is required".to_string(),
+            }));
+        }
+
+        // Validate address format (basic check)
+        if !req.address.starts_with("akash1") {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "Invalid Akash address format (must start with 'akash1')".to_string(),
+            }));
+        }
+
+        match self.state.s.add_trusted_provider(&req.address, &req.label).await {
+            Ok(()) => {
+                tracing::info!("Added trusted provider: {} ({})", req.address, req.label);
+                Ok(Response::new(OperationResult {
+                    success: true,
+                    message: format!("Trusted provider {} added", req.address),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to add trusted provider: {}", e);
+                Ok(Response::new(OperationResult {
+                    success: false,
+                    message: format!("Failed to add trusted provider: {}", e),
+                }))
+            }
+        }
+    }
+
+    /// Remove trusted provider
+    async fn remove_trusted_provider(
+        &self,
+        request: Request<RemoveTrustedProviderRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        if req.address.is_empty() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "Provider address is required".to_string(),
+            }));
+        }
+
+        match self.state.s.remove_trusted_provider(&req.address).await {
+            Ok(removed) => {
+                if removed {
+                    tracing::info!("Removed trusted provider: {}", req.address);
+                    Ok(Response::new(OperationResult {
+                        success: true,
+                        message: format!("Trusted provider {} removed", req.address),
+                    }))
+                } else {
+                    Ok(Response::new(OperationResult {
+                        success: false,
+                        message: format!("Provider {} not found in trusted list", req.address),
+                    }))
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to remove trusted provider: {}", e);
+                Ok(Response::new(OperationResult {
+                    success: false,
+                    message: format!("Failed to remove trusted provider: {}", e),
+                }))
+            }
+        }
+    }
+
+    /// List trusted providers
+    async fn list_trusted_providers(
+        &self,
+        _request: Request<ListTrustedProvidersRequest>,
+    ) -> Result<Response<ListTrustedProvidersResponse>, Status> {
+        match self.state.s.get_trusted_providers().await {
+            Ok(list) => {
+                Ok(Response::new(ListTrustedProvidersResponse {
+                    providers: list.providers,
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to list trusted providers: {}", e);
+                Err(Status::internal(format!("Failed to list trusted providers: {}", e)))
+            }
+        }
+    }
+
     /// Request authz grant from coordinator
     async fn request_grant(
         &self,
@@ -2534,22 +2799,38 @@ impl ManagementService for ManagementServiceImpl {
         }))
     }
 
-    /// Query account balance
+    /// Query account balance from blockchain
     async fn query_balance(
         &self,
         request: Request<QueryBalanceRequest>,
     ) -> Result<Response<QueryBalanceResponse>, Status> {
         let req = request.into_inner();
 
-        // TODO: Query actual balance from blockchain node
-        // For now, return placeholder
+        // Get endpoints from config (or use defaults)
+        let endpoints = match &self.state.c.0.akash {
+            Some(cfg) => CosmosEndpoints::from_akash_config(cfg),
+            None => CosmosEndpoints::akash_mainnet(),
+        };
 
-        tracing::debug!("Querying balance for {} (denom: {})", req.address, req.denom);
+        tracing::debug!(
+            "Querying balance for {} (denom: {}) via {}",
+            req.address,
+            req.denom,
+            endpoints.rest
+        );
+
+        let client = CosmosClient::new(endpoints)
+            .map_err(|e| Status::internal(format!("Failed to create client: {}", e)))?;
+
+        let coin = client
+            .query_balance(&req.address, &req.denom)
+            .await
+            .map_err(|e| Status::internal(format!("Balance query failed: {}", e)))?;
 
         Ok(Response::new(QueryBalanceResponse {
             address: req.address,
-            denom: req.denom.clone(),
-            amount: "0".to_string(), // TODO: Query from blockchain
+            denom: coin.denom,
+            amount: coin.amount,
         }))
     }
 

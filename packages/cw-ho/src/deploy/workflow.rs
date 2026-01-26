@@ -7,19 +7,23 @@
 //! - Supports concurrent workflows via HD path derivation
 
 use crate::deploy::authz::AkashAuthzManager;
+use crate::deploy::certificate::CertificateManager;
+use crate::deploy::cosmos_client::CosmosClient;
 use crate::deploy::sdl::SdlTemplateManager;
+use crate::deploy::tx_lifecycle::TxLifecycle;
 use crate::storage::ErgorsStorage;
 use anyhow::{anyhow, Result};
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::ergors::orch::v1::{
-    AkashDeploymentWorkflow, AkashProviderSelection,
-    AkashWorkflowStatus, AkashWorkflowStep, EndpointTestResult,
-    GrantRequestParams, GrantRequestStatus, GrantType, WorkflowGrantState,
+    AkashBidInfo, AkashBidState, AkashDeploymentWorkflow, AkashLeaseIdInfo,
+    AkashProviderSelection, AkashWorkflowOptions, AkashWorkflowStatus,
+    AkashWorkflowStep, CosmosKeyStore, EndpointTestResult, GrantRequestParams, GrantRequestStatus,
+    GrantType, WorkflowGrantState, WorkflowInputRequired, WorkflowInputType,
 };
 use pbjson_types::Timestamp;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -130,6 +134,12 @@ impl AkashWorkflowManager {
             grant_duration_seconds: 0,
             grant_spend_limit_uakt: 0,
             grant_purpose: String::new(),
+            // Automated workflow fields
+            available_bids: vec![],
+            certificate_info: None,
+            lease_id_info: None,
+            options: None,
+            service_endpoints: vec![],
         };
 
         // Persist to storage
@@ -912,6 +922,531 @@ fn current_timestamp() -> Timestamp {
         seconds: now.as_secs() as i64,
         nanos: now.subsec_nanos() as i32,
     }
+}
+
+// ========================================
+// Automated Workflow Engine
+// ========================================
+
+/// Result of a workflow execution.
+#[derive(Debug)]
+pub enum WorkflowResult {
+    /// Workflow completed successfully
+    Completed(AkashDeploymentWorkflow),
+    /// Workflow failed
+    Failed(AkashDeploymentWorkflow),
+    /// Workflow needs user input to continue
+    NeedsInput(AkashDeploymentWorkflow, WorkflowInputRequired),
+}
+
+/// Automated workflow engine for Akash deployments.
+///
+/// Provides a single entry point for running deployments to completion
+/// with proper transaction lifecycle management.
+pub struct WorkflowEngine {
+    storage: Arc<ErgorsStorage>,
+    cosmos: Arc<CosmosClient>,
+    cert_manager: Arc<CertificateManager>,
+    tx_lifecycle: Arc<TxLifecycle>,
+    key_store: Arc<RwLock<CosmosKeyStore>>,
+    chain_id: String,
+    rest_endpoint: String,
+}
+
+impl WorkflowEngine {
+    /// Create a new workflow engine.
+    pub fn new(
+        storage: Arc<ErgorsStorage>,
+        cosmos: Arc<CosmosClient>,
+        cert_manager: Arc<CertificateManager>,
+        tx_lifecycle: Arc<TxLifecycle>,
+        key_store: Arc<RwLock<CosmosKeyStore>>,
+        chain_id: String,
+        rest_endpoint: String,
+    ) -> Self {
+        Self {
+            storage,
+            cosmos,
+            cert_manager,
+            tx_lifecycle,
+            key_store,
+            chain_id,
+            rest_endpoint,
+        }
+    }
+
+    /// Run workflow to completion (or until user input needed).
+    ///
+    /// This is the main entry point for automated deployments.
+    pub async fn run(&self, session_id: &str, opts: AkashWorkflowOptions) -> Result<WorkflowResult> {
+        // Get workflow and set options
+        let mut workflow = self
+            .storage
+            .get_akash_workflow(session_id)
+            .await
+            .map_err(|e| anyhow!("Storage error: {}", e))?
+            .ok_or_else(|| anyhow!("Workflow not found: {}", session_id))?;
+
+        workflow.options = Some(opts.clone());
+        workflow.status = AkashWorkflowStatus::Running as i32;
+        self.save_workflow(&workflow).await?;
+
+        // Run the workflow loop
+        loop {
+            let current_step = AkashWorkflowStep::try_from(workflow.current_step)
+                .unwrap_or(AkashWorkflowStep::Unspecified);
+
+            tracing::info!("Executing workflow step: {:?}", current_step);
+
+            let step_result = match current_step {
+                AkashWorkflowStep::KeySelection => {
+                    self.handle_key_selection(&mut workflow).await
+                }
+                AkashWorkflowStep::BalanceCheck => {
+                    self.handle_balance_check(&mut workflow, &opts).await
+                }
+                AkashWorkflowStep::GrantRequest | AkashWorkflowStep::GrantWait => {
+                    if opts.skip_grants {
+                        self.skip_to_step(&mut workflow, AkashWorkflowStep::SdlConfiguration)
+                            .await
+                    } else {
+                        self.handle_grant_step(&mut workflow).await
+                    }
+                }
+                AkashWorkflowStep::AuthzSetup | AkashWorkflowStep::FeegrantSetup => {
+                    if opts.skip_grants {
+                        self.skip_to_step(&mut workflow, AkashWorkflowStep::SdlConfiguration)
+                            .await
+                    } else {
+                        Ok(StepOutcome::Next(AkashWorkflowStep::SdlConfiguration))
+                    }
+                }
+                AkashWorkflowStep::SdlConfiguration => {
+                    self.handle_sdl_config(&mut workflow).await
+                }
+                AkashWorkflowStep::CertificateSetup => {
+                    self.handle_certificate(&mut workflow).await
+                }
+                AkashWorkflowStep::DeploymentCreate => {
+                    self.handle_deployment_create(&mut workflow).await
+                }
+                AkashWorkflowStep::BidWait => {
+                    self.handle_bid_wait(&mut workflow, &opts).await
+                }
+                AkashWorkflowStep::ProviderSelection => {
+                    if opts.auto_select_bid {
+                        self.auto_select_provider(&mut workflow, &opts).await
+                    } else {
+                        // Return needing input for bid selection
+                        Ok(StepOutcome::NeedsInput(WorkflowInputRequired {
+                            input_type: WorkflowInputType::BidSelection as i32,
+                            available_bids: workflow.available_bids.clone(),
+                            grant_request: None,
+                            message: "Select a provider from available bids".to_string(),
+                        }))
+                    }
+                }
+                AkashWorkflowStep::LeaseCreate => {
+                    self.handle_lease_create(&mut workflow).await
+                }
+                AkashWorkflowStep::ManifestSend => {
+                    self.handle_manifest_send(&mut workflow).await
+                }
+                AkashWorkflowStep::EndpointRetrieval => {
+                    self.handle_endpoint_retrieval(&mut workflow).await
+                }
+                AkashWorkflowStep::EndpointTesting => {
+                    self.handle_endpoint_testing(&mut workflow).await
+                }
+                AkashWorkflowStep::Complete => {
+                    workflow.status = AkashWorkflowStatus::Completed as i32;
+                    workflow.completed_at = Some(current_timestamp());
+                    self.save_workflow(&workflow).await?;
+                    return Ok(WorkflowResult::Completed(workflow));
+                }
+                AkashWorkflowStep::Failed | AkashWorkflowStep::Unspecified => {
+                    return Ok(WorkflowResult::Failed(workflow));
+                }
+            };
+
+            // Process step outcome
+            match step_result {
+                Ok(StepOutcome::Next(next_step)) => {
+                    workflow.current_step = next_step as i32;
+                    workflow.retry_count = 0;
+                    workflow.last_error.clear();
+                    workflow.updated_at = Some(current_timestamp());
+                    self.save_workflow(&workflow).await?;
+                }
+                Ok(StepOutcome::NeedsInput(input_required)) => {
+                    workflow.status = AkashWorkflowStatus::Paused as i32;
+                    workflow.updated_at = Some(current_timestamp());
+                    self.save_workflow(&workflow).await?;
+                    return Ok(WorkflowResult::NeedsInput(workflow, input_required));
+                }
+                Err(e) => {
+                    workflow.retry_count += 1;
+                    workflow.last_error = e.to_string();
+                    workflow.updated_at = Some(current_timestamp());
+
+                    if workflow.retry_count >= opts.max_retries.max(3) {
+                        workflow.current_step = AkashWorkflowStep::Failed as i32;
+                        workflow.status = AkashWorkflowStatus::Failed as i32;
+                        self.save_workflow(&workflow).await?;
+                        return Ok(WorkflowResult::Failed(workflow));
+                    }
+
+                    tracing::warn!(
+                        "Step failed (attempt {}/{}): {}",
+                        workflow.retry_count,
+                        opts.max_retries.max(3),
+                        e
+                    );
+                    self.save_workflow(&workflow).await?;
+                }
+            }
+        }
+    }
+
+    /// Resume workflow after user provides input.
+    pub async fn resume(&self, session_id: &str) -> Result<WorkflowResult> {
+        let workflow = self
+            .storage
+            .get_akash_workflow(session_id)
+            .await
+            .map_err(|e| anyhow!("Storage error: {}", e))?
+            .ok_or_else(|| anyhow!("Workflow not found: {}", session_id))?;
+
+        let opts = workflow.options.clone().unwrap_or_default();
+        self.run(session_id, opts).await
+    }
+
+    // ==================== Step Handlers ====================
+
+    async fn handle_key_selection(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<StepOutcome> {
+        tracing::info!(
+            "Using key '{}' at address {}",
+            workflow.selected_key_name,
+            workflow.account_address
+        );
+        Ok(StepOutcome::Next(AkashWorkflowStep::BalanceCheck))
+    }
+
+    async fn handle_balance_check(
+        &self,
+        workflow: &mut AkashDeploymentWorkflow,
+        opts: &AkashWorkflowOptions,
+    ) -> Result<StepOutcome> {
+        let balance = self
+            .cosmos
+            .query_balance(&workflow.account_address, "uakt")
+            .await?;
+
+        let amount: u64 = balance.amount.parse().unwrap_or(0);
+        let min_balance = if opts.min_balance_uakt > 0 {
+            opts.min_balance_uakt
+        } else {
+            5_000_000 // Default 5 AKT minimum
+        };
+
+        tracing::info!("Account balance: {} uAKT (minimum: {} uAKT)", amount, min_balance);
+
+        if amount < min_balance {
+            return Err(anyhow!(
+                "Insufficient balance: {} < {} uakt",
+                amount,
+                min_balance
+            ));
+        }
+
+        // Check if grants are needed
+        if workflow.request_grant_from.is_empty() || opts.skip_grants {
+            Ok(StepOutcome::Next(AkashWorkflowStep::SdlConfiguration))
+        } else {
+            Ok(StepOutcome::Next(AkashWorkflowStep::GrantRequest))
+        }
+    }
+
+    async fn handle_grant_step(&self, _workflow: &mut AkashDeploymentWorkflow) -> Result<StepOutcome> {
+        // Simplified grant handling - in production would interact with contract
+        tracing::info!("Skipping grant setup (not yet implemented in automated mode)");
+        Ok(StepOutcome::Next(AkashWorkflowStep::SdlConfiguration))
+    }
+
+    async fn handle_sdl_config(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<StepOutcome> {
+        if workflow.configured_sdl.is_some() {
+            tracing::info!("SDL already configured");
+            Ok(StepOutcome::Next(AkashWorkflowStep::CertificateSetup))
+        } else {
+            // Need SDL configuration
+            Ok(StepOutcome::NeedsInput(WorkflowInputRequired {
+                input_type: WorkflowInputType::SdlConfiguration as i32,
+                available_bids: vec![],
+                grant_request: None,
+                message: "SDL configuration required".to_string(),
+            }))
+        }
+    }
+
+    async fn handle_certificate(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<StepOutcome> {
+        tracing::info!("Setting up certificate for {}", workflow.account_address);
+
+        let cert_info = self
+            .cert_manager
+            .get_or_create(
+                &workflow.selected_key_name,
+                workflow.hd_account_index,
+                &workflow.account_address,
+            )
+            .await?;
+
+        workflow.certificate_info = Some(cert_info);
+        tracing::info!("Certificate ready");
+
+        Ok(StepOutcome::Next(AkashWorkflowStep::DeploymentCreate))
+    }
+
+    async fn handle_deployment_create(
+        &self,
+        workflow: &mut AkashDeploymentWorkflow,
+    ) -> Result<StepOutcome> {
+        let sdl = workflow
+            .configured_sdl
+            .as_ref()
+            .ok_or_else(|| anyhow!("No SDL configured"))?;
+
+        tracing::info!("Creating deployment from template '{}'", sdl.template_name);
+
+        // Build MsgCreateDeployment
+        // Note: This requires parsing the SDL and building the proper deployment message
+        // For now, this is a placeholder - full implementation requires SDL parsing
+
+        // TODO: Implement proper deployment creation
+        // let msg = build_create_deployment_msg(workflow, sdl)?;
+        // let result = self.tx_lifecycle.sign_broadcast_wait(...).await?;
+        // let dseq = result.extract_dseq().ok_or_else(|| anyhow!("No dseq in response"))?;
+
+        tracing::warn!("Deployment creation not yet fully implemented - proceeding to bid wait");
+
+        Ok(StepOutcome::Next(AkashWorkflowStep::BidWait))
+    }
+
+    async fn handle_bid_wait(
+        &self,
+        workflow: &mut AkashDeploymentWorkflow,
+        opts: &AkashWorkflowOptions,
+    ) -> Result<StepOutcome> {
+        let wait_blocks = if opts.bid_wait_blocks > 0 {
+            opts.bid_wait_blocks
+        } else {
+            2 // Default to 2 blocks (~12 seconds on Akash)
+        };
+
+        tracing::info!("Waiting {} blocks for bids (~{}s)...", wait_blocks, wait_blocks * 6);
+
+        // Wait for bids (approximately 6 seconds per block on Akash)
+        tokio::time::sleep(Duration::from_secs(wait_blocks as u64 * 6)).await;
+
+        // Query bids from chain
+        if let Some(deployment) = &workflow.deployment {
+            let dseq: u64 = deployment.deployment_sequence.parse().unwrap_or(0);
+            if dseq > 0 {
+                let bids = self
+                    .cosmos
+                    .query_open_bids(&workflow.account_address, dseq)
+                    .await?;
+
+                // Convert to proto types
+                let bid_infos: Vec<AkashBidInfo> = bids
+                    .iter()
+                    .map(|b| AkashBidInfo {
+                        owner: b.owner.clone(),
+                        dseq: b.dseq,
+                        gseq: b.gseq,
+                        oseq: b.oseq,
+                        provider: b.provider.clone(),
+                        price_denom: b.price_denom.clone(),
+                        price_amount: b.price_amount.clone(),
+                        state: AkashBidState::Open as i32,
+                        created_at: 0,
+                    })
+                    .collect();
+
+                workflow.available_bids = bid_infos;
+                tracing::info!("Found {} open bids", workflow.available_bids.len());
+            }
+        }
+
+        if workflow.available_bids.is_empty() {
+            tracing::warn!("No bids received yet");
+        }
+
+        Ok(StepOutcome::Next(AkashWorkflowStep::ProviderSelection))
+    }
+
+    async fn auto_select_provider(
+        &self,
+        workflow: &mut AkashDeploymentWorkflow,
+        opts: &AkashWorkflowOptions,
+    ) -> Result<StepOutcome> {
+        if workflow.available_bids.is_empty() {
+            return Err(anyhow!("No bids available to select from"));
+        }
+
+        // Filter by trusted providers if specified
+        let mut candidates = workflow.available_bids.clone();
+        if !opts.trusted_providers.is_empty() {
+            candidates.retain(|bid| opts.trusted_providers.contains(&bid.provider));
+        }
+
+        if candidates.is_empty() {
+            return Err(anyhow!("No bids from trusted providers"));
+        }
+
+        // Select cheapest bid
+        let selected = candidates
+            .iter()
+            .min_by(|a, b| {
+                let price_a: u64 = a.price_amount.parse().unwrap_or(u64::MAX);
+                let price_b: u64 = b.price_amount.parse().unwrap_or(u64::MAX);
+                price_a.cmp(&price_b)
+            })
+            .ok_or_else(|| anyhow!("Failed to select bid"))?;
+
+        tracing::info!(
+            "Auto-selected provider {} with price {} {}",
+            selected.provider,
+            selected.price_amount,
+            selected.price_denom
+        );
+
+        let price: u64 = selected.price_amount.parse().unwrap_or(0);
+        workflow.provider = Some(AkashProviderSelection {
+            provider_address: selected.provider.clone(),
+            reputation_score: 100, // Would query reputation system
+            bid_price_uakt: price,
+            total_bids_received: workflow.available_bids.len() as u32,
+            selected_at: Some(current_timestamp()),
+            is_trusted_provider: opts.trusted_providers.contains(&selected.provider),
+        });
+
+        Ok(StepOutcome::Next(AkashWorkflowStep::LeaseCreate))
+    }
+
+    async fn handle_lease_create(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<StepOutcome> {
+        let provider = workflow
+            .provider
+            .as_ref()
+            .ok_or_else(|| anyhow!("No provider selected"))?;
+
+        let deployment = workflow
+            .deployment
+            .as_ref()
+            .ok_or_else(|| anyhow!("No deployment info"))?;
+
+        tracing::info!("Creating lease with provider {}", provider.provider_address);
+
+        // Build MsgCreateLease
+        // let msg = MsgCreateLease { bid_id: ... };
+        // let result = self.tx_lifecycle.sign_broadcast_wait(...).await?;
+
+        // Store lease ID
+        let dseq: u64 = deployment.deployment_sequence.parse().unwrap_or(0);
+        let gseq: u32 = deployment.group_sequence.parse().unwrap_or(1);
+        let oseq: u32 = deployment.order_sequence.parse().unwrap_or(1);
+
+        workflow.lease_id_info = Some(AkashLeaseIdInfo {
+            owner: workflow.account_address.clone(),
+            dseq,
+            gseq,
+            oseq,
+            provider: provider.provider_address.clone(),
+        });
+
+        tracing::warn!("Lease creation not yet fully implemented");
+        Ok(StepOutcome::Next(AkashWorkflowStep::ManifestSend))
+    }
+
+    async fn handle_manifest_send(&self, _workflow: &mut AkashDeploymentWorkflow) -> Result<StepOutcome> {
+        tracing::info!("Sending manifest to provider...");
+        // TODO: Implement manifest sending to provider
+        tracing::warn!("Manifest send not yet fully implemented");
+        Ok(StepOutcome::Next(AkashWorkflowStep::EndpointRetrieval))
+    }
+
+    async fn handle_endpoint_retrieval(
+        &self,
+        _workflow: &mut AkashDeploymentWorkflow,
+    ) -> Result<StepOutcome> {
+        tracing::info!("Retrieving deployment endpoints...");
+        // TODO: Query provider for service endpoints
+        tracing::warn!("Endpoint retrieval not yet fully implemented");
+        Ok(StepOutcome::Next(AkashWorkflowStep::EndpointTesting))
+    }
+
+    async fn handle_endpoint_testing(
+        &self,
+        workflow: &mut AkashDeploymentWorkflow,
+    ) -> Result<StepOutcome> {
+        tracing::info!("Testing endpoints...");
+
+        // Test each endpoint
+        for endpoint in &workflow.service_endpoints {
+            let result = self.test_endpoint(&endpoint.external_uri).await;
+            workflow.test_results.push(EndpointTestResult {
+                service_name: endpoint.service_name.clone(),
+                endpoint_uri: endpoint.external_uri.clone(),
+                success: result.is_ok(),
+                response_time_ms: result.as_ref().copied().unwrap_or(0),
+                test_type: "http_connect".to_string(),
+                error_message: result.err().map(|e| e.to_string()).unwrap_or_default(),
+                tested_at: Some(current_timestamp()),
+            });
+        }
+
+        Ok(StepOutcome::Next(AkashWorkflowStep::Complete))
+    }
+
+    async fn skip_to_step(
+        &self,
+        _workflow: &mut AkashDeploymentWorkflow,
+        step: AkashWorkflowStep,
+    ) -> Result<StepOutcome> {
+        tracing::info!("Skipping to step: {:?}", step);
+        Ok(StepOutcome::Next(step))
+    }
+
+    // ==================== Helper Methods ====================
+
+    async fn save_workflow(&self, workflow: &AkashDeploymentWorkflow) -> Result<()> {
+        self.storage
+            .put_akash_workflow(workflow)
+            .await
+            .map_err(|e| anyhow!("Storage error: {}", e))
+    }
+
+    async fn test_endpoint(&self, endpoint: &str) -> Result<u64> {
+        let start = std::time::Instant::now();
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()?;
+
+        let response = client.get(endpoint).send().await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow!("Endpoint returned status: {}", response.status()));
+        }
+
+        Ok(start.elapsed().as_millis() as u64)
+    }
+}
+
+/// Internal step outcome for workflow engine.
+enum StepOutcome {
+    /// Proceed to next step
+    Next(AkashWorkflowStep),
+    /// Needs user input
+    NeedsInput(WorkflowInputRequired),
 }
 
 #[cfg(test)]

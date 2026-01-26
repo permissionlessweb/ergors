@@ -13,11 +13,11 @@ use ho_std::types::ergors::management::v1::{
     AdvanceAkashDeploymentResponse,
     ApproveGrantRequest,
     CancelAkashDeploymentRequest,
-    ConfigureProxyRoutesRequest,
     CompleteTaskWorktreeRequest,
     CompleteTaskWorktreeResponse,
     ConfigData,
     ConfigUpdate,
+    ConfigureProxyRoutesRequest,
     CreateAkashDeploymentRequest,
     CreateAkashDeploymentResponse,
     CreateTaskWorktreeRequest,
@@ -28,12 +28,22 @@ use ho_std::types::ergors::management::v1::{
     FailTaskWorktreeRequest,
     GetAkashDeploymentRequest,
     GetAkashDeploymentResponse,
+    // Key address query types
+    GetKeyAddressRequest,
+    GetKeyAddressResponse,
+    GetSdlDefaultsRequest,
+    GetSdlDefaultsResponse,
+    GetSdlTemplateRequest,
+    GetSdlTemplateResponse,
     GetWorkspaceRequest,
     GetWorkspaceResponse,
     ListAkashDeploymentsRequest,
     ListAkashDeploymentsResponse,
     ListGrantRequestsRequest,
     ListGrantRequestsResponse,
+    // SDL template types
+    ListSdlTemplatesRequest,
+    ListSdlTemplatesResponse,
     ListTaskWorktreesRequest,
     ListTaskWorktreesResponse,
     ListWorkspacesRequest,
@@ -51,18 +61,8 @@ use ho_std::types::ergors::management::v1::{
     QueryBalanceRequest,
     QueryBalanceResponse,
     RemoveWorkspaceRequest,
-    // SDL template types
-    ListSdlTemplatesRequest,
-    ListSdlTemplatesResponse,
-    GetSdlTemplateRequest,
-    GetSdlTemplateResponse,
-    GetSdlDefaultsRequest,
-    GetSdlDefaultsResponse,
     RenderSdlTemplateRequest,
     RenderSdlTemplateResponse,
-    // Key address query types
-    GetKeyAddressRequest,
-    GetKeyAddressResponse,
     RequestGrantRequest,
     RequestGrantResponse,
     RevokeGrantRequest,
@@ -79,6 +79,19 @@ use ho_std::types::ergors::management::v1::{
     TokenResponse,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
+use ho_std::types::ergors::orch::v1::{
+    AddTrustedProviderRequest,
+    AkashWorkflowOptions,
+    CloseAkashLeaseRequest,
+    GetLeaseStatusRequest,
+    LeaseStatusResponse,
+    ListTrustedProvidersRequest,
+    ListTrustedProvidersResponse,
+    RemoveTrustedProviderRequest,
+    // Automated workflow types
+    RunAkashDeploymentRequest,
+    RunAkashDeploymentResponse,
+};
 use tonic::transport::Channel;
 
 /// Management client wrapping the generated tonic client
@@ -572,10 +585,7 @@ impl ManagementClient {
     }
 
     /// Query bids for a deployment
-    pub async fn query_akash_bids(
-        &mut self,
-        session_id: &str,
-    ) -> Result<QueryAkashBidsResponse> {
+    pub async fn query_akash_bids(&mut self, session_id: &str) -> Result<QueryAkashBidsResponse> {
         let response = self
             .inner
             .query_akash_bids(QueryAkashBidsRequest {
@@ -608,10 +618,7 @@ impl ManagementClient {
     }
 
     /// Cancel an Akash deployment workflow
-    pub async fn cancel_akash_deployment(
-        &mut self,
-        session_id: &str,
-    ) -> Result<OperationResult> {
+    pub async fn cancel_akash_deployment(&mut self, session_id: &str) -> Result<OperationResult> {
         let response = self
             .inner
             .cancel_akash_deployment(CancelAkashDeploymentRequest {
@@ -751,7 +758,11 @@ impl ManagementClient {
     }
 
     /// Query account balance
-    pub async fn query_balance(&mut self, address: &str, denom: &str) -> Result<QueryBalanceResponse> {
+    pub async fn query_balance(
+        &mut self,
+        address: &str,
+        denom: &str,
+    ) -> Result<QueryBalanceResponse> {
         let response = self
             .inner
             .query_balance(QueryBalanceRequest {
@@ -778,7 +789,10 @@ impl ManagementClient {
     }
 
     /// Get SDL template from contract
-    pub async fn get_sdl_template(&mut self, contract_address: &str) -> Result<GetSdlTemplateResponse> {
+    pub async fn get_sdl_template(
+        &mut self,
+        contract_address: &str,
+    ) -> Result<GetSdlTemplateResponse> {
         let response = self
             .inner
             .get_sdl_template(GetSdlTemplateRequest {
@@ -791,7 +805,10 @@ impl ManagementClient {
     }
 
     /// Get variable defaults from contract
-    pub async fn get_sdl_defaults(&mut self, contract_address: &str) -> Result<GetSdlDefaultsResponse> {
+    pub async fn get_sdl_defaults(
+        &mut self,
+        contract_address: &str,
+    ) -> Result<GetSdlDefaultsResponse> {
         let response = self
             .inner
             .get_sdl_defaults(GetSdlDefaultsRequest {
@@ -817,6 +834,104 @@ impl ManagementClient {
             })
             .await
             .context("Failed to render SDL template")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ Automated Workflow Methods ============
+
+    /// Run automated deployment workflow
+    pub async fn run_akash_deployment(
+        &mut self,
+        session_id: &str,
+        skip_grants: bool,
+        auto_select_bid: bool,
+        min_balance_uakt: u64,
+        trusted_providers: Vec<String>,
+    ) -> Result<RunAkashDeploymentResponse> {
+        let response = self
+            .inner
+            .run_akash_deployment(RunAkashDeploymentRequest {
+                session_id: session_id.to_string(),
+                options: Some(AkashWorkflowOptions {
+                    skip_grants,
+                    auto_select_bid,
+                    min_balance_uakt,
+                    bid_wait_blocks: 2,
+                    trusted_providers,
+                    max_retries: 3,
+                }),
+            })
+            .await
+            .context("Failed to run Akash deployment")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Close an active lease
+    pub async fn close_akash_lease(&mut self, session_id: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .close_akash_lease(CloseAkashLeaseRequest {
+                session_id: session_id.to_string(),
+            })
+            .await
+            .context("Failed to close Akash lease")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Get lease status
+    pub async fn get_lease_status(&mut self, session_id: &str) -> Result<LeaseStatusResponse> {
+        let response = self
+            .inner
+            .get_lease_status(GetLeaseStatusRequest {
+                session_id: session_id.to_string(),
+            })
+            .await
+            .context("Failed to get lease status")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Add trusted provider
+    pub async fn add_trusted_provider(
+        &mut self,
+        address: &str,
+        label: &str,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .add_trusted_provider(AddTrustedProviderRequest {
+                address: address.to_string(),
+                label: label.to_string(),
+            })
+            .await
+            .context("Failed to add trusted provider")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Remove trusted provider
+    pub async fn remove_trusted_provider(&mut self, address: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .remove_trusted_provider(RemoveTrustedProviderRequest {
+                address: address.to_string(),
+            })
+            .await
+            .context("Failed to remove trusted provider")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// List trusted providers
+    pub async fn list_trusted_providers(&mut self) -> Result<ListTrustedProvidersResponse> {
+        let response = self
+            .inner
+            .list_trusted_providers(ListTrustedProvidersRequest {})
+            .await
+            .context("Failed to list trusted providers")?;
 
         Ok(response.into_inner())
     }

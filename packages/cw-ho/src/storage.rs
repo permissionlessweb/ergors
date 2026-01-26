@@ -62,6 +62,7 @@ const OP_PREFIX: &str = "operations";
 const API_KEY_PREFIX: &str = "custody/api_keys";
 const COSMOS_KEY_STORE_KEY: &str = "custody/cosmos_key_store";
 const AKASH_WORKFLOW_PREFIX: &str = "akash_workflows";
+const TRUSTED_PROVIDERS_KEY: &str = "config/trusted_providers";
 // const HEADSTASH: &str = "headstash";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions";
 const PROXY_CLIENT_INDEX_PREFIX: &str = "proxy_sessions_by_client";
@@ -856,6 +857,116 @@ impl ErgorsStorage {
         self.cs.commit(delta).await?;
         info!("🗑️  Deleted Akash workflow: {}", session_id);
         Ok(())
+    }
+
+    // ========================================
+    // Trusted Providers Storage
+    // ========================================
+
+    /// Get list of trusted Akash providers
+    pub async fn get_trusted_providers(
+        &self,
+    ) -> HoResult<ho_std::types::ergors::orch::v1::TrustedProviderList> {
+        let snapshot = self.cs.latest_snapshot();
+
+        match snapshot.get_raw(TRUSTED_PROVIDERS_KEY).await {
+            Ok(Some(data)) => {
+                let list: ho_std::types::ergors::orch::v1::TrustedProviderList =
+                    serde_json::from_slice(&data)?;
+                Ok(list)
+            }
+            Ok(None) => {
+                // Return empty list if not set
+                Ok(ho_std::types::ergors::orch::v1::TrustedProviderList {
+                    providers: vec![],
+                    updated_at: None,
+                })
+            }
+            Err(e) => {
+                warn!("Failed to get trusted providers: {}", e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Store trusted providers list
+    pub async fn put_trusted_providers(
+        &self,
+        list: &ho_std::types::ergors::orch::v1::TrustedProviderList,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let data = serde_json::to_vec(list)?;
+        delta.put_raw(TRUSTED_PROVIDERS_KEY.to_string(), data);
+        self.cs.commit(delta).await?;
+        info!(
+            "💾 Stored {} trusted providers",
+            list.providers.len()
+        );
+        Ok(())
+    }
+
+    /// Add a trusted provider
+    pub async fn add_trusted_provider(&self, address: &str, label: &str) -> HoResult<()> {
+        use ho_std::types::ergors::orch::v1::TrustedProvider;
+
+        let mut list = self.get_trusted_providers().await?;
+
+        // Check if already exists
+        if list.providers.iter().any(|p| p.address == address) {
+            info!("Provider {} already in trusted list", address);
+            return Ok(());
+        }
+
+        // Add new provider
+        let now = pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+            nanos: 0,
+        };
+
+        list.providers.push(TrustedProvider {
+            address: address.to_string(),
+            label: label.to_string(),
+            added_at: Some(now),
+        });
+        list.updated_at = Some(now);
+
+        self.put_trusted_providers(&list).await?;
+        info!("Added trusted provider: {} ({})", address, label);
+        Ok(())
+    }
+
+    /// Remove a trusted provider
+    pub async fn remove_trusted_provider(&self, address: &str) -> HoResult<bool> {
+        let mut list = self.get_trusted_providers().await?;
+        let original_len = list.providers.len();
+
+        list.providers.retain(|p| p.address != address);
+
+        if list.providers.len() == original_len {
+            info!("Provider {} not found in trusted list", address);
+            return Ok(false);
+        }
+
+        list.updated_at = Some(pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+            nanos: 0,
+        });
+
+        self.put_trusted_providers(&list).await?;
+        info!("Removed trusted provider: {}", address);
+        Ok(true)
+    }
+
+    /// Check if a provider is trusted
+    pub async fn is_trusted_provider(&self, address: &str) -> HoResult<bool> {
+        let list = self.get_trusted_providers().await?;
+        Ok(list.providers.iter().any(|p| p.address == address))
     }
 
     // ========================================

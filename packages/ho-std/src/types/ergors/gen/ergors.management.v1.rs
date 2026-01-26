@@ -5212,6 +5212,198 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Run automated deployment workflow (uses WorkflowEngine)
+        pub async fn run_akash_deployment(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RunAkashDeploymentRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RunAkashDeploymentResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RunAkashDeployment",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RunAkashDeployment",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Close an active lease
+        pub async fn close_akash_lease(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::CloseAkashLeaseRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/CloseAkashLease",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "CloseAkashLease",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get lease status
+        pub async fn get_lease_status(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::GetLeaseStatusRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::LeaseStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/GetLeaseStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "GetLeaseStatus",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Add trusted provider
+        pub async fn add_trusted_provider(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::AddTrustedProviderRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/AddTrustedProvider",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "AddTrustedProvider",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Remove trusted provider
+        pub async fn remove_trusted_provider(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RemoveTrustedProviderRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RemoveTrustedProvider",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RemoveTrustedProvider",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List trusted providers
+        pub async fn list_trusted_providers(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::ListTrustedProvidersRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::ListTrustedProvidersResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListTrustedProviders",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListTrustedProviders",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Request authz grant from coordinator
         pub async fn request_grant(
             &mut self,
@@ -5971,6 +6163,55 @@ pub mod management_service_server {
             &self,
             request: tonic::Request<super::ConfigureProxyRoutesRequest>,
         ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Run automated deployment workflow (uses WorkflowEngine)
+        async fn run_akash_deployment(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::RunAkashDeploymentRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RunAkashDeploymentResponse>,
+            tonic::Status,
+        >;
+        /// Close an active lease
+        async fn close_akash_lease(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::CloseAkashLeaseRequest,
+            >,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Get lease status
+        async fn get_lease_status(
+            &self,
+            request: tonic::Request<super::super::super::orch::v1::GetLeaseStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::LeaseStatusResponse>,
+            tonic::Status,
+        >;
+        /// Add trusted provider
+        async fn add_trusted_provider(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::AddTrustedProviderRequest,
+            >,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Remove trusted provider
+        async fn remove_trusted_provider(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::RemoveTrustedProviderRequest,
+            >,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// List trusted providers
+        async fn list_trusted_providers(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::ListTrustedProvidersRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::ListTrustedProvidersResponse>,
+            tonic::Status,
+        >;
         /// Request authz grant from coordinator
         async fn request_grant(
             &self,
@@ -8793,6 +9034,312 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ConfigureProxyRoutesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RunAkashDeployment" => {
+                    #[allow(non_camel_case_types)]
+                    struct RunAkashDeploymentSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RunAkashDeploymentRequest,
+                    > for RunAkashDeploymentSvc<T> {
+                        type Response = super::super::super::orch::v1::RunAkashDeploymentResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RunAkashDeploymentRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::run_akash_deployment(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RunAkashDeploymentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/CloseAkashLease" => {
+                    #[allow(non_camel_case_types)]
+                    struct CloseAkashLeaseSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::CloseAkashLeaseRequest,
+                    > for CloseAkashLeaseSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::CloseAkashLeaseRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::close_akash_lease(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CloseAkashLeaseSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/GetLeaseStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetLeaseStatusSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::GetLeaseStatusRequest,
+                    > for GetLeaseStatusSvc<T> {
+                        type Response = super::super::super::orch::v1::LeaseStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::GetLeaseStatusRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::get_lease_status(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetLeaseStatusSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/AddTrustedProvider" => {
+                    #[allow(non_camel_case_types)]
+                    struct AddTrustedProviderSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::AddTrustedProviderRequest,
+                    > for AddTrustedProviderSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::AddTrustedProviderRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::add_trusted_provider(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = AddTrustedProviderSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RemoveTrustedProvider" => {
+                    #[allow(non_camel_case_types)]
+                    struct RemoveTrustedProviderSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RemoveTrustedProviderRequest,
+                    > for RemoveTrustedProviderSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RemoveTrustedProviderRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::remove_trusted_provider(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RemoveTrustedProviderSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListTrustedProviders" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListTrustedProvidersSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::ListTrustedProvidersRequest,
+                    > for ListTrustedProvidersSvc<T> {
+                        type Response = super::super::super::orch::v1::ListTrustedProvidersResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::ListTrustedProvidersRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_trusted_providers(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListTrustedProvidersSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

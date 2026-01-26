@@ -2723,6 +2723,9 @@ pub struct AkashDeployConfig {
     /// Trusted provider addresses (optional whitelist)
     #[prost(string, repeated, tag = "8")]
     pub trusted_providers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// REST/LCD endpoint for queries (e.g. "<https://rest-akash.ecostake.com">)
+    #[prost(string, tag = "9")]
+    pub rest_endpoint: ::prost::alloc::string::String,
 }
 impl ::prost::Name for AkashDeployConfig {
     const NAME: &'static str = "AkashDeployConfig";
@@ -3030,6 +3033,21 @@ pub struct AkashDeploymentWorkflow {
     pub grant_spend_limit_uakt: u64,
     #[prost(string, tag = "27")]
     pub grant_purpose: ::prost::alloc::string::String,
+    /// Bids received during BidWait step
+    #[prost(message, repeated, tag = "30")]
+    pub available_bids: ::prost::alloc::vec::Vec<AkashBidInfo>,
+    /// Certificate info (cached from chain or newly created)
+    #[prost(message, optional, tag = "31")]
+    pub certificate_info: ::core::option::Option<AkashCertificateInfo>,
+    /// Lease ID after lease creation
+    #[prost(message, optional, tag = "32")]
+    pub lease_id_info: ::core::option::Option<AkashLeaseIdInfo>,
+    /// Workflow automation options
+    #[prost(message, optional, tag = "33")]
+    pub options: ::core::option::Option<AkashWorkflowOptions>,
+    /// Service endpoints with port mappings (after manifest send)
+    #[prost(message, repeated, tag = "34")]
+    pub service_endpoints: ::prost::alloc::vec::Vec<AkashServiceEndpoint>,
 }
 impl ::prost::Name for AkashDeploymentWorkflow {
     const NAME: &'static str = "AkashDeploymentWorkflow";
@@ -3101,6 +3119,491 @@ impl ::prost::Name for AkashProviderReputation {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.AkashProviderReputation".into()
+    }
+}
+/// Bid info stored during workflow (mirrors cosmos_client::BidInfo)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashBidInfo {
+    #[prost(string, tag = "1")]
+    pub owner: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub dseq: u64,
+    #[prost(uint32, tag = "3")]
+    pub gseq: u32,
+    #[prost(uint32, tag = "4")]
+    pub oseq: u32,
+    #[prost(string, tag = "5")]
+    pub provider: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub price_denom: ::prost::alloc::string::String,
+    #[prost(string, tag = "7")]
+    pub price_amount: ::prost::alloc::string::String,
+    #[prost(enumeration = "AkashBidState", tag = "8")]
+    pub state: i32,
+    #[prost(int64, tag = "9")]
+    pub created_at: i64,
+}
+impl ::prost::Name for AkashBidInfo {
+    const NAME: &'static str = "AkashBidInfo";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashBidInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashBidInfo".into()
+    }
+}
+/// Certificate info stored during workflow (mirrors cosmos_client::CertificateInfo)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashCertificateInfo {
+    #[prost(string, tag = "1")]
+    pub owner: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub serial: ::prost::alloc::string::String,
+    #[prost(enumeration = "AkashCertState", tag = "3")]
+    pub state: i32,
+    #[prost(bytes = "vec", tag = "4")]
+    pub cert_pem: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "5")]
+    pub pubkey: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for AkashCertificateInfo {
+    const NAME: &'static str = "AkashCertificateInfo";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashCertificateInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashCertificateInfo".into()
+    }
+}
+/// Lease ID info stored after lease creation
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashLeaseIdInfo {
+    #[prost(string, tag = "1")]
+    pub owner: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub dseq: u64,
+    #[prost(uint32, tag = "3")]
+    pub gseq: u32,
+    #[prost(uint32, tag = "4")]
+    pub oseq: u32,
+    #[prost(string, tag = "5")]
+    pub provider: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AkashLeaseIdInfo {
+    const NAME: &'static str = "AkashLeaseIdInfo";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashLeaseIdInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashLeaseIdInfo".into()
+    }
+}
+/// Lease info with full state (mirrors cosmos_client::LeaseInfo)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashLeaseInfo {
+    #[prost(string, tag = "1")]
+    pub owner: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub dseq: u64,
+    #[prost(uint32, tag = "3")]
+    pub gseq: u32,
+    #[prost(uint32, tag = "4")]
+    pub oseq: u32,
+    #[prost(string, tag = "5")]
+    pub provider: ::prost::alloc::string::String,
+    #[prost(enumeration = "AkashLeaseState", tag = "6")]
+    pub state: i32,
+    #[prost(string, tag = "7")]
+    pub price_denom: ::prost::alloc::string::String,
+    #[prost(string, tag = "8")]
+    pub price_amount: ::prost::alloc::string::String,
+    #[prost(int64, tag = "9")]
+    pub created_at: i64,
+    #[prost(int64, tag = "10")]
+    pub closed_on: i64,
+}
+impl ::prost::Name for AkashLeaseInfo {
+    const NAME: &'static str = "AkashLeaseInfo";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashLeaseInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashLeaseInfo".into()
+    }
+}
+/// Workflow automation options (from CLI flags)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashWorkflowOptions {
+    /// Skip authz/feegrant setup steps
+    #[prost(bool, tag = "1")]
+    pub skip_grants: bool,
+    /// Auto-select cheapest bid from trusted providers
+    #[prost(bool, tag = "2")]
+    pub auto_select_bid: bool,
+    /// Minimum balance required to proceed (uakt)
+    #[prost(uint64, tag = "3")]
+    pub min_balance_uakt: u64,
+    /// Blocks to wait for bids (default: 2)
+    #[prost(uint32, tag = "4")]
+    pub bid_wait_blocks: u32,
+    /// Filter bids by these providers (empty = all providers)
+    #[prost(string, repeated, tag = "5")]
+    pub trusted_providers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Maximum retries on transient failures
+    #[prost(uint32, tag = "6")]
+    pub max_retries: u32,
+}
+impl ::prost::Name for AkashWorkflowOptions {
+    const NAME: &'static str = "AkashWorkflowOptions";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashWorkflowOptions".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashWorkflowOptions".into()
+    }
+}
+/// Service endpoint with port mapping (after manifest send)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashServiceEndpoint {
+    #[prost(string, tag = "1")]
+    pub service_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub external_uri: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub internal_port: u32,
+    #[prost(uint32, tag = "4")]
+    pub external_port: u32,
+    /// "tcp", "udp", "http"
+    #[prost(string, tag = "5")]
+    pub protocol: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AkashServiceEndpoint {
+    const NAME: &'static str = "AkashServiceEndpoint";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashServiceEndpoint".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashServiceEndpoint".into()
+    }
+}
+/// Trusted provider entry stored in Cnidarium
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TrustedProvider {
+    #[prost(string, tag = "1")]
+    pub address: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub added_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for TrustedProvider {
+    const NAME: &'static str = "TrustedProvider";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.TrustedProvider".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.TrustedProvider".into()
+    }
+}
+/// Collection of trusted providers
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TrustedProviderList {
+    #[prost(message, repeated, tag = "1")]
+    pub providers: ::prost::alloc::vec::Vec<TrustedProvider>,
+    #[prost(message, optional, tag = "2")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for TrustedProviderList {
+    const NAME: &'static str = "TrustedProviderList";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.TrustedProviderList".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.TrustedProviderList".into()
+    }
+}
+/// Request to run automated deployment workflow
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RunAkashDeploymentRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub options: ::core::option::Option<AkashWorkflowOptions>,
+}
+impl ::prost::Name for RunAkashDeploymentRequest {
+    const NAME: &'static str = "RunAkashDeploymentRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RunAkashDeploymentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RunAkashDeploymentRequest".into()
+    }
+}
+/// Response from running deployment workflow
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RunAkashDeploymentResponse {
+    #[prost(message, optional, tag = "1")]
+    pub workflow: ::core::option::Option<AkashDeploymentWorkflow>,
+    #[prost(bool, tag = "2")]
+    pub completed: bool,
+    /// If not completed, what input is needed
+    #[prost(message, optional, tag = "3")]
+    pub input_required: ::core::option::Option<WorkflowInputRequired>,
+}
+impl ::prost::Name for RunAkashDeploymentResponse {
+    const NAME: &'static str = "RunAkashDeploymentResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RunAkashDeploymentResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RunAkashDeploymentResponse".into()
+    }
+}
+/// What input the workflow needs to continue
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorkflowInputRequired {
+    #[prost(enumeration = "WorkflowInputType", tag = "1")]
+    pub input_type: i32,
+    /// For BID_SELECTION: available bids
+    #[prost(message, repeated, tag = "2")]
+    pub available_bids: ::prost::alloc::vec::Vec<AkashBidInfo>,
+    /// For GRANT_APPROVAL: grant request details
+    #[prost(message, optional, tag = "3")]
+    pub grant_request: ::core::option::Option<WorkflowGrantState>,
+    #[prost(string, tag = "4")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for WorkflowInputRequired {
+    const NAME: &'static str = "WorkflowInputRequired";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.WorkflowInputRequired".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.WorkflowInputRequired".into()
+    }
+}
+/// Request to get bids for a deployment
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetAkashBidsRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub trusted_only: bool,
+}
+impl ::prost::Name for GetAkashBidsRequest {
+    const NAME: &'static str = "GetAkashBidsRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GetAkashBidsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GetAkashBidsRequest".into()
+    }
+}
+/// Response with available bids
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetAkashBidsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub bids: ::prost::alloc::vec::Vec<AkashBidInfo>,
+    #[prost(uint64, tag = "2")]
+    pub dseq: u64,
+}
+impl ::prost::Name for GetAkashBidsResponse {
+    const NAME: &'static str = "GetAkashBidsResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GetAkashBidsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GetAkashBidsResponse".into()
+    }
+}
+/// Request to select a bid and create lease
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SelectAkashBidRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub provider_address: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SelectAkashBidRequest {
+    const NAME: &'static str = "SelectAkashBidRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.SelectAkashBidRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.SelectAkashBidRequest".into()
+    }
+}
+/// Request to close an active lease
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CloseAkashLeaseRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for CloseAkashLeaseRequest {
+    const NAME: &'static str = "CloseAkashLeaseRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.CloseAkashLeaseRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.CloseAkashLeaseRequest".into()
+    }
+}
+/// Request to get lease status
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetLeaseStatusRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GetLeaseStatusRequest {
+    const NAME: &'static str = "GetLeaseStatusRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GetLeaseStatusRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GetLeaseStatusRequest".into()
+    }
+}
+/// Response with lease status
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeaseStatusResponse {
+    #[prost(message, optional, tag = "1")]
+    pub lease: ::core::option::Option<AkashLeaseInfo>,
+    #[prost(message, repeated, tag = "2")]
+    pub endpoints: ::prost::alloc::vec::Vec<AkashServiceEndpoint>,
+    #[prost(uint64, tag = "3")]
+    pub balance_remaining_uakt: u64,
+    #[prost(string, tag = "4")]
+    pub deployment_status: ::prost::alloc::string::String,
+}
+impl ::prost::Name for LeaseStatusResponse {
+    const NAME: &'static str = "LeaseStatusResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.LeaseStatusResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.LeaseStatusResponse".into()
+    }
+}
+/// Request to add a trusted provider
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AddTrustedProviderRequest {
+    #[prost(string, tag = "1")]
+    pub address: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AddTrustedProviderRequest {
+    const NAME: &'static str = "AddTrustedProviderRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AddTrustedProviderRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AddTrustedProviderRequest".into()
+    }
+}
+/// Request to remove a trusted provider
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemoveTrustedProviderRequest {
+    #[prost(string, tag = "1")]
+    pub address: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RemoveTrustedProviderRequest {
+    const NAME: &'static str = "RemoveTrustedProviderRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RemoveTrustedProviderRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RemoveTrustedProviderRequest".into()
+    }
+}
+/// Request to list trusted providers
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListTrustedProvidersRequest {}
+impl ::prost::Name for ListTrustedProvidersRequest {
+    const NAME: &'static str = "ListTrustedProvidersRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ListTrustedProvidersRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ListTrustedProvidersRequest".into()
+    }
+}
+/// Response with trusted providers
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListTrustedProvidersResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub providers: ::prost::alloc::vec::Vec<TrustedProvider>,
+}
+impl ::prost::Name for ListTrustedProvidersResponse {
+    const NAME: &'static str = "ListTrustedProvidersResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ListTrustedProvidersResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ListTrustedProvidersResponse".into()
+    }
+}
+/// Generic operation result
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OperationResult {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub tx_hash: ::prost::alloc::string::String,
+}
+impl ::prost::Name for OperationResult {
+    const NAME: &'static str = "OperationResult";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.OperationResult".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.OperationResult".into()
     }
 }
 /// Default parameters for grants a granter will issue
@@ -3913,6 +4416,142 @@ impl AkashWorkflowStatus {
             "AKASH_WORKFLOW_STATUS_COMPLETED" => Some(Self::Completed),
             "AKASH_WORKFLOW_STATUS_FAILED" => Some(Self::Failed),
             "AKASH_WORKFLOW_STATUS_CANCELLED" => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
+}
+/// Bid state enum
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AkashBidState {
+    Invalid = 0,
+    Open = 1,
+    Active = 2,
+    Lost = 3,
+    Closed = 4,
+}
+impl AkashBidState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Invalid => "AKASH_BID_STATE_INVALID",
+            Self::Open => "AKASH_BID_STATE_OPEN",
+            Self::Active => "AKASH_BID_STATE_ACTIVE",
+            Self::Lost => "AKASH_BID_STATE_LOST",
+            Self::Closed => "AKASH_BID_STATE_CLOSED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AKASH_BID_STATE_INVALID" => Some(Self::Invalid),
+            "AKASH_BID_STATE_OPEN" => Some(Self::Open),
+            "AKASH_BID_STATE_ACTIVE" => Some(Self::Active),
+            "AKASH_BID_STATE_LOST" => Some(Self::Lost),
+            "AKASH_BID_STATE_CLOSED" => Some(Self::Closed),
+            _ => None,
+        }
+    }
+}
+/// Certificate state enum
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AkashCertState {
+    Invalid = 0,
+    Valid = 1,
+    Revoked = 2,
+}
+impl AkashCertState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Invalid => "AKASH_CERT_STATE_INVALID",
+            Self::Valid => "AKASH_CERT_STATE_VALID",
+            Self::Revoked => "AKASH_CERT_STATE_REVOKED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AKASH_CERT_STATE_INVALID" => Some(Self::Invalid),
+            "AKASH_CERT_STATE_VALID" => Some(Self::Valid),
+            "AKASH_CERT_STATE_REVOKED" => Some(Self::Revoked),
+            _ => None,
+        }
+    }
+}
+/// Lease state enum
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AkashLeaseState {
+    Invalid = 0,
+    Active = 1,
+    InsufficientFunds = 2,
+    Closed = 3,
+}
+impl AkashLeaseState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Invalid => "AKASH_LEASE_STATE_INVALID",
+            Self::Active => "AKASH_LEASE_STATE_ACTIVE",
+            Self::InsufficientFunds => "AKASH_LEASE_STATE_INSUFFICIENT_FUNDS",
+            Self::Closed => "AKASH_LEASE_STATE_CLOSED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AKASH_LEASE_STATE_INVALID" => Some(Self::Invalid),
+            "AKASH_LEASE_STATE_ACTIVE" => Some(Self::Active),
+            "AKASH_LEASE_STATE_INSUFFICIENT_FUNDS" => Some(Self::InsufficientFunds),
+            "AKASH_LEASE_STATE_CLOSED" => Some(Self::Closed),
+            _ => None,
+        }
+    }
+}
+/// Types of input the workflow might require
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorkflowInputType {
+    Unspecified = 0,
+    BidSelection = 1,
+    GrantApproval = 2,
+    SdlConfiguration = 3,
+}
+impl WorkflowInputType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKFLOW_INPUT_TYPE_UNSPECIFIED",
+            Self::BidSelection => "WORKFLOW_INPUT_TYPE_BID_SELECTION",
+            Self::GrantApproval => "WORKFLOW_INPUT_TYPE_GRANT_APPROVAL",
+            Self::SdlConfiguration => "WORKFLOW_INPUT_TYPE_SDL_CONFIGURATION",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKFLOW_INPUT_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKFLOW_INPUT_TYPE_BID_SELECTION" => Some(Self::BidSelection),
+            "WORKFLOW_INPUT_TYPE_GRANT_APPROVAL" => Some(Self::GrantApproval),
+            "WORKFLOW_INPUT_TYPE_SDL_CONFIGURATION" => Some(Self::SdlConfiguration),
             _ => None,
         }
     }

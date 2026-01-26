@@ -3,12 +3,16 @@ pub mod bootstrap;
 pub mod akash;
 pub mod api_client;
 pub mod authz;
+pub mod certificate;
+pub mod cosmos_client;
 pub mod granter;
 pub mod proto_types;
 pub mod reputation;
 pub mod requester;
 pub mod sdl;
+pub mod signer;
 pub mod transaction;
+pub mod tx_lifecycle;
 pub mod workflow;
 
 #[cfg(feature = "testing")]

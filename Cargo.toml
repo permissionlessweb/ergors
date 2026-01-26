@@ -71,6 +71,7 @@ commonware-p2p = { version = "0.0.63" }
 commonware-runtime  = { version = "0.0.63" }
 commonware-storage = { version = "0.0.63" }
 commonware-utils  = { version = "0.0.63" }
+cosmrs = { version = "0.19", default-features = false, features = ["cosmwasm"] }
 cosmwasm-std = { version = "=3.0.2", features = ["stargate"] }
 cosmwasm-vm = { version = "3.0.1", features = ["stargate"] }
 decaf377                         = { default-features = false, version = "0.10.1" }

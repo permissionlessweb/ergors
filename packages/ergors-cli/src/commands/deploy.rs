@@ -35,9 +35,32 @@ pub enum DeployCmd {
         /// Auto-advance through all workflow steps
         #[arg(long)]
         auto: bool,
+        /// Skip authz/feegrant setup steps
+        #[arg(long)]
+        skip_grants: bool,
+        /// Auto-select cheapest bid from trusted providers
+        #[arg(long)]
+        auto_select_bid: bool,
+        /// Minimum balance required in uakt (default: 5000000)
+        #[arg(long, default_value = "5000000")]
+        min_balance: u64,
         /// SDL template variables (key=value pairs)
         #[arg(long, value_parser = parse_key_val)]
         var: Vec<(String, String)>,
+    },
+    /// Run automated deployment workflow on existing session
+    Run {
+        /// Session ID
+        session_id: String,
+        /// Skip authz/feegrant setup steps
+        #[arg(long)]
+        skip_grants: bool,
+        /// Auto-select cheapest bid from trusted providers
+        #[arg(long)]
+        auto_select_bid: bool,
+        /// Minimum balance required in uakt
+        #[arg(long, default_value = "5000000")]
+        min_balance: u64,
     },
     /// List deployment workflows
     List {
@@ -166,6 +189,34 @@ pub enum DeployCmd {
         #[arg(long, default_value = "uakt")]
         denom: String,
     },
+    /// Close an active lease
+    CloseLease {
+        /// Session ID
+        session_id: String,
+    },
+    /// Get lease status
+    Status {
+        /// Session ID
+        session_id: String,
+        /// Follow logs (poll continuously)
+        #[arg(short, long)]
+        follow: bool,
+    },
+    /// List trusted providers
+    TrustedProviders,
+    /// Add a trusted provider
+    AddProvider {
+        /// Provider address
+        address: String,
+        /// Optional label for the provider
+        #[arg(long, default_value = "")]
+        label: String,
+    },
+    /// Remove a trusted provider
+    RemoveProvider {
+        /// Provider address
+        address: String,
+    },
 }
 
 /// Parse a key=value pair
@@ -187,6 +238,9 @@ impl DeployCmd {
                 node,
                 chain_id,
                 auto,
+                skip_grants,
+                auto_select_bid,
+                min_balance,
                 var,
             } => {
                 // Resolve SDL content
@@ -215,7 +269,71 @@ impl DeployCmd {
                     .await?;
 
                 if response.success {
-                    if cli.json {
+                    let session_id = response.workflow.as_ref().map(|wf| wf.session_id.clone()).unwrap_or_default();
+
+                    if !cli.json {
+                        println!("Deployment workflow created!");
+                        if let Some(wf) = &response.workflow {
+                            println!("  Session ID: {}", wf.session_id);
+                            println!("  Account:    {}", wf.account_address);
+                            println!("  Chain:      {}", wf.chain_id);
+                            println!("  Node:       {}", wf.node_endpoint);
+                            println!("  Step:       {}", format_step(wf.current_step));
+                            println!("  Status:     {}", format_status(wf.status));
+                        }
+                    }
+
+                    // If auto mode, run the automated workflow
+                    if *auto && !session_id.is_empty() {
+                        if !cli.json {
+                            println!("\nRunning automated workflow...");
+                        }
+
+                        // Get trusted providers list for auto-select
+                        let trusted_providers = if *auto_select_bid {
+                            match client.list_trusted_providers().await {
+                                Ok(resp) => resp.providers.iter().map(|p| p.address.clone()).collect(),
+                                Err(_) => vec![],
+                            }
+                        } else {
+                            vec![]
+                        };
+
+                        let run_response = client
+                            .run_akash_deployment(
+                                &session_id,
+                                *skip_grants,
+                                *auto_select_bid,
+                                *min_balance,
+                                trusted_providers,
+                            )
+                            .await?;
+
+                        if cli.json {
+                            let mut json = serde_json::json!({
+                                "session_id": session_id,
+                                "completed": run_response.completed,
+                            });
+                            if let Some(wf) = &run_response.workflow {
+                                json["current_step"] = serde_json::json!(format_step(wf.current_step));
+                                json["status"] = serde_json::json!(format_status(wf.status));
+                            }
+                            if let Some(input) = &run_response.input_required {
+                                json["input_required"] = serde_json::json!(&input.message);
+                            }
+                            println!("{}", serde_json::to_string_pretty(&json)?);
+                        } else if run_response.completed {
+                            println!("Deployment workflow completed!");
+                        } else {
+                            if let Some(wf) = &run_response.workflow {
+                                println!("  Step:    {}", format_step(wf.current_step));
+                                println!("  Status:  {}", format_status(wf.status));
+                            }
+                            if let Some(input) = &run_response.input_required {
+                                println!("  Needs:   {}", input.message);
+                            }
+                        }
+                    } else if cli.json {
                         if let Some(wf) = &response.workflow {
                             println!(
                                 "{}",
@@ -228,16 +346,6 @@ impl DeployCmd {
                                     "node_endpoint": wf.node_endpoint,
                                 }))?
                             );
-                        }
-                    } else {
-                        println!("Deployment workflow created!");
-                        if let Some(wf) = &response.workflow {
-                            println!("  Session ID: {}", wf.session_id);
-                            println!("  Account:    {}", wf.account_address);
-                            println!("  Chain:      {}", wf.chain_id);
-                            println!("  Node:       {}", wf.node_endpoint);
-                            println!("  Step:       {}", format_step(wf.current_step));
-                            println!("  Status:     {}", format_status(wf.status));
                         }
                     }
                 } else {
@@ -694,6 +802,201 @@ impl DeployCmd {
                     println!("  Address: {}", response.address);
                     println!("  Denom:   {}", response.denom);
                     println!("  Amount:  {}", response.amount);
+                }
+                Ok(())
+            }
+            DeployCmd::Run {
+                session_id,
+                skip_grants,
+                auto_select_bid,
+                min_balance,
+            } => {
+                // Get trusted providers list for auto-select
+                let trusted_providers = if *auto_select_bid {
+                    match client.list_trusted_providers().await {
+                        Ok(resp) => resp.providers.iter().map(|p| p.address.clone()).collect(),
+                        Err(_) => vec![],
+                    }
+                } else {
+                    vec![]
+                };
+
+                let response = client
+                    .run_akash_deployment(
+                        session_id,
+                        *skip_grants,
+                        *auto_select_bid,
+                        *min_balance,
+                        trusted_providers,
+                    )
+                    .await?;
+
+                if cli.json {
+                    let mut json = serde_json::json!({
+                        "completed": response.completed,
+                    });
+                    if let Some(wf) = &response.workflow {
+                        json["session_id"] = serde_json::json!(&wf.session_id);
+                        json["current_step"] = serde_json::json!(format_step(wf.current_step));
+                        json["status"] = serde_json::json!(format_status(wf.status));
+                    }
+                    if let Some(input) = &response.input_required {
+                        json["input_required"] = serde_json::json!(&input.message);
+                    }
+                    println!("{}", serde_json::to_string_pretty(&json)?);
+                } else if response.completed {
+                    println!("Deployment workflow completed!");
+                    if let Some(wf) = &response.workflow {
+                        println!("  Session: {}", wf.session_id);
+                        println!("  Status:  {}", format_status(wf.status));
+                    }
+                } else {
+                    println!("Deployment workflow running...");
+                    if let Some(wf) = &response.workflow {
+                        println!("  Session: {}", wf.session_id);
+                        println!("  Step:    {}", format_step(wf.current_step));
+                        println!("  Status:  {}", format_status(wf.status));
+                    }
+                    if let Some(input) = &response.input_required {
+                        println!("  Needs:   {}", input.message);
+                    }
+                }
+                Ok(())
+            }
+            DeployCmd::CloseLease { session_id } => {
+                let result = client.close_akash_lease(session_id).await?;
+
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": result.success,
+                            "message": result.message,
+                        }))?
+                    );
+                } else if result.success {
+                    println!("Lease closed for session: {}", session_id);
+                } else {
+                    eprintln!("Failed to close lease: {}", result.message);
+                }
+                Ok(())
+            }
+            DeployCmd::Status { session_id, follow } => {
+                loop {
+                    let response = client.get_lease_status(session_id).await?;
+
+                    if cli.json {
+                        let mut json = serde_json::json!({
+                            "deployment_status": response.deployment_status,
+                            "balance_remaining_uakt": response.balance_remaining_uakt,
+                        });
+                        if let Some(lease) = &response.lease {
+                            json["lease"] = serde_json::json!({
+                                "owner": lease.owner,
+                                "dseq": lease.dseq,
+                                "provider": lease.provider,
+                                "state": lease.state,
+                            });
+                        }
+                        if !response.endpoints.is_empty() {
+                            json["endpoints"] = serde_json::json!(response.endpoints.iter().map(|e| {
+                                serde_json::json!({
+                                    "service": e.service_name,
+                                    "uri": e.external_uri,
+                                    "port": e.external_port,
+                                })
+                            }).collect::<Vec<_>>());
+                        }
+                        println!("{}", serde_json::to_string_pretty(&json)?);
+                    } else {
+                        println!("Lease Status: {}", response.deployment_status);
+                        if let Some(lease) = &response.lease {
+                            println!("  Owner:    {}", lease.owner);
+                            println!("  DSEQ:     {}", lease.dseq);
+                            println!("  Provider: {}", lease.provider);
+                        }
+                        println!("  Balance:  {} uakt remaining", response.balance_remaining_uakt);
+                        if !response.endpoints.is_empty() {
+                            println!("  Endpoints:");
+                            for ep in &response.endpoints {
+                                println!("    {} -> {}:{}", ep.service_name, ep.external_uri, ep.external_port);
+                            }
+                        }
+                    }
+
+                    if !*follow {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
+                Ok(())
+            }
+            DeployCmd::TrustedProviders => {
+                let response = client.list_trusted_providers().await?;
+
+                if cli.json {
+                    let providers: Vec<_> = response
+                        .providers
+                        .iter()
+                        .map(|p| {
+                            serde_json::json!({
+                                "address": p.address,
+                                "label": p.label,
+                            })
+                        })
+                        .collect();
+                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({"providers": providers}))?);
+                } else {
+                    println!("Trusted Providers ({} total)", response.providers.len());
+                    println!("=======================");
+                    if response.providers.is_empty() {
+                        println!("No trusted providers configured.");
+                        println!("\nAdd providers with: ergors-cli deploy add-provider <address>");
+                    } else {
+                        for p in &response.providers {
+                            if p.label.is_empty() {
+                                println!("  {}", p.address);
+                            } else {
+                                println!("  {} ({})", p.address, p.label);
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+            DeployCmd::AddProvider { address, label } => {
+                let result = client.add_trusted_provider(address, label).await?;
+
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": result.success,
+                            "message": result.message,
+                        }))?
+                    );
+                } else if result.success {
+                    println!("Trusted provider added: {}", address);
+                } else {
+                    eprintln!("Failed to add provider: {}", result.message);
+                }
+                Ok(())
+            }
+            DeployCmd::RemoveProvider { address } => {
+                let result = client.remove_trusted_provider(address).await?;
+
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": result.success,
+                            "message": result.message,
+                        }))?
+                    );
+                } else if result.success {
+                    println!("Trusted provider removed: {}", address);
+                } else {
+                    eprintln!("Failed to remove provider: {}", result.message);
                 }
                 Ok(())
             }

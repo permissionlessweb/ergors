@@ -1073,6 +1073,8 @@ message AkashDeployConfig {
   string default_key_name = 7;
   // Trusted provider addresses (optional whitelist)
   repeated string trusted_providers = 8;
+  // REST/LCD endpoint for queries (e.g. "https://rest-akash.ecostake.com")
+  string rest_endpoint = 9;
 }
 
 // ==============================================
@@ -1251,6 +1253,23 @@ message AkashDeploymentWorkflow {
   uint64 grant_duration_seconds = 25;
   uint64 grant_spend_limit_uakt = 26;
   string grant_purpose = 27;
+
+  // ===== Automated Workflow Fields (tags 30+) =====
+
+  // Bids received during BidWait step
+  repeated AkashBidInfo available_bids = 30;
+
+  // Certificate info (cached from chain or newly created)
+  AkashCertificateInfo certificate_info = 31;
+
+  // Lease ID after lease creation
+  AkashLeaseIdInfo lease_id_info = 32;
+
+  // Workflow automation options
+  AkashWorkflowOptions options = 33;
+
+  // Service endpoints with port mappings (after manifest send)
+  repeated AkashServiceEndpoint service_endpoints = 34;
 }
 
 // Workflow step log entry for audit
@@ -1275,6 +1294,215 @@ message AkashProviderReputation {
   uint64 avg_response_time_ms = 6;
   bool is_trusted = 7;
   google.protobuf.Timestamp updated_at = 8;
+}
+
+// ========================================
+// Automated Workflow Types
+// ========================================
+
+// Bid info stored during workflow (mirrors cosmos_client::BidInfo)
+message AkashBidInfo {
+  string owner = 1;
+  uint64 dseq = 2;
+  uint32 gseq = 3;
+  uint32 oseq = 4;
+  string provider = 5;
+  string price_denom = 6;
+  string price_amount = 7;
+  AkashBidState state = 8;
+  int64 created_at = 9;
+}
+
+// Bid state enum
+enum AkashBidState {
+  AKASH_BID_STATE_INVALID = 0;
+  AKASH_BID_STATE_OPEN = 1;
+  AKASH_BID_STATE_ACTIVE = 2;
+  AKASH_BID_STATE_LOST = 3;
+  AKASH_BID_STATE_CLOSED = 4;
+}
+
+// Certificate info stored during workflow (mirrors cosmos_client::CertificateInfo)
+message AkashCertificateInfo {
+  string owner = 1;
+  string serial = 2;
+  AkashCertState state = 3;
+  bytes cert_pem = 4;
+  bytes pubkey = 5;
+}
+
+// Certificate state enum
+enum AkashCertState {
+  AKASH_CERT_STATE_INVALID = 0;
+  AKASH_CERT_STATE_VALID = 1;
+  AKASH_CERT_STATE_REVOKED = 2;
+}
+
+// Lease ID info stored after lease creation
+message AkashLeaseIdInfo {
+  string owner = 1;
+  uint64 dseq = 2;
+  uint32 gseq = 3;
+  uint32 oseq = 4;
+  string provider = 5;
+}
+
+// Lease info with full state (mirrors cosmos_client::LeaseInfo)
+message AkashLeaseInfo {
+  string owner = 1;
+  uint64 dseq = 2;
+  uint32 gseq = 3;
+  uint32 oseq = 4;
+  string provider = 5;
+  AkashLeaseState state = 6;
+  string price_denom = 7;
+  string price_amount = 8;
+  int64 created_at = 9;
+  int64 closed_on = 10;
+}
+
+// Lease state enum
+enum AkashLeaseState {
+  AKASH_LEASE_STATE_INVALID = 0;
+  AKASH_LEASE_STATE_ACTIVE = 1;
+  AKASH_LEASE_STATE_INSUFFICIENT_FUNDS = 2;
+  AKASH_LEASE_STATE_CLOSED = 3;
+}
+
+// Workflow automation options (from CLI flags)
+message AkashWorkflowOptions {
+  // Skip authz/feegrant setup steps
+  bool skip_grants = 1;
+  // Auto-select cheapest bid from trusted providers
+  bool auto_select_bid = 2;
+  // Minimum balance required to proceed (uakt)
+  uint64 min_balance_uakt = 3;
+  // Blocks to wait for bids (default: 2)
+  uint32 bid_wait_blocks = 4;
+  // Filter bids by these providers (empty = all providers)
+  repeated string trusted_providers = 5;
+  // Maximum retries on transient failures
+  uint32 max_retries = 6;
+}
+
+// Service endpoint with port mapping (after manifest send)
+message AkashServiceEndpoint {
+  string service_name = 1;
+  string external_uri = 2;
+  uint32 internal_port = 3;
+  uint32 external_port = 4;
+  string protocol = 5;  // "tcp", "udp", "http"
+}
+
+// Trusted provider entry stored in Cnidarium
+message TrustedProvider {
+  string address = 1;
+  string label = 2;
+  google.protobuf.Timestamp added_at = 3;
+}
+
+// Collection of trusted providers
+message TrustedProviderList {
+  repeated TrustedProvider providers = 1;
+  google.protobuf.Timestamp updated_at = 2;
+}
+
+// ========================================
+// Workflow Control RPC Messages
+// ========================================
+
+// Request to run automated deployment workflow
+message RunAkashDeploymentRequest {
+  string session_id = 1;
+  AkashWorkflowOptions options = 2;
+}
+
+// Response from running deployment workflow
+message RunAkashDeploymentResponse {
+  AkashDeploymentWorkflow workflow = 1;
+  bool completed = 2;
+  // If not completed, what input is needed
+  WorkflowInputRequired input_required = 3;
+}
+
+// What input the workflow needs to continue
+message WorkflowInputRequired {
+  WorkflowInputType input_type = 1;
+  // For BID_SELECTION: available bids
+  repeated AkashBidInfo available_bids = 2;
+  // For GRANT_APPROVAL: grant request details
+  WorkflowGrantState grant_request = 3;
+  string message = 4;
+}
+
+// Types of input the workflow might require
+enum WorkflowInputType {
+  WORKFLOW_INPUT_TYPE_UNSPECIFIED = 0;
+  WORKFLOW_INPUT_TYPE_BID_SELECTION = 1;
+  WORKFLOW_INPUT_TYPE_GRANT_APPROVAL = 2;
+  WORKFLOW_INPUT_TYPE_SDL_CONFIGURATION = 3;
+}
+
+// Request to get bids for a deployment
+message GetAkashBidsRequest {
+  string session_id = 1;
+  bool trusted_only = 2;
+}
+
+// Response with available bids
+message GetAkashBidsResponse {
+  repeated AkashBidInfo bids = 1;
+  uint64 dseq = 2;
+}
+
+// Request to select a bid and create lease
+message SelectAkashBidRequest {
+  string session_id = 1;
+  string provider_address = 2;
+}
+
+// Request to close an active lease
+message CloseAkashLeaseRequest {
+  string session_id = 1;
+}
+
+// Request to get lease status
+message GetLeaseStatusRequest {
+  string session_id = 1;
+}
+
+// Response with lease status
+message LeaseStatusResponse {
+  AkashLeaseInfo lease = 1;
+  repeated AkashServiceEndpoint endpoints = 2;
+  uint64 balance_remaining_uakt = 3;
+  string deployment_status = 4;
+}
+
+// Request to add a trusted provider
+message AddTrustedProviderRequest {
+  string address = 1;
+  string label = 2;
+}
+
+// Request to remove a trusted provider
+message RemoveTrustedProviderRequest {
+  string address = 1;
+}
+
+// Request to list trusted providers
+message ListTrustedProvidersRequest {}
+
+// Response with trusted providers
+message ListTrustedProvidersResponse {
+  repeated TrustedProvider providers = 1;
+}
+
+// Generic operation result
+message OperationResult {
+  bool success = 1;
+  string message = 2;
+  string tx_hash = 3;
 }
 
 // ========================================

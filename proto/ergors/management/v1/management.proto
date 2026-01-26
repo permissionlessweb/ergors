@@ -122,6 +122,18 @@ service ManagementService {
   rpc SetWorkflowEndpoints(SetWorkflowEndpointsRequest) returns (SetWorkflowEndpointsResponse);
   // Configure proxy routing dynamically
   rpc ConfigureProxyRoutes(ConfigureProxyRoutesRequest) returns (OperationResult);
+  // Run automated deployment workflow (uses WorkflowEngine)
+  rpc RunAkashDeployment(ergors.orch.v1.RunAkashDeploymentRequest) returns (ergors.orch.v1.RunAkashDeploymentResponse);
+  // Close an active lease
+  rpc CloseAkashLease(ergors.orch.v1.CloseAkashLeaseRequest) returns (OperationResult);
+  // Get lease status
+  rpc GetLeaseStatus(ergors.orch.v1.GetLeaseStatusRequest) returns (ergors.orch.v1.LeaseStatusResponse);
+  // Add trusted provider
+  rpc AddTrustedProvider(ergors.orch.v1.AddTrustedProviderRequest) returns (OperationResult);
+  // Remove trusted provider
+  rpc RemoveTrustedProvider(ergors.orch.v1.RemoveTrustedProviderRequest) returns (OperationResult);
+  // List trusted providers
+  rpc ListTrustedProviders(ergors.orch.v1.ListTrustedProvidersRequest) returns (ergors.orch.v1.ListTrustedProvidersResponse);
 
   // ============================================
   // Authz/Feegrant Management

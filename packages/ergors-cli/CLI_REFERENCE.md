@@ -25,7 +25,7 @@ ergors-cli [OPTIONS] <COMMAND>
 | `network` | Network and peer management | peers, topology, add, remove |
 | `provider` | LLM provider management | list, add, test, default |
 | `sdl` | SDL template management | list, get-template, get-defaults, render |
-| `deploy` | Akash deployment management | create, list, get, advance, bids, select, cancel, set-endpoints, configure-proxy, request-grant, approve-grant, revoke-grant, list-grants, query-balance |
+| `deploy` | Akash deployment management | create, run, list, get, advance, bids, select, cancel, close-lease, status, set-endpoints, configure-proxy, trusted-providers, add-provider, remove-provider, request-grant, approve-grant, revoke-grant, list-grants, query-balance |
 | `workspace` | Git workspace management | add, list, show, remove, sync, task |
 | `status` | Shortcut for `engine status` | - |
 
@@ -100,15 +100,21 @@ ergors-cli [OPTIONS] <COMMAND>
 
 | Command | Description | Options/Arguments | Example |
 |---------|-------------|-------------------|---------|
-| `deploy create` | Create new Akash deployment | `--sdl <PATH>` or `--sdl-content <YAML>` - SDL source<br>`--key-name <NAME>` - Signing key (default: `default`)<br>`--account-index <N>` - HD account index (default: `0`)<br>`--node <URL>` - RPC endpoint (env: `AKASH_NODE`)<br>`--chain-id <ID>` - Chain ID (env: `AKASH_CHAIN_ID`)<br>`--auto` - Auto-advance all steps<br>`--var <KEY=VALUE>` - Template variables | `ergors-cli deploy create --sdl deployment.yaml --auto` |
+| `deploy create` | Create new Akash deployment | `--sdl <PATH>` or `--sdl-content <YAML>` - SDL source<br>`--key-name <NAME>` - Signing key (default: `default`)<br>`--account-index <N>` - HD account index (default: `0`)<br>`--node <URL>` - RPC endpoint (env: `AKASH_NODE`)<br>`--chain-id <ID>` - Chain ID (env: `AKASH_CHAIN_ID`)<br>`--auto` - Auto-advance all steps<br>`--skip-grants` - Skip authz/feegrant setup<br>`--auto-select-bid` - Auto-select cheapest trusted provider<br>`--min-balance <UAKT>` - Minimum balance required (default: `5000000`)<br>`--var <KEY=VALUE>` - Template variables | `ergors-cli deploy create --sdl deployment.yaml --auto --skip-grants` |
+| `deploy run <SESSION>` | Run automated workflow on existing session | `<SESSION>` - Session ID<br>`--skip-grants` - Skip authz/feegrant setup<br>`--auto-select-bid` - Auto-select cheapest trusted provider<br>`--min-balance <UAKT>` - Minimum balance required (default: `5000000`) | `ergors-cli deploy run 12345... --auto-select-bid` |
 | `deploy list` | List deployment workflows | `--status <STATUS>` - Filter: pending, running, completed, failed<br>`--limit <N>` - Max results (default: `50`) | `ergors-cli deploy list --status running --limit 10` |
 | `deploy get <SESSION>` | Get deployment workflow details | `<SESSION>` - Session ID | `ergors-cli deploy get 12345678-abcd-...` |
 | `deploy advance <SESSION>` | Advance deployment to next step | `<SESSION>` - Session ID | `ergors-cli deploy advance 12345678-abcd-...` |
 | `deploy bids <SESSION>` | Query bids for a deployment | `<SESSION>` - Session ID | `ergors-cli deploy bids 12345678-abcd-...` |
 | `deploy select <SESSION>` | Select provider for deployment | `<SESSION>` - Session ID<br>`--provider <ADDR>` - Provider address (required)<br>`--price <UAKT>` - Bid price (default: `0`) | `ergors-cli deploy select 12345... --provider akash1provider... --price 100` |
 | `deploy cancel <SESSION>` | Cancel a deployment workflow | `<SESSION>` - Session ID | `ergors-cli deploy cancel 12345678-abcd-...` |
+| `deploy close-lease <SESSION>` | Close an active lease | `<SESSION>` - Session ID | `ergors-cli deploy close-lease 12345678-abcd-...` |
+| `deploy status <SESSION>` | Get lease status | `<SESSION>` - Session ID<br>`-f, --follow` - Follow updates continuously | `ergors-cli deploy status 12345... --follow` |
 | `deploy set-endpoints <SESSION>` | Set discovered endpoints | `<SESSION>` - Session ID<br>`--endpoint <SERVICE=URL>` - Endpoints (repeatable) | `ergors-cli deploy set-endpoints 12345... --endpoint api=https://api.example.com` |
 | `deploy configure-proxy` | Configure proxy routing | `--openai-url <URL>` - OpenAI-compatible API base<br>`--anthropic-url <URL>` - Anthropic-compatible base<br>`--ollama-url <URL>` - Ollama-compatible base<br>`--route <GLOB=URL>` - Model routing rules (repeatable) | `ergors-cli deploy configure-proxy --openai-url https://api.akash.example/v1 --route "gpt-*=https://openai.proxy"` |
+| `deploy trusted-providers` | List trusted providers | - | `ergors-cli deploy trusted-providers` |
+| `deploy add-provider <ADDR>` | Add a trusted provider | `<ADDR>` - Provider address<br>`--label <TEXT>` - Optional label | `ergors-cli deploy add-provider akash1provider... --label "US West"` |
+| `deploy remove-provider <ADDR>` | Remove a trusted provider | `<ADDR>` - Provider address | `ergors-cli deploy remove-provider akash1provider...` |
 | `deploy request-grant` | Request authz grant from coordinator | `--granter <ADDR>` - Granter address (required)<br>`--grantee <ADDR>` - Grantee address (required)<br>`--msg-type <TYPE>` - Message types (repeatable)<br>`--allowance <UAKT>` - Feegrant amount (default: `0`)<br>`--reason <TEXT>` - Reason for request | `ergors-cli deploy request-grant --granter akash1granter... --grantee akash1grantee... --msg-type /akash.deployment.v1beta3.MsgCreateDeployment --allowance 1000000` |
 | `deploy approve-grant <REQ>` | Approve or reject grant request | `<REQ>` - Request ID<br>`--reject` - Reject instead of approve<br>`--reason <TEXT>` - Reason for decision | `ergors-cli deploy approve-grant abc123... --reason "Approved for Q1 campaign"` |
 | `deploy revoke-grant` | Revoke an existing grant | `--granter <ADDR>` - Granter address (required)<br>`--grantee <ADDR>` - Grantee address (required)<br>`--msg-type <TYPE>` - Message type (empty = all)<br>`--revoke-feegrant` - Also revoke feegrant | `ergors-cli deploy revoke-grant --granter akash1granter... --grantee akash1grantee... --revoke-feegrant` |
