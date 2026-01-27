@@ -249,6 +249,7 @@ with_port_forward() {
 
     kubectl port-forward -n "$namespace" "svc/$service" "$ports" > "$pf_log" 2>&1 &
     local pf_pid=$!
+    register_pid "$pf_pid"
 
     # Wait for port-forward to be ready
     if ! wait_for_port "127.0.0.1" "$local_port" 15; then
@@ -267,6 +268,167 @@ with_port_forward() {
     wait "$pf_pid" 2>/dev/null || true
 
     return $rc
+}
+
+# =============================================================================
+# Process Cleanup Helpers
+# =============================================================================
+
+# Global array to track all background PIDs for cleanup
+declare -a ALL_BACKGROUND_PIDS=()
+
+# Register a PID for cleanup tracking
+register_pid() {
+    local pid="$1"
+    ALL_BACKGROUND_PIDS+=("$pid")
+}
+
+# Kill a process and all its children forcefully
+# Usage: kill_process_tree <pid> [signal]
+kill_process_tree() {
+    local pid="$1"
+    local signal="${2:-TERM}"
+
+    [[ -z "$pid" ]] && return 0
+
+    # Check if process exists
+    if ! kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+
+    # Get all child PIDs recursively (works on macOS and Linux)
+    local children
+    if [[ "$(uname)" == "Darwin" ]]; then
+        children=$(pgrep -P "$pid" 2>/dev/null || true)
+    else
+        children=$(pgrep -P "$pid" 2>/dev/null || true)
+    fi
+
+    # Kill children first (depth-first)
+    for child in $children; do
+        kill_process_tree "$child" "$signal"
+    done
+
+    # Kill the parent
+    kill "-$signal" "$pid" 2>/dev/null || true
+}
+
+# Kill a process with SIGTERM, wait, then SIGKILL if needed
+# Usage: kill_with_timeout <pid> [timeout_seconds]
+kill_with_timeout() {
+    local pid="$1"
+    local timeout="${2:-5}"
+
+    [[ -z "$pid" ]] && return 0
+
+    # Check if process exists
+    if ! kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+
+    # Send SIGTERM to process tree
+    kill_process_tree "$pid" "TERM"
+
+    # Wait for process to die
+    local waited=0
+    while kill -0 "$pid" 2>/dev/null && [[ $waited -lt $timeout ]]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    # If still alive, send SIGKILL
+    if kill -0 "$pid" 2>/dev/null; then
+        log_verbose "Process $pid didn't terminate, sending SIGKILL"
+        kill_process_tree "$pid" "KILL"
+        sleep 1
+    fi
+
+    # Final check
+    if kill -0 "$pid" 2>/dev/null; then
+        log_warn "Failed to kill process $pid"
+        return 1
+    fi
+
+    return 0
+}
+
+# Kill all processes listening on a specific port
+# Usage: kill_port <port>
+kill_port() {
+    local port="$1"
+    local pids
+
+    # Get PIDs listening on port (works on macOS)
+    pids=$(lsof -ti ":$port" 2>/dev/null || true)
+
+    for pid in $pids; do
+        if [[ -n "$pid" ]]; then
+            log_verbose "Killing process $pid on port $port"
+            kill_with_timeout "$pid" 3
+        fi
+    done
+}
+
+# Kill processes by name pattern
+# Usage: kill_by_pattern <pattern>
+kill_by_pattern() {
+    local pattern="$1"
+    local pids
+
+    # Use pgrep to find processes matching pattern
+    pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+
+    for pid in $pids; do
+        # Don't kill our own script
+        if [[ "$pid" != "$$" ]] && [[ "$pid" != "$PPID" ]]; then
+            log_verbose "Killing process $pid matching pattern '$pattern'"
+            kill_with_timeout "$pid" 3
+        fi
+    done
+}
+
+# Kill all registered background PIDs
+kill_all_registered() {
+    for pid in "${ALL_BACKGROUND_PIDS[@]}"; do
+        kill_with_timeout "$pid" 3
+    done
+    ALL_BACKGROUND_PIDS=()
+}
+
+# Comprehensive cleanup of all known E2E test processes
+cleanup_all_processes() {
+    log "Cleaning up all E2E test processes..."
+
+    # Kill all registered PIDs first
+    kill_all_registered
+
+    # Kill known port ranges used by tests
+    local ports=(
+        # ERGORS ports (base 50100)
+        50100 50101 50102  # Coordinator
+        50110 50111 50112  # Executor
+        # Akash ports
+        26657 26656 9090 1317  # Node
+        8443 8444              # Provider
+    )
+
+    for port in "${ports[@]}"; do
+        kill_port "$port"
+    done
+
+    # Kill by process name patterns (be specific to avoid killing unrelated processes)
+    local patterns=(
+        "ergors.*--home.*$TEST_DIR"
+        "provider-services.*run"
+        "akash.*start"
+        "kubectl.*port-forward"
+    )
+
+    for pattern in "${patterns[@]}"; do
+        kill_by_pattern "$pattern" 2>/dev/null || true
+    done
+
+    log_verbose "Process cleanup complete"
 }
 
 # =============================================================================

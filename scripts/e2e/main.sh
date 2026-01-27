@@ -126,27 +126,60 @@ check_prerequisites() {
 # Cleanup
 # =============================================================================
 cleanup() {
+    local exit_code=$?
+
     if [[ "$SKIP_CLEANUP" == true ]]; then
         log_warn "Skipping cleanup (--skip-cleanup)"
         log_warn "Test dir: ${TEST_DIR}"
         log_warn "ERGORS PIDs: ${ERGORS_NODE_PIDS[*]:-none}"
+        log_warn "Akash Node PID: ${AKASH_NODE_PID:-none}"
+        log_warn "Akash Provider PID: ${AKASH_PROVIDER_PID:-none}"
         return
     fi
 
     log_step "Cleanup"
 
+    # Stop ERGORS network first (specific cleanup)
     ergors_stop_network
+
+    # Stop Akash infrastructure (specific cleanup)
     akash_cleanup
 
+    # Comprehensive cleanup of any remaining processes
+    cleanup_all_processes
+
+    # Remove test directory
     if [[ -d "$TEST_DIR" ]]; then
         log "Removing test directory..."
         rm -rf "$TEST_DIR"
     fi
 
+    # Final verification - check if any known test ports are still in use
+    local leftover_ports=()
+    for port in 50100 50101 50110 50111 26657 9090 8443; do
+        if lsof -ti ":$port" &>/dev/null; then
+            leftover_ports+=("$port")
+        fi
+    done
+
+    if [[ ${#leftover_ports[@]} -gt 0 ]]; then
+        log_warn "Warning: Some ports still in use after cleanup: ${leftover_ports[*]}"
+        log_warn "Attempting forceful cleanup..."
+        for port in "${leftover_ports[@]}"; do
+            kill_port "$port"
+        done
+    fi
+
     log_success "Cleanup complete"
+
+    # Preserve original exit code
+    return $exit_code
 }
 
+# Trap both EXIT and common error signals for comprehensive cleanup
 trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 # =============================================================================
 # Build Phase

@@ -233,6 +233,7 @@ ergors_start_network() {
     "$ERGORS_BIN" --home "$coord_home" start --grpc-port "$coord_grpc" \
         > "$coord_home/node.log" 2>&1 &
     ERGORS_NODE_PIDS+=($!)
+    register_pid $!
 
     # === Executor ===
     local exec_home="$TEST_DIR/executor_0"
@@ -252,6 +253,7 @@ ergors_start_network() {
     "$ERGORS_BIN" --home "$exec_home" start --grpc-port "$exec_grpc" \
         > "$exec_home/node.log" 2>&1 &
     ERGORS_NODE_PIDS+=($!)
+    register_pid $!
 
     # Wait for nodes to be ready (check gRPC ports)
     sleep 2  # Brief startup delay
@@ -282,12 +284,25 @@ ergors_start_network() {
 ergors_stop_network() {
     log "Stopping ERGORS network..."
 
+    # Kill all tracked ERGORS node processes with timeout and SIGKILL fallback
     for pid in "${ERGORS_NODE_PIDS[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
+        if [[ -n "$pid" ]]; then
+            log_verbose "Stopping ERGORS node PID: $pid"
+            kill_with_timeout "$pid" 5
         fi
     done
     ERGORS_NODE_PIDS=()
+
+    # Kill any orphaned ergors processes related to our test directory
+    if [[ -n "${TEST_DIR:-}" ]]; then
+        kill_by_pattern "ergors.*--home.*${TEST_DIR}" 2>/dev/null || true
+    fi
+
+    # Clean up ERGORS ports (in case processes were orphaned)
+    local ergors_ports=(50100 50101 50102 50110 50111 50112)
+    for port in "${ergors_ports[@]}"; do
+        kill_port "$port" 2>/dev/null || true
+    done
 
     log_success "ERGORS network stopped"
 }

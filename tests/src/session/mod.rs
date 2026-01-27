@@ -6,8 +6,7 @@
 //! Note: Full SessionManager tests require network manifold setup, which is
 //! tested in the integration/mod.rs. These tests focus on the storage-backed
 //! session operations directly.
-
-use crate::common::{init_test_tracing, IntegrationTestHarness};
+use crate::common::setup::{init_test_tracing, IntegrationTestHarness};
 use ho_std::types::ergors::management::v1::{
     FractalSession, QuerySessionsRequest, SessionScope, SessionStatus, SessionType,
 };

@@ -16,3 +16,5 @@ ssh-config.json
 captures/*
 .opencode/plans
 archive
+
+work/*

@@ -1,4 +1,3 @@
-#![allow(unused_imports)] 
 //! Full Integration Tests
 //!
 //! End-to-end integration tests that exercise the complete node engine stack:
@@ -8,10 +7,11 @@
 //!
 //! These tests verify that all components work together correctly.
 
-use crate::common::{init_test_tracing, IntegrationTestHarness};
 use ho_std::types::ergors::orch::v1::{
     AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep,
 };
+
+use crate::common::setup::{init_test_tracing, IntegrationTestHarness};
 
 // ============================================================================
 // Workflow Integration Tests
@@ -21,7 +21,9 @@ use ho_std::types::ergors::orch::v1::{
 #[tokio::test]
 async fn test_workflow_full_lifecycle() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("workflow_lifecycle").await.unwrap();
+    let harness = IntegrationTestHarness::new("workflow_lifecycle")
+        .await
+        .unwrap();
     let storage = harness.storage();
 
     let session_id = "full-lifecycle-001";
@@ -43,7 +45,11 @@ async fn test_workflow_full_lifecycle() {
     storage.put_akash_workflow(&workflow).await.unwrap();
 
     // Verify initial state
-    let saved = storage.get_akash_workflow(session_id).await.unwrap().unwrap();
+    let saved = storage
+        .get_akash_workflow(session_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(saved.current_step, AkashWorkflowStep::KeySelection as i32);
     assert_eq!(saved.status, AkashWorkflowStatus::Pending as i32);
 
@@ -62,7 +68,11 @@ async fn test_workflow_full_lifecycle() {
         workflow.status = AkashWorkflowStatus::Running as i32;
         storage.put_akash_workflow(&workflow).await.unwrap();
 
-        let updated = storage.get_akash_workflow(session_id).await.unwrap().unwrap();
+        let updated = storage
+            .get_akash_workflow(session_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(updated.current_step, step as i32);
     }
 
@@ -75,7 +85,11 @@ async fn test_workflow_full_lifecycle() {
     });
     storage.put_akash_workflow(&workflow).await.unwrap();
 
-    let final_state = storage.get_akash_workflow(session_id).await.unwrap().unwrap();
+    let final_state = storage
+        .get_akash_workflow(session_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(final_state.status, AkashWorkflowStatus::Completed as i32);
     assert!(final_state.completed_at.is_some());
 }
@@ -102,7 +116,11 @@ async fn test_workflow_error_and_retry() {
     workflow.retry_count = 1;
     storage.put_akash_workflow(&workflow).await.unwrap();
 
-    let after_error = storage.get_akash_workflow("error-test").await.unwrap().unwrap();
+    let after_error = storage
+        .get_akash_workflow("error-test")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(after_error.retry_count, 1);
     assert!(!after_error.last_error.is_empty());
 
@@ -112,7 +130,11 @@ async fn test_workflow_error_and_retry() {
     workflow.current_step = AkashWorkflowStep::Failed as i32;
     storage.put_akash_workflow(&workflow).await.unwrap();
 
-    let failed = storage.get_akash_workflow("error-test").await.unwrap().unwrap();
+    let failed = storage
+        .get_akash_workflow("error-test")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(failed.status, AkashWorkflowStatus::Failed as i32);
 }
 
@@ -120,7 +142,9 @@ async fn test_workflow_error_and_retry() {
 #[tokio::test]
 async fn test_workflow_cancellation() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("workflow_cancel").await.unwrap();
+    let harness = IntegrationTestHarness::new("workflow_cancel")
+        .await
+        .unwrap();
     let storage = harness.storage();
 
     // Create workflow in progress
@@ -137,7 +161,11 @@ async fn test_workflow_cancellation() {
     workflow.last_error = "Cancelled by user".to_string();
     storage.put_akash_workflow(&workflow).await.unwrap();
 
-    let cancelled = storage.get_akash_workflow("cancel-test").await.unwrap().unwrap();
+    let cancelled = storage
+        .get_akash_workflow("cancel-test")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(cancelled.status, AkashWorkflowStatus::Cancelled as i32);
 }
 
@@ -145,16 +173,38 @@ async fn test_workflow_cancellation() {
 #[tokio::test]
 async fn test_multiple_workflows_filtering() {
     init_test_tracing();
-    let harness = IntegrationTestHarness::new("workflows_filter").await.unwrap();
+    let harness = IntegrationTestHarness::new("workflows_filter")
+        .await
+        .unwrap();
     let storage = harness.storage();
 
     // Create workflows in different states
     let workflows = vec![
-        ("wf-1", AkashWorkflowStatus::Pending, AkashWorkflowStep::KeySelection),
-        ("wf-2", AkashWorkflowStatus::Running, AkashWorkflowStep::BidWait),
-        ("wf-3", AkashWorkflowStatus::Running, AkashWorkflowStep::ManifestSend),
-        ("wf-4", AkashWorkflowStatus::Completed, AkashWorkflowStep::Complete),
-        ("wf-5", AkashWorkflowStatus::Failed, AkashWorkflowStep::Failed),
+        (
+            "wf-1",
+            AkashWorkflowStatus::Pending,
+            AkashWorkflowStep::KeySelection,
+        ),
+        (
+            "wf-2",
+            AkashWorkflowStatus::Running,
+            AkashWorkflowStep::BidWait,
+        ),
+        (
+            "wf-3",
+            AkashWorkflowStatus::Running,
+            AkashWorkflowStep::ManifestSend,
+        ),
+        (
+            "wf-4",
+            AkashWorkflowStatus::Completed,
+            AkashWorkflowStep::Complete,
+        ),
+        (
+            "wf-5",
+            AkashWorkflowStatus::Failed,
+            AkashWorkflowStep::Failed,
+        ),
     ];
 
     for (id, status, step) in &workflows {
@@ -191,8 +241,12 @@ async fn test_storage_isolation() {
     init_test_tracing();
 
     // Create two separate harnesses
-    let harness1 = IntegrationTestHarness::new("isolation_test_1").await.unwrap();
-    let harness2 = IntegrationTestHarness::new("isolation_test_2").await.unwrap();
+    let harness1 = IntegrationTestHarness::new("isolation_test_1")
+        .await
+        .unwrap();
+    let harness2 = IntegrationTestHarness::new("isolation_test_2")
+        .await
+        .unwrap();
 
     // Write to harness1
     let workflow1 = AkashDeploymentWorkflow {
@@ -201,7 +255,11 @@ async fn test_storage_isolation() {
         status: AkashWorkflowStatus::Pending as i32,
         ..Default::default()
     };
-    harness1.storage().put_akash_workflow(&workflow1).await.unwrap();
+    harness1
+        .storage()
+        .put_akash_workflow(&workflow1)
+        .await
+        .unwrap();
 
     // harness2 should NOT see harness1's data
     let from_harness2 = harness2

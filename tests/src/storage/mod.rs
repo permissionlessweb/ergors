@@ -5,7 +5,7 @@
 //! These tests verify actual persistence, prefix scanning, atomic commits,
 //! and snapshot isolation - NOT mocks.
 
-use crate::common::{init_test_tracing, IntegrationTestHarness};
+use crate::common::setup::{init_test_tracing, IntegrationTestHarness};
 use ho_std::types::ergors::management::v1::{
     FractalSession, QuerySessionsRequest, SessionScope, SessionStatus, SessionType,
 };

@@ -13,7 +13,7 @@ use anyhow::{anyhow, Result};
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::ergors::orch::v1::{
     AkashDeploymentWorkflow, AkashProviderSelection, AkashWorkflowStatus,
-    AkashWorkflowStep, EndpointTestResult, GrantRequestStatus,
+    AkashWorkflowStep, GrantRequestStatus,
 };
 use pbjson_types::Timestamp;
 use std::collections::HashMap;

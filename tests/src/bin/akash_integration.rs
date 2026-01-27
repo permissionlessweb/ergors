@@ -595,3 +595,14 @@ deployment:
 "#, mock_endpoint)
     }
 }
+
+// Required main function for bin target (tests are run via cargo test)
+#[cfg(not(feature = "testing"))]
+fn main() {
+    eprintln!("Run with: cargo test -p ergors-tests --features testing");
+}
+
+#[cfg(feature = "testing")]
+fn main() {
+    eprintln!("Run tests with: cargo test -p ergors-tests --features testing");
+}

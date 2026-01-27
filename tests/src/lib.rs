@@ -37,20 +37,32 @@
 //! ```
 
 // Common test utilities
-pub mod common;
+mod common;
 
 // Mock client for testing without real infrastructure
 pub mod mock_client;
 
 // Component test modules
-pub mod custody;
+#[cfg(test)]
+mod config;
+#[cfg(test)]
+mod custody;
+#[cfg(test)]
 pub mod git;
+#[cfg(test)]
 pub mod llm;
+#[cfg(test)]
 pub mod network;
+#[cfg(test)]
 pub mod orchestration;
+#[cfg(test)]
 pub mod session;
+#[cfg(test)]
 pub mod storage;
+#[cfg(test)]
 pub mod wasm;
 
 // Integration test modules
+#[cfg(test)]
 pub mod integration;
+

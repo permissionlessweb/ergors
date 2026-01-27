@@ -34,6 +34,8 @@ toml = { workspace = true }
 # Additional test dependencies
 tokio-test = "0.4"
 pbjson-types = { workspace = true }
+camino = { workspace = true }
+rand = { workspace = true }
 
 # Integration test dependencies - real node engine components
 ergors = { path = "../packages/cw-ho", features = ["cw"] }

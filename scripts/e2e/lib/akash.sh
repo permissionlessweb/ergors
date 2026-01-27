@@ -275,6 +275,7 @@ akash_start_node() {
     log "Starting node..."
     akash_make node-run > "$node_log" 2>&1 &
     AKASH_NODE_PID=$!
+    register_pid $AKASH_NODE_PID
 
     # Wait for node to be ready (check RPC endpoint)
     if wait_for_port "127.0.0.1" 26657 "$NODE_READY_TIMEOUT"; then
@@ -288,11 +289,17 @@ akash_start_node() {
 }
 
 akash_stop_node() {
-    if [[ -n "$AKASH_NODE_PID" ]] && kill -0 "$AKASH_NODE_PID" 2>/dev/null; then
-        log "Stopping Akash node..."
-        kill "$AKASH_NODE_PID" 2>/dev/null || true
+    if [[ -n "$AKASH_NODE_PID" ]]; then
+        log "Stopping Akash node (PID: $AKASH_NODE_PID)..."
+        kill_with_timeout "$AKASH_NODE_PID" 5
         AKASH_NODE_PID=""
     fi
+
+    # Clean up any orphaned akash node processes on standard ports
+    local akash_node_ports=(26657 26656 9090 1317)
+    for port in "${akash_node_ports[@]}"; do
+        kill_port "$port" 2>/dev/null || true
+    done
 }
 
 # Check if node is healthy via RPC
@@ -332,6 +339,7 @@ akash_start_provider() {
     log "Starting provider..."
     akash_make provider-run > "$provider_log" 2>&1 &
     AKASH_PROVIDER_PID=$!
+    register_pid $AKASH_PROVIDER_PID
 
     # Wait for provider to be ready (check gateway)
     if wait_for_port "127.0.0.1" 8443 "$PROVIDER_READY_TIMEOUT"; then
@@ -345,11 +353,20 @@ akash_start_provider() {
 }
 
 akash_stop_provider() {
-    if [[ -n "$AKASH_PROVIDER_PID" ]] && kill -0 "$AKASH_PROVIDER_PID" 2>/dev/null; then
-        log "Stopping Akash provider..."
-        kill "$AKASH_PROVIDER_PID" 2>/dev/null || true
+    if [[ -n "$AKASH_PROVIDER_PID" ]]; then
+        log "Stopping Akash provider (PID: $AKASH_PROVIDER_PID)..."
+        kill_with_timeout "$AKASH_PROVIDER_PID" 5
         AKASH_PROVIDER_PID=""
     fi
+
+    # Clean up any orphaned provider processes on standard ports
+    local provider_ports=(8443 8444)
+    for port in "${provider_ports[@]}"; do
+        kill_port "$port" 2>/dev/null || true
+    done
+
+    # Kill any provider-services processes that may have been spawned
+    kill_by_pattern "provider-services" 2>/dev/null || true
 }
 
 # =============================================================================
@@ -414,11 +431,22 @@ akash_setup_provider() {
 akash_cleanup() {
     log "Cleaning up Akash environment..."
 
+    # Stop provider and node with proper cleanup
     akash_stop_provider
     akash_stop_node
 
+    # Kill any kubectl port-forward processes
+    kill_by_pattern "kubectl.*port-forward" 2>/dev/null || true
+
+    # Delete Kind cluster if it exists
     if [[ -d "${AKASH_KUBE_DIR}" ]]; then
         akash_make kube-cluster-delete 2>/dev/null || true
+    fi
+
+    # Fallback: delete kind cluster directly if make fails
+    if kind get clusters 2>/dev/null | grep -q "^kind$"; then
+        log "Deleting Kind cluster directly..."
+        kind delete cluster --name kind 2>/dev/null || true
     fi
 
     log_success "Akash cleanup complete"

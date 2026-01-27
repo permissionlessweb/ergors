@@ -9,7 +9,3 @@ pub mod fixtures;
 pub mod setup;
 
 // Re-export commonly used items
-pub use assertions::*;
-pub use config::*;
-pub use fixtures::*;
-pub use setup::*;
