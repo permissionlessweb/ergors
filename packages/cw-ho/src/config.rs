@@ -110,7 +110,10 @@ impl HoConfigTrait for ErgorsConfig {
                 ),
             ))
         })?;
-        Ok(toml::from_str(&contents)?)
+        let mut config: Self = toml::from_str(&contents)?;
+        // Apply defaults for missing optional configs (handles migration of old configs)
+        config.apply_defaults();
+        Ok(config)
     }
 
     fn save<P: AsRef<std::path::Path>>(&self, path: P) -> HoResult<()> {
@@ -274,6 +277,17 @@ impl ErgorsConfig {
             keyring_backend: "file".to_string(),
             default_key_name: "default".to_string(),
             trusted_providers: vec![],
+        }
+    }
+
+    /// Apply defaults for missing optional configs
+    ///
+    /// This handles migration of old config files that don't have
+    /// newer optional sections like [akash].
+    pub fn apply_defaults(&mut self) {
+        // Ensure Akash config exists with mainnet defaults
+        if self.0.akash.is_none() {
+            self.0.akash = Some(Self::default_akash_config());
         }
     }
 }
