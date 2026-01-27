@@ -83,8 +83,7 @@ pub trait NodeIdentityTrait {
 // ============================================
 
 /// Custody backend type for node identity key management
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum NodeIdentityCustodyBackend {
     /// Plaintext storage (legacy, insecure for production)
     Plaintext,
@@ -98,7 +97,6 @@ pub enum NodeIdentityCustodyBackend {
     /// Remote custody service via gRPC
     RemoteCustody(String),
 }
-
 
 /// Core trait for custody-backed node identity operations.
 ///
@@ -528,9 +526,6 @@ pub trait LlmProviderTrait: Send + Sync {
 /// Trait for API request handlers
 #[async_trait]
 pub trait ApiJoint {
-    // type Request: PromptRequestTrait;
-    // type Response: PromptResponseTrait;
-    // type Message: PromptRequestTrait;
     async fn handle_request<T>(
         provider: &T,
         client: &Client,
@@ -552,11 +547,10 @@ pub trait ApiKeyProvider: Send + Sync {
 
 // LLM-related traits for ERGORS system
 // Category: llm
-/// Core trait for LLM prompt requests
+/// Core trait for prompt requests
 pub trait PromptRequestTrait {
     type Message;
     type Context;
-    type Config;
 
     /// Get messages
     fn messages(&self) -> &[Self::Message];
@@ -567,17 +561,11 @@ pub trait PromptRequestTrait {
     /// Get context
     fn context(&self) -> Option<&Self::Context>;
 
-    /// Get LLM configuration
-    fn llm_config(&self) -> Option<&Self::Config>;
-
     /// Add message to request
     fn add_message(&mut self, message: Self::Message);
 
     /// Set model
     fn set_model(&mut self, model: String);
-
-    /// Set context
-    fn set_context(&mut self, context: Self::Context);
 }
 
 // LLM-related traits for ERGORS system
@@ -649,6 +637,30 @@ pub trait LlmMessageTrait {
 
     /// Create system message
     fn system_message(content: String) -> Self;
+    type Message;
+    type Context;
+    type Config;
+
+    /// Get messages
+    fn messages(&self) -> &[Self::Message];
+
+    /// Get model name
+    fn model(&self) -> &str;
+
+    /// Get context
+    fn context(&self) -> Option<&Self::Context>;
+
+    /// Get LLM configuration
+    fn llm_config(&self) -> Option<&Self::Config>;
+
+    /// Add message to request
+    fn add_message(&mut self, message: Self::Message);
+
+    /// Set model
+    fn set_model(&mut self, model: String);
+
+    /// Set context
+    fn set_context(&mut self, context: Self::Context);
 }
 
 // LLM-related traits for ERGORS system
@@ -858,116 +870,7 @@ impl<S: StateWrite + Send + Sync> StateWrite for &mut S {
 
 // Storage-related traits for ERGORS system
 // Category: storage
-/// Core trait for storage queries
-pub trait StorageQueryTrait {
-    type Timestamp;
-
-    /// Get session ID filter
-    fn session_id(&self) -> Option<&str>;
-
-    /// Get user ID filter
-    fn user_id(&self) -> Option<&str>;
-
-    /// Get start time filter
-    fn start_time(&self) -> Option<&Self::Timestamp>;
-
-    /// Get end time filter
-    fn end_time(&self) -> Option<&Self::Timestamp>;
-
-    /// Get limit
-    fn limit(&self) -> Option<u32>;
-
-    /// Get offset
-    fn offset(&self) -> Option<u32>;
-
-    /// Get additional filters
-    fn filters(&self) -> &std::collections::HashMap<String, String>;
-
-    /// Set session ID filter
-    fn set_session_id(&mut self, session_id: String);
-
-    /// Set user ID filter
-    fn set_user_id(&mut self, user_id: String);
-
-    /// Set time range
-    fn set_time_range(&mut self, start: Self::Timestamp, end: Self::Timestamp);
-
-    /// Set pagination
-    fn set_pagination(&mut self, limit: u32, offset: u32);
-
-    /// Add filter
-    fn add_filter(&mut self, key: String, value: String);
-
-    /// Set pagination
-    fn data_file_path(&mut self, limit: u32, offset: u32);
-}
-
-// Storage-related traits for ERGORS system
-// Category: storage
 /// Core trait for storage snapshots
-pub trait StorageSnapshotTrait {
-    type Timestamp;
-
-    /// Get snapshot ID
-    fn id(&self) -> &str;
-
-    /// Get creation timestamp
-    fn created_at(&self) -> &Self::Timestamp;
-
-    /// Get state root
-    fn state_root(&self) -> &str;
-
-    /// Get version
-    fn version(&self) -> u64;
-
-    /// Get data
-    fn data(&self) -> &std::collections::HashMap<String, Vec<u8>>;
-
-    /// Set state root
-    fn set_state_root(&mut self, root: String);
-
-    /// Add data entry
-    fn add_data(&mut self, key: String, value: Vec<u8>);
-
-    /// Remove data entry
-    fn remove_data(&mut self, key: &str);
-}
-
-// Storage-related traits for ERGORS system
-// Category: storage
-/// Core trait for storage metrics
-pub trait StorageMetricsTrait {
-    type Timestamp;
-
-    /// Get total entries
-    fn total_entries(&self) -> u64;
-
-    /// Get storage size in bytes
-    fn storage_size_bytes(&self) -> u64;
-
-    /// Get index size in bytes
-    fn index_size_bytes(&self) -> u64;
-
-    /// Get last compaction time
-    fn last_compaction(&self) -> &Self::Timestamp;
-
-    /// Get fragmentation ratio
-    fn fragmentation_ratio(&self) -> f64;
-
-    /// Update metrics
-    fn update_metrics(
-        &mut self,
-        entries: u64,
-        storage_size: u64,
-        index_size: u64,
-        fragmentation: f64,
-    );
-
-    /// Check if compaction is needed
-    fn needs_compaction(&self) -> bool {
-        self.fragmentation_ratio() > 0.3 // 30% fragmentation threshold
-    }
-}
 
 // Storage-related traits for ERGORS system
 // Category: storage
@@ -976,9 +879,10 @@ pub trait StorageMetricsTrait {
 pub trait StorageTrait {
     type PromptResponse;
     type PromptRequest;
-    type Query: StorageQueryTrait;
-    type Snapshot: StorageSnapshotTrait;
-    type Metrics: StorageMetricsTrait;
+    type Query;
+    type Snapshot;
+    type Metrics;
+    type Timestamp;
 
     /// Initialize storage
     async fn new<P: AsRef<std::path::Path> + Send>(data_dir: P) -> HoResult<Self>
@@ -1024,6 +928,98 @@ pub trait StorageTrait {
 
     /// Clear all data (dangerous operation)
     async fn clear_all(&self) -> HoResult<()>;
+
+    /// Get snapshot ID
+    fn id(&self) -> &str;
+
+    /// Get creation timestamp
+    fn created_at(&self) -> &Self::Timestamp;
+
+    /// Get state root
+    fn state_root(&self) -> &str;
+
+    /// Get version
+    fn version(&self) -> u64;
+
+    /// Get data
+    fn data(&self) -> &std::collections::HashMap<String, Vec<u8>>;
+
+    /// Set state root
+    fn set_state_root(&mut self, root: String);
+
+    /// Add data entry
+    fn add_data(&mut self, key: String, value: Vec<u8>);
+
+    /// Remove data entry
+    fn remove_data(&mut self, key: &str);
+
+    /// Get session ID filter
+    fn session_id(&self) -> Option<&str>;
+
+    /// Get user ID filter
+    fn user_id(&self) -> Option<&str>;
+
+    /// Get start time filter
+    fn start_time(&self) -> Option<&Self::Timestamp>;
+
+    /// Get end time filter
+    fn end_time(&self) -> Option<&Self::Timestamp>;
+
+    /// Get limit
+    fn limit(&self) -> Option<u32>;
+
+    /// Get offset
+    fn offset(&self) -> Option<u32>;
+
+    /// Get additional filters
+    fn filters(&self) -> &std::collections::HashMap<String, String>;
+
+    /// Set session ID filter
+    fn set_session_id(&mut self, session_id: String);
+
+    /// Set user ID filter
+    fn set_user_id(&mut self, user_id: String);
+
+    /// Set time range
+    fn set_time_range(&mut self, start: Self::Timestamp, end: Self::Timestamp);
+
+    /// Set pagination
+    fn set_pagination(&mut self, limit: u32, offset: u32);
+
+    /// Add filter
+    fn add_filter(&mut self, key: String, value: String);
+
+    /// Set pagination
+    fn data_file_path(&mut self, limit: u32, offset: u32);
+
+    /// Get total entries
+    fn total_entries(&self) -> u64;
+
+    /// Get storage size in bytes
+    fn storage_size_bytes(&self) -> u64;
+
+    /// Get index size in bytes
+    fn index_size_bytes(&self) -> u64;
+
+    /// Get last compaction time
+    fn last_compaction(&self) -> &Self::Timestamp;
+
+    /// Get fragmentation ratio
+    fn fragmentation_ratio(&self) -> f64;
+
+    /// Update metrics
+    fn update_metrics(
+        &mut self,
+        entries: u64,
+        storage_size: u64,
+        index_size: u64,
+        fragmentation: f64,
+    );
+
+    /// Check if compaction is needed
+    fn needs_compaction(&self) -> bool {
+        self.fragmentation_ratio() > 0.3 // 30% fragmentation threshold
+    }
 }
 
 // Storage-related traits for ERGORS system
@@ -1053,20 +1049,6 @@ pub trait StorageIndexTrait {
 }
 
 // Orchestrator-related traits for ERGORS system
-// Category: orchestrator
-pub trait FractalRequirementsExt {
-    type FractalRequirements;
-    fn new_default() -> Self::FractalRequirements;
-}
-
-// Orchestrator-related traits for ERGORS system
-// Category: orchestrator
-pub trait CosmicContextExt {
-    type CosmicContext;
-    fn new_context(task_id: String, prompt: &str, recursion_depth: u32) -> Self::CosmicContext;
-}
-
-// Orchestrator-related traits for ERGORS system
 /// Core trait for cosmic task management
 pub trait CosmicTaskTrait {
     type TaskType;
@@ -1088,9 +1070,6 @@ pub trait CosmicTaskTrait {
 
     /// Get prompt
     fn prompt(&self) -> &str;
-
-    /// Get fractal requirements
-    fn fractal_requirements(&self) -> Option<&Self::FractalRequirements>;
 
     /// Get creation timestamp
     fn created_at(&self) -> &Self::Timestamp;
@@ -1186,11 +1165,6 @@ pub trait OrchestratorTrait {
 
     /// Create fractal context
     fn create_fractal_context(&self, task_id: String, prompt: &str, depth: u32) -> Self::Context;
-
-    /// Apply golden ratio scaling
-    fn apply_golden_ratio_scaling(&self, value: f64) -> f64 {
-        value * 1.618033988749894
-    }
 }
 
 // ============================================
@@ -1273,12 +1247,52 @@ pub trait SessionTrait {
             SessionStatus::Created | SessionStatus::Active | SessionStatus::Paused
         )
     }
-}
 
-/// Trait for fractal session hierarchy operations
-/// Supports parent/child relationships and recursive metrics aggregation
-#[async_trait]
-pub trait FractalSessionTrait: SessionTrait {
+    // === Cross-Node Operations ===
+
+    /// Sync session state to another node
+    async fn sync_to_node(
+        &self,
+        session_id: &str,
+        target_node_id: &str,
+        full_sync: bool,
+    ) -> HoResult<String>;
+
+    /// Migrate session ownership to another node
+    async fn migrate_to_node(
+        &self,
+        session_id: &str,
+        target_node_id: &str,
+        migrate_children: bool,
+    ) -> HoResult<Self::Session>;
+
+    // === Node Ownership ===
+
+    /// Get owning node ID
+    fn owner_node_id(&self, session: &Self::Session) -> &str;
+
+    /// Get owning node type
+    fn owner_node_type(&self, session: &Self::Session) -> NodeType;
+
+    /// Check if this node owns the session
+    fn is_local_owner(&self, session: &Self::Session) -> bool;
+
+    // === Distributed Locking ===
+
+    /// Acquire distributed lock on session
+    async fn acquire_lock(&self, session_id: &str) -> HoResult<SessionLock>;
+
+    /// Release distributed lock
+    async fn release_lock(&self, lock: SessionLock) -> HoResult<()>;
+
+    /// Check if session is locked
+    async fn is_locked(&self, session_id: &str) -> HoResult<bool>;
+
+    // === Notifications ===
+
+    /// Notify all participants of session update
+    async fn notify_participants(&self, session_id: &str, update: SessionUpdate) -> HoResult<()>;
+
     // === Hierarchy Operations ===
 
     /// Spawn a child session linked to parent
@@ -1334,58 +1348,50 @@ pub trait FractalSessionTrait: SessionTrait {
 
     /// Get propagation configuration
     fn propagation(&self, session: &Self::Session) -> Option<&SessionPropagation>;
-}
 
-/// Trait for cross-node session coordination
-/// Supports distributed session management across tetrahedral network
-#[async_trait]
-pub trait SessionCoordinationTrait: FractalSessionTrait {
-    type Topology: NetworkTopologyTrait;
+    // === Label Operations ===
 
-    // === Cross-Node Operations ===
+    /// Add or update a label
+    fn add_label(&mut self, key: &str, value: &str);
 
-    /// Sync session state to another node
-    async fn sync_to_node(
-        &self,
-        session_id: &str,
-        target_node_id: &str,
-        full_sync: bool,
-    ) -> HoResult<String>;
+    /// Remove a label
+    fn remove_label(&mut self, key: &str);
 
-    /// Migrate session ownership to another node
-    async fn migrate_to_node(
-        &self,
-        session_id: &str,
-        target_node_id: &str,
-        migrate_children: bool,
-    ) -> HoResult<Self::Session>;
+    /// Get a label value
+    fn get_label(&self, key: &str) -> Option<&str>;
 
-    // === Node Ownership ===
+    /// Get all labels
+    fn labels(&self) -> &HashMap<String, String>;
 
-    /// Get owning node ID
-    fn owner_node_id(&self, session: &Self::Session) -> &str;
+    // === Tag Operations ===
 
-    /// Get owning node type
-    fn owner_node_type(&self, session: &Self::Session) -> NodeType;
+    /// Add a tag
+    fn add_tag(&mut self, tag: &str);
 
-    /// Check if this node owns the session
-    fn is_local_owner(&self, session: &Self::Session) -> bool;
+    /// Remove a tag
+    fn remove_tag(&mut self, tag: &str);
 
-    // === Distributed Locking ===
+    /// Check if has tag
+    fn has_tag(&self, tag: &str) -> bool;
 
-    /// Acquire distributed lock on session
-    async fn acquire_lock(&self, session_id: &str) -> HoResult<SessionLock>;
+    /// Get all tags
+    fn tags(&self) -> &[String];
 
-    /// Release distributed lock
-    async fn release_lock(&self, lock: SessionLock) -> HoResult<()>;
+    // === Metadata Operations ===
 
-    /// Check if session is locked
-    async fn is_locked(&self, session_id: &str) -> HoResult<bool>;
+    /// Set metadata value
+    fn set_metadata(&mut self, key: &str, value: &str);
 
-    // === Notifications ===
+    /// Get metadata value
+    fn get_metadata(&self, key: &str) -> Option<&str>;
 
-    /// Notify all participants of session update
-    async fn notify_participants(&self, session_id: &str, update: SessionUpdate) -> HoResult<()>;
+    /// Get all metadata
+    fn metadata(&self) -> &HashMap<String, String>;
+
+    // === Classification ===
+
+    /// Classify session for reinforcement learning
+    fn classify_for_reinforcement(&self) -> SessionClassification;
 }
 
 /// Distributed lock for session operations
@@ -1473,54 +1479,6 @@ pub trait SessionStorageTrait {
         session_id: &str,
         version: u64,
     ) -> HoResult<Option<SessionStateSnapshot>>;
-}
-
-/// Trait for session labeling and classification
-/// Supports reinforcement learning classification
-pub trait SessionLabelingTrait {
-    // === Label Operations ===
-
-    /// Add or update a label
-    fn add_label(&mut self, key: &str, value: &str);
-
-    /// Remove a label
-    fn remove_label(&mut self, key: &str);
-
-    /// Get a label value
-    fn get_label(&self, key: &str) -> Option<&str>;
-
-    /// Get all labels
-    fn labels(&self) -> &HashMap<String, String>;
-
-    // === Tag Operations ===
-
-    /// Add a tag
-    fn add_tag(&mut self, tag: &str);
-
-    /// Remove a tag
-    fn remove_tag(&mut self, tag: &str);
-
-    /// Check if has tag
-    fn has_tag(&self, tag: &str) -> bool;
-
-    /// Get all tags
-    fn tags(&self) -> &[String];
-
-    // === Metadata Operations ===
-
-    /// Set metadata value
-    fn set_metadata(&mut self, key: &str, value: &str);
-
-    /// Get metadata value
-    fn get_metadata(&self, key: &str) -> Option<&str>;
-
-    /// Get all metadata
-    fn metadata(&self) -> &HashMap<String, String>;
-
-    // === Classification ===
-
-    /// Classify session for reinforcement learning
-    fn classify_for_reinforcement(&self) -> SessionClassification;
 }
 
 /// Classification result for reinforcement learning

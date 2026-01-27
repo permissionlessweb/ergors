@@ -9,8 +9,6 @@ use ho_std::types::ergors::management::v1::{
     AddWorkspaceRequest,
     AddWorkspaceResponse,
     // Akash deployment types
-    AdvanceAkashDeploymentRequest,
-    AdvanceAkashDeploymentResponse,
     ApproveGrantRequest,
     CancelAkashDeploymentRequest,
     CompleteTaskWorktreeRequest,
@@ -580,22 +578,6 @@ impl ManagementClient {
         Ok(response.into_inner())
     }
 
-    /// Advance Akash deployment to next step
-    pub async fn advance_akash_deployment(
-        &mut self,
-        session_id: &str,
-    ) -> Result<AdvanceAkashDeploymentResponse> {
-        let response = self
-            .inner
-            .advance_akash_deployment(AdvanceAkashDeploymentRequest {
-                session_id: session_id.to_string(),
-            })
-            .await
-            .context("Failed to advance Akash deployment")?;
-
-        Ok(response.into_inner())
-    }
-
     /// Query bids for a deployment
     pub async fn query_akash_bids(&mut self, session_id: &str) -> Result<QueryAkashBidsResponse> {
         let response = self
@@ -856,22 +838,28 @@ impl ManagementClient {
     pub async fn run_akash_deployment(
         &mut self,
         session_id: &str,
-        skip_grants: bool,
-        auto_select_bid: bool,
+        interactive_bid: bool,
         min_balance_uakt: u64,
         trusted_providers: Vec<String>,
+        request_grant_from: &str,
+        grant_duration_seconds: u64,
+        grant_spend_limit_uakt: u64,
     ) -> Result<RunAkashDeploymentResponse> {
         let response = self
             .inner
             .run_akash_deployment(RunAkashDeploymentRequest {
                 session_id: session_id.to_string(),
                 options: Some(AkashWorkflowOptions {
-                    skip_grants,
-                    auto_select_bid,
+                    skip_grants: request_grant_from.is_empty(), // deprecated: skip if no grant requested
+                    auto_select_bid: !interactive_bid,          // deprecated: auto if not interactive
                     min_balance_uakt,
                     bid_wait_blocks: 2,
                     trusted_providers,
                     max_retries: 3,
+                    interactive_bid,
+                    request_grant_from: request_grant_from.to_string(),
+                    grant_duration_seconds,
+                    grant_spend_limit_uakt,
                 }),
             })
             .await

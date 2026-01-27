@@ -1,4 +1,4 @@
-# SDL Template Registrar Contract
+# CW-SDL: SDL Template Registrar Contract
 
 A CosmWasm smart contract for storing and managing Akash SDL (Stack Definition Language) templates with variable substitution and default value management.
 

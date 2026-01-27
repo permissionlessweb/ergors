@@ -233,10 +233,19 @@ impl Server {
         use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
         use tokio::sync::RwLock;
 
-        // Check if Akash config exists
-        let akash_config = c.0.akash.as_ref()?;
+        // Get Akash config (uses mainnet defaults if not explicitly configured)
+        let akash_config = c.akash();
+
+        // Skip if endpoints are empty (meaning Akash is intentionally disabled)
+        if akash_config.rpc_endpoint.is_empty() || akash_config.chain_id.is_empty() {
+            tracing::info!("📋 Akash deployment disabled (empty endpoints in config)");
+            return None;
+        }
 
         tracing::info!("🚀 Initializing Akash deployment context...");
+        tracing::info!("   Chain:    {}", akash_config.chain_id);
+        tracing::info!("   RPC:      {}", akash_config.rpc_endpoint);
+        tracing::info!("   REST:     {}", akash_config.rest_endpoint);
 
         // Get Cosmos key store from storage
         let key_store = match storage.get_cosmos_key_store().await {
@@ -266,8 +275,8 @@ impl Server {
             tracing::info!("📋 No custody password - Cosmos key manager locked (unlock via gRPC)");
         }
 
-        // Get endpoints from config or use mainnet defaults
-        let endpoints = CosmosEndpoints::from_akash_config(akash_config);
+        // Get endpoints from config
+        let endpoints = CosmosEndpoints::from_akash_config(&akash_config);
         let rest_endpoint = endpoints.rest.clone();
         let chain_id = akash_config.chain_id.clone();
 

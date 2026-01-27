@@ -296,16 +296,20 @@ pub mod remote {
     /// Use this to call embedding services that expose `/v1/embeddings` endpoint.
     ///
     /// ## Example
-    /// ```rust,no_run
-    /// use ergors_rag::embedder::remote::RemoteEmbedder;
+    /// ```rust,ignore
+    /// use ergors_rag::embedder::{Embedder, remote::RemoteEmbedder};
     ///
-    /// // Point to Akash deployment
-    /// let embedder = RemoteEmbedder::new(
-    ///     "http://provider.akash.network:8080",
-    ///     "all-MiniLM-L6-v2",
-    ///     384
-    /// )?;
-    /// let vec = embedder.embed("hello world").await?;
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     // Point to Akash deployment
+    ///     let embedder = RemoteEmbedder::new(
+    ///         "http://provider.akash.network:8080",
+    ///         "all-MiniLM-L6-v2",
+    ///         384
+    ///     )?;
+    ///     let vec = embedder.embed("hello world").await?;
+    ///     Ok(())
+    /// }
     /// ```
     pub struct RemoteEmbedder {
         client: Client,
@@ -428,12 +432,16 @@ pub mod openai {
     /// Requires OPENAI_API_KEY environment variable.
     ///
     /// ## Example
-    /// ```rust
-    /// use ergors_rag::embedder::openai::OpenAIEmbedder;
+    /// ```rust,ignore
+    /// use ergors_rag::embedder::{Embedder, openai::OpenAIEmbedder};
     ///
-    /// let embedder = OpenAIEmbedder::new()?;
-    /// let vec = embedder.embed("hello world").await?;
-    /// assert_eq!(vec.len(), 1536);  // text-embedding-3-small dimension
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let embedder = OpenAIEmbedder::new()?;
+    ///     let vec = embedder.embed("hello world").await?;
+    ///     assert_eq!(vec.len(), 1536);  // text-embedding-3-small dimension
+    ///     Ok(())
+    /// }
     /// ```
     pub struct OpenAIEmbedder {
         client: Client,

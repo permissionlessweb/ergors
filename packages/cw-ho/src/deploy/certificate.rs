@@ -44,16 +44,19 @@ impl CertificateManager {
         account_index: u32,
         address: &str,
     ) -> Result<AkashCertificateInfo> {
-        tracing::info!("Checking certificate for address: {}", address);
+        tracing::info!("  Querying chain for existing certificate...");
 
         // Query chain for existing valid certificate
         if let Some(chain_cert) = self.cosmos.query_valid_certificate(address).await? {
-            tracing::info!("Found valid certificate on chain");
+            tracing::info!("  Certificate: FOUND EXISTING");
+            tracing::info!("    Owner:  {}", chain_cert.owner);
+            tracing::info!("    Serial: {}", chain_cert.serial);
+            tracing::info!("    State:  {:?}", chain_cert.state);
             return Ok(certificate_info_to_proto(&chain_cert));
         }
 
         // No valid certificate exists, create new one
-        tracing::info!("No valid certificate found, creating new one");
+        tracing::info!("  Certificate: NOT FOUND - creating new one...");
 
         self.create_certificate(key_name, account_index, address)
             .await
@@ -67,7 +70,9 @@ impl CertificateManager {
         address: &str,
     ) -> Result<AkashCertificateInfo> {
         // Generate certificate and key pair
+        tracing::info!("  Generating certificate keypair...");
         let (cert_bytes, pubkey_bytes, serial) = generate_akash_certificate(address)?;
+        tracing::info!("    Serial: {}", serial);
 
         // Build MsgCreateCertificate
         let msg = MsgCreateCertificate {
@@ -79,6 +84,7 @@ impl CertificateManager {
         let msg_any = msg_to_any(&msg, "/akash.cert.v1beta3.MsgCreateCertificate");
 
         // Broadcast and wait for finality
+        tracing::info!("  Broadcasting MsgCreateCertificate...");
         let result = self
             .tx_lifecycle
             .sign_broadcast_wait(
@@ -92,6 +98,8 @@ impl CertificateManager {
             .await?;
 
         if !result.is_success() {
+            tracing::error!("  FAILED: Certificate tx rejected (code {})", result.code);
+            tracing::error!("  Error: {}", result.raw_log);
             return Err(anyhow!(
                 "Certificate creation failed (code {}): {}",
                 result.code,
@@ -99,11 +107,10 @@ impl CertificateManager {
             ));
         }
 
-        tracing::info!(
-            "Certificate created, tx_hash: {}, height: {}",
-            result.hash,
-            result.height
-        );
+        tracing::info!("  Certificate: CREATED NEW");
+        tracing::info!("    Tx Hash: {}", result.hash);
+        tracing::info!("    Height:  {}", result.height);
+        tracing::info!("    Serial:  {}", serial);
 
         Ok(AkashCertificateInfo {
             owner: address.to_string(),

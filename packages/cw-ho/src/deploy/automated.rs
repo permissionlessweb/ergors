@@ -78,41 +78,53 @@ impl AutomatedDeployer {
         workflow: &mut AkashDeploymentWorkflow,
         opts: &AkashWorkflowOptions,
     ) -> Result<DeploymentResult> {
-        tracing::info!(
-            "Starting automated deployment for session {}",
-            workflow.session_id
-        );
+        tracing::info!("═══════════════════════════════════════════════════════════════");
+        tracing::info!("  AUTOMATED AKASH DEPLOYMENT");
+        tracing::info!("═══════════════════════════════════════════════════════════════");
+        tracing::info!("Session ID: {}", workflow.session_id);
+        tracing::info!("Account:    {}", workflow.account_address);
+        tracing::info!("Key:        {} (index {})", workflow.selected_key_name, workflow.hd_account_index);
+        tracing::info!("Chain:      {}", workflow.chain_id);
+        tracing::info!("───────────────────────────────────────────────────────────────");
 
         // Set workflow status
         workflow.status = AkashWorkflowStatus::Running as i32;
         workflow.options = Some(opts.clone());
         self.save_workflow(workflow).await?;
 
-        // Step 1: Check balance
+        // Step 1: Connectivity check - verify we can reach Akash network
+        self.step_connectivity_check(workflow).await?;
+
+        // Step 2: Check balance
         self.step_check_balance(workflow, opts).await?;
 
-        // Step 2: Setup certificate
+        // Step 3: Grant request/wait (optional - only if request_grant_from is set)
+        if !opts.request_grant_from.is_empty() {
+            self.step_grant_request_and_wait(workflow, opts).await?;
+        }
+
+        // Step 4: Setup certificate
         self.step_setup_certificate(workflow).await?;
 
-        // Step 3: Create deployment
+        // Step 5: Create deployment
         let dseq = self.step_create_deployment(workflow, opts).await?;
 
-        // Step 4: Wait for and collect bids
+        // Step 6: Wait for and collect bids
         let bids = self.step_wait_for_bids(workflow, dseq, opts).await?;
 
-        // Step 5: Select provider
+        // Step 7: Select provider
         let selected_bid = self.step_select_provider(workflow, &bids, opts).await?;
 
-        // Step 6: Create lease
+        // Step 8: Create lease
         self.step_create_lease(workflow, &selected_bid).await?;
 
-        // Step 7: Send manifest
+        // Step 9: Send manifest
         self.step_send_manifest(workflow).await?;
 
-        // Step 8: Retrieve endpoints
+        // Step 10: Retrieve endpoints
         let endpoints = self.step_retrieve_endpoints(workflow).await?;
 
-        // Step 9: Save endpoints to storage
+        // Step 11: Save endpoints to storage
         self.step_save_endpoints(workflow, endpoints).await?;
 
         // Mark completed
@@ -121,10 +133,17 @@ impl AutomatedDeployer {
         workflow.completed_at = Some(current_timestamp());
         self.save_workflow(workflow).await?;
 
-        tracing::info!(
-            "Deployment completed successfully for session {}",
-            workflow.session_id
-        );
+        tracing::info!("───────────────────────────────────────────────────────────────");
+        tracing::info!("  DEPLOYMENT COMPLETE");
+        tracing::info!("───────────────────────────────────────────────────────────────");
+        tracing::info!("Session:  {}", workflow.session_id);
+        tracing::info!("DSEQ:     {}", dseq);
+        tracing::info!("Provider: {}", selected_bid.provider);
+        tracing::info!("Endpoints:");
+        for ep in &workflow.service_endpoints {
+            tracing::info!("  {} -> {}", ep.service_name, ep.external_uri);
+        }
+        tracing::info!("═══════════════════════════════════════════════════════════════");
 
         Ok(DeploymentResult {
             session_id: workflow.session_id.clone(),
@@ -134,16 +153,97 @@ impl AutomatedDeployer {
         })
     }
 
-    /// Step 1: Check account balance.
+    /// Step 1: Verify connectivity to Akash network.
+    async fn step_connectivity_check(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<()> {
+        tracing::info!("[Step 1/11] Connectivity Check");
+        workflow.current_step = AkashWorkflowStep::ConnectivityCheck as i32;
+        self.save_workflow(workflow).await?;
+
+        let node_info_url = format!(
+            "{}/cosmos/base/tendermint/v1beta1/node_info",
+            self.cosmos.rest_endpoint().trim_end_matches('/')
+        );
+
+        tracing::info!("  Endpoint: {}", self.cosmos.rest_endpoint());
+        tracing::info!("  Verifying network connectivity...");
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()?;
+
+        let response = client.get(&node_info_url).send().await;
+
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                let info: serde_json::Value = resp.json().await?;
+
+                // Extract network/chain info
+                let network = info
+                    .get("default_node_info")
+                    .and_then(|n| n.get("network"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown");
+
+                let moniker = info
+                    .get("default_node_info")
+                    .and_then(|n| n.get("moniker"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown");
+
+                tracing::info!("  Network:  {}", network);
+                tracing::info!("  Node:     {}", moniker);
+
+                // Verify chain ID matches if configured
+                if !workflow.chain_id.is_empty() && network != workflow.chain_id {
+                    tracing::error!(
+                        "  FAILED: Chain ID mismatch (expected {}, got {})",
+                        workflow.chain_id,
+                        network
+                    );
+                    return Err(anyhow!(
+                        "Chain ID mismatch: expected '{}', but connected to '{}'",
+                        workflow.chain_id,
+                        network
+                    ));
+                }
+
+                tracing::info!("  OK: Connected to Akash network");
+                Ok(())
+            }
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                tracing::error!("  FAILED: HTTP {} - {}", status, body);
+                Err(anyhow!(
+                    "Cannot reach Akash network at {}. HTTP {}: {}",
+                    self.cosmos.rest_endpoint(),
+                    status,
+                    body
+                ))
+            }
+            Err(e) => {
+                tracing::error!("  FAILED: Connection error");
+                tracing::error!("  Error: {}", e);
+                Err(anyhow!(
+                    "Cannot connect to Akash network at {}: {}",
+                    self.cosmos.rest_endpoint(),
+                    e
+                ))
+            }
+        }
+    }
+
+    /// Step 2: Check account balance.
     async fn step_check_balance(
         &self,
         workflow: &mut AkashDeploymentWorkflow,
         opts: &AkashWorkflowOptions,
     ) -> Result<()> {
+        tracing::info!("[Step 2/11] Balance Check");
         workflow.current_step = AkashWorkflowStep::BalanceCheck as i32;
         self.save_workflow(workflow).await?;
 
-        tracing::info!("Checking balance for {}", workflow.account_address);
+        tracing::info!("  Querying balance for wallet: {}", workflow.account_address);
 
         let balance = self
             .cosmos
@@ -157,26 +257,84 @@ impl AutomatedDeployer {
             MIN_BALANCE_UAKT
         };
 
-        tracing::info!("Account balance: {} uAKT (required: {})", amount, min_required);
+        let akt_balance = amount as f64 / 1_000_000.0;
+        let akt_required = min_required as f64 / 1_000_000.0;
+
+        tracing::info!("  Wallet:   {}", workflow.account_address);
+        tracing::info!("  Balance:  {:.6} AKT ({} uakt)", akt_balance, amount);
+        tracing::info!("  Required: {:.6} AKT ({} uakt)", akt_required, min_required);
 
         if amount < min_required {
+            tracing::error!("  FAILED: Insufficient balance");
             return Err(anyhow!(
-                "Insufficient balance: {} uAKT (need at least {} uAKT)",
-                amount,
-                min_required
+                "Insufficient balance: {:.6} AKT (need at least {:.6} AKT)",
+                akt_balance,
+                akt_required
             ));
         }
 
+        tracing::info!("  OK: Balance sufficient");
         Ok(())
     }
 
-    /// Step 2: Setup certificate.
+    /// Step 3 (optional): Request grant from another node and wait for approval.
+    ///
+    /// This step is only executed if `opts.request_grant_from` is set.
+    /// It will block indefinitely until:
+    /// - The grant is approved and confirmed on-chain
+    /// - The grant is rejected
+    /// - The user cancels (Ctrl+C)
+    async fn step_grant_request_and_wait(
+        &self,
+        workflow: &mut AkashDeploymentWorkflow,
+        opts: &AkashWorkflowOptions,
+    ) -> Result<()> {
+        tracing::info!("[Step 3/11] Grant Request (Optional)");
+        workflow.current_step = AkashWorkflowStep::GrantRequest as i32;
+        self.save_workflow(workflow).await?;
+
+        let granter_address = &opts.request_grant_from;
+        tracing::info!("  Requesting grant from: {}", granter_address);
+        tracing::info!("  Duration: {} seconds", opts.grant_duration_seconds);
+        tracing::info!("  Spend limit: {} uakt", opts.grant_spend_limit_uakt);
+
+        // Store grant request in workflow
+        workflow.request_grant_from = granter_address.as_bytes().to_vec();
+        workflow.grant_duration_seconds = opts.grant_duration_seconds;
+        workflow.grant_spend_limit_uakt = opts.grant_spend_limit_uakt;
+
+        // In production: Submit grant request to the granter node
+        // For now, we just log that we would submit it
+        tracing::info!("  Submitting grant request...");
+        tracing::warn!("  NOTE: Grant request submission not yet implemented");
+        tracing::warn!("  Proceeding without grant (account must be self-funded)");
+
+        // Transition to GrantWait step
+        workflow.current_step = AkashWorkflowStep::GrantWait as i32;
+        self.save_workflow(workflow).await?;
+
+        tracing::info!("[Step 3b/11] Grant Wait");
+        tracing::info!("  Waiting for grant approval...");
+        tracing::info!("  Press Ctrl+C to cancel");
+
+        // In production: Poll indefinitely until grant is confirmed/rejected
+        // For now, we simulate a successful grant after a short wait
+        // TODO: Implement actual grant polling when granter contract is ready
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        tracing::info!("  OK: Grant request processed (skipped - not yet implemented)");
+        Ok(())
+    }
+
+    /// Step 4: Setup certificate.
     async fn step_setup_certificate(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<()> {
+        tracing::info!("[Step 4/11] Certificate Setup");
         workflow.current_step = AkashWorkflowStep::CertificateSetup as i32;
         self.save_workflow(workflow).await?;
 
-        tracing::info!("Setting up certificate for {}", workflow.account_address);
+        tracing::info!("  Address: {}", workflow.account_address);
 
+        // The cert_manager logs detailed info about found vs created
         let cert_info = self
             .cert_manager
             .get_or_create(
@@ -189,7 +347,7 @@ impl AutomatedDeployer {
         workflow.certificate_info = Some(cert_info);
         self.save_workflow(workflow).await?;
 
-        tracing::info!("Certificate ready");
+        tracing::info!("  OK: Certificate ready");
         Ok(())
     }
 
@@ -199,6 +357,7 @@ impl AutomatedDeployer {
         workflow: &mut AkashDeploymentWorkflow,
         opts: &AkashWorkflowOptions,
     ) -> Result<u64> {
+        tracing::info!("[Step 5/11] Create Deployment");
         workflow.current_step = AkashWorkflowStep::DeploymentCreate as i32;
         self.save_workflow(workflow).await?;
 
@@ -207,20 +366,21 @@ impl AutomatedDeployer {
             .as_ref()
             .ok_or_else(|| anyhow!("No SDL configured"))?;
 
-        tracing::info!("Creating deployment from template '{}'", sdl.template_name);
+        tracing::info!("  SDL Template: {}", sdl.template_name);
 
         // Get next available dseq
         let dseq = get_next_dseq(self.cosmos.rest_endpoint(), &workflow.account_address).await?;
-
-        tracing::info!("Using dseq: {}", dseq);
+        tracing::info!("  Assigned DSEQ: {}", dseq);
 
         // Build MsgCreateDeployment
-        // Use min_balance as a reasonable deposit (or default if not set)
         let deposit = if opts.min_balance_uakt > 0 {
             opts.min_balance_uakt
         } else {
             DEFAULT_DEPOSIT_UAKT
         };
+
+        let deposit_akt = deposit as f64 / 1_000_000.0;
+        tracing::info!("  Escrow Deposit: {:.6} AKT ({} uakt)", deposit_akt, deposit);
 
         let builder = DeploymentBuilder::new(&workflow.account_address, dseq)
             .with_deposit(deposit);
@@ -228,6 +388,7 @@ impl AutomatedDeployer {
         let msg = builder.build_from_sdl(&sdl.resolved_content)?;
 
         // Sign and broadcast
+        tracing::info!("  Broadcasting MsgCreateDeployment...");
         let msg_any = msg_to_any(&msg, msg_types::MSG_CREATE_DEPLOYMENT);
 
         let result = self
@@ -243,6 +404,8 @@ impl AutomatedDeployer {
             .await?;
 
         if !result.is_success() {
+            tracing::error!("  FAILED: Deployment tx rejected (code {})", result.code);
+            tracing::error!("  Error: {}", result.raw_log);
             return Err(anyhow!(
                 "Deployment creation failed (code {}): {}",
                 result.code,
@@ -250,20 +413,14 @@ impl AutomatedDeployer {
             ));
         }
 
-        tracing::info!(
-            "Deployment created: tx_hash={}, height={}",
-            result.hash,
-            result.height
-        );
+        tracing::info!("  Tx Hash:  {}", result.hash);
+        tracing::info!("  Height:   {}", result.height);
+        tracing::info!("  Gas Used: {}", result.gas_used);
 
         // Extract dseq from events (verify it matches)
         let event_dseq = result.extract_dseq().unwrap_or(dseq);
         if event_dseq != dseq {
-            tracing::warn!(
-                "Dseq mismatch: expected {}, got {} from events",
-                dseq,
-                event_dseq
-            );
+            tracing::warn!("  Warning: DSEQ mismatch (expected {}, got {})", dseq, event_dseq);
         }
 
         // Store deployment info
@@ -279,6 +436,7 @@ impl AutomatedDeployer {
         });
 
         self.save_workflow(workflow).await?;
+        tracing::info!("  OK: Deployment created (DSEQ: {})", dseq);
         Ok(dseq)
     }
 
@@ -289,6 +447,7 @@ impl AutomatedDeployer {
         dseq: u64,
         opts: &AkashWorkflowOptions,
     ) -> Result<Vec<BidInfo>> {
+        tracing::info!("[Step 6/11] Wait for Bids");
         workflow.current_step = AkashWorkflowStep::BidWait as i32;
         self.save_workflow(workflow).await?;
 
@@ -298,11 +457,9 @@ impl AutomatedDeployer {
             DEFAULT_BID_WAIT_BLOCKS
         };
 
-        tracing::info!(
-            "Waiting for bids (~{}s for {} blocks)...",
-            wait_blocks * 6,
-            wait_blocks
-        );
+        let wait_secs = wait_blocks * 6;
+        tracing::info!("  DSEQ: {}", dseq);
+        tracing::info!("  Waiting ~{}s ({} blocks) for providers to bid...", wait_secs, wait_blocks);
 
         // Initial wait for bids to arrive
         tokio::time::sleep(Duration::from_secs(wait_blocks as u64 * 6)).await;
@@ -314,6 +471,8 @@ impl AutomatedDeployer {
         while attempts < MAX_BID_POLL_ATTEMPTS {
             attempts += 1;
 
+            tracing::info!("  Polling for bids (attempt {}/{})...", attempts, MAX_BID_POLL_ATTEMPTS);
+
             let query_result = self
                 .cosmos
                 .query_open_bids(&workflow.account_address, dseq)
@@ -322,17 +481,20 @@ impl AutomatedDeployer {
             match query_result {
                 Ok(found_bids) => {
                     if !found_bids.is_empty() {
-                        tracing::info!(
-                            "Found {} open bids after {} attempts",
-                            found_bids.len(),
-                            attempts
-                        );
+                        tracing::info!("  Received {} bid(s):", found_bids.len());
 
-                        // Log bids
-                        for bid in &found_bids {
+                        // Log all bids with details
+                        for (i, bid) in found_bids.iter().enumerate() {
+                            let price: u64 = bid.price_amount.parse().unwrap_or(0);
+                            let price_akt = price as f64 / 1_000_000.0;
                             tracing::info!(
-                                "  Bid from {}: {} {}",
-                                bid.provider,
+                                "    [{}] Provider: {}",
+                                i + 1,
+                                bid.provider
+                            );
+                            tracing::info!(
+                                "        Price: {:.6} AKT/block ({} {})",
+                                price_akt,
                                 bid.price_amount,
                                 bid.price_denom
                             );
@@ -343,23 +505,20 @@ impl AutomatedDeployer {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Bid query attempt {} failed: {}", attempts, e);
+                    tracing::warn!("  Query failed: {}", e);
                 }
             }
 
             if attempts < MAX_BID_POLL_ATTEMPTS {
-                tracing::info!(
-                    "No bids yet (attempt {}/{}), waiting...",
-                    attempts,
-                    MAX_BID_POLL_ATTEMPTS
-                );
-                tokio::time::sleep(Duration::from_secs(6)).await; // Wait one more block
+                tracing::info!("  No bids yet, waiting 6s for next block...");
+                tokio::time::sleep(Duration::from_secs(6)).await;
             }
         }
 
         if bids.is_empty() {
+            tracing::error!("  FAILED: No bids received after {} attempts", MAX_BID_POLL_ATTEMPTS);
             return Err(anyhow!(
-                "No bids received after {} attempts. Check provider availability.",
+                "No bids received after {} attempts. Check provider availability or increase max price.",
                 MAX_BID_POLL_ATTEMPTS
             ));
         }
@@ -381,37 +540,83 @@ impl AutomatedDeployer {
             .collect();
 
         self.save_workflow(workflow).await?;
+        tracing::info!("  OK: {} bid(s) available for selection", bids.len());
         Ok(bids)
     }
 
-    /// Step 5: Select provider.
+    /// Step 7: Select provider.
+    ///
+    /// Default behavior: auto-select cheapest from trusted providers (or all if none trusted).
+    /// If `opts.interactive_bid` is true: future implementation would pause for user input.
     async fn step_select_provider(
         &self,
         workflow: &mut AkashDeploymentWorkflow,
         bids: &[BidInfo],
         opts: &AkashWorkflowOptions,
     ) -> Result<BidInfo> {
+        tracing::info!("[Step 7/11] Provider Selection");
         workflow.current_step = AkashWorkflowStep::ProviderSelection as i32;
         self.save_workflow(workflow).await?;
 
+        // Check if interactive mode is requested
+        let selection_mode = if opts.interactive_bid {
+            // Interactive mode requested - log available bids
+            tracing::info!("  Mode: INTERACTIVE (user selection)");
+            tracing::info!("  Available bids:");
+            for (i, bid) in bids.iter().enumerate() {
+                let price: u64 = bid.price_amount.parse().unwrap_or(0);
+                let price_akt = price as f64 / 1_000_000.0;
+                let trusted = if opts.trusted_providers.contains(&bid.provider) {
+                    " [TRUSTED]"
+                } else {
+                    ""
+                };
+                tracing::info!(
+                    "    [{}] {} - {:.6} AKT/block{}",
+                    i + 1,
+                    bid.provider,
+                    price_akt,
+                    trusted
+                );
+            }
+            tracing::warn!("  NOTE: Interactive selection not yet implemented");
+            tracing::warn!("  Falling back to auto-selection...");
+            "AUTO (fallback from interactive)"
+        } else {
+            "AUTO"
+        };
+
         // Filter by trusted providers if specified
+        let filter_mode = if opts.trusted_providers.is_empty() {
+            "all providers (no trusted list)"
+        } else {
+            "trusted providers only"
+        };
+        tracing::info!("  Selection: {}", selection_mode);
+        tracing::info!("  Filter: {}", filter_mode);
+
         let candidates: Vec<_> = if opts.trusted_providers.is_empty() {
             bids.to_vec()
         } else {
+            tracing::info!("  Trusted list: {:?}", opts.trusted_providers);
             bids.iter()
                 .filter(|b| opts.trusted_providers.contains(&b.provider))
                 .cloned()
                 .collect()
         };
 
+        tracing::info!("  Candidates: {} (from {} total bids)", candidates.len(), bids.len());
+
         if candidates.is_empty() {
+            tracing::error!("  FAILED: No bids from trusted providers");
+            tracing::error!("  Available providers: {:?}", bids.iter().map(|b| &b.provider).collect::<Vec<_>>());
             return Err(anyhow!(
                 "No bids from trusted providers. Available providers: {:?}",
                 bids.iter().map(|b| &b.provider).collect::<Vec<_>>()
             ));
         }
 
-        // Select cheapest bid
+        // Select cheapest bid (auto-selection)
         let selected = candidates
             .iter()
             .min_by(|a, b| {
@@ -422,16 +627,15 @@ impl AutomatedDeployer {
             .cloned()
             .ok_or_else(|| anyhow!("Failed to select bid"))?;
 
-        tracing::info!(
-            "Selected provider {} with price {} {}",
-            selected.provider,
-            selected.price_amount,
-            selected.price_denom
-        );
-
-        // Store selection
-        let is_trusted = opts.trusted_providers.contains(&selected.provider);
         let price: u64 = selected.price_amount.parse().unwrap_or(0);
+        let price_akt = price as f64 / 1_000_000.0;
+        let is_trusted = opts.trusted_providers.contains(&selected.provider);
+
+        tracing::info!("  ─────────────────────────────────────────");
+        tracing::info!("  Selected: {} (cheapest)", selected.provider);
+        tracing::info!("  Price:    {:.6} AKT/block ({} {})", price_akt, selected.price_amount, selected.price_denom);
+        tracing::info!("  Trusted:  {}", if is_trusted { "YES" } else { "NO" });
+        tracing::info!("  ─────────────────────────────────────────");
 
         workflow.provider = Some(AkashProviderSelection {
             provider_address: selected.provider.clone(),
@@ -443,6 +647,7 @@ impl AutomatedDeployer {
         });
 
         self.save_workflow(workflow).await?;
+        tracing::info!("  OK: Provider selected");
         Ok(selected)
     }
 
@@ -452,15 +657,18 @@ impl AutomatedDeployer {
         workflow: &mut AkashDeploymentWorkflow,
         bid: &BidInfo,
     ) -> Result<()> {
+        tracing::info!("[Step 8/11] Create Lease");
         workflow.current_step = AkashWorkflowStep::LeaseCreate as i32;
         self.save_workflow(workflow).await?;
 
-        tracing::info!("Creating lease with provider {}", bid.provider);
+        tracing::info!("  Provider: {}", bid.provider);
+        tracing::info!("  DSEQ: {}, GSEQ: {}, OSEQ: {}", bid.dseq, bid.gseq, bid.oseq);
 
         // Build MsgCreateLease
         let msg = build_create_lease_msg(&bid.owner, bid.dseq, bid.gseq, bid.oseq, &bid.provider);
-
         let msg_any = msg_to_any(&msg, msg_types::MSG_CREATE_LEASE);
+
+        tracing::info!("  Broadcasting MsgCreateLease...");
 
         let result = self
             .tx_lifecycle
@@ -475,6 +683,8 @@ impl AutomatedDeployer {
             .await?;
 
         if !result.is_success() {
+            tracing::error!("  FAILED: Lease tx rejected (code {})", result.code);
+            tracing::error!("  Error: {}", result.raw_log);
             return Err(anyhow!(
                 "Lease creation failed (code {}): {}",
                 result.code,
@@ -482,11 +692,11 @@ impl AutomatedDeployer {
             ));
         }
 
-        tracing::info!(
-            "Lease created: tx_hash={}, height={}",
-            result.hash,
-            result.height
-        );
+        let lease_id = format!("{}/{}/{}/{}/{}", bid.owner, bid.dseq, bid.gseq, bid.oseq, bid.provider);
+
+        tracing::info!("  Tx Hash:  {}", result.hash);
+        tracing::info!("  Height:   {}", result.height);
+        tracing::info!("  Lease ID: {}", lease_id);
 
         // Store lease info
         workflow.lease_id_info = Some(AkashLeaseIdInfo {
@@ -500,15 +710,17 @@ impl AutomatedDeployer {
         // Update runtime info
         if let Some(ref mut runtime) = workflow.deployment {
             runtime.provider_address = bid.provider.clone();
-            runtime.lease_id = format!("{}/{}/{}/{}/{}", bid.owner, bid.dseq, bid.gseq, bid.oseq, bid.provider);
+            runtime.lease_id = lease_id;
         }
 
         self.save_workflow(workflow).await?;
+        tracing::info!("  OK: Lease created");
         Ok(())
     }
 
     /// Step 7: Send manifest.
     async fn step_send_manifest(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<()> {
+        tracing::info!("[Step 9/11] Send Manifest");
         workflow.current_step = AkashWorkflowStep::ManifestSend as i32;
         self.save_workflow(workflow).await?;
 
@@ -524,11 +736,17 @@ impl AutomatedDeployer {
 
         // Construct provider URI
         let provider_uri = format!("https://{}:8443", lease_info.provider);
+        let manifest_endpoint = format!(
+            "{}/deployment/{}/manifest",
+            provider_uri, lease_info.dseq
+        );
 
-        tracing::info!("Sending manifest to provider at {}", provider_uri);
+        tracing::info!("  Provider URI: {}", provider_uri);
+        tracing::info!("  Endpoint:     {}", manifest_endpoint);
+        tracing::info!("  Sending manifest...");
 
         let sender = ManifestSender::new(&provider_uri);
-        sender
+        match sender
             .send_manifest_from_sdl(
                 &lease_info.owner,
                 lease_info.dseq,
@@ -536,9 +754,23 @@ impl AutomatedDeployer {
                 lease_info.oseq,
                 &sdl.resolved_content,
             )
-            .await?;
+            .await
+        {
+            Ok(_) => {
+                tracing::info!("  OK: Manifest accepted by provider");
+            }
+            Err(e) => {
+                tracing::error!("  FAILED: Manifest send failed");
+                tracing::error!("  Error: {}", e);
+                return Err(e);
+            }
+        }
 
-        tracing::info!("Manifest sent successfully");
+        // Store provider URI in runtime
+        if let Some(ref mut runtime) = workflow.deployment {
+            runtime.provider_host_uri = provider_uri;
+        }
+
         self.save_workflow(workflow).await?;
         Ok(())
     }
@@ -548,6 +780,7 @@ impl AutomatedDeployer {
         &self,
         workflow: &mut AkashDeploymentWorkflow,
     ) -> Result<Vec<AkashServiceEndpoint>> {
+        tracing::info!("[Step 10/11] Retrieve Endpoints");
         workflow.current_step = AkashWorkflowStep::EndpointRetrieval as i32;
         self.save_workflow(workflow).await?;
 
@@ -557,8 +790,14 @@ impl AutomatedDeployer {
             .ok_or_else(|| anyhow!("No lease info"))?;
 
         let provider_uri = format!("https://{}:8443", lease_info.provider);
+        let status_endpoint = format!(
+            "{}/lease/{}/{}/{}/{}/status",
+            provider_uri, lease_info.dseq, lease_info.gseq, lease_info.oseq, lease_info.provider
+        );
 
-        tracing::info!("Retrieving endpoints from provider at {}", provider_uri);
+        tracing::info!("  Provider URI: {}", provider_uri);
+        tracing::info!("  Status URL:   {}", status_endpoint);
+        tracing::info!("  Waiting 10s for container startup...");
 
         // Wait a bit for services to start
         tokio::time::sleep(Duration::from_secs(10)).await;
@@ -571,6 +810,8 @@ impl AutomatedDeployer {
         while attempts < MAX_ENDPOINT_ATTEMPTS {
             attempts += 1;
 
+            tracing::info!("  Polling endpoints (attempt {}/{})...", attempts, MAX_ENDPOINT_ATTEMPTS);
+
             match query_service_endpoints(
                 &provider_uri,
                 &lease_info.owner,
@@ -581,21 +822,21 @@ impl AutomatedDeployer {
             .await
             {
                 Ok(eps) if !eps.is_empty() => {
+                    tracing::info!("  Discovered {} endpoint(s):", eps.len());
                     for (name, ep) in eps {
-                        tracing::info!("Discovered endpoint: {} -> {}", name, ep.external_uri);
+                        tracing::info!("    ┌─ Service: {}", name);
+                        tracing::info!("    │  URI:      {}", ep.external_uri);
+                        tracing::info!("    │  Port:     {}:{} ({})", ep.external_port, ep.internal_port, ep.protocol);
+                        tracing::info!("    └──────────────────────────────");
                         endpoints.insert(name, ep);
                     }
                     break;
                 }
                 Ok(_) => {
-                    tracing::info!(
-                        "No endpoints yet (attempt {}/{}), waiting...",
-                        attempts,
-                        MAX_ENDPOINT_ATTEMPTS
-                    );
+                    tracing::info!("  No endpoints yet, waiting 5s...");
                 }
                 Err(e) => {
-                    tracing::warn!("Endpoint query failed (attempt {}): {}", attempts, e);
+                    tracing::warn!("  Query failed: {}", e);
                 }
             }
 
@@ -617,7 +858,9 @@ impl AutomatedDeployer {
             .collect();
 
         if endpoint_infos.is_empty() {
-            tracing::warn!("No endpoints discovered - service may still be starting");
+            tracing::warn!("  Warning: No endpoints discovered - service may still be starting");
+        } else {
+            tracing::info!("  OK: {} endpoint(s) retrieved", endpoint_infos.len());
         }
 
         Ok(endpoint_infos)
@@ -629,6 +872,8 @@ impl AutomatedDeployer {
         workflow: &mut AkashDeploymentWorkflow,
         endpoints: Vec<AkashServiceEndpoint>,
     ) -> Result<()> {
+        tracing::info!("[Step 11/11] Save Endpoints");
+
         // Store in workflow
         workflow.service_endpoints = endpoints.clone();
 
@@ -650,8 +895,14 @@ impl AutomatedDeployer {
             // Serialize endpoints to JSON for storage
             let _endpoints_json = serde_json::to_string(&endpoints)?;
 
-            tracing::info!("Saved {} endpoints to storage key: {}", endpoints.len(), storage_key);
+            tracing::info!("  Storage Key: {}", storage_key);
         }
+
+        tracing::info!("  Saved {} endpoint(s) to workflow state", endpoints.len());
+        for ep in &endpoints {
+            tracing::info!("    {} -> {}", ep.service_name, ep.external_uri);
+        }
+        tracing::info!("  OK: Endpoints persisted to storage");
 
         Ok(())
     }

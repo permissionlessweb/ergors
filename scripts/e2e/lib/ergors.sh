@@ -61,7 +61,7 @@ ergors_build() {
 ergors_build_contracts() {
     log_step "Building CosmWasm Contracts"
 
-    local artifact="${ROOT_DIR}/contracts/artifacts/sdl_template_registrar.wasm"
+    local artifact="${ROOT_DIR}/contracts/artifacts/cw_sdl.wasm"
 
     if [[ -f "$artifact" ]]; then
         log_success "Contract artifacts already exist"
@@ -119,8 +119,8 @@ _ergors_generate_config() {
 
     local sdl_args=""
     if [[ "$node_type" == "coordinator" ]]; then
-        local wasm_src="${ROOT_DIR}/contracts/artifacts/sdl_template_registrar.wasm"
-        local wasm_dst="${home_dir}/sdl_template_registrar.wasm"
+        local wasm_src="${ROOT_DIR}/contracts/artifacts/cw_sdl.wasm"
+        local wasm_dst="${home_dir}/cw_sdl.wasm"
         if [[ -f "$wasm_src" ]]; then
             cp "$wasm_src" "$wasm_dst"
             sdl_args="--with-sdl-contract --sdl-wasm-path ${wasm_dst}"

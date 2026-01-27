@@ -1107,14 +1107,16 @@ message ProxyRouterConfig {
 }
 
 // Workflow step enumeration for Akash deployment wizard
+// NOTE: Step ordering is handled in code, not by enum values.
+// CONNECTIVITY_CHECK runs first regardless of its numeric value.
 enum AkashWorkflowStep {
   AKASH_WORKFLOW_STEP_UNSPECIFIED = 0;
   AKASH_WORKFLOW_STEP_KEY_SELECTION = 1;
   AKASH_WORKFLOW_STEP_BALANCE_CHECK = 2;
-  AKASH_WORKFLOW_STEP_GRANT_REQUEST = 3;      // NEW: Request authz/feegrant from granter
-  AKASH_WORKFLOW_STEP_GRANT_WAIT = 4;         // NEW: Wait for grant approval
-  AKASH_WORKFLOW_STEP_AUTHZ_SETUP = 5;
-  AKASH_WORKFLOW_STEP_FEEGRANT_SETUP = 6;
+  AKASH_WORKFLOW_STEP_GRANT_REQUEST = 3;      // OPTIONAL: Request authz/feegrant (only if --request-grant-from)
+  AKASH_WORKFLOW_STEP_GRANT_WAIT = 4;         // OPTIONAL: Wait for grant approval (follows GRANT_REQUEST)
+  AKASH_WORKFLOW_STEP_AUTHZ_SETUP = 5;        // DEPRECATED: Handled in grant flow
+  AKASH_WORKFLOW_STEP_FEEGRANT_SETUP = 6;     // DEPRECATED: Handled in grant flow
   AKASH_WORKFLOW_STEP_SDL_CONFIGURATION = 7;
   AKASH_WORKFLOW_STEP_CERTIFICATE_SETUP = 8;
   AKASH_WORKFLOW_STEP_DEPLOYMENT_CREATE = 9;
@@ -1123,9 +1125,10 @@ enum AkashWorkflowStep {
   AKASH_WORKFLOW_STEP_LEASE_CREATE = 12;
   AKASH_WORKFLOW_STEP_MANIFEST_SEND = 13;
   AKASH_WORKFLOW_STEP_ENDPOINT_RETRIEVAL = 14;
-  AKASH_WORKFLOW_STEP_ENDPOINT_TESTING = 15;
+  AKASH_WORKFLOW_STEP_ENDPOINT_TESTING = 15;  // DEPRECATED: Connectivity checked at start
   AKASH_WORKFLOW_STEP_COMPLETE = 16;
   AKASH_WORKFLOW_STEP_FAILED = 17;
+  AKASH_WORKFLOW_STEP_CONNECTIVITY_CHECK = 18; // NEW: Verify Akash network reachable (runs first)
 }
 
 // Workflow status
@@ -1371,10 +1374,10 @@ enum AkashLeaseState {
 
 // Workflow automation options (from CLI flags)
 message AkashWorkflowOptions {
-  // Skip authz/feegrant setup steps
-  bool skip_grants = 1;
-  // Auto-select cheapest bid from trusted providers
-  bool auto_select_bid = 2;
+  // DEPRECATED: Grants are now opt-in via request_grant_from. Ignored.
+  bool skip_grants = 1 [deprecated = true];
+  // DEPRECATED: Auto-select is now the default. Use interactive_bid=true for manual selection.
+  bool auto_select_bid = 2 [deprecated = true];
   // Minimum balance required to proceed (uakt)
   uint64 min_balance_uakt = 3;
   // Blocks to wait for bids (default: 2)
@@ -1383,6 +1386,15 @@ message AkashWorkflowOptions {
   repeated string trusted_providers = 5;
   // Maximum retries on transient failures
   uint32 max_retries = 6;
+
+  // NEW: Prompt user for bid selection instead of auto-selecting cheapest
+  bool interactive_bid = 7;
+  // NEW: Request grant from this node (bech32 ergo1... address). Empty = no grant request.
+  string request_grant_from = 8;
+  // NEW: Grant duration in seconds (default: 86400 = 24h)
+  uint64 grant_duration_seconds = 9;
+  // NEW: Grant spend limit in uakt (default: 5000000 = 5 AKT)
+  uint64 grant_spend_limit_uakt = 10;
 }
 
 // Service endpoint with port mapping (after manifest send)

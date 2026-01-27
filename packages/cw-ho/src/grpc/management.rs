@@ -11,7 +11,7 @@ use ho_std::types::ergors::management::v1::{
     // Workspace types
     AddWorkspaceRequest,
     AddWorkspaceResponse,
-    // Akash deployment types
+    // Akash deployment types (advance_akash_deployment is deprecated but still in proto)
     AdvanceAkashDeploymentRequest,
     AdvanceAkashDeploymentResponse,
     CancelAkashDeploymentRequest,
@@ -2124,57 +2124,15 @@ impl ManagementService for ManagementServiceImpl {
         Ok(Response::new(GetAkashDeploymentResponse { workflow }))
     }
 
+    /// DEPRECATED: Manual step advancement is no longer supported.
+    /// Use run_akash_deployment for automated workflows.
     async fn advance_akash_deployment(
         &self,
-        request: Request<AdvanceAkashDeploymentRequest>,
+        _request: Request<AdvanceAkashDeploymentRequest>,
     ) -> Result<Response<AdvanceAkashDeploymentResponse>, Status> {
-        let req = request.into_inner();
-
-        let mut workflow = self
-            .state
-            .s
-            .get_akash_workflow(&req.session_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
-
-        // Advance to next step
-        let current = workflow.current_step;
-        let next_step = current + 1;
-
-        // Validate step transition
-        if current >= AkashWorkflowStep::Complete as i32 {
-            return Ok(Response::new(AdvanceAkashDeploymentResponse {
-                success: false,
-                workflow: Some(workflow),
-                error_message: "Workflow is already complete".to_string(),
-            }));
-        }
-
-        workflow.current_step = next_step;
-        workflow.status = AkashWorkflowStatus::Running as i32;
-        workflow.updated_at = Some(pbjson_types::Timestamp {
-            seconds: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64,
-            nanos: 0,
-        });
-
-        // Mark as complete if we reached the complete step
-        if next_step >= AkashWorkflowStep::Complete as i32 {
-            workflow.status = AkashWorkflowStatus::Completed as i32;
-            workflow.completed_at = workflow.updated_at;
-        }
-
-        // Persist
-        self.state.s.put_akash_workflow(&workflow).await.ok();
-
-        Ok(Response::new(AdvanceAkashDeploymentResponse {
-            success: true,
-            workflow: Some(workflow),
-            error_message: String::new(),
-        }))
+        Err(Status::unimplemented(
+            "Manual workflow advancement is deprecated. Use automated deployment with `deploy create` instead."
+        ))
     }
 
     async fn query_akash_bids(
@@ -2437,12 +2395,16 @@ impl ManagementService for ManagementServiceImpl {
 
         // Apply options if provided
         let options = req.options.unwrap_or_else(|| AkashWorkflowOptions {
-            skip_grants: false,
-            auto_select_bid: true, // Default to auto-select for automated flow
+            skip_grants: false,              // Deprecated, ignored
+            auto_select_bid: true,           // Deprecated, default behavior
             min_balance_uakt: 5_000_000,
             bid_wait_blocks: 2,
             trusted_providers: vec![],
             max_retries: 3,
+            interactive_bid: false,          // Auto-select by default
+            request_grant_from: String::new(), // No grant request by default
+            grant_duration_seconds: 86400,   // 24 hours
+            grant_spend_limit_uakt: 5_000_000, // 5 AKT
         });
 
         tracing::info!(

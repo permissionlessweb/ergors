@@ -120,11 +120,3 @@ If something is broken, you fix it.
 If something is stupid, you say so.
 
 ---
-
-If you want, I can also:
-
-* Make a **“gentler” Linus** version (still blunt, less sharp)
-* Adapt this for **SRE**, **Platform Ops**, or **Infra-only** agents
-* Create a **short system-prompt version** for agent frameworks
-
-Just tell me how intense you want the Torvalds energy 😄

@@ -202,7 +202,7 @@ test_node_config() {
     fi
 
     # Test: SDL contract WASM present for coordinator
-    if [[ -f "$coord_home/sdl_template_registrar.wasm" ]]; then
+    if [[ -f "$coord_home/cw_sdl.wasm" ]]; then
         test_pass "sdl_wasm_present" "SDL contract WASM file present"
     else
         test_fail "sdl_wasm_present" "SDL contract WASM file missing"
@@ -224,7 +224,7 @@ test_node_config() {
 test_contract_artifacts() {
     log_section "Contract Artifact Tests"
 
-    # local artifact="${ROOT_DIR}/contracts/artifacts/sdl_template_registrar.wasm"
+    # local artifact="${ROOT_DIR}/contracts/artifacts/cw_sdl.wasm"
 
     # # Test: Artifact exists
     # if [[ -f "$artifact" ]]; then

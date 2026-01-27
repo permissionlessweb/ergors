@@ -17,6 +17,3 @@ pub mod signer;
 pub mod transaction;
 pub mod tx_lifecycle;
 pub mod workflow;
-
-#[cfg(feature = "testing")]
-pub mod testing;

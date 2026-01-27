@@ -191,7 +191,7 @@ impl ConfigCmd {
         println!("  data_dir: {}", data_dir);
         println!("  cosmwasm.enabled: {}", with_sdl_contract);
         if with_sdl_contract {
-            println!("  sdl_contract: sdl-template-registrar (will deploy on startup)");
+            println!("  sdl_contract: cw-sdl (will deploy on startup)");
         }
 
         Ok(())
@@ -221,7 +221,7 @@ impl ConfigCmd {
             Some(path) => path.to_string(),
             None => {
                 // Default to looking in home_dir or contracts/artifacts
-                let default_path = home_dir.join("sdl_template_registrar.wasm");
+                let default_path = home_dir.join("cw_sdl.wasm");
                 if default_path.exists() {
                     default_path.to_string()
                 } else {
@@ -234,7 +234,7 @@ impl ConfigCmd {
 
         // Create SDL template registrar contract deployment
         let sdl_contract = ContractDeployment {
-            name: "sdl-template-registrar".to_string(),
+            name: "cw-sdl".to_string(),
             wasm_path,
             wasm_bytes: vec![],
             label: "SDL Template Store".to_string(),

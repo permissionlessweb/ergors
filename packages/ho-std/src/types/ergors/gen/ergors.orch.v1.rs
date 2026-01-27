@@ -3243,10 +3243,12 @@ impl ::prost::Name for AkashLeaseInfo {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AkashWorkflowOptions {
-    /// Skip authz/feegrant setup steps
+    /// DEPRECATED: Grants are now opt-in via request_grant_from. Ignored.
+    #[deprecated]
     #[prost(bool, tag = "1")]
     pub skip_grants: bool,
-    /// Auto-select cheapest bid from trusted providers
+    /// DEPRECATED: Auto-select is now the default. Use interactive_bid=true for manual selection.
+    #[deprecated]
     #[prost(bool, tag = "2")]
     pub auto_select_bid: bool,
     /// Minimum balance required to proceed (uakt)
@@ -3261,6 +3263,18 @@ pub struct AkashWorkflowOptions {
     /// Maximum retries on transient failures
     #[prost(uint32, tag = "6")]
     pub max_retries: u32,
+    /// NEW: Prompt user for bid selection instead of auto-selecting cheapest
+    #[prost(bool, tag = "7")]
+    pub interactive_bid: bool,
+    /// NEW: Request grant from this node (bech32 ergo1... address). Empty = no grant request.
+    #[prost(string, tag = "8")]
+    pub request_grant_from: ::prost::alloc::string::String,
+    /// NEW: Grant duration in seconds (default: 86400 = 24h)
+    #[prost(uint64, tag = "9")]
+    pub grant_duration_seconds: u64,
+    /// NEW: Grant spend limit in uakt (default: 5000000 = 5 AKT)
+    #[prost(uint64, tag = "10")]
+    pub grant_spend_limit_uakt: u64,
 }
 impl ::prost::Name for AkashWorkflowOptions {
     const NAME: &'static str = "AkashWorkflowOptions";
@@ -4566,6 +4580,8 @@ impl DeploymentStatus {
     }
 }
 /// Workflow step enumeration for Akash deployment wizard
+/// NOTE: Step ordering is handled in code, not by enum values.
+/// CONNECTIVITY_CHECK runs first regardless of its numeric value.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -4573,11 +4589,13 @@ pub enum AkashWorkflowStep {
     Unspecified = 0,
     KeySelection = 1,
     BalanceCheck = 2,
-    /// NEW: Request authz/feegrant from granter
+    /// OPTIONAL: Request authz/feegrant (only if --request-grant-from)
     GrantRequest = 3,
-    /// NEW: Wait for grant approval
+    /// OPTIONAL: Wait for grant approval (follows GRANT_REQUEST)
     GrantWait = 4,
+    /// DEPRECATED: Handled in grant flow
     AuthzSetup = 5,
+    /// DEPRECATED: Handled in grant flow
     FeegrantSetup = 6,
     SdlConfiguration = 7,
     CertificateSetup = 8,
@@ -4587,9 +4605,12 @@ pub enum AkashWorkflowStep {
     LeaseCreate = 12,
     ManifestSend = 13,
     EndpointRetrieval = 14,
+    /// DEPRECATED: Connectivity checked at start
     EndpointTesting = 15,
     Complete = 16,
     Failed = 17,
+    /// NEW: Verify Akash network reachable (runs first)
+    ConnectivityCheck = 18,
 }
 impl AkashWorkflowStep {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -4616,6 +4637,7 @@ impl AkashWorkflowStep {
             Self::EndpointTesting => "AKASH_WORKFLOW_STEP_ENDPOINT_TESTING",
             Self::Complete => "AKASH_WORKFLOW_STEP_COMPLETE",
             Self::Failed => "AKASH_WORKFLOW_STEP_FAILED",
+            Self::ConnectivityCheck => "AKASH_WORKFLOW_STEP_CONNECTIVITY_CHECK",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -4639,6 +4661,7 @@ impl AkashWorkflowStep {
             "AKASH_WORKFLOW_STEP_ENDPOINT_TESTING" => Some(Self::EndpointTesting),
             "AKASH_WORKFLOW_STEP_COMPLETE" => Some(Self::Complete),
             "AKASH_WORKFLOW_STEP_FAILED" => Some(Self::Failed),
+            "AKASH_WORKFLOW_STEP_CONNECTIVITY_CHECK" => Some(Self::ConnectivityCheck),
             _ => None,
         }
     }

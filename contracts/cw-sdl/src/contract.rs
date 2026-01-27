@@ -9,7 +9,7 @@ use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, InstantiateNewResponse};
 use crate::state::{Config, CONFIG, SDL_TEMPLATE, VARIABLE_DEFAULTS};
 use crate::validation::validate_template_variables;
 
-const CONTRACT_NAME: &str = "crates.io:sdl-template-registrar";
+const CONTRACT_NAME: &str = "crates.io:cw-sdl";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Reply ID for instantiate new contract

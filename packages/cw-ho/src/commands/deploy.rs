@@ -12,7 +12,7 @@ use super::CliContext;
 /// Akash deployment management commands
 #[derive(Subcommand)]
 pub enum DeployCmd {
-    /// Create a new Akash deployment
+    /// Create a new Akash deployment (automated by default)
     Create {
         /// Path to SDL file
         #[arg(long)]
@@ -32,35 +32,52 @@ pub enum DeployCmd {
         /// Override chain ID
         #[arg(long, env = "AKASH_CHAIN_ID")]
         chain_id: Option<String>,
-        /// Auto-advance through all workflow steps
-        #[arg(long)]
-        auto: bool,
-        /// Skip authz/feegrant setup steps
-        #[arg(long)]
-        skip_grants: bool,
-        /// Auto-select cheapest bid from trusted providers
-        #[arg(long)]
-        auto_select_bid: bool,
         /// Minimum balance required in uakt (default: 5000000)
         #[arg(long, default_value = "5000000")]
         min_balance: u64,
         /// SDL template variables (key=value pairs)
         #[arg(long, value_parser = parse_key_val)]
         var: Vec<(String, String)>,
+
+        // Grant options (opt-in)
+        /// Request grant from node (ergo1... bech32 address). Waits indefinitely for approval.
+        #[arg(long)]
+        request_grant_from: Option<String>,
+        /// Grant duration in seconds (default: 86400 = 24h). Only used with --request-grant-from.
+        #[arg(long, default_value = "86400")]
+        grant_duration: u64,
+        /// Grant spend limit in uakt (default: 5000000 = 5 AKT). Only used with --request-grant-from.
+        #[arg(long, default_value = "5000000")]
+        grant_spend_limit: u64,
+
+        // Provider selection options
+        /// Prompt for manual provider selection instead of auto-selecting cheapest
+        #[arg(long)]
+        interactive_bid: bool,
     },
     /// Run automated deployment workflow on existing session
     Run {
         /// Session ID
         session_id: String,
-        /// Skip authz/feegrant setup steps
-        #[arg(long)]
-        skip_grants: bool,
-        /// Auto-select cheapest bid from trusted providers
-        #[arg(long)]
-        auto_select_bid: bool,
         /// Minimum balance required in uakt
         #[arg(long, default_value = "5000000")]
         min_balance: u64,
+
+        // Grant options (opt-in)
+        /// Request grant from node (ergo1... bech32 address). Waits indefinitely for approval.
+        #[arg(long)]
+        request_grant_from: Option<String>,
+        /// Grant duration in seconds (default: 86400 = 24h). Only used with --request-grant-from.
+        #[arg(long, default_value = "86400")]
+        grant_duration: u64,
+        /// Grant spend limit in uakt (default: 5000000 = 5 AKT). Only used with --request-grant-from.
+        #[arg(long, default_value = "5000000")]
+        grant_spend_limit: u64,
+
+        // Provider selection options
+        /// Prompt for manual provider selection instead of auto-selecting cheapest
+        #[arg(long)]
+        interactive_bid: bool,
     },
     /// List deployment workflows
     List {
@@ -73,11 +90,6 @@ pub enum DeployCmd {
     },
     /// Get deployment workflow details
     Get {
-        /// Session ID
-        session_id: String,
-    },
-    /// Advance deployment to next step
-    Advance {
         /// Session ID
         session_id: String,
     },
@@ -237,11 +249,12 @@ impl DeployCmd {
                 account_index,
                 node,
                 chain_id,
-                auto,
-                skip_grants,
-                auto_select_bid,
                 min_balance,
                 var,
+                request_grant_from,
+                grant_duration,
+                grant_spend_limit,
+                interactive_bid,
             } => {
                 // Resolve SDL content
                 let content = match (sdl, sdl_content) {
@@ -255,6 +268,7 @@ impl DeployCmd {
 
                 let variables: HashMap<String, String> = var.iter().cloned().collect();
 
+                // Create deployment (auto is now default)
                 let response = client
                     .create_akash_deployment(
                         key_name,
@@ -264,7 +278,7 @@ impl DeployCmd {
                         variables,
                         node.as_deref().unwrap_or(""),
                         chain_id.as_deref().unwrap_or(""),
-                        *auto,
+                        true, // auto is always true now
                     )
                     .await?;
 
@@ -283,14 +297,14 @@ impl DeployCmd {
                         }
                     }
 
-                    // If auto mode, run the automated workflow
-                    if *auto && !session_id.is_empty() {
+                    // Always run automated workflow
+                    if !session_id.is_empty() {
                         if !ctx.json {
                             println!("\nRunning automated workflow...");
                         }
 
-                        // Get trusted providers list for auto-select
-                        let trusted_providers = if *auto_select_bid {
+                        // Get trusted providers list for auto-selection (unless interactive mode)
+                        let trusted_providers = if !*interactive_bid {
                             match client.list_trusted_providers().await {
                                 Ok(resp) => resp.providers.iter().map(|p| p.address.clone()).collect(),
                                 Err(_) => vec![],
@@ -302,10 +316,12 @@ impl DeployCmd {
                         let run_response = client
                             .run_akash_deployment(
                                 &session_id,
-                                *skip_grants,
-                                *auto_select_bid,
+                                *interactive_bid,
                                 *min_balance,
                                 trusted_providers,
+                                request_grant_from.as_deref().unwrap_or(""),
+                                *grant_duration,
+                                *grant_spend_limit,
                             )
                             .await?;
 
@@ -459,35 +475,6 @@ impl DeployCmd {
                     }
                 } else {
                     println!("Deployment not found: {}", session_id);
-                }
-                Ok(())
-            }
-            DeployCmd::Advance { session_id } => {
-                let response = client.advance_akash_deployment(session_id).await?;
-
-                if ctx.json {
-                    let mut json = serde_json::json!({
-                        "success": response.success,
-                    });
-                    if let Some(wf) = &response.workflow {
-                        json["current_step"] = serde_json::json!(format_step(wf.current_step));
-                        json["status"] = serde_json::json!(format_status(wf.status));
-                        json["session_id"] = serde_json::json!(&wf.session_id);
-                    }
-                    if !response.error_message.is_empty() {
-                        json["error"] = serde_json::json!(&response.error_message);
-                    }
-                    println!("{}", serde_json::to_string_pretty(&json)?);
-                } else if response.success {
-                    if let Some(wf) = &response.workflow {
-                        println!(
-                            "Advanced to step: {} (status: {})",
-                            format_step(wf.current_step),
-                            format_status(wf.status)
-                        );
-                    }
-                } else {
-                    eprintln!("Failed to advance: {}", response.error_message);
                 }
                 Ok(())
             }
@@ -807,12 +794,14 @@ impl DeployCmd {
             }
             DeployCmd::Run {
                 session_id,
-                skip_grants,
-                auto_select_bid,
                 min_balance,
+                request_grant_from,
+                grant_duration,
+                grant_spend_limit,
+                interactive_bid,
             } => {
-                // Get trusted providers list for auto-select
-                let trusted_providers = if *auto_select_bid {
+                // Get trusted providers list for auto-selection (unless interactive mode)
+                let trusted_providers = if !*interactive_bid {
                     match client.list_trusted_providers().await {
                         Ok(resp) => resp.providers.iter().map(|p| p.address.clone()).collect(),
                         Err(_) => vec![],
@@ -824,10 +813,12 @@ impl DeployCmd {
                 let response = client
                     .run_akash_deployment(
                         session_id,
-                        *skip_grants,
-                        *auto_select_bid,
+                        *interactive_bid,
                         *min_balance,
                         trusted_providers,
+                        request_grant_from.as_deref().unwrap_or(""),
+                        *grant_duration,
+                        *grant_spend_limit,
                     )
                     .await?;
 
@@ -1024,6 +1015,7 @@ fn format_step(step: i32) -> &'static str {
         15 => "endpoint_testing",
         16 => "complete",
         17 => "failed",
+        18 => "connectivity_check",
         _ => "unknown",
     }
 }

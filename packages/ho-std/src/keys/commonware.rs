@@ -7,10 +7,14 @@
 
 use crate::traits::NodeIdentityTrait;
 use crate::types::ergors::network::v1::*;
+use bech32::{self, FromBase32, ToBase32, Variant};
 use commonware_codec::{DecodeExt, Encode, FixedSize};
 use commonware_cryptography::{ed25519, PrivateKeyExt, Signer, Verifier};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+/// Human-readable prefix for ergo node addresses (bech32 encoded pubkeys).
+pub const ERGO_HRP: &str = "ergo";
 
 // Use proto types
 
@@ -148,6 +152,30 @@ impl NodePubkey {
     /// cannot be decoded or the resulting bytes don't form a valid public key.
     pub fn from_hex(hex_str: &str) -> Option<Self> {
         let bytes = hex::decode(hex_str).ok()?;
+        Self::from_bytes(&bytes)
+    }
+
+    /// Encode this public key as a bech32 string with the "ergo" prefix.
+    ///
+    /// Returns a human-readable address like "ergo1abc123...".
+    /// This is used for CLI arguments like `--request-grant-from`.
+    pub fn to_bech32(&self) -> Result<String, bech32::Error> {
+        let data = self.0.to_vec().to_base32();
+        bech32::encode(ERGO_HRP, data, Variant::Bech32)
+    }
+
+    /// Decode a bech32 "ergo1..." string into a NodePubkey.
+    ///
+    /// Returns `None` if:
+    /// - The string is not valid bech32
+    /// - The HRP is not "ergo"
+    /// - The decoded bytes don't form a valid ed25519 public key
+    pub fn from_bech32(encoded: &str) -> Option<Self> {
+        let (hrp, data, _variant) = bech32::decode(encoded).ok()?;
+        if hrp != ERGO_HRP {
+            return None;
+        }
+        let bytes = Vec::<u8>::from_base32(&data).ok()?;
         Self::from_bytes(&bytes)
     }
 }
@@ -363,5 +391,47 @@ mod tests {
         let pk_bytes = binding.0.to_vec();
         let reconstructed = NodePubkey::from_bytes(&pk_bytes).expect("valid pk");
         assert_eq!(node.id().0.to_vec(), reconstructed.0.to_vec());
+    }
+
+    #[test]
+    fn bech32_roundtrip() {
+        let node = NodePrivKey::new(&mut OsRng);
+        let pubkey = node.id();
+
+        // Encode to bech32
+        let encoded = pubkey.to_bech32().expect("encoding should succeed");
+        assert!(encoded.starts_with("ergo1"), "should have ergo prefix");
+
+        // Decode back
+        let decoded = NodePubkey::from_bech32(&encoded).expect("decoding should succeed");
+        assert_eq!(pubkey.0.to_vec(), decoded.0.to_vec());
+    }
+
+    #[test]
+    fn bech32_deterministic() {
+        let node = NodePrivKey::from_seed(12345);
+        let encoded = node.id().to_bech32().expect("encoding should succeed");
+
+        // Same seed should produce same bech32 address
+        let node2 = NodePrivKey::from_seed(12345);
+        let encoded2 = node2.id().to_bech32().expect("encoding should succeed");
+        assert_eq!(encoded, encoded2);
+    }
+
+    #[test]
+    fn bech32_rejects_wrong_hrp() {
+        // Create a valid bech32 string but with wrong HRP
+        let node = NodePrivKey::new(&mut OsRng);
+        let data = node.id().0.to_vec().to_base32();
+        let wrong_hrp = bech32::encode("cosmos", data, bech32::Variant::Bech32).unwrap();
+
+        assert!(NodePubkey::from_bech32(&wrong_hrp).is_none());
+    }
+
+    #[test]
+    fn bech32_rejects_invalid_string() {
+        assert!(NodePubkey::from_bech32("not-a-bech32-string").is_none());
+        assert!(NodePubkey::from_bech32("ergo1invalid").is_none());
+        assert!(NodePubkey::from_bech32("").is_none());
     }
 }

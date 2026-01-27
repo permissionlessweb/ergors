@@ -60,7 +60,7 @@ profiles:
       pricing:
         embedding:
           denom: uakt
-          amount: 500000
+          amount: 1000000
 
 deployment:
   embedding:

@@ -6,8 +6,8 @@
 use super::chain::MockCosmosChain;
 use anyhow::{anyhow, Result};
 use ho_std::types::ergors::orch::v1::{
-    AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep,
-    ConfiguredSdl, AkashRuntime, AkashProviderSelection,
+    AkashDeploymentWorkflow, AkashProviderSelection, AkashRuntime, AkashWorkflowStatus,
+    AkashWorkflowStep, ConfiguredSdl,
 };
 use std::collections::HashMap;
 
@@ -24,8 +24,7 @@ pub struct MockWorkflowEngine {
 }
 
 /// Configuration for how a step should behave in tests.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct StepConfig {
     /// Should this step fail?
     pub should_fail: bool,
@@ -36,7 +35,6 @@ pub struct StepConfig {
     /// Current failure count
     current_failures: u32,
 }
-
 
 /// Mock provider that will bid on deployments.
 #[derive(Debug, Clone)]
@@ -161,6 +159,11 @@ impl MockWorkflowEngine {
             grant_duration_seconds: 86400,
             grant_spend_limit_uakt: 5_000_000,
             grant_purpose: String::new(),
+            available_bids: Vec::new(),
+            certificate_info: None,
+            lease_id_info: None,
+            options: None,
+            service_endpoints: Vec::new(),
         }
     }
 
@@ -200,12 +203,18 @@ impl MockWorkflowEngine {
         workflow.status = AkashWorkflowStatus::Running as i32;
 
         match current {
+            AkashWorkflowStep::ConnectivityCheck => {
+                // Connectivity check passes in mock - just advance
+                workflow.current_step = AkashWorkflowStep::KeySelection as i32;
+            }
             AkashWorkflowStep::KeySelection => self.execute_key_selection(&mut workflow, chain)?,
             AkashWorkflowStep::BalanceCheck => self.execute_balance_check(&mut workflow, chain)?,
             AkashWorkflowStep::GrantRequest => self.execute_grant_request(&mut workflow)?,
             AkashWorkflowStep::GrantWait => self.execute_grant_wait(&mut workflow, chain)?,
             AkashWorkflowStep::AuthzSetup => self.execute_authz_setup(&mut workflow, chain)?,
-            AkashWorkflowStep::FeegrantSetup => self.execute_feegrant_setup(&mut workflow, chain)?,
+            AkashWorkflowStep::FeegrantSetup => {
+                self.execute_feegrant_setup(&mut workflow, chain)?
+            }
             AkashWorkflowStep::SdlConfiguration => self.execute_sdl_configuration(&mut workflow)?,
             AkashWorkflowStep::CertificateSetup => self.execute_certificate_setup(&mut workflow)?,
             AkashWorkflowStep::DeploymentCreate => {
@@ -217,7 +226,9 @@ impl MockWorkflowEngine {
             }
             AkashWorkflowStep::LeaseCreate => self.execute_lease_create(&mut workflow, chain)?,
             AkashWorkflowStep::ManifestSend => self.execute_manifest_send(&mut workflow)?,
-            AkashWorkflowStep::EndpointRetrieval => self.execute_endpoint_retrieval(&mut workflow)?,
+            AkashWorkflowStep::EndpointRetrieval => {
+                self.execute_endpoint_retrieval(&mut workflow)?
+            }
             AkashWorkflowStep::EndpointTesting => self.execute_endpoint_testing(&mut workflow)?,
             AkashWorkflowStep::Complete => {
                 // Already complete, nothing to do
@@ -472,12 +483,14 @@ impl MockWorkflowEngine {
 
     fn execute_endpoint_retrieval(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<()> {
         // Generate mock endpoints
-        workflow
-            .endpoints
-            .insert("http".to_string(), "http://mock-endpoint.akash.network:80".to_string());
-        workflow
-            .endpoints
-            .insert("https".to_string(), "https://mock-endpoint.akash.network:443".to_string());
+        workflow.endpoints.insert(
+            "http".to_string(),
+            "http://mock-endpoint.akash.network:80".to_string(),
+        );
+        workflow.endpoints.insert(
+            "https".to_string(),
+            "https://mock-endpoint.akash.network:443".to_string(),
+        );
 
         workflow.current_step = AkashWorkflowStep::EndpointTesting as i32;
         Ok(())
@@ -541,14 +554,13 @@ deployment:
     #[test]
     fn test_workflow_creation() {
         let engine = MockWorkflowEngine::new();
-        let workflow = engine.create_workflow(
-            "test-session".to_string(),
-            create_test_sdl(),
-            None,
-        );
+        let workflow = engine.create_workflow("test-session".to_string(), create_test_sdl(), None);
 
         assert_eq!(workflow.session_id, "test-session");
-        assert_eq!(workflow.current_step, AkashWorkflowStep::KeySelection as i32);
+        assert_eq!(
+            workflow.current_step,
+            AkashWorkflowStep::KeySelection as i32
+        );
         assert_eq!(workflow.status, AkashWorkflowStatus::Pending as i32);
     }
 
@@ -559,14 +571,13 @@ deployment:
 
         let mut chain = MockCosmosChain::new();
 
-        let workflow = engine.create_workflow(
-            "test-session".to_string(),
-            create_test_sdl(),
-            None,
-        );
+        let workflow = engine.create_workflow("test-session".to_string(), create_test_sdl(), None);
 
         let advanced = engine.advance_workflow(workflow, &mut chain).unwrap();
-        assert_eq!(advanced.current_step, AkashWorkflowStep::BalanceCheck as i32);
+        assert_eq!(
+            advanced.current_step,
+            AkashWorkflowStep::BalanceCheck as i32
+        );
         assert_eq!(advanced.account_address, "akash1testaccount");
     }
 
@@ -578,11 +589,8 @@ deployment:
         let mut chain = MockCosmosChain::new();
         chain.fund_account("akash1owner", 1_000_000_000); // 1000 AKT
 
-        let mut workflow = engine.create_workflow(
-            "test-session".to_string(),
-            create_test_sdl(),
-            None,
-        );
+        let mut workflow =
+            engine.create_workflow("test-session".to_string(), create_test_sdl(), None);
 
         // Run through all steps
         let max_iterations = 20;
@@ -606,19 +614,13 @@ deployment:
     fn test_workflow_step_failure() {
         let mut engine = MockWorkflowEngine::new();
         engine.set_default_account("akash1owner");
-        engine.configure_step_failure(
-            AkashWorkflowStep::SdlConfiguration,
-            "SDL validation failed",
-        );
+        engine.configure_step_failure(AkashWorkflowStep::SdlConfiguration, "SDL validation failed");
 
         let mut chain = MockCosmosChain::new();
         chain.fund_account("akash1owner", 1_000_000_000);
 
-        let mut workflow = engine.create_workflow(
-            "test-session".to_string(),
-            create_test_sdl(),
-            None,
-        );
+        let mut workflow =
+            engine.create_workflow("test-session".to_string(), create_test_sdl(), None);
 
         // Advance until failure or completion
         let max_iterations = 20;
@@ -646,11 +648,8 @@ deployment:
         let mut chain = MockCosmosChain::new();
         chain.fund_account("akash1owner", 1_000_000_000);
 
-        let mut workflow = engine.create_workflow(
-            "test-session".to_string(),
-            create_test_sdl(),
-            None,
-        );
+        let mut workflow =
+            engine.create_workflow("test-session".to_string(), create_test_sdl(), None);
 
         // Advance to DeploymentCreate
         while workflow.current_step != AkashWorkflowStep::DeploymentCreate as i32 {
@@ -660,7 +659,10 @@ deployment:
         // First attempt - should fail transiently
         workflow = engine.advance_workflow(workflow, &mut chain).unwrap();
         assert_eq!(workflow.retry_count, 1);
-        assert_eq!(workflow.current_step, AkashWorkflowStep::DeploymentCreate as i32);
+        assert_eq!(
+            workflow.current_step,
+            AkashWorkflowStep::DeploymentCreate as i32
+        );
 
         // Second attempt - should fail transiently
         workflow = engine.advance_workflow(workflow, &mut chain).unwrap();
@@ -679,21 +681,24 @@ deployment:
         let mut chain = MockCosmosChain::new();
         // Don't fund account - should trigger grant request
 
-        let mut workflow = engine.create_workflow(
-            "test-session".to_string(),
-            create_test_sdl(),
-            None,
-        );
+        let mut workflow =
+            engine.create_workflow("test-session".to_string(), create_test_sdl(), None);
 
         // Set up grant request target
         workflow.request_grant_from = vec![1, 2, 3]; // Dummy pubkey
 
         // Advance through key selection
         workflow = engine.advance_workflow(workflow, &mut chain).unwrap();
-        assert_eq!(workflow.current_step, AkashWorkflowStep::BalanceCheck as i32);
+        assert_eq!(
+            workflow.current_step,
+            AkashWorkflowStep::BalanceCheck as i32
+        );
 
         // Balance check should redirect to grant request
         workflow = engine.advance_workflow(workflow, &mut chain).unwrap();
-        assert_eq!(workflow.current_step, AkashWorkflowStep::GrantRequest as i32);
+        assert_eq!(
+            workflow.current_step,
+            AkashWorkflowStep::GrantRequest as i32
+        );
     }
 }

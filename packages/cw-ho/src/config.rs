@@ -7,7 +7,8 @@ use ho_std::llm::{HoError, HoResult};
 use ho_std::traits::{NodeIdentityCustody, NodeIdentityCustodyBackend};
 use ho_std::types::ergors::{network::v1::*, orch::v1::*, storage::v1::*};
 pub use ho_std::types::ergors::orch::v1::{
-    ContractConfig, ContractDeployment, ContractMigration, CosmwasmConfig, CosmwasmGasLimits,
+    AkashDeployConfig, ContractConfig, ContractDeployment, ContractMigration, CosmwasmConfig,
+    CosmwasmGasLimits,
 };
 
 use ho_std::traits::file_ops::ConfigLoaderTrait;
@@ -31,9 +32,9 @@ impl HoConfigTrait for ErgorsConfig {
             storage: Some(StorageConfig::new(home)),
             llm: Some(LlmRouterConfig::new(home)),
             home: home.as_str().into(),
-            custody: None, // Custody config is managed separately
-            cosmwasm: None, // CosmWasm config is optional
-            akash: None,    // Akash deploy config is optional
+            custody: None,                              // Custody config is managed separately
+            cosmwasm: None,                             // CosmWasm config is optional
+            akash: Some(Self::default_akash_config()),  // Akash mainnet defaults
         })
     }
 
@@ -241,6 +242,38 @@ impl ErgorsConfig {
             path
         } else {
             Utf8PathBuf::from(&self.0.home).join(wasm_path)
+        }
+    }
+
+    /// Get Akash deploy configuration (returns default if not configured)
+    pub fn akash(&self) -> AkashDeployConfig {
+        self.0.akash.clone().unwrap_or_else(Self::default_akash_config)
+    }
+
+    /// Set Akash deploy configuration
+    pub fn set_akash(&mut self, config: AkashDeployConfig) {
+        self.0.akash = Some(config);
+    }
+
+    /// Check if Akash deployment is configured
+    pub fn akash_enabled(&self) -> bool {
+        self.0.akash.as_ref()
+            .map(|c| !c.rpc_endpoint.is_empty() && !c.chain_id.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// Create default Akash deploy config for mainnet
+    pub fn default_akash_config() -> AkashDeployConfig {
+        AkashDeployConfig {
+            rpc_endpoint: "https://rpc-akash.ecostake.com:443".to_string(),
+            grpc_endpoint: "https://grpc-akash.ecostake.com:443".to_string(),
+            rest_endpoint: "https://rest-akash.ecostake.com".to_string(),
+            chain_id: "akashnet-2".to_string(),
+            gas_prices: "0.025uakt".to_string(),
+            gas_adjustment: 1.3,
+            keyring_backend: "file".to_string(),
+            default_key_name: "default".to_string(),
+            trusted_providers: vec![],
         }
     }
 }

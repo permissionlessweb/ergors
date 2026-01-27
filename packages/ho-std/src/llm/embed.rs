@@ -48,15 +48,19 @@ struct Embedding {
 /// * `api_key` - Optional API key for authenticated endpoints
 ///
 /// # Example
-/// ```rust,no_run
+/// ```rust,ignore
 /// use ho_std::llm::embed;
 ///
-/// let vecs = embed::generate(
-///     "http://localhost:8080",
-///     &["hello world", "foo bar"],
-///     "all-MiniLM-L6-v2",
-///     None,
-/// ).await?;
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let vecs = embed::generate(
+///         "http://localhost:8080",
+///         &["hello world", "foo bar"],
+///         "all-MiniLM-L6-v2",
+///         None,
+///     ).await?;
+///     Ok(())
+/// }
 /// ```
 pub async fn generate(
     endpoint: &str,

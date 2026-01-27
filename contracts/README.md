@@ -52,7 +52,7 @@ cargo build --workspace
 Build a specific contract:
 
 ```bash
-cd contracts/sdl-template-registrar
+cd contracts/cw-sdl
 cargo build --release --target wasm32-unknown-wasm32
 ```
 
@@ -69,7 +69,7 @@ cd contracts && cargo test --workspace
 Run tests for a specific contract:
 
 ```bash
-cd contracts/sdl-template-registrar
+cd contracts/cw-sdl
 cargo test
 ```
 
@@ -98,7 +98,7 @@ docker run --rm -v "$(pwd)":/code \
 Generate JSON schemas for contract messages:
 
 ```bash
-cd contracts/sdl-template-registrar
+cd contracts/cw-sdl
 cargo schema
 ```
 

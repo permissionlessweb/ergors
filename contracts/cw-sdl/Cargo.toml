@@ -1,5 +1,5 @@
 [package]
-name = "sdl-templates"
+name = "cw-sdl"
 version = "0.1.0"
 edition = "2021"
 authors = ["Ergors Team"]
@@ -7,7 +7,7 @@ description = "CosmWasm contract for storing and managing Akash SDL templates wi
 
 [package.metadata.optimizer]
 builds = [
-    { name = "sdl_template_registrar", features = [] }
+    { name = "cw_sdl", features = [] }
 ]
 
 [lib]

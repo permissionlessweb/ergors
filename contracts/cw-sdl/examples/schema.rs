@@ -1,6 +1,6 @@
 use cosmwasm_schema::write_api;
 
-use sdl_template_registrar::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use cw_sdl::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 fn main() {
     write_api! {

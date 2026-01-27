@@ -1228,7 +1228,7 @@ run_real_akash_deployment() {
 build_contracts() {
     if [ "$SKIP_BUILD" = true ] || [ "$SKIP_CONTRACTS" = true ]; then
         log_warn "Skipping contract build (--skip-build or --skip-contracts)"
-        if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
+        if [ -f "$ROOT_DIR/contracts/artifacts/cw_sdl.wasm" ]; then
             log_success "Using existing contract artifacts"
         else
             log_warn "No existing contract artifacts found - tests may fail"
@@ -1237,9 +1237,9 @@ build_contracts() {
     fi
 
     # Skip build if artifacts already exist
-    if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
-        local size=$(ls -lh "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" | awk '{print $5}')
-        log_success "Contract artifacts already exist (sdl_template_registrar.wasm: $size), skipping build"
+    if [ -f "$ROOT_DIR/contracts/artifacts/cw_sdl.wasm" ]; then
+        local size=$(ls -lh "$ROOT_DIR/contracts/artifacts/cw_sdl.wasm" | awk '{print $5}')
+        log_success "Contract artifacts already exist (cw_sdl.wasm: $size), skipping build"
         return
     fi
 
@@ -1279,11 +1279,11 @@ build_contracts() {
     cd "$ROOT_DIR"
 
     # Verify artifacts were created
-    if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
-        local size=$(ls -lh "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" | awk '{print $5}')
+    if [ -f "$ROOT_DIR/contracts/artifacts/cw_sdl.wasm" ]; then
+        local size=$(ls -lh "$ROOT_DIR/contracts/artifacts/cw_sdl.wasm" | awk '{print $5}')
         log_success "SDL Template Registrar contract built: $size"
     else
-        log_error "Contract build failed - sdl_template_registrar.wasm not found"
+        log_error "Contract build failed - cw_sdl.wasm not found"
         ls -la "$ROOT_DIR/contracts/artifacts/" 2>/dev/null || log_error "artifacts/ directory not found"
         exit 1
     fi
@@ -1337,15 +1337,15 @@ generate_node_config() {
     mkdir -p "$home_dir/wasm_cache"
 
     # Copy SDL contract artifact for coordinators
-    local wasm_path="${home_dir}/sdl_template_registrar.wasm"
+    local wasm_path="${home_dir}/cw_sdl.wasm"
     local sdl_contract_args=""
 
     if [ "$node_type" = "coordinator" ]; then
-        if cp "${ROOT_DIR}/contracts/artifacts/sdl_template_registrar.wasm" "$wasm_path" 2>/dev/null; then
+        if cp "${ROOT_DIR}/contracts/artifacts/cw_sdl.wasm" "$wasm_path" 2>/dev/null; then
             sdl_contract_args="--with-sdl-contract --sdl-wasm-path ${wasm_path}"
             log "SDL contract WASM copied for $node_id"
         else
-            log_warn "SDL contract WASM not found at ${ROOT_DIR}/contracts/artifacts/sdl_template_registrar.wasm"
+            log_warn "SDL contract WASM not found at ${ROOT_DIR}/contracts/artifacts/cw_sdl.wasm"
         fi
     fi
 
@@ -1642,7 +1642,7 @@ test_node_config() {
     fi
 
     # Test 3: WASM artifact copied
-    if [ -f "$TEST_DIR/coordinator/sdl_template_registrar.wasm" ]; then
+    if [ -f "$TEST_DIR/coordinator/cw_sdl.wasm" ]; then
         test_pass "wasm_artifact_present" "SDL contract WASM artifact present"
     else
         test_fail "wasm_artifact_present" "SDL contract WASM artifact missing"
@@ -3336,9 +3336,9 @@ test_contract_artifacts() {
 
     # Test 1: Check SDL contract artifact exists
     log "Verifying SDL contract WASM artifact..."
-    if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
+    if [ -f "$ROOT_DIR/contracts/artifacts/cw_sdl.wasm" ]; then
         TESTS_PASSED=$((TESTS_PASSED + 1))
-        local size=$(ls -lh "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" | awk '{print $5}')
+        local size=$(ls -lh "$ROOT_DIR/contracts/artifacts/cw_sdl.wasm" | awk '{print $5}')
         log_success "  SDL contract artifact exists ($size)"
     else
         TESTS_FAILED=$((TESTS_FAILED + 1))
@@ -3347,9 +3347,9 @@ test_contract_artifacts() {
 
     # Test 2: Verify artifact is a valid WASM file
     log "Verifying WASM file header..."
-    if [ -f "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" ]; then
+    if [ -f "$ROOT_DIR/contracts/artifacts/cw_sdl.wasm" ]; then
         # WASM files start with magic bytes: 0x00 0x61 0x73 0x6D (\0asm)
-        local magic=$(xxd -l 4 -p "$ROOT_DIR/contracts/artifacts/sdl_template_registrar.wasm" 2>/dev/null)
+        local magic=$(xxd -l 4 -p "$ROOT_DIR/contracts/artifacts/cw_sdl.wasm" 2>/dev/null)
         if [ "$magic" = "0061736d" ]; then
             TESTS_PASSED=$((TESTS_PASSED + 1))
             log_success "  Valid WASM magic bytes verified"
@@ -3380,7 +3380,7 @@ test_contract_deployment() {
 
     # Test 1: Check config has initial_contracts
     log "Verifying SDL contract in config..."
-    if grep -q "sdl-template-registrar" "$TEST_DIR/coordinator/config.toml" 2>/dev/null; then
+    if grep -q "cw-sdl" "$TEST_DIR/coordinator/config.toml" 2>/dev/null; then
         TESTS_PASSED=$((TESTS_PASSED + 1))
         log_success "  SDL contract configured in initial_contracts"
     else
@@ -3391,7 +3391,7 @@ test_contract_deployment() {
 
     # Test 2: Check coordinator logs for contract deployment
     log "Checking for contract deployment in logs..."
-    if grep -q "Processing.*contracts for deployment\|deploy.*contract\|sdl-template-registrar" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+    if grep -q "Processing.*contracts for deployment\|deploy.*contract\|cw-sdl" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
         TESTS_PASSED=$((TESTS_PASSED + 1))
         log_success "  Contract deployment initiated"
     else
@@ -3407,7 +3407,7 @@ test_contract_deployment() {
 
     # Test 3: Check for successful deployment
     log "Checking for successful contract deployment..."
-    if grep -q "Successfully deployed contract.*sdl-template-registrar" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
+    if grep -q "Successfully deployed contract.*cw-sdl" "$TEST_DIR/coordinator/node.log" 2>/dev/null; then
         TESTS_PASSED=$((TESTS_PASSED + 1))
         log_success "  SDL contract deployed successfully"
     else
@@ -3422,7 +3422,7 @@ test_contract_deployment() {
     fi
 
     # Test 4: Check WASM file was present
-    if [ -f "$TEST_DIR/coordinator/sdl_template_registrar.wasm" ]; then
+    if [ -f "$TEST_DIR/coordinator/cw_sdl.wasm" ]; then
         TESTS_PASSED=$((TESTS_PASSED + 1))
         log_success "  SDL contract WASM file present"
     else
@@ -3437,9 +3437,9 @@ show_contract_debug_info() {
     echo -e "${YELLOW}=== Contract Debug ===${NC}"
 
     # Show WASM file location
-    if [ -f "$TEST_DIR/coordinator/sdl_template_registrar.wasm" ]; then
-        echo "✓ SDL contract WASM found: $TEST_DIR/coordinator/sdl_template_registrar.wasm"
-        ls -lh "$TEST_DIR/coordinator/sdl_template_registrar.wasm" 2>/dev/null || true
+    if [ -f "$TEST_DIR/coordinator/cw_sdl.wasm" ]; then
+        echo "✓ SDL contract WASM found: $TEST_DIR/coordinator/cw_sdl.wasm"
+        ls -lh "$TEST_DIR/coordinator/cw_sdl.wasm" 2>/dev/null || true
     else
         echo "✗ SDL contract WASM missing"
     fi
