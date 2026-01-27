@@ -18,7 +18,9 @@ TEST_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD:-e2e-test-password-12345}"
 # Network config
 BASE_PORT="${BASE_PORT:-50100}"
 COORDINATOR_GRPC=""
+COORDINATOR_API=""
 EXECUTOR_GRPC=""
+EXECUTOR_API=""
 
 # Process tracking
 declare -a ERGORS_NODE_PIDS=()
@@ -221,6 +223,7 @@ ergors_start_network() {
     local coord_grpc=$((port + 1))
     local coord_p2p=$((port + 2))
     COORDINATOR_GRPC="127.0.0.1:${coord_grpc}"
+    COORDINATOR_API="127.0.0.1:${coord_http}"
     port=$((port + 10))
 
     _ergors_init_node "$coord_home" "coordinator"
@@ -241,6 +244,7 @@ ergors_start_network() {
     local exec_grpc=$((port + 1))
     local exec_p2p=$((port + 2))
     EXECUTOR_GRPC="127.0.0.1:${exec_grpc}"
+    EXECUTOR_API="127.0.0.1:${exec_http}"
     port=$((port + 10))
 
     _ergors_init_node "$exec_home" "executor_0"
@@ -268,16 +272,35 @@ ergors_start_network() {
         return 1
     fi
 
+    # Export for child scripts
+    export COORDINATOR_GRPC COORDINATOR_API EXECUTOR_GRPC EXECUTOR_API
+
     log_success "ERGORS network started"
     log "  Coordinator gRPC: $COORDINATOR_GRPC"
+    log "  Coordinator API:  $COORDINATOR_API"
     log "  Executor gRPC:    $EXECUTOR_GRPC"
+    log "  Executor API:     $EXECUTOR_API"
 
-    # Verbose: show config and process info
+    # Verbose: show config, process info, and initial logs
     if [[ "${VERBOSE:-false}" == "true" ]]; then
         log_verbose "Coordinator config:"
         log_debug "$(head -30 "$coord_home/config.toml" 2>/dev/null || echo '  (config not found)')"
         log_verbose "Node PIDs: ${ERGORS_NODE_PIDS[*]}"
         log_verbose "Test directory: $TEST_DIR"
+
+        # Show startup logs
+        log_verbose ""
+        log_verbose "=== Initial Engine Logs ==="
+        if [[ -f "$coord_home/node.log" ]]; then
+            log_verbose "--- Coordinator startup log ---"
+            head -50 "$coord_home/node.log" 2>/dev/null || true
+        fi
+        if [[ -f "$exec_home/node.log" ]]; then
+            log_verbose "--- Executor startup log ---"
+            head -50 "$exec_home/node.log" 2>/dev/null || true
+        fi
+        log_verbose "=== End Initial Logs ==="
+        log_verbose ""
     fi
 }
 
@@ -311,12 +334,12 @@ ergors_stop_network() {
 # Node Health Checks (no log grepping!)
 # =============================================================================
 
-# Check if coordinator is healthy via gRPC
+# Check if coordinator is healthy via gRPC port
 ergors_coordinator_healthy() {
     [[ -n "$COORDINATOR_GRPC" ]] && nc -z 127.0.0.1 "${COORDINATOR_GRPC##*:}" 2>/dev/null
 }
 
-# Check if executor is healthy via gRPC
+# Check if executor is healthy via gRPC port
 ergors_executor_healthy() {
     [[ -n "$EXECUTOR_GRPC" ]] && nc -z 127.0.0.1 "${EXECUTOR_GRPC##*:}" 2>/dev/null
 }
@@ -332,29 +355,284 @@ ergors_all_nodes_running() {
     [[ $running -eq ${#ERGORS_NODE_PIDS[@]} ]] && [[ $running -gt 0 ]]
 }
 
+# Display engine logs for debugging (called on failures)
+# Shows last N lines of coordinator and executor logs
+display_engine_logs() {
+    local lines="${1:-50}"
+    local coord_log="$TEST_DIR/coordinator/node.log"
+    local exec_log="$TEST_DIR/executor_0/node.log"
+
+    echo ""
+    log_error "=== ENGINE LOGS (last $lines lines) ==="
+
+    if [[ -f "$coord_log" ]]; then
+        echo ""
+        echo -e "${RED}--- Coordinator Log ($coord_log) ---${NC}"
+        tail -"$lines" "$coord_log" 2>/dev/null || echo "  (could not read log)"
+    else
+        echo -e "${YELLOW}  Coordinator log not found${NC}"
+    fi
+
+    if [[ -f "$exec_log" ]]; then
+        echo ""
+        echo -e "${RED}--- Executor Log ($exec_log) ---${NC}"
+        tail -"$lines" "$exec_log" 2>/dev/null || echo "  (could not read log)"
+    fi
+
+    echo ""
+    log_error "=== END ENGINE LOGS ==="
+    echo ""
+}
+
+# Check engine process status and report
+check_engine_status() {
+    local coord_pid="${ERGORS_NODE_PIDS[0]:-}"
+    local exec_pid="${ERGORS_NODE_PIDS[1]:-}"
+
+    echo ""
+    log "Engine Process Status:"
+
+    if [[ -n "$coord_pid" ]]; then
+        if kill -0 "$coord_pid" 2>/dev/null; then
+            log_success "  Coordinator (PID $coord_pid): RUNNING"
+        else
+            log_error "  Coordinator (PID $coord_pid): DEAD"
+        fi
+    else
+        log_warn "  Coordinator: No PID tracked"
+    fi
+
+    if [[ -n "$exec_pid" ]]; then
+        if kill -0 "$exec_pid" 2>/dev/null; then
+            log_success "  Executor (PID $exec_pid): RUNNING"
+        else
+            log_error "  Executor (PID $exec_pid): DEAD"
+        fi
+    else
+        log_warn "  Executor: No PID tracked"
+    fi
+
+    # Check ports
+    if ergors_coordinator_healthy; then
+        log_success "  Coordinator gRPC: LISTENING"
+    else
+        log_error "  Coordinator gRPC: NOT RESPONDING"
+    fi
+
+    if ergors_executor_healthy; then
+        log_success "  Executor gRPC: LISTENING"
+    else
+        log_error "  Executor gRPC: NOT RESPONDING"
+    fi
+    echo ""
+}
+
 # =============================================================================
 # CLI Wrappers
 # =============================================================================
 
-# Run ergors-cli command against coordinator
-# ergors_cli() {
-#     if [[ ! -f "$ERGORS_CLI" ]]; then
-#         echo '{"error":"ergors-cli not found"}'
-#         return 1
-#     fi
+# Run ergors command against coordinator
+# Routes to either ergors binary or HTTP API based on subcommand
+# CLI commands that need gRPC use COORDINATOR_GRPC address
+ergors_cli() {
+    local coord_home="${TEST_DIR}/coordinator"
+    local subcommand="${1:-}"
 
-#     "$ERGORS_CLI" --grpc-addr "http://${COORDINATOR_GRPC}" --json "$@"
-# }
+    # Build gRPC address for CLI commands
+    local grpc_addr="http://${COORDINATOR_GRPC:-localhost:50051}"
 
-# Run ergors-cli command against executor
-# ergors_cli_executor() {
-#     if [[ ! -f "$ERGORS_CLI" ]]; then
-#         echo '{"error":"ergors-cli not found"}'
-#         return 1
-#     fi
+    case "$subcommand" in
+        node)
+            # Node commands use HTTP API (topology endpoint)
+            shift
+            _ergors_node_api "coordinator" "$@"
+            ;;
+        deploy|sdl)
+            # Deploy and SDL commands use CLI binary (connects to gRPC server)
+            ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
+                echo '{"error":"'"$subcommand"' command failed"}'
+            ;;
+        keys)
+            # Keys commands use the ergors binary (local, no gRPC needed)
+            ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+                "$ERGORS_BIN" --home "$coord_home" keys "$@" 2>&1 || \
+                echo '{"error":"keys command failed"}'
+            ;;
+        *)
+            # Default: try as ergors binary subcommand with gRPC
+            ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
+                echo '{"error":"command failed"}'
+            ;;
+    esac
+}
 
-#     "$ERGORS_CLI" --grpc-addr "http://${EXECUTOR_GRPC}" --json "$@"
-# }
+# Run ergors command against executor
+ergors_cli_executor() {
+    local exec_home="${TEST_DIR}/executor_0"
+    local subcommand="${1:-}"
+
+    # Build gRPC address for CLI commands
+    local grpc_addr="http://${EXECUTOR_GRPC:-localhost:50111}"
+
+    case "$subcommand" in
+        node)
+            shift
+            _ergors_node_api "executor" "$@"
+            ;;
+        deploy|sdl)
+            # CLI commands that need gRPC
+            ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
+                echo '{"error":"command failed"}'
+            ;;
+        keys)
+            # Keys commands are local (no gRPC needed)
+            ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+                "$ERGORS_BIN" --home "$exec_home" keys "$@" 2>&1 || \
+                echo '{"error":"keys command failed"}'
+            ;;
+        *)
+            ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
+                echo '{"error":"command failed"}'
+            ;;
+    esac
+}
+
+# Internal: Node API calls via HTTP
+# Uses /network/topology which returns node_identity info
+_ergors_node_api() {
+    local node_type="$1"
+    local action="$2"
+    shift 2
+
+    local api_host
+    if [[ "$node_type" == "coordinator" ]]; then
+        api_host="$COORDINATOR_API"
+    else
+        api_host="$EXECUTOR_API"
+    fi
+
+    case "$action" in
+        info)
+            # /network/topology returns node_identity with node_type, node_id, etc.
+            local response
+            response=$(curl -s --max-time 10 -X GET "http://${api_host}/network/topology" \
+                -H "Content-Type: application/json" 2>/dev/null) || echo '{"error":"request failed"}'
+            # Extract node_identity from topology response
+            if echo "$response" | jq -e '.node_identity' >/dev/null 2>&1; then
+                echo "$response" | jq '.node_identity'
+            else
+                echo "$response"
+            fi
+            ;;
+        address)
+            # Parse --prefix argument
+            local prefix="akash"
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --prefix) prefix="$2"; shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+            # Get address from topology response
+            local response
+            response=$(curl -s --max-time 10 -X GET "http://${api_host}/network/topology" \
+                -H "Content-Type: application/json" 2>/dev/null) || echo '{"error":"request failed"}'
+            # Extract node_id and format as address response
+            local node_id
+            node_id=$(echo "$response" | jq -r '.node_identity.node_id // empty' 2>/dev/null)
+            if [[ -n "$node_id" ]]; then
+                # Node ID is the hex pubkey - for now just return it
+                # TODO: actual bech32 encoding with prefix
+                echo "{\"address\": \"${prefix}1${node_id:0:38}\"}"
+            else
+                echo '{"error":"could not extract node address"}'
+            fi
+            ;;
+        *)
+            echo "{\"error\": \"Unknown node action: $action\"}"
+            ;;
+    esac
+}
+
+# Internal: Deploy API calls via HTTP
+_ergors_deploy_api() {
+    local node_type="$1"
+    local action="$2"
+    shift 2
+
+    local api_host
+    if [[ "$node_type" == "coordinator" ]]; then
+        api_host="$COORDINATOR_API"
+    else
+        api_host="$EXECUTOR_API"
+    fi
+
+    case "$action" in
+        register-token)
+            # Parse --label argument
+            local label=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --label) label="$2"; shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+            curl -s --max-time 15 -X POST "http://${api_host}/api/tokens" \
+                -H "Content-Type: application/json" \
+                -d "{\"label\": \"${label}\"}" 2>/dev/null || echo '{"error":"request failed"}'
+            ;;
+        list-tokens)
+            curl -s --max-time 15 -X GET "http://${api_host}/api/tokens" \
+                -H "Content-Type: application/json" 2>/dev/null || echo '{"error":"request failed"}'
+            ;;
+        revoke-token)
+            local token_id="${1:-}"
+            curl -s --max-time 15 -X DELETE "http://${api_host}/api/tokens/${token_id}" \
+                -H "Content-Type: application/json" 2>/dev/null || echo '{"error":"request failed"}'
+            ;;
+        request-grant)
+            # Forward as JSON body
+            local body="{}"
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --granter) body=$(echo "$body" | jq --arg v "$2" '. + {granter: $v}'); shift 2 ;;
+                    --grantee) body=$(echo "$body" | jq --arg v "$2" '. + {grantee: $v}'); shift 2 ;;
+                    --allowance) body=$(echo "$body" | jq --arg v "$2" '. + {allowance: $v}'); shift 2 ;;
+                    --reason) body=$(echo "$body" | jq --arg v "$2" '. + {reason: $v}'); shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+            curl -s --max-time 15 -X POST "http://${api_host}/api/grants/request" \
+                -H "Content-Type: application/json" \
+                -d "$body" 2>/dev/null || echo '{"error":"request failed"}'
+            ;;
+        *)
+            echo "{\"error\": \"Unknown deploy action: $action\"}"
+            ;;
+    esac
+}
+
+# Internal: CosmWasm query via HTTP (generic)
+_ergors_cw_query_api() {
+    local node_type="$1"
+    local contract="$2"
+    local query="$3"
+
+    local api_host
+    if [[ "$node_type" == "coordinator" ]]; then
+        api_host="$COORDINATOR_API"
+    else
+        api_host="$EXECUTOR_API"
+    fi
+
+    curl -s --max-time 15 -X POST "http://${api_host}/api/cosmwasm/query" \
+        -H "Content-Type: application/json" \
+        -d "{\"contract\": \"$contract\", \"query\": $query}" 2>/dev/null || echo '{"error":"request failed"}'
+}
 
 # =============================================================================
 # Identity Management
@@ -502,7 +780,51 @@ ergors_deploy_select() {
 
 ergors_deploy_advance() {
     local session_id="$1"
-    ergors_cli deploy advance "$session_id" 2>&1
+    ergors_cli deploy run "$session_id" 2>&1
+}
+
+ergors_deploy_status() {
+    local session_id="$1"
+    ergors_cli deploy status "$session_id" 2>&1
+}
+
+ergors_deploy_close() {
+    local session_id="$1"
+    ergors_cli deploy close-lease "$session_id" 2>&1
+}
+
+ergors_deploy_cancel() {
+    local session_id="$1"
+    ergors_cli deploy cancel "$session_id" 2>&1
+}
+
+ergors_deploy_query_balance() {
+    local address="$1"
+    local denom="${2:-uakt}"
+    ergors_cli deploy query-balance "$address" --denom "$denom" 2>&1
+}
+
+# =============================================================================
+# Provider Management Commands
+# =============================================================================
+
+ergors_trusted_providers() {
+    ergors_cli deploy trusted-providers 2>&1
+}
+
+ergors_add_provider() {
+    local address="$1"
+    local label="${2:-}"
+    if [[ -n "$label" ]]; then
+        ergors_cli deploy add-provider "$address" --label "$label" 2>&1
+    else
+        ergors_cli deploy add-provider "$address" 2>&1
+    fi
+}
+
+ergors_remove_provider() {
+    local address="$1"
+    ergors_cli deploy remove-provider "$address" 2>&1
 }
 
 # =============================================================================
@@ -534,20 +856,142 @@ ergors_grant_approve() {
 }
 
 # =============================================================================
-# SDL Template Commands
+# CosmWasm Commands (via HTTP API)
 # =============================================================================
 
-ergors_sdl_list() {
-    ergors_cli sdl list 2>&1
+# Generic CosmWasm contract query
+# Usage: ergors_cw_query <contract_address> <query_json>
+ergors_cw_query() {
+    local contract="$1"
+    local query="$2"
+
+    curl -s --max-time 15 -X POST "http://${COORDINATOR_API}/api/cosmwasm/query" \
+        -H "Content-Type: application/json" \
+        -d "{\"contract\": \"$contract\", \"query\": $query}" 2>/dev/null || echo '{"error":"request failed"}'
 }
 
+# Generic CosmWasm contract execute
+# Usage: ergors_cw_execute <contract_address> <sender> <msg_json> [funds_json]
+# funds_json format: [{"denom":"uakt","amount":"1000000"}]
+ergors_cw_execute() {
+    local contract="$1"
+    local sender="$2"
+    local msg="$3"
+    local funds="${4:-[]}"
+
+    curl -s --max-time 30 -X POST "http://${COORDINATOR_API}/api/cosmwasm/execute" \
+        -H "Content-Type: application/json" \
+        -d "{\"contract\": \"$contract\", \"sender\": \"$sender\", \"msg\": $msg, \"funds\": $funds}" \
+        2>/dev/null || echo '{"error":"request failed"}'
+}
+
+# Generic CosmWasm code store (upload)
+# Usage: ergors_cw_store <sender> <wasm_base64>
+ergors_cw_store() {
+    local sender="$1"
+    local wasm_base64="$2"
+
+    curl -s --max-time 60 -X POST "http://${COORDINATOR_API}/api/cosmwasm/store" \
+        -H "Content-Type: application/json" \
+        -d "{\"sender\": \"$sender\", \"wasm_byte_code\": \"$wasm_base64\"}" \
+        2>/dev/null || echo '{"error":"request failed"}'
+}
+
+# Generic CosmWasm contract instantiate
+# Usage: ergors_cw_instantiate <code_id> <sender> <label> <msg_json> [admin] [funds_json]
+ergors_cw_instantiate() {
+    local code_id="$1"
+    local sender="$2"
+    local label="$3"
+    local msg="$4"
+    local admin="${5:-null}"
+    local funds="${6:-[]}"
+
+    # Handle admin field (null or string)
+    local admin_json
+    if [[ "$admin" == "null" ]] || [[ -z "$admin" ]]; then
+        admin_json="null"
+    else
+        admin_json="\"$admin\""
+    fi
+
+    curl -s --max-time 30 -X POST "http://${COORDINATOR_API}/api/cosmwasm/instantiate" \
+        -H "Content-Type: application/json" \
+        -d "{\"code_id\": $code_id, \"sender\": \"$sender\", \"admin\": $admin_json, \"label\": \"$label\", \"msg\": $msg, \"funds\": $funds}" \
+        2>/dev/null || echo '{"error":"request failed"}'
+}
+
+# Generic CosmWasm contract instantiate2 (predictable address)
+# Usage: ergors_cw_instantiate2 <code_id> <sender> <label> <msg_json> <salt_base64> [admin] [funds_json]
+ergors_cw_instantiate2() {
+    local code_id="$1"
+    local sender="$2"
+    local label="$3"
+    local msg="$4"
+    local salt="$5"
+    local admin="${6:-null}"
+    local funds="${7:-[]}"
+
+    # Handle admin field (null or string)
+    local admin_json
+    if [[ "$admin" == "null" ]] || [[ -z "$admin" ]]; then
+        admin_json="null"
+    else
+        admin_json="\"$admin\""
+    fi
+
+    curl -s --max-time 30 -X POST "http://${COORDINATOR_API}/api/cosmwasm/instantiate2" \
+        -H "Content-Type: application/json" \
+        -d "{\"code_id\": $code_id, \"sender\": \"$sender\", \"admin\": $admin_json, \"label\": \"$label\", \"msg\": $msg, \"salt\": \"$salt\", \"funds\": $funds}" \
+        2>/dev/null || echo '{"error":"request failed"}'
+}
+
+# =============================================================================
+# SDL Template Commands (built on generic CosmWasm query)
+# =============================================================================
+
+# List SDL template contracts (queries storage, not contract)
+ergors_sdl_list() {
+    # This queries the node's storage for registered SDL contracts
+    # Returns contracts with addresses, labels, and code_ids
+    local coord_home="${TEST_DIR}/coordinator"
+
+    # Use the ergors binary to list contracts from storage
+    ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" sdl list 2>&1 || echo '{"error":"sdl list failed"}'
+}
+
+# Get SDL template from contract
 ergors_sdl_get_template() {
     local contract="$1"
-    ergors_cli sdl get-template "$contract" 2>&1
+    ergors_cw_query "$contract" '{"get_template": {}}'
 }
 
+# Get variable defaults from contract
+ergors_sdl_get_defaults() {
+    local contract="$1"
+    ergors_cw_query "$contract" '{"get_defaults": {}}'
+}
+
+# Render SDL template with variables
 ergors_sdl_render() {
     local contract="$1"
     shift
-    ergors_cli sdl render "$contract" "$@" 2>&1
+
+    # Build variables JSON from --var arguments
+    local vars="{}"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --var)
+                local kv="$2"
+                local key="${kv%%=*}"
+                local val="${kv#*=}"
+                vars=$(echo "$vars" | jq --arg k "$key" --arg v "$val" '. + {($k): $v}')
+                shift 2
+                ;;
+            *) shift ;;
+        esac
+    done
+
+    ergors_cw_query "$contract" "{\"render_sdl\": {\"variables\": $vars}}"
 }

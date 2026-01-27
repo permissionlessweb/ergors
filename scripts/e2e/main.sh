@@ -12,7 +12,7 @@
 #   --skip-akash       Skip Akash/Kind setup (use existing)
 #   --skip-cleanup     Keep everything running after tests
 #   --verbose          Enable verbose output
-#   --test SUITE       Run only specific test suite (network|grants|deployment|all)
+#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|all)
 #   --akash-home PATH  Set Akash repo location
 #   --help             Show this help message
 #
@@ -46,6 +46,12 @@ source "${SCRIPT_DIR}/tests/network.sh"
 source "${SCRIPT_DIR}/tests/grants.sh"
 # shellcheck source=tests/deployment.sh
 source "${SCRIPT_DIR}/tests/deployment.sh"
+# shellcheck source=tests/security.sh
+source "${SCRIPT_DIR}/tests/security.sh"
+# shellcheck source=tests/contracts.sh
+source "${SCRIPT_DIR}/tests/contracts.sh"
+# shellcheck source=tests/api.sh
+source "${SCRIPT_DIR}/tests/api.sh"
 
 # =============================================================================
 # Configuration
@@ -258,20 +264,41 @@ run_tests() {
             akash_setup_provider || log_warn "Provider setup had issues"
             run_deployment_tests
             ;;
+        security)
+            run_network_tests  # Ensure nodes are up
+            run_security_tests
+            ;;
+        contracts)
+            run_network_tests  # Ensure nodes are up
+            run_contract_tests
+            ;;
+        api)
+            run_network_tests  # Ensure nodes are up
+            run_api_tests
+            ;;
         all)
             # Phase 1: Network tests
             run_network_tests
 
-            # Phase 2: Grant tests (before provider)
+            # Phase 2: Contract tests (before grants, as contracts need to be deployed)
+            run_contract_tests
+
+            # Phase 3: Security tests (authentication, authorization)
+            run_security_tests
+
+            # Phase 4: API tests (endpoints, routing)
+            run_api_tests
+
+            # Phase 5: Grant tests (authz/feegrant)
             run_grant_tests
 
-            # Phase 3: Provider setup + deployment tests
+            # Phase 6: Provider setup + deployment tests
             akash_setup_provider || log_warn "Provider setup had issues"
             run_deployment_tests
             ;;
         *)
             log_error "Unknown test suite: $TEST_SUITE"
-            log_error "Valid options: network, grants, deployment, all"
+            log_error "Valid options: network, grants, deployment, security, contracts, api, all"
             exit 1
             ;;
     esac

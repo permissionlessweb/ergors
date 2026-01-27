@@ -112,6 +112,18 @@ test_fail() {
         echo "[$(date +%H:%M:%S)] FAIL: $test_name - $description" >> "${TEST_DIR}/test-results.log"
         [[ -n "$details" ]] && echo "    Details: $details" >> "${TEST_DIR}/test-results.log"
     fi
+
+    # If verbose mode and this looks like an engine crash, show logs immediately
+    if [[ "${VERBOSE:-false}" == "true" ]]; then
+        if echo "$description $details" | grep -qiE "engine|crash|connect|grpc|transport"; then
+            if type display_engine_logs &>/dev/null; then
+                display_engine_logs 50
+            fi
+            if type check_engine_status &>/dev/null; then
+                check_engine_status
+            fi
+        fi
+    fi
 }
 
 test_skip() {
@@ -145,6 +157,15 @@ print_test_summary() {
             fi
         done
         echo ""
+
+        # Display engine logs on failure (helps debug crashes)
+        if [[ "${VERBOSE:-false}" == "true" ]] && type display_engine_logs &>/dev/null; then
+            display_engine_logs 100
+        else
+            echo -e "  ${YELLOW}Tip: Run with --verbose to see engine logs on failure${NC}"
+            echo ""
+        fi
+
         return 1
     else
         echo -e "${GREEN}${BOLD}  All tests passed!${NC}"

@@ -68,13 +68,18 @@ _load_akash_env() {
     export AP_ROOT="${AKASH_PROVIDER_DIR}"
     export AKASH_DIRENV_SET=1
 
-    # Try direnv first
+    # Try direnv first, but preserve our ROOT_DIR
+    local saved_root_dir="${ROOT_DIR:-}"
     local direnv_loaded=false
     if command -v direnv >/dev/null 2>&1; then
         (cd "${AKASH_PROVIDER_DIR}" && direnv allow . >/dev/null 2>&1) || true
         if eval "$(cd "${AKASH_PROVIDER_DIR}" && direnv export bash 2>/dev/null)"; then
             direnv_loaded=true
         fi
+    fi
+    # Restore ROOT_DIR if it was set (Akash's direnv may override it)
+    if [[ -n "$saved_root_dir" ]]; then
+        export ROOT_DIR="$saved_root_dir"
     fi
 
     # Fallback to manual .env only if direnv failed
