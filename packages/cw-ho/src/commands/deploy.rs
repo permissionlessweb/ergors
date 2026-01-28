@@ -5,6 +5,7 @@
 use anyhow::Result;
 use clap::Subcommand;
 use std::collections::HashMap;
+use std::io::IsTerminal;
 
 use crate::client::ManagementClient;
 use super::CliContext;
@@ -277,7 +278,7 @@ impl DeployCmd {
                         "",
                         variables,
                         node.as_deref().unwrap_or(""),
-                        chain_id.as_deref().unwrap_or(""),
+                        chain_id.as_deref().unwrap_or("akashnet-2"),
                         true, // auto is always true now
                     )
                     .await?;
@@ -303,6 +304,14 @@ impl DeployCmd {
                             println!("\nRunning automated workflow...");
                         }
 
+                        // Prompt for key password
+                        let key_password = if std::io::stdin().is_terminal() {
+                            rpassword::prompt_password("Enter Cosmos key password: ")
+                                .map_err(|e| anyhow::anyhow!("Failed to read password: {}", e))?
+                        } else {
+                            String::new()
+                        };
+
                         // Get trusted providers list for auto-selection (unless interactive mode)
                         let trusted_providers = if !*interactive_bid {
                             match client.list_trusted_providers().await {
@@ -322,6 +331,7 @@ impl DeployCmd {
                                 request_grant_from.as_deref().unwrap_or(""),
                                 *grant_duration,
                                 *grant_spend_limit,
+                                &key_password,
                             )
                             .await?;
 
@@ -800,6 +810,14 @@ impl DeployCmd {
                 grant_spend_limit,
                 interactive_bid,
             } => {
+                // Prompt for key password
+                let key_password = if std::io::stdin().is_terminal() {
+                    rpassword::prompt_password("Enter Cosmos key password: ")
+                        .map_err(|e| anyhow::anyhow!("Failed to read password: {}", e))?
+                } else {
+                    String::new()
+                };
+
                 // Get trusted providers list for auto-selection (unless interactive mode)
                 let trusted_providers = if !*interactive_bid {
                     match client.list_trusted_providers().await {
@@ -819,6 +837,7 @@ impl DeployCmd {
                         request_grant_from.as_deref().unwrap_or(""),
                         *grant_duration,
                         *grant_spend_limit,
+                        &key_password,
                     )
                     .await?;
 

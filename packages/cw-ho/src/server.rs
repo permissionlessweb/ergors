@@ -44,7 +44,10 @@ impl Server {
 }
 
 impl Server {
-    pub async fn run(self) -> HoResult<()> {
+    pub async fn run(
+        self,
+        shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> HoResult<()> {
         // Use the new generic route structure from ho-std
         let (public_router, protected_router) = ho_std::define_routes! {
             public_routes: [
@@ -63,8 +66,13 @@ impl Server {
                 // Ollama-compatible proxy endpoint
                 { path: "/api/chat", method: post, handler: crate::proxy::handle_ollama_proxy },
                 { path: "/api/generate", method: post, handler: crate::proxy::handle_ollama_proxy },
+                // CosmWasm contract endpoints (single entry points)
+                { path: "/api/cosmwasm/store", method: post, handler: crate::cosmwasm::handle_cosmwasm_store },
+                { path: "/api/cosmwasm/instantiate", method: post, handler: crate::cosmwasm::handle_cosmwasm_instantiate },
+                { path: "/api/cosmwasm/instantiate2", method: post, handler: crate::cosmwasm::handle_cosmwasm_instantiate2 },
+                { path: "/api/cosmwasm/execute", method: post, handler: crate::cosmwasm::handle_cosmwasm_execute },
+                { path: "/api/cosmwasm/query", method: post, handler: crate::cosmwasm::handle_cosmwasm_query },
                 // { path: "/orchestrate/bootstrap", method: post, handler: crate::deploy::handle_bootstrap },
-                // { path: "/headstash/cosmwasm", method: get, handler: crate::cosmwasm::handle_cosmwasm_action },
                 { path: "/health", method: get, handler: handle_health },
             ],
             protected_routes: [
@@ -88,7 +96,6 @@ impl Server {
             self.state.c.identity().api_port,
         );
 
-        // Build router with operation recording middleware
         let app = Router::new()
             .merge(public_router)
             .merge(protected_router.route_layer(AuthLayer))
@@ -100,9 +107,14 @@ impl Server {
             ))
             .with_state(self.state);
 
+        info!("HTTP API server listening on {}", server_addr);
+
         axum::serve(TcpListener::bind(&server_addr).await?, app)
+            .with_graceful_shutdown(shutdown_signal)
             .await
-            .map_err(|e| HoError::Cfg(format!("Dayum yo: {}", e)))?;
+            .map_err(|e| HoError::Cfg(format!("Server error: {}", e)))?;
+
+        info!("HTTP server shut down gracefully");
         Ok(())
     }
 
@@ -184,7 +196,10 @@ impl Server {
                 crate::proxy::ProxyRouterConfig::default()
             }
             Err(e) => {
-                tracing::warn!("⚠️  Failed to load proxy router config from storage: {}, using defaults", e);
+                tracing::warn!(
+                    "⚠️  Failed to load proxy router config from storage: {}, using defaults",
+                    e
+                );
                 crate::proxy::ProxyRouterConfig::default()
             }
         };
@@ -206,9 +221,9 @@ impl Server {
                 // c == config
                 c.clone(),
                 // pr == proxy router (loaded from storage or default)
-                Arc::new(tokio::sync::RwLock::new(
-                    crate::proxy::ProxyRouter::new(proxy_router_config),
-                )),
+                Arc::new(tokio::sync::RwLock::new(crate::proxy::ProxyRouter::new(
+                    proxy_router_config,
+                ))),
                 // akash == Akash deployment context (optional)
                 akash_context,
                 // wasm == WASM runtime
@@ -227,7 +242,7 @@ impl Server {
     async fn init_akash_context(
         c: &ErgorsConfig,
         storage: &Arc<ErgorsStorage>,
-        custody_password: Option<&str>,
+        _custody_password: Option<&str>,
     ) -> Option<AkashDeploymentContext> {
         use crate::deploy::cosmos_client::CosmosEndpoints;
         use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
@@ -247,33 +262,33 @@ impl Server {
         tracing::info!("   RPC:      {}", akash_config.rpc_endpoint);
         tracing::info!("   REST:     {}", akash_config.rest_endpoint);
 
-        // Get Cosmos key store from storage
+        // Get Cosmos key store from storage (use empty store if not found)
         let key_store = match storage.get_cosmos_key_store().await {
-            Ok(Some(store)) => store,
+            Ok(Some(store)) => {
+                tracing::info!(
+                    "🔑 Loaded Cosmos key store with {} keys",
+                    store.derived_accounts.len()
+                );
+                store
+            }
             Ok(None) => {
                 tracing::info!(
                     "📋 No Cosmos key store found - run 'ergors keys import-mnemonic' to import keys"
                 );
-                return None;
+                // Create empty key store - deployment will fail at signing with clear error
+                CosmosKeyStore::default()
             }
             Err(e) => {
                 tracing::warn!("⚠️  Failed to load Cosmos key store: {}", e);
-                return None;
+                // Create empty key store - deployment will fail at signing with clear error
+                CosmosKeyStore::default()
             }
         };
 
-        // Create key manager and unlock if we have a password
-        let mut key_manager = EncryptedCosmosKeyManager::new();
-
-        if let Some(password) = custody_password {
-            if let Err(e) = key_manager.unlock(password) {
-                tracing::warn!("⚠️  Failed to unlock Cosmos key manager: {}", e);
-                return None;
-            }
-            tracing::info!("🔓 Unlocked Cosmos key manager");
-        } else {
-            tracing::info!("📋 No custody password - Cosmos key manager locked (unlock via gRPC)");
-        }
+        // Create key manager from store (loads salt from existing keys)
+        // NOTE: We keep it locked on startup - it will be unlocked with password during deployment
+        let key_manager = EncryptedCosmosKeyManager::from_store(&key_store);
+        tracing::info!("🔐 Cosmos key manager initialized (locked - will unlock during deployment)");
 
         // Get endpoints from config
         let endpoints = CosmosEndpoints::from_akash_config(&akash_config);
@@ -305,7 +320,10 @@ impl Server {
         let tx_lifecycle = Arc::new(TxLifecycle::new(signer.clone(), rest_endpoint));
 
         // Create CertificateManager
-        let cert_manager = Arc::new(CertificateManager::new(cosmos.clone(), tx_lifecycle.clone()));
+        let cert_manager = Arc::new(CertificateManager::new(
+            cosmos.clone(),
+            tx_lifecycle.clone(),
+        ));
 
         tracing::info!("✅ Akash deployment context initialized");
 
@@ -340,8 +358,8 @@ impl Server {
 
                 // Check if encrypted identity exists
                 if custody.exists() {
-                    // Unlock with password
-                    let password = Self::get_custody_password()?;
+                    // Unlock with password (async, interruptible by Ctrl+C)
+                    let password = Self::get_custody_password().await?;
                     custody
                         .unlock(&password)
                         .await
@@ -353,7 +371,7 @@ impl Server {
                 } else {
                     // No identity exists - need to create one
                     info!("🆕 Creating new encrypted node identity...");
-                    let password = Self::create_custody_password()?;
+                    let password = Self::create_custody_password().await?;
 
                     let metadata = EncryptedIdentityBuilder::new()
                         .user(c.identity().user.clone())
@@ -409,7 +427,7 @@ impl Server {
     }
 
     /// Get custody password from environment or interactive prompt
-    fn get_custody_password() -> HoResult<String> {
+    async fn get_custody_password() -> HoResult<String> {
         // First check environment variable for non-interactive use
         if let Ok(password) = std::env::var("ERGORS_CUSTODY_PASSWORD") {
             if !password.is_empty() {
@@ -417,12 +435,12 @@ impl Server {
             }
         }
 
-        // Interactive password prompt
-        Self::prompt_for_password("Enter custody password: ")
+        // Interactive password prompt (async, interruptible by Ctrl+C)
+        Self::prompt_for_password_async("Enter custody password: ").await
     }
 
     /// Create a new custody password with confirmation
-    fn create_custody_password() -> HoResult<String> {
+    async fn create_custody_password() -> HoResult<String> {
         // Check environment variable first
         if let Ok(password) = std::env::var("ERGORS_CUSTODY_PASSWORD") {
             if !password.is_empty() {
@@ -430,9 +448,9 @@ impl Server {
             }
         }
 
-        // Interactive prompts
-        let password = Self::prompt_for_password("Create custody password: ")?;
-        let confirm = Self::prompt_for_password("Confirm custody password: ")?;
+        // Interactive prompts (async, interruptible by Ctrl+C)
+        let password = Self::prompt_for_password_async("Create custody password: ").await?;
+        let confirm = Self::prompt_for_password_async("Confirm custody password: ").await?;
 
         if password != confirm {
             return Err(HoError::Cfg("Passwords do not match".to_string()));
@@ -448,20 +466,43 @@ impl Server {
     }
 
     /// Prompt for password (interactive or from stdin)
-    fn prompt_for_password(msg: &str) -> HoResult<String> {
-        let mut password = String::new();
+    ///
+    /// This async function runs the blocking password prompt in a separate thread
+    /// and can be cancelled via Ctrl+C (which will cause the process to exit).
+    /// Use Ctrl+D to cancel password entry gracefully.
+    async fn prompt_for_password_async(msg: &str) -> HoResult<String> {
         if std::io::stdin().is_terminal() {
-            password = rpassword::prompt_password(msg)
-                .map_err(|e| HoError::Cfg(format!("Failed to read password: {}", e)))?;
-        } else {
-            while let Ok(n_bytes) = std::io::stdin().lock().read_to_string(&mut password) {
-                if n_bytes == 0 {
-                    break;
+            let msg = msg.to_string();
+
+            // Run blocking password prompt in a separate thread
+            let handle = tokio::task::spawn_blocking(move || rpassword::prompt_password(&msg));
+
+            // Race against Ctrl+C signal
+            tokio::select! {
+                result = handle => {
+                    match result {
+                        Ok(Ok(password)) if password.is_empty() => {
+                            Err(HoError::Cfg("Password entry cancelled (empty input)".to_string()))
+                        }
+                        Ok(Ok(password)) => Ok(password),
+                        Ok(Err(e)) => Err(HoError::Cfg(format!("Password read error: {}", e))),
+                        Err(e) => Err(HoError::Cfg(format!("Password prompt interrupted: {}", e))),
+                    }
                 }
-                password = password.trim().to_string();
+                _ = tokio::signal::ctrl_c() => {
+                    eprintln!(); // Newline after prompt
+                    Err(HoError::Cfg("Password entry cancelled (Ctrl+C)".to_string()))
+                }
+            }
+        } else {
+            // Non-interactive: read from stdin (blocking is fine here)
+            let mut password = String::new();
+            match std::io::stdin().lock().read_to_string(&mut password) {
+                Ok(0) => Err(HoError::Cfg("No password provided on stdin".to_string())),
+                Ok(_) => Ok(password.trim().to_string()),
+                Err(e) => Err(HoError::Cfg(format!("Failed to read password: {}", e))),
             }
         }
-        Ok(password)
     }
 
     /// Import an existing private key to encrypted custody
@@ -475,7 +516,7 @@ impl Server {
     ) -> HoResult<()> {
         // Create password for new encrypted storage
         info!("🔐 Importing key to encrypted custody...");
-        let password = Self::create_custody_password()?;
+        let password = Self::create_custody_password().await?;
 
         let metadata = EncryptedIdentityBuilder::new()
             .user(c.identity().user.clone())

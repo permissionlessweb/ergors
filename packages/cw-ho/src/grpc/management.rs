@@ -1982,22 +1982,74 @@ impl ManagementService for ManagementServiceImpl {
 
         let session_id = uuid::Uuid::new_v4().to_string();
 
-        // Use engine config as defaults, override with request params
-        let akash_config = self.state.c.0.akash.as_ref();
+        // Use engine config defaults, override with request params if provided
+        let akash_config = self.state.c.akash(); // Uses default_akash_config() if not set
         let chain_id = if !req.chain_id.is_empty() {
-            req.chain_id
-        } else if let Some(cfg) = akash_config {
-            if cfg.chain_id.is_empty() { "akashnet-2".to_string() } else { cfg.chain_id.clone() }
+            req.chain_id.clone()
         } else {
-            "akashnet-2".to_string()
+            akash_config.chain_id.clone()
         };
         let node_endpoint = if !req.node_endpoint.is_empty() {
-            req.node_endpoint
-        } else if let Some(cfg) = akash_config {
-            if cfg.rpc_endpoint.is_empty() { "https://rpc-akash.ecostake.com:443".to_string() } else { cfg.rpc_endpoint.clone() }
+            req.node_endpoint.clone()
         } else {
-            "https://rpc-akash.ecostake.com:443".to_string()
+            akash_config.rpc_endpoint.clone()
         };
+
+        // Get key store and resolve account address
+        let key_store = match self.state.s.get_cosmos_key_store().await {
+            Ok(Some(ks)) => ks,
+            Ok(None) => {
+                return Ok(Response::new(CreateAkashDeploymentResponse {
+                    success: false,
+                    workflow: None,
+                    error_message: "No key store found. Import a key with `ergors keys import-mnemonic`".to_string(),
+                }));
+            }
+            Err(e) => {
+                return Ok(Response::new(CreateAkashDeploymentResponse {
+                    success: false,
+                    workflow: None,
+                    error_message: format!("Failed to access key store: {}", e),
+                }));
+            }
+        };
+
+        // Determine key name: use request param or default
+        let key_name = if !req.key_name.is_empty() {
+            req.key_name.clone()
+        } else {
+            // Use default key
+            match ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager::get_default_key_name(&key_store) {
+                Some(name) => name.to_string(),
+                None => {
+                    return Ok(Response::new(CreateAkashDeploymentResponse {
+                        success: false,
+                        workflow: None,
+                        error_message: "No key specified and no default key set. Use `ergors keys set-default --key-name <name>`".to_string(),
+                    }));
+                }
+            }
+        };
+
+        // Look up account address from key store
+        let account = match key_store.derived_accounts.iter().find(|a| {
+            a.key_name == key_name && a.account_index == req.hd_account_index
+        }) {
+            Some(acc) => acc,
+            None => {
+                return Ok(Response::new(CreateAkashDeploymentResponse {
+                    success: false,
+                    workflow: None,
+                    error_message: format!(
+                        "Key '{}' with account index {} not found. Use `ergors keys list` to see available keys.",
+                        key_name, req.hd_account_index
+                    ),
+                }));
+            }
+        };
+
+        let account_address = account.address.clone();
+        tracing::info!("Resolved account address: {}", account_address);
 
         let now = pbjson_types::Timestamp {
             seconds: std::time::SystemTime::now()
@@ -2024,8 +2076,8 @@ impl ManagementService for ManagementServiceImpl {
             session_id: session_id.clone(),
             current_step: AkashWorkflowStep::KeySelection as i32,
             status: AkashWorkflowStatus::Pending as i32,
-            selected_key_name: req.key_name,
-            account_address: String::new(),
+            selected_key_name: key_name,
+            account_address,
             hd_account_index: req.hd_account_index,
             authz_grants: vec![],
             feegrants: vec![],
@@ -2414,6 +2466,24 @@ impl ManagementService for ManagementServiceImpl {
             options.auto_select_bid
         );
 
+        // Unlock key manager with provided password
+        if !req.key_password.is_empty() {
+            let mut key_manager = akash_ctx.key_manager.write().await;
+            if !key_manager.is_unlocked() {
+                tracing::info!("🔐 Unlocking Cosmos key manager for deployment signing...");
+                key_manager.unlock(&req.key_password).map_err(|e| {
+                    Status::unauthenticated(format!("Failed to unlock key manager: {}", e))
+                })?;
+                tracing::info!("🔓 Cosmos key manager unlocked");
+            } else {
+                tracing::debug!("Key manager already unlocked");
+            }
+        } else if !akash_ctx.key_manager.read().await.is_unlocked() {
+            return Err(Status::unauthenticated(
+                "Key manager is locked. Provide key_password to unlock for signing."
+            ));
+        }
+
         // Create deployer from context
         let deployer = akash_ctx.create_deployer(self.state.s.clone());
 
@@ -2435,11 +2505,20 @@ impl ManagementService for ManagementServiceImpl {
                 }))
             }
             Err(e) => {
-                tracing::error!("Automated deployment failed: {}", e);
+                // Determine which step failed based on current_step
+                let failed_step = AkashWorkflowStep::try_from(workflow.current_step)
+                    .map(|s| format!("{:?}", s))
+                    .unwrap_or_else(|_| format!("step_{}", workflow.current_step));
 
-                // Update workflow status to failed
+                tracing::error!(
+                    "Automated deployment FAILED at step '{}': {}",
+                    failed_step,
+                    e
+                );
+
+                // Update workflow status to failed with detailed error
                 workflow.status = AkashWorkflowStatus::Failed as i32;
-                workflow.last_error = e.to_string();
+                workflow.last_error = format!("[{}] {}", failed_step, e);
                 workflow.updated_at = Some(pbjson_types::Timestamp {
                     seconds: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -2447,7 +2526,22 @@ impl ManagementService for ManagementServiceImpl {
                         .as_secs() as i64,
                     nanos: 0,
                 });
-                self.state.s.put_akash_workflow(&workflow).await.ok();
+
+                // Persist failed state - log any storage errors
+                if let Err(storage_err) = self.state.s.put_akash_workflow(&workflow).await {
+                    tracing::error!(
+                        "Failed to persist workflow failure state: {} (session: {})",
+                        storage_err,
+                        workflow.session_id
+                    );
+                } else {
+                    tracing::info!(
+                        "💾 Persisted failed workflow state: session={}, step={}, error={}",
+                        workflow.session_id,
+                        failed_step,
+                        e
+                    );
+                }
 
                 Ok(Response::new(RunAkashDeploymentResponse {
                     workflow: Some(workflow),
@@ -3100,11 +3194,9 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<QueryBalanceResponse>, Status> {
         let req = request.into_inner();
 
-        // Get endpoints from config (or use defaults)
-        let endpoints = match &self.state.c.0.akash {
-            Some(cfg) => CosmosEndpoints::from_akash_config(cfg),
-            None => CosmosEndpoints::akash_mainnet(),
-        };
+        // Get endpoints from config (uses mainnet defaults if not configured)
+        let akash_config = self.state.c.akash();
+        let endpoints = CosmosEndpoints::from_akash_config(&akash_config);
 
         tracing::debug!(
             "Querying balance for {} (denom: {}) via {}",

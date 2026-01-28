@@ -36,36 +36,95 @@ pub mod manifest {
 pub mod akash {
 
     pub mod base {
+        pub mod attributes {
+            pub mod v1 {
+                include!("gen/akash.base.attributes.v1.rs");
+            }
+        }
+        pub mod deposit {
+            pub mod v1 {
+                include!("gen/akash.base.deposit.v1.rs");
+            }
+        }
+        pub mod resources {
+            pub mod v1beta4 {
+                include!("gen/akash.base.resources.v1beta4.rs");
+            }
+        }
         pub mod v1beta3 {
-
             include!("gen/akash.base.v1beta3.rs");
         }
     }
+
+    pub mod cert {
+        pub mod v1 {
+            include!("gen/akash.cert.v1.rs");
+        }
+    }
+
     pub mod deployment {
+        pub mod v1 {
+            include!("gen/akash.deployment.v1.rs");
+        }
         pub mod v1beta3 {
             include!("gen/akash.deployment.v1beta3.rs");
         }
-    }
-    pub mod escrow {
-        pub mod v1beta3 {
-            include!("gen/akash.escrow.v1beta3.rs");
+        pub mod v1beta5 {
+            include!("gen/akash.deployment.v1beta5.rs");
         }
     }
+
+    pub mod discovery {
+        pub mod v1 {
+            include!("gen/akash.discovery.v1.rs");
+        }
+    }
+
+    pub mod escrow {
+        pub mod id {
+            pub mod v1 {
+                include!("gen/akash.escrow.id.v1.rs");
+            }
+        }
+        pub mod types {
+            pub mod v1 {
+                include!("gen/akash.escrow.types.v1.rs");
+            }
+        }
+        pub mod v1 {
+            include!("gen/akash.escrow.v1.rs");
+        }
+    }
+
     pub mod manifest {
         pub mod v2beta2 {
             include!("gen/akash.manifest.v2beta2.rs");
         }
     }
+
     pub mod market {
+        pub mod v1 {
+            include!("gen/akash.market.v1.rs");
+        }
         pub mod v1beta4 {
             include!("gen/akash.market.v1beta4.rs");
         }
+        pub mod v2beta1 {
+            include!("gen/akash.market.v2beta1.rs");
+        }
     }
+
     pub mod provider {
         pub mod lease {
             pub mod v1 {
                 include!("gen/akash.provider.lease.v1.rs");
             }
+        }
+        pub mod v1beta3 {
+            include!("gen/akash.provider.v1beta3.rs");
+        }
+        pub mod v1beta4 {
+            include!("gen/akash.provider.v1beta4.rs");
         }
     }
 }

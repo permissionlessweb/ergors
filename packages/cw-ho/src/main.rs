@@ -197,7 +197,9 @@ async fn execute_grpc_command(cli: &Cli) -> Result<()> {
             EngineCmd::Status.execute(&ctx, client).await?;
         }
         Commands::Restart { force } => {
-            EngineCmd::Restart { force: *force }.execute(&ctx, client).await?;
+            EngineCmd::Restart { force: *force }
+                .execute(&ctx, client)
+                .await?;
         }
 
         // gRPC commands
@@ -277,7 +279,6 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
 
         // Get app state for gRPC service
         let app_state = s.state();
-        let _shutdown_tx = signal_handler.subscribe_shutdown();
 
         // Create gRPC management service
         let grpc_service =
@@ -296,21 +297,26 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
 
         info!("gRPC management server listening on {}", grpc_addr);
 
-        // Run HTTP API server in parallel with shutdown monitoring
-        tokio::select! {
-            result = s.run() => {
-                if let Err(e) = result {
-                    error!("HTTP server error: {}", e);
-                    error!("Backtrace: {:#?}", e.backtrace());
-                }
-            }
-            _ = shutdown_rx.recv() => {
+        // Create shutdown signal for HTTP server
+
+        // Run HTTP API server with graceful shutdown
+        if let Err(e) = s
+            .run(async move {
+                let _ = shutdown_rx.recv().await;
                 info!("Shutdown signal received, stopping servers...");
-            }
+            })
+            .await
+        {
+            error!("HTTP server error: {}", e);
         }
 
-        // Cleanup
+        // Cleanup gRPC server - abort and wait for it to finish
         grpc_handle.abort();
+        let _ = grpc_handle.await;
+
+        // Give async tasks time to clean up their Arc references
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
         info!("ERGORS engine stopped");
     });
 

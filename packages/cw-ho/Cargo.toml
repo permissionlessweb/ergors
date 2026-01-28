@@ -44,6 +44,7 @@ http-body-util = { workspace = true }
 pbjson-types = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
+rcgen = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
 sha2 = { workspace = true }
@@ -51,6 +52,7 @@ rpassword = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }

@@ -844,6 +844,7 @@ impl ManagementClient {
         request_grant_from: &str,
         grant_duration_seconds: u64,
         grant_spend_limit_uakt: u64,
+        key_password: &str,
     ) -> Result<RunAkashDeploymentResponse> {
         let response = self
             .inner
@@ -861,6 +862,7 @@ impl ManagementClient {
                     grant_duration_seconds,
                     grant_spend_limit_uakt,
                 }),
+                key_password: key_password.to_string(),
             })
             .await
             .context("Failed to run Akash deployment")?;

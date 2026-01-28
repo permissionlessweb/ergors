@@ -9,7 +9,6 @@ pub mod cosmos_client;
 pub mod deployment_builder;
 pub mod granter;
 pub mod manifest;
-pub mod proto_types;
 pub mod reputation;
 pub mod requester;
 pub mod sdl;

@@ -2,20 +2,22 @@
 //!
 //! Handles:
 //! - Checking for existing valid certificates on chain
-//! - Certificate creation workflow
+//! - Certificate creation workflow (X.509 PEM format)
 //! - Converting between chain types and proto types
 //!
-//! Note: The current implementation uses a simplified certificate format.
-//! For production use, consider implementing proper X.509 certificates
-//! using the `rcgen` crate.
+//! Uses `rcgen` for proper X.509 certificate generation compatible with
+//! Akash provider mTLS requirements.
 
 use anyhow::{anyhow, Result};
+use ho_std::types::akash::cert::v1::{Certificate, MsgCreateCertificate, State};
 use ho_std::types::ergors::orch::v1::{AkashCertState, AkashCertificateInfo};
+use prost::Name;
+use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-use super::cosmos_client::{CertState, CertificateInfo, CosmosClient};
+use super::cosmos_client::CosmosClient;
 use super::signer::msg_to_any;
 use super::tx_lifecycle::{TxLifecycle, DEFAULT_GAS_LIMIT, DEFAULT_GAS_PRICE};
 
@@ -37,7 +39,8 @@ impl CertificateManager {
     /// Get or create a valid certificate for the address.
     ///
     /// 1. Query chain for existing valid certificate
-    /// 2. If none exists, generate and broadcast new certificate
+    /// 2. If none exists (or query fails), generate and broadcast new certificate
+    /// 3. Handle duplicate certificate errors gracefully
     pub async fn get_or_create(
         &self,
         key_name: &str,
@@ -47,19 +50,54 @@ impl CertificateManager {
         tracing::info!("  Querying chain for existing certificate...");
 
         // Query chain for existing valid certificate
-        if let Some(chain_cert) = self.cosmos.query_valid_certificate(address).await? {
-            tracing::info!("  Certificate: FOUND EXISTING");
-            tracing::info!("    Owner:  {}", chain_cert.owner);
-            tracing::info!("    Serial: {}", chain_cert.serial);
-            tracing::info!("    State:  {:?}", chain_cert.state);
-            return Ok(certificate_info_to_proto(&chain_cert));
+        match self.cosmos.query_valid_certificate(address).await {
+            Ok(Some(chain_cert)) => {
+                tracing::info!("  Certificate: FOUND EXISTING");
+                tracing::info!("    State:  {:?}", State::try_from(chain_cert.state).ok());
+                return Ok(certificate_to_workflow_info(address, &chain_cert, "existing"));
+            }
+            Ok(None) => {
+                tracing::info!("  Certificate: NOT FOUND - creating new one...");
+            }
+            Err(e) => {
+                // Some REST endpoints don't implement certificate queries (501 Not Implemented)
+                // In this case, try to create a certificate - it will fail with a clear error
+                // if one already exists
+                tracing::warn!(
+                    "  Certificate query failed: {} - attempting to create new certificate",
+                    e
+                );
+            }
         }
 
-        // No valid certificate exists, create new one
-        tracing::info!("  Certificate: NOT FOUND - creating new one...");
-
-        self.create_certificate(key_name, account_index, address)
+        // Create new certificate
+        match self
+            .create_certificate(key_name, account_index, address)
             .await
+        {
+            Ok(cert) => Ok(cert),
+            Err(e) => {
+                let error_str = e.to_string();
+                // Check for duplicate certificate error (certificate already exists)
+                if error_str.contains("certificate exists")
+                    || error_str.contains("already exists")
+                    || error_str.contains("duplicate")
+                {
+                    tracing::info!("  Certificate already exists on chain (creation rejected)");
+                    // Return a placeholder cert info - the actual cert exists on chain
+                    // and will be used for mTLS by the provider
+                    Ok(AkashCertificateInfo {
+                        owner: address.to_string(),
+                        serial: "existing".to_string(),
+                        state: AkashCertState::Valid as i32,
+                        cert_pem: vec![],
+                        pubkey: vec![],
+                    })
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     /// Create a new certificate and broadcast to chain.
@@ -81,7 +119,10 @@ impl CertificateManager {
             pubkey: pubkey_bytes.clone(),
         };
 
-        let msg_any = msg_to_any(&msg, "/akash.cert.v1beta3.MsgCreateCertificate");
+        let msg_any = msg_to_any(
+            &msg,
+            &MsgCreateCertificate::type_url(),
+        );
 
         // Broadcast and wait for finality
         tracing::info!("  Broadcasting MsgCreateCertificate...");
@@ -124,136 +165,93 @@ impl CertificateManager {
     /// Query certificate from chain by address.
     pub async fn query_certificate(&self, address: &str) -> Result<Option<AkashCertificateInfo>> {
         match self.cosmos.query_valid_certificate(address).await? {
-            Some(cert) => Ok(Some(certificate_info_to_proto(&cert))),
+            Some(cert) => Ok(Some(certificate_to_workflow_info(address, &cert, "unknown"))),
             None => Ok(None),
         }
     }
 
     /// Check if an address has a valid certificate.
     pub async fn has_valid_certificate(&self, address: &str) -> Result<bool> {
-        Ok(self.cosmos.query_valid_certificate(address).await?.is_some())
+        Ok(self
+            .cosmos
+            .query_valid_certificate(address)
+            .await?
+            .is_some())
     }
 }
 
-/// Convert CertificateInfo to proto AkashCertificateInfo.
-fn certificate_info_to_proto(cert: &CertificateInfo) -> AkashCertificateInfo {
-    let state = match cert.state {
-        CertState::Invalid => AkashCertState::Invalid,
-        CertState::Valid => AkashCertState::Valid,
-        CertState::Revoked => AkashCertState::Revoked,
+/// Convert Akash Certificate (prost type) to workflow AkashCertificateInfo.
+///
+/// This keeps certificate details minimal - users only need to know the cert exists and its state.
+fn certificate_to_workflow_info(
+    owner: &str,
+    cert: &Certificate,
+    serial: &str,
+) -> AkashCertificateInfo {
+    // Map Akash chain state enum to our workflow state enum
+    let state = match State::try_from(cert.state) {
+        Ok(State::Valid) => AkashCertState::Valid,
+        Ok(State::Revoked) => AkashCertState::Revoked,
+        _ => AkashCertState::Invalid,
     };
 
     AkashCertificateInfo {
-        owner: cert.owner.clone(),
-        serial: cert.serial.clone(),
+        owner: owner.to_string(),
+        serial: serial.to_string(),
         state: state as i32,
-        cert_pem: cert.cert_pem.as_bytes().to_vec(),
-        pubkey: cert.pubkey.as_bytes().to_vec(),
+        cert_pem: cert.cert.clone(),
+        pubkey: cert.pubkey.clone(),
     }
 }
 
-/// Generate an Akash-compatible certificate.
+/// Generate an Akash-compatible X.509 certificate in PEM format.
 ///
-/// This creates a self-signed certificate for mTLS authentication
-/// between tenants and providers.
+/// This creates a self-signed ECDSA P-256 certificate for mTLS authentication
+/// between tenants and providers on Akash Network.
 ///
-/// Returns (cert_bytes, pubkey_bytes, serial).
+/// Returns (cert_pem_bytes, pubkey_pem_bytes, serial).
 fn generate_akash_certificate(address: &str) -> Result<(Vec<u8>, Vec<u8>, String)> {
-    // Generate a unique serial number
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let random_bytes: [u8; 8] = rand::random();
+    // Generate ECDSA P-256 key pair (compatible with Akash)
+    let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
+        .map_err(|e| anyhow!("Failed to generate key pair: {}", e))?;
 
+    // Generate a unique serial number from hash
+    let random_bytes: [u8; 16] = rand::random();
     let mut hasher = Sha256::new();
-    hasher.update(now.to_le_bytes());
     hasher.update(random_bytes);
+    hasher.update(address.as_bytes());
     let hash = hasher.finalize();
     let serial = hex::encode(&hash[..16]);
 
-    // Generate a secp256k1 key pair
-    let private_key_bytes: [u8; 32] = rand::random();
-    let signing_key = cosmrs::crypto::secp256k1::SigningKey::from_slice(&private_key_bytes)
-        .map_err(|e| anyhow!("Failed to create signing key: {}", e))?;
-    let public_key = signing_key.public_key();
+    // Build certificate parameters
+    let mut params = CertificateParams::default();
 
-    // Get public key bytes
-    let pubkey_bytes = public_key.to_bytes();
+    // Set subject with Common Name = address (required by Akash)
+    let mut distinguished_name = DistinguishedName::new();
+    distinguished_name.push(DnType::CommonName, address);
+    params.distinguished_name = distinguished_name;
 
-    // Create certificate data structure
-    let cert_bytes = build_certificate_data(address, &serial, &pubkey_bytes)?;
+    // Set validity period (1 year from now)
+    params.not_before = time::OffsetDateTime::now_utc();
+    params.not_after = time::OffsetDateTime::now_utc() + Duration::from_secs(365 * 24 * 60 * 60);
+
+    // Get public key PEM before moving key_pair
+    let pubkey_pem = key_pair.public_key_pem();
+    let pubkey_bytes = pubkey_pem.as_bytes().to_vec();
+
+    // Generate the self-signed certificate
+    let cert = params
+        .self_signed(&key_pair)
+        .map_err(|e| anyhow!("Failed to generate certificate: {}", e))?;
+
+    // Get PEM-encoded certificate
+    let cert_pem = cert.pem();
+    let cert_bytes = cert_pem.as_bytes().to_vec();
+
+    tracing::debug!("Generated certificate PEM ({} bytes)", cert_bytes.len());
+    tracing::debug!("Generated public key PEM ({} bytes)", pubkey_bytes.len());
 
     Ok((cert_bytes, pubkey_bytes, serial))
-}
-
-/// Build certificate data structure.
-///
-/// Creates a simplified certificate format compatible with Akash's requirements.
-fn build_certificate_data(address: &str, serial: &str, pubkey_bytes: &[u8]) -> Result<Vec<u8>> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    // Create certificate data
-    let mut cert_data = Vec::new();
-
-    // Magic header for identification
-    cert_data.extend_from_slice(b"AKASH_CERT_V1");
-
-    // Serial number (variable length, prefixed with length)
-    let serial_bytes = serial.as_bytes();
-    cert_data.push(serial_bytes.len() as u8);
-    cert_data.extend_from_slice(serial_bytes);
-
-    // Validity period (not_before, not_after as unix timestamps)
-    cert_data.extend_from_slice(&now.to_le_bytes());
-    cert_data.extend_from_slice(&(now + 365 * 24 * 3600).to_le_bytes()); // 1 year validity
-
-    // Subject (address)
-    let addr_bytes = address.as_bytes();
-    cert_data.push(addr_bytes.len() as u8);
-    cert_data.extend_from_slice(addr_bytes);
-
-    // Public key (length-prefixed)
-    cert_data.push(pubkey_bytes.len() as u8);
-    cert_data.extend_from_slice(pubkey_bytes);
-
-    // Create a simple signature (hash of all data above)
-    let mut hasher = Sha256::new();
-    hasher.update(&cert_data);
-    let signature = hasher.finalize();
-    cert_data.extend_from_slice(&signature);
-
-    Ok(cert_data)
-}
-
-/// Akash certificate creation message (matches akash.cert.v1beta3.MsgCreateCertificate).
-#[derive(Clone, PartialEq, prost::Message)]
-pub struct MsgCreateCertificate {
-    #[prost(string, tag = "1")]
-    pub owner: String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub cert: Vec<u8>,
-    #[prost(bytes = "vec", tag = "3")]
-    pub pubkey: Vec<u8>,
-}
-
-/// Akash certificate revocation message (matches akash.cert.v1beta3.MsgRevokeCertificate).
-#[derive(Clone, PartialEq, prost::Message)]
-pub struct MsgRevokeCertificate {
-    #[prost(message, optional, tag = "1")]
-    pub id: Option<CertificateId>,
-}
-
-/// Certificate ID for revocation.
-#[derive(Clone, PartialEq, prost::Message)]
-pub struct CertificateId {
-    #[prost(string, tag = "1")]
-    pub owner: String,
-    #[prost(string, tag = "2")]
-    pub serial: String,
 }
 
 #[cfg(test)]
@@ -261,22 +259,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_certificate_info_to_proto() {
-        let cert = CertificateInfo {
-            owner: "akash1test".to_string(),
-            serial: "abc123".to_string(),
-            state: CertState::Valid,
-            cert_pem: "cert_data".to_string(),
-            pubkey: "pubkey_data".to_string(),
+    fn test_certificate_to_workflow_info() {
+        let cert = Certificate {
+            state: State::Valid as i32,
+            cert: b"cert_data".to_vec(),
+            pubkey: b"pubkey_data".to_vec(),
         };
 
-        let proto = certificate_info_to_proto(&cert);
+        let workflow_info = certificate_to_workflow_info("akash1test", &cert, "abc123");
 
-        assert_eq!(proto.owner, "akash1test");
-        assert_eq!(proto.serial, "abc123");
-        assert_eq!(proto.state, AkashCertState::Valid as i32);
-        assert_eq!(proto.cert_pem, b"cert_data");
-        assert_eq!(proto.pubkey, b"pubkey_data");
+        assert_eq!(workflow_info.owner, "akash1test");
+        assert_eq!(workflow_info.serial, "abc123");
+        assert_eq!(workflow_info.state, AkashCertState::Valid as i32);
+        assert_eq!(workflow_info.cert_pem, b"cert_data");
+        assert_eq!(workflow_info.pubkey, b"pubkey_data");
     }
 
     #[test]

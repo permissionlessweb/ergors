@@ -8,6 +8,7 @@
 
 use anyhow::{anyhow, Result};
 use camino::Utf8Path;
+use ho_std::constants::DATA_FOLDER_NAME;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 
 use crate::storage::ErgorsStorage;
@@ -78,7 +79,8 @@ impl KeysCmd {
     }
 
     async fn exec_async(&self, home_dir: &Utf8Path) -> Result<()> {
-        let data_dir = home_dir.join("data");
+        // Use same storage path as server config (home/memories)
+        let data_dir = home_dir.join(DATA_FOLDER_NAME);
 
         // Open storage
         let storage = ErgorsStorage::new(&data_dir, vec![])

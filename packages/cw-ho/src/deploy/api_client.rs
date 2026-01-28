@@ -6,8 +6,10 @@
 use std::time::Duration;
 
 use anyhow::Result;
+use ho_std::types::akash::deployment::v1beta5::QueryDeploymentsResponse;
 use reqwest::Client as HttpClient;
 use serde_json::Value;
+
 
 /// Configuration for Akash API connections
 #[derive(Debug, Clone)]
@@ -70,8 +72,7 @@ impl AkashApiClient {
         &mut self,
         _owner: Option<&str>,
         _state: Option<&str>,
-    ) -> Result<ho_std::types::ergors::akash::deployment::v1beta3::QueryDeploymentsResponse> {
-        use ho_std::types::ergors::akash::deployment::v1beta3::QueryDeploymentsResponse;
+    ) -> Result<QueryDeploymentsResponse> {
 
         // TODO: Implement actual gRPC query using tonic client
         // For now, return a stub response

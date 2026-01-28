@@ -85,7 +85,6 @@ const SESSION_BY_TYPE_PREFIX: &str = "sessions_by_type";
 const SESSION_BY_LABEL_PREFIX: &str = "sessions_by_label";
 const SESSION_BY_TAG_PREFIX: &str = "sessions_by_tag";
 const SESSION_STATE_PREFIX: &str = "session_states";
-const SESSION_LOCK_PREFIX: &str = "session_locks";
 
 // Open Responses Storage Prefix
 const OPEN_RESPONSE_PREFIX: &str = "open_responses";

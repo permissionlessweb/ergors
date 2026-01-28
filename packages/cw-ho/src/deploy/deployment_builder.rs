@@ -4,11 +4,14 @@
 //! Handles resource parsing, group specs, and deposit calculation.
 
 use anyhow::{anyhow, Result};
-use ho_std::types::ergors::akash::base::v1beta3::{
-    Attribute, PlacementRequirements, Resources, SignedBy, Storage,
+use ho_std::types::akash::base::attributes::v1::{Attribute, PlacementRequirements, SignedBy};
+use ho_std::types::akash::base::deposit::v1::Deposit;
+use ho_std::types::akash::base::resources::v1beta4::{
+    Cpu, Endpoint, Gpu, Memory, ResourceValue, Resources, Storage,
 };
-use ho_std::types::ergors::akash::deployment::v1beta3::{
-    DeploymentId, GroupSpec, MsgCloseDeployment, MsgCreateDeployment, ResourceUnit,
+use ho_std::types::ergors::akash::deployment::v1::DeploymentId;
+use ho_std::types::ergors::akash::deployment::v1beta5::{
+    GroupSpec, MsgCloseDeployment, MsgCreateDeployment, ResourceUnit,
 };
 use ho_std::types::ergors::akash::market::v1beta4::{BidId, MsgCreateLease};
 use ho_std::types::ergors::cosmos::base::v1beta1::{Coin, DecCoin};
@@ -59,10 +62,10 @@ impl DeploymentBuilder {
         // Extract groups from SDL
         let groups = self.parse_groups(&yaml)?;
 
-        // Compute version hash (SHA256 of SDL content)
+        // Compute hash (SHA256 of SDL content)
         let mut hasher = Sha256::new();
         hasher.update(sdl_yaml.as_bytes());
-        let version = hasher.finalize().to_vec();
+        let hash = hasher.finalize().to_vec();
 
         Ok(MsgCreateDeployment {
             id: Some(DeploymentId {
@@ -70,12 +73,14 @@ impl DeploymentBuilder {
                 dseq: self.dseq,
             }),
             groups,
-            version,
-            deposit: Some(Coin {
-                denom: "uakt".to_string(),
-                amount: self.deposit_uakt.to_string(),
-            }),
-            depositor: self.depositor.clone(),
+            hash,
+            deposits: vec![Deposit {
+                amount: Some(Coin {
+                    denom: "uakt".to_string(),
+                    amount: self.deposit_uakt.to_string(),
+                }),
+                sources: vec![],
+            }],
         })
     }
 
@@ -158,10 +163,10 @@ impl DeploymentBuilder {
                 let resource_unit = ResourceUnit {
                     resource: Some(resources),
                     count,
-                    price: Some(DecCoin {
+                    prices: vec!{DecCoin {
                         denom: "uakt".to_string(),
                         amount: "10000".to_string(), // Default bid price
-                    }),
+                    }},
                 };
 
                 // Create group spec
@@ -220,14 +225,14 @@ impl DeploymentBuilder {
         let endpoints = self.parse_endpoints(services, service_name)?;
 
         Ok(Resources {
-            cpu: Some(ho_std::types::ergors::akash::base::v1beta3::Cpu {
-                units: Some(ho_std::types::ergors::akash::base::v1beta3::ResourceValue {
+            cpu: Some(Cpu {
+                units: Some(ResourceValue {
                     val: cpu.to_string().into_bytes(),
                 }),
                 attributes: vec![],
             }),
-            memory: Some(ho_std::types::ergors::akash::base::v1beta3::Memory {
-                quantity: Some(ho_std::types::ergors::akash::base::v1beta3::ResourceValue {
+            memory: Some(Memory {
+                quantity: Some(ResourceValue {
                     val: memory.to_string().into_bytes(),
                 }),
                 attributes: vec![],
@@ -304,7 +309,7 @@ impl DeploymentBuilder {
             // Default storage
             storage_list.push(Storage {
                 name: "default".to_string(),
-                quantity: Some(ho_std::types::ergors::akash::base::v1beta3::ResourceValue {
+                quantity: Some(ResourceValue {
                     val: "1073741824".to_string().into_bytes(), // 1Gi default
                 }),
                 attributes: vec![],
@@ -349,7 +354,7 @@ impl DeploymentBuilder {
 
         Ok(Storage {
             name,
-            quantity: Some(ho_std::types::ergors::akash::base::v1beta3::ResourceValue {
+            quantity: Some(ResourceValue {
                 val: size.to_string().into_bytes(),
             }),
             attributes,
@@ -360,7 +365,7 @@ impl DeploymentBuilder {
     fn parse_gpu(
         &self,
         resources: &serde_yaml::Value,
-    ) -> Result<Option<ho_std::types::ergors::akash::base::v1beta3::Gpu>> {
+    ) -> Result<Option<Gpu>> {
         let gpu_section = match resources.get("gpu") {
             Some(g) => g,
             None => return Ok(None),
@@ -408,8 +413,8 @@ impl DeploymentBuilder {
             }
         }
 
-        Ok(Some(ho_std::types::ergors::akash::base::v1beta3::Gpu {
-            units: Some(ho_std::types::ergors::akash::base::v1beta3::ResourceValue {
+        Ok(Some(Gpu {
+            units: Some(ResourceValue {
                 val: units.to_string().into_bytes(),
             }),
             attributes,
@@ -421,7 +426,7 @@ impl DeploymentBuilder {
         &self,
         services: &serde_yaml::Value,
         service_name: &str,
-    ) -> Result<Vec<ho_std::types::ergors::akash::base::v1beta3::Endpoint>> {
+    ) -> Result<Vec<Endpoint>> {
         let mut endpoints = Vec::new();
 
         let service = match services.get(service_name) {
@@ -455,7 +460,7 @@ impl DeploymentBuilder {
                         0 // INTERNAL
                     };
 
-                    endpoints.push(ho_std::types::ergors::akash::base::v1beta3::Endpoint {
+                    endpoints.push(Endpoint {
                         kind,
                         sequence_number: idx as u32,
                     });

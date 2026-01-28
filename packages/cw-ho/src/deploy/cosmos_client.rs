@@ -3,6 +3,7 @@
 //! REST-based queries to Cosmos SDK chains. No magic, just functions.
 
 use anyhow::{anyhow, Result};
+use ho_std::types::akash::cert::v1::{Certificate, CertificateResponse, State};
 use ho_std::types::ergors::cosmos::base::v1beta1::Coin;
 use ho_std::types::ergors::orch::v1::AkashDeployConfig;
 use reqwest::Client as HttpClient;
@@ -202,7 +203,8 @@ impl CosmosClient {
     /// Query certificates for an owner address.
     ///
     /// REST: /akash/cert/v1beta3/certificates/list?filter.owner={owner}
-    pub async fn query_certificates(&self, owner: &str) -> Result<Vec<CertificateInfo>> {
+    /// Returns prost-generated CertificateResponse types from Akash chain.
+    pub async fn query_certificates(&self, owner: &str) -> Result<Vec<CertificateResponse>> {
         let url = format!(
             "{}/akash/cert/v1beta3/certificates/list?filter.owner={}",
             self.endpoints.rest.trim_end_matches('/'),
@@ -227,37 +229,42 @@ impl CosmosClient {
             .unwrap_or(&empty_vec);
 
         let mut result = Vec::new();
-        for cert in certs {
-            let certificate = cert.get("certificate");
-            if let Some(c) = certificate {
-                let state_str = c
+        for cert_json in certs {
+            if let (Some(serial), Some(cert_data)) = (
+                cert_json.get("serial").and_then(|s| s.as_str()),
+                cert_json.get("certificate"),
+            ) {
+                // Parse state from string to enum
+                let state_str = cert_data
                     .get("state")
                     .and_then(|s| s.as_str())
                     .unwrap_or("invalid");
                 let state = match state_str {
-                    "valid" => CertState::Valid,
-                    "revoked" => CertState::Revoked,
-                    _ => CertState::Invalid,
+                    "valid" => State::Valid as i32,
+                    "revoked" => State::Revoked as i32,
+                    _ => State::Invalid as i32,
                 };
 
-                result.push(CertificateInfo {
-                    owner: owner.to_string(),
-                    serial: cert
-                        .get("serial")
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    state,
-                    cert_pem: c
-                        .get("cert")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    pubkey: c
-                        .get("pubkey")
-                        .and_then(|p| p.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                // Get cert and pubkey bytes (base64 decoded from JSON)
+                let cert_bytes = cert_data
+                    .get("cert")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.as_bytes().to_vec())
+                    .unwrap_or_default();
+
+                let pubkey_bytes = cert_data
+                    .get("pubkey")
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.as_bytes().to_vec())
+                    .unwrap_or_default();
+
+                result.push(CertificateResponse {
+                    certificate: Some(Certificate {
+                        state,
+                        cert: cert_bytes,
+                        pubkey: pubkey_bytes,
+                    }),
+                    serial: serial.to_string(),
                 });
             }
         }
@@ -266,9 +273,20 @@ impl CosmosClient {
     }
 
     /// Query valid certificate for an owner (first valid cert found).
-    pub async fn query_valid_certificate(&self, owner: &str) -> Result<Option<CertificateInfo>> {
-        let certs = self.query_certificates(owner).await?;
-        Ok(certs.into_iter().find(|c| c.state == CertState::Valid))
+    /// Returns the actual Certificate type from Akash chain.
+    pub async fn query_valid_certificate(&self, owner: &str) -> Result<Option<Certificate>> {
+        let responses = self.query_certificates(owner).await?;
+
+        // Find first valid certificate
+        for cert_response in responses {
+            if let Some(cert) = cert_response.certificate {
+                if cert.state == State::Valid as i32 {
+                    return Ok(Some(cert));
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     // ===== Akash Deployment Queries =====
@@ -589,23 +607,6 @@ impl CosmosClient {
 }
 
 // ===== Query Result Types =====
-
-/// Certificate information.
-#[derive(Debug, Clone)]
-pub struct CertificateInfo {
-    pub owner: String,
-    pub serial: String,
-    pub state: CertState,
-    pub cert_pem: String,
-    pub pubkey: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CertState {
-    Invalid,
-    Valid,
-    Revoked,
-}
 
 /// Deployment information.
 #[derive(Debug, Clone)]
