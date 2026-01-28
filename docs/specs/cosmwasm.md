@@ -2,618 +2,345 @@
 
 ## Overview
 
-This specification outlines the complete integration of CosmWasm VM into the ERGORS system, enabling each individual node to instantiate and execute smart contracts as isolated "mini-chains".
+ERGORS integrates CosmWasm VM to enable each node to instantiate and execute smart contracts as isolated "mini-chains". Each node maintains its own VM instance with node-wide state synchronization.
 
-**Core Focus: Node-Wide State Synchronization**
-The primary friction point is ensuring contract writes complete before state queries occur. This specification implements node-wide synchronization to guarantee:
+## Quick Reference
 
-- All contract writes are immediately committed and visible to subsequent reads
-- Cross-contract queries always see consistent state
-- No stale reads possible within the same node
-- Partial state preservation on failures (standard CosmWasm behavior)
+### HTTP API Endpoints
 
-**Architecture Principles:**
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/cosmwasm/store` | POST | Upload WASM bytecode |
+| `/api/cosmwasm/instantiate` | POST | Create contract instance |
+| `/api/cosmwasm/instantiate2` | POST | Create with predictable address (salt) |
+| `/api/cosmwasm/execute` | POST | Execute contract method |
+| `/api/cosmwasm/query` | POST | Query contract state (read-only) |
 
-- **Node Isolation**: Each ERGORS node maintains its own VM instance and contract ecosystem
-- **Synchronization Scope**: Node-wide (not per-contract) since contracts can query other contracts
-- **State Consistency**: Immediate commit of all state changes with proper read-write barriers
+### CLI Commands
 
-## Core Architecture
+| Command | Purpose |
+|---------|---------|
+| `ergors sdl list` | List deployed SDL template contracts |
+| `ergors sdl get-template <addr>` | Get SDL template from contract |
+| `ergors sdl get-defaults <addr>` | Get variable defaults |
+| `ergors sdl render <addr> --var K=V` | Render SDL with variables |
 
-### Mini-Chain Concept
+### Shell Wrappers (E2E)
 
-Each ERGORS node operates as an independent CosmWasm execution environment where:
-
-- Contracts are isolated per node with deterministic addressing
-- State changes are committed atomically using Cnidarium's StateDelta
-- Cross-contract calls are supported within the same node
-- Gas metering prevents resource exhaustion
-- Storage is verifiable and cryptographically secure
-
-### Key Components
-
-#### 1. WasmRuntime (packages/ho-std/src/wasm/runtime.rs)
-
-High-level API providing contract lifecycle management:
-
-- `store_code()` - Upload and validate WASM bytecode
-- `instantiate_contract()` - Create contract instances
-- `execute_contract()` - Handle mutable contract calls
-- `query_contract()` - Handle read-only contract queries
-
-#### 2. CnidariumStorage (packages/ho-std/src/wasm/backend.rs)
-
-CosmWasm Storage trait implementation using Cnidarium:
-
-- Thread-safe state access with Arc<Mutex<>>
-- Atomic state updates via StateDelta
-- Gas metering for storage operations
-- Contract-specific state isolation
-
-#### 3. WasmVmBackend (packages/ho-std/src/wasm/backend.rs)
-
-CosmWasm BackendApi implementation:
-
-- Address validation and canonicalization
-- Cryptographic operations
-- Querier for cross-contract queries
-
-#### 4. ErgorsAppState Integration (packages/cw-ho/src/lib.rs)
-
-Runtime inclusion in application state:
-
-```rust
-#[cfg(feature = "cw")]
-pub struct ErgorsAppState {
-    // ... existing fields
-    pub wasm: Arc<WasmRuntime>,
-}
+```bash
+ergors_cw_store <sender> <wasm_base64>
+ergors_cw_instantiate <code_id> <sender> <label> <msg_json> [admin] [funds]
+ergors_cw_instantiate2 <code_id> <sender> <label> <msg_json> <salt> [admin] [funds]
+ergors_cw_execute <contract> <sender> <msg_json> [funds]
+ergors_cw_query <contract> <query_json>
 ```
 
-## Implementation Plan
+## Architecture
 
-### Phase 1: Node-Wide State Synchronization
+### VM Integration Flow
 
-#### **1.1 Node-Wide Atomic Operations**
+```mermaid
+sequenceDiagram
+    participant Client
+    participant HTTP as HTTP Server
+    participant Handler as cosmwasm.rs
+    participant Runtime as WasmRuntime
+    participant Cache as WasmCache
+    participant Storage as Cnidarium
+    participant VM as CosmWasm VM
 
-**Architecture:** Each ERGORS node maintains its own isolated CosmWasm VM instance with node-wide state synchronization.
+    Note over Client,VM: Store Code
+    Client->>HTTP: POST /api/cosmwasm/store
+    HTTP->>Handler: handle_cosmwasm_store()
+    Handler->>Runtime: store_code(wasm_bytes, sender)
+    Runtime->>Cache: store_code(wasm, persist=true)
+    Runtime->>Storage: put_wasm_code(code_id, bytes)
+    Runtime-->>Client: {"code_id": 1}
 
-**Key Design Decisions:**
+    Note over Client,VM: Instantiate
+    Client->>HTTP: POST /api/cosmwasm/instantiate
+    Handler->>Runtime: instantiate_contract(...)
+    Runtime->>Runtime: Acquire state_lock (exclusive)
+    Runtime->>Cache: get_instance(checksum)
+    Runtime->>VM: call_instantiate(env, info, msg)
+    Runtime->>Storage: commit(delta)
+    Runtime-->>Client: {"contract_address": "ergors..."}
 
-- **Scope**: Node-wide synchronization (not per-contract) since contracts can query other contracts
-- **State Policy**: Leave partial state on execution failures (CosmWasm standard behavior)
-- **Isolation**: Each node operates independently with its own contract ecosystem
+    Note over Client,VM: Execute
+    Client->>HTTP: POST /api/cosmwasm/execute
+    Handler->>Runtime: execute_contract(...)
+    Runtime->>Runtime: Acquire state_lock (exclusive)
+    Runtime->>VM: call_execute(env, info, msg)
+    Runtime->>Storage: commit(delta)
+    Runtime-->>Client: {"data": "...", "events": [...]}
 
-**Implementation Pattern:**
-
-```rust
-pub struct NodeWasmRuntime {
-    cache: Arc<WasmCache>,
-    state_lock: Arc<RwLock<()>>, // Node-wide synchronization
-    // ... other fields
-}
-
-impl NodeWasmRuntime {
-    /// Execute contract with node-wide state consistency
-    pub async fn execute_contract_node_atomic(
-        &self,
-        state: &mut CnidariumStorage,
-        contract_address: String,
-        // ... other params
-    ) -> HoResult<ContractResult<Response>> {
-        // Acquire node-wide lock for state consistency
-        let _node_lock = self.state_lock.write().await;
-
-        // Execute contract and apply StateDelta immediately
-        let result = self.execute_contract_with_immediate_commit(
-            state, contract_address, /*...*/
-        ).await?;
-
-        // StateDelta is applied and committed within the lock
-        Ok(result)
-    }
-
-    /// Query contract with node-wide consistency guarantee
-    pub async fn query_contract_node_consistent(
-        &self,
-        state: &CnidariumStorage, // Read-only for queries
-        contract_address: String,
-        msg: Vec<u8>,
-    ) -> HoResult<ContractResult<Binary>> {
-        // Shared read lock allows concurrent queries
-        let _node_lock = self.state_lock.read().await;
-
-        // Query always sees latest committed state
-        self.query_contract_latest(state, contract_address, msg).await
-    }
-}
+    Note over Client,VM: Query (Read-Only)
+    Client->>HTTP: POST /api/cosmwasm/query
+    Handler->>Runtime: query_contract(...)
+    Runtime->>Runtime: Acquire state_lock (shared)
+    Runtime->>VM: call_query(env, msg)
+    Runtime-->>Client: {"data": {...}}
 ```
 
-#### **1.2 Read-Write Consistency Model**
+### Contract Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> CodeUploaded: POST /store
+    CodeUploaded --> Instantiated: POST /instantiate
+    CodeUploaded --> Instantiated: POST /instantiate2
+    Instantiated --> Executing: POST /execute
+    Executing --> Instantiated: Success/Failure
+    Instantiated --> Querying: POST /query
+    Querying --> Instantiated: Response
+```
+
+### State Synchronization
+
+```mermaid
+flowchart TB
+    subgraph Node["ERGORS Node"]
+        subgraph Requests["Concurrent Requests"]
+            R1[Execute 1]
+            R2[Query 1]
+            R3[Execute 2]
+        end
+        subgraph Lock["RwLock"]
+            WL[Write Lock]
+            RL[Read Lock]
+        end
+        subgraph State["Storage"]
+            SD[StateDelta]
+            SS[Snapshot]
+        end
+    end
+    R1 & R3 --> WL -->|Exclusive| SD -->|Commit| SS
+    R2 --> RL -->|Shared| SS
+    style WL fill:#ff6b6b
+    style RL fill:#4ecdc4
+```
 
 **Guarantees:**
+- All writes committed before subsequent reads
+- Cross-contract queries see consistent state
+- No stale reads within node
+- Partial state preserved on failures (CosmWasm standard)
 
-- All writes are immediately committed and visible to subsequent reads
-- Cross-contract queries always see consistent state
-- No stale reads possible within the same node
-- Partial state preservation on failures (standard CosmWasm behavior)
+## Core Components
 
-#### **1.3 Synchronization Barriers**
+| Component | File | Purpose |
+|-----------|------|---------|
+| WasmRuntime | `packages/ho-std/src/wasm/runtime.rs` | Contract lifecycle (store, instantiate, execute, query) |
+| CnidariumStorage | `packages/ho-std/src/wasm/backend.rs` | Thread-safe state access via StateDelta |
+| WasmVmBackend | `packages/ho-std/src/wasm/backend.rs` | Address validation, crypto ops, querier |
+| HTTP Handlers | `packages/cw-ho/src/cosmwasm.rs` | REST API endpoints |
+| Contract Manager | `packages/cw-ho/src/contracts/manager.rs` | Named contract resolution, auto-deployment |
 
-**Files:** packages/ho-std/src/wasm/runtime.rs
+### Contract Address Generation
 
-**Implementation:**
-
-- Node-wide RwLock for read-write synchronization
-- Write operations take exclusive lock, blocking all other operations
-- Read operations take shared lock, allowing concurrent queries
-- Immediate StateDelta application within lock scope
-
-#### **1.4 Enable WasmRuntime in Application State**
-
-**Files:** packages/cw-ho/src/lib.rs, packages/cw-ho/src/server.rs
-
-**Changes:**
-
-- Update WasmRuntime to include node-wide synchronization primitives
-- Add conditional compilation with `#[cfg(feature = "cw")]`
-- Initialize WasmRuntime in Server::new() with proper cache directory and synchronization setup
-
-### Phase 2: Mini-Chain Isolation & Security
-
-#### **2.1 Node-Scoped Contract Isolation**
-
-**Design:** Each node maintains completely independent contract ecosystems with proper namespacing.
-
-**Implementation:**
-
-- Node-specific contract addressing: `ergors{node_id}_{contract_hash}`
-- Isolated state storage per node
-- Cross-node contract discovery through network protocols (future phase)
-
-#### **2.2 Contract Address Generation**
-
-**Files:** packages/ho-std/src/wasm/runtime.rs
-
-**Implementation:**
-
-- Deterministic addressing using SHA256: node_id + code_id + creator + label
-- Collision-resistant with 20-byte truncated hash
-- Human-readable prefix for easy identification
+Deterministic addressing: `ergors{node_id}_{hash}`
 
 ```rust
-fn generate_contract_address(
-    &self,
-    code_id: u64,
-    creator: &str,
-    label: &str,
-    node_id: &str,
-) -> HoResult<String> {
-    let mut hasher = Sha256::new();
-    hasher.update(node_id.as_bytes());
-    hasher.update(code_id.to_le_bytes());
-    hasher.update(creator.as_bytes());
-    hasher.update(label.as_bytes());
-    let hash = hasher.finalize();
-
-    Ok(format!("ergors{}_{}", node_id, hex::encode(&hash[..20])))
+fn generate_contract_address(code_id: u64, creator: &str, label: &str, node_id: &str) -> String {
+    let hash = sha256(node_id || code_id || creator || label);
+    format!("ergors{}_{}", node_id, hex::encode(&hash[..20]))
 }
 ```
 
-#### 2.2 Gas Metering & Limits
-
-**Files:** packages/ho-std/src/wasm/runtime.rs, packages/ho-std/src/wasm/backend.rs
-
-**Configuration:**
-
-```rust
-pub struct GasLimits {
-    pub instantiate: u64,  // Default: 100_000_000
-    pub execute: u64,      // Default: 50_000_000
-    pub query: u64,        // Default: 10_000_000
-    pub migrate: u64,      // Default: 75_000_000
-}
-```
-
-#### 2.3 Storage Isolation
-
-**Files:** packages/ho-std/src/wasm/state_ext.rs
-
-**Key Structure:**
+### Storage Structure
 
 ```
 wasm/
-├── code/{code_id}/
-│   ├── bytecode
-│   ├── info
-│   └── hash
-├── contracts/{contract_address}/
-│   ├── info
-│   ├── state/{key} -> value
-│   └── code_id
-└── config/
-    └── next_code_id
+├── code/{code_id}/bytecode, info, hash
+├── contracts/{address}/info, state/{key}, code_id
+└── config/next_code_id
 ```
 
-### Phase 3: HTTP API Integration
+### Gas Limits
 
-#### 3.1 Message Routing
+| Operation | Default |
+|-----------|---------|
+| Instantiate | 100,000,000 |
+| Execute | 50,000,000 |
+| Query | 10,000,000 |
+| Migrate | 75,000,000 |
 
-**Files:** packages/cw-ho/src/cosmwasm.rs
+## HTTP API
 
-**Supported Messages:**
+### Store Code
 
-- `MsgStoreCode` - Upload contract code
-- `MsgInstantiateContract` - Create contract instances
-- `MsgExecuteContract` - Execute contract methods
-- `MsgMigrateContract` - Upgrade contract code
-- `MsgUpdateAdmin` - Change contract admin
+```http
+POST /api/cosmwasm/store
 
-#### 3.2 Error Handling
+{"sender": "akash1...", "wasm_byte_code": "<base64>"}
 
-**Standard Response Format:**
+Response: {"code_id": 1, "sender": "akash1..."}
+```
+
+### Instantiate
+
+```http
+POST /api/cosmwasm/instantiate
+
+{
+  "code_id": 1,
+  "sender": "akash1...",
+  "admin": "akash1...",      // optional
+  "label": "my-contract",
+  "msg": {...},
+  "funds": [{"denom": "uakt", "amount": "1000000"}]  // optional
+}
+
+Response: {"contract_address": "ergors...", "code_id": 1, "events": [...]}
+```
+
+### Instantiate2 (Predictable Address)
+
+```http
+POST /api/cosmwasm/instantiate2
+
+{
+  "code_id": 1,
+  "sender": "akash1...",
+  "label": "my-contract",
+  "msg": {...},
+  "salt": "<base64>",  // required
+  "funds": []
+}
+
+Response: {"contract_address": "ergors...", "salt": "..."}
+```
+
+Address derivation: `hash(code_id || sender || salt || label)`
+
+### Execute
+
+```http
+POST /api/cosmwasm/execute
+
+{
+  "contract": "ergors...",
+  "sender": "akash1...",
+  "msg": {"transfer": {"recipient": "akash1...", "amount": "1000"}},
+  "funds": []
+}
+
+Response: {"contract": "...", "sender": "...", "data": "<base64>", "events": [...]}
+```
+
+### Query
+
+```http
+POST /api/cosmwasm/query
+
+{"contract": "ergors...", "query": {"get_balance": {"address": "akash1..."}}}
+
+Response: {"contract": "...", "data": {"balance": "1000"}}
+// or for binary: {"contract": "...", "data_raw": "<base64>"}
+```
+
+### Error Format
 
 ```json
 {
   "error": {
-    "code": "WASM_ERROR",
-    "message": "Contract execution failed: gas exhausted",
-    "details": { ... }
+    "code": "WASM_ERROR|VALIDATION_ERROR|NOT_FOUND|UNAUTHORIZED|GAS_EXHAUSTED",
+    "message": "Human-readable message"
   }
 }
 ```
 
-#### 3.3 Gas Reporting
+## Contract Deployment
 
-**Response Enhancement:**
-
-```json
-{
-  "result": { ... },
-  "gas_used": 1500000,
-  "gas_limit": 50000000
-}
-```
-
-### Phase 4: Cross-Contract Communication
-
-#### 4.1 IBC-Like Messaging
-
-**Implementation:**
-
-- Contract-to-contract calls within the same node
-- Event emission and subscription system
-- Sub-message execution with reply handling
-
-#### 4.2 Permission System
-
-**Access Control:**
-
-- Contract admin permissions
-- Instantiate permissions per code ID
-- Execution permissions based on caller address
-
-### Phase 5: Testing & Validation
-
-#### 5.1 Unit Tests
-
-- Contract instantiation and execution
-- Gas limit enforcement
-- State isolation verification
-- Address generation determinism
-
-#### 5.2 Integration Tests
-
-- Multi-contract interactions
-- Cross-contract calls
-- State persistence across restarts
-- Concurrent execution safety
-
-## Contract Lifecycle & Deployment
-
-### Initial Contract Upload
-
-Contracts are deployed via the **ContractManager** (`packages/cw-ho/src/contracts/manager.rs`), which provides:
-
-- **Named contract resolution** - Contracts are referenced by name (e.g., `"identity_registry"`)
-- **Automatic coordinator deployment** - Required contracts deployed on coordinator startup
-- **Existence checks** - Skip deployment if contract already exists
-
-#### Startup Deployment Flow
+### Coordinator Auto-Deployment
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Coordinator Node Startup                      │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-                   ┌─────────────────────┐
-                   │ Check node_type ==  │
-                   │   "coordinator"     │
-                   └──────────┬──────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │ No                │ Yes
-                    ▼                   ▼
-            ┌───────────────┐  ┌───────────────────┐
-            │ Skip deploy   │  │ Check contract    │
-            │ (regular node)│  │ already exists?   │
-            └───────────────┘  └─────────┬─────────┘
-                                         │
-                               ┌─────────┴─────────┐
-                               │ Yes               │ No
-                               ▼                   ▼
-                       ┌─────────────────┐  ┌─────────────────┐
-                       │ Skip (already   │  │ Upload WASM +   │
-                       │ deployed)       │  │ Instantiate     │
-                       └─────────────────┘  └─────────────────┘
+Startup → Is Coordinator? → Contract Exists? → No → Upload WASM + Instantiate
+                                            → Yes → Skip
 ```
 
-#### Code Example: Deploying a Contract
+### Default Contracts
+
+| Contract | Purpose |
+|----------|---------|
+| `identity_registry` | Node identity verification, key share tracking |
+| `cw_sdl` | SDL template storage and rendering |
+
+### Programmatic Deployment
 
 ```rust
-use crate::contracts::{ContractManager, ProviderConfig};
-
-// Create manager with storage and runtime
 let manager = ContractManager::new(storage, wasm_runtime, node_id);
 
-// Check if already deployed
-if !manager.contract_exists("identity_registry").await? {
-    // Upload WASM bytecode
-    let code_id = manager.upload_contract(&wasm_bytes, "identity_registry").await?;
-
-    // Instantiate with init message
-    let init_msg = IdentityRegistryInstantiateMsg {
-        coordinator: coordinator_pubkey,
-        providers: vec![
-            ProviderConfig {
-                name: "anthropic".to_string(),
-                ownership: "shared".to_string(),
-                threshold: Some(2),
-                total_shares: Some(3),
-            },
-        ],
-    };
-
-    let address = manager.instantiate_contract(code_id, "identity_registry", &init_msg).await?;
+if !manager.contract_exists("my-contract").await? {
+    let code_id = manager.upload_contract(&wasm_bytes, "my-contract").await?;
+    let address = manager.instantiate_contract(code_id, "my-contract", &init_msg).await?;
 }
 ```
 
-#### Default Contracts
+## Cross-Node Communication
 
-| Contract | Purpose | Deployed By |
-|----------|---------|-------------|
-| `identity_registry` | Node identity verification, key share tracking | Coordinator on fresh DB |
-
-### Cross-Node Contract Communication
-
-Nodes can query and execute contracts on **other nodes** via P2P network messages:
-
-#### Network Channel 4: Contract Operations
+Nodes can query/execute contracts on other nodes via P2P (Channel 4):
 
 ```
-┌──────────────┐          Channel 4          ┌──────────────┐
-│   Node A     │ ─────────────────────────► │   Node B     │
-│              │     ContractQuery           │              │
-│  Query B's   │                             │  Execute on  │
-│  contract    │ ◄───────────────────────── │  local VM    │
-│              │     QueryResponse           │              │
-└──────────────┘                             └──────────────┘
+Node A ──ContractQuery──► Node B
+       ◄─QueryResponse──
 ```
 
-#### Message Types
-
-```protobuf
-message ContractQuery {
-  string target_node_id = 1;      // Node hosting the contract
-  string contract_name = 2;        // Named contract reference
-  bytes query_msg = 3;             // JSON-encoded query
-  bytes sender_pubkey = 4;         // For access control
-}
-
-message ContractExecute {
-  string target_node_id = 1;
-  string contract_name = 2;
-  bytes execute_msg = 3;
-  bytes sender_pubkey = 4;
-  bytes signature = 5;             // Proves sender identity
-}
-```
-
-#### Query Flow
-
-```rust
-// Node A queries Node B's contract
-let response = network.query_remote_contract(
-    target_node: "node_b",
-    contract: "identity_registry",
-    msg: QueryMsg::GetNodeInfo { node_id: "node_c" },
-).await?;
-```
-
-#### Permission Model
-
-Cross-node contract calls follow these rules:
-
-1. **Queries** - Read-only, allowed by default
-2. **Executions** - Require signature verification
-3. **Admin operations** - Only allowed for contract admin
-
-```rust
-// Verify sender has permission
-fn verify_cross_node_execute(
-    sender_pubkey: &[u8],
-    contract_admin: &[u8],
-    msg: &ExecuteMsg,
-) -> bool {
-    match msg {
-        // Admin-only operations
-        ExecuteMsg::UpdateConfig { .. } => sender_pubkey == contract_admin,
-        // Public operations with rate limiting
-        ExecuteMsg::RegisterNode { .. } => true,
-        // Restricted by contract logic
-        _ => verify_in_contract(sender_pubkey, msg),
-    }
-}
-```
+**Permission Model:**
+- Queries: Read-only, allowed by default
+- Executions: Require signature verification
+- Admin ops: Only contract admin
 
 ## Configuration
 
-### Environment Variables
-
 ```bash
-# CosmWasm Configuration
 COSMWASM_ENABLED=true
 COSMWASM_CACHE_DIR=./data/wasm_cache
 COSMWASM_MEMORY_LIMIT=33554432  # 32MB
-COSMWASM_INSTANTIATE_GAS=100000000
-COSMWASM_EXECUTE_GAS=50000000
-COSMWASM_QUERY_GAS=10000000
 ```
-
-### Cargo Features
 
 ```toml
 [features]
-default = []
 cw = ["cosmwasm-vm", "cosmwasm-std"]
 ```
 
-## Security Considerations
+## Security
 
-### 1. Resource Limits
+- **Resource Limits**: Gas metering, memory limits, code size validation
+- **Isolation**: Contract state isolated per address, no filesystem access
+- **Validation**: WASM bytecode validation, address format checks, permission verification
 
-- Strict gas metering prevents infinite loops
-- Memory limits prevent excessive allocation
-- Code size validation prevents oversized uploads
+## File Locations
 
-### 2. Isolation
+| Component | Path |
+|-----------|------|
+| HTTP Handlers | `packages/cw-ho/src/cosmwasm.rs` |
+| Server Routes | `packages/cw-ho/src/server.rs` |
+| WasmRuntime | `packages/ho-std/src/wasm/runtime.rs` |
+| Storage Backend | `packages/ho-std/src/wasm/backend.rs` |
+| State Extensions | `packages/ho-std/src/wasm/state_ext.rs` |
+| Contract Manager | `packages/cw-ho/src/contracts/manager.rs` |
+| SDL Manager | `packages/cw-ho/src/deploy/sdl.rs` |
+| CLI Commands | `packages/cw-ho/src/commands/mod.rs` |
+| E2E Wrappers | `scripts/e2e/lib/ergors.sh` |
+| E2E Tests | `scripts/e2e/tests/contracts.sh` |
 
-- Contract state completely isolated per address
-- No direct filesystem access
-- Controlled network access through querier
+## Example: Deploy SDL Contract
 
-### 3. Validation
+```bash
+# Store code
+WASM_B64=$(base64 -i contracts/artifacts/cw_sdl.wasm)
+RESULT=$(ergors_cw_store "akash1sender..." "$WASM_B64")
+CODE_ID=$(echo "$RESULT" | jq -r '.code_id')
 
-- WASM bytecode validation on upload
-- Address format validation
-- Permission checks for privileged operations
+# Instantiate
+INIT='{"sdl_template": "version: \"2.0\"...", "defaults": {"CPU": "2"}}'
+RESULT=$(ergors_cw_instantiate "$CODE_ID" "akash1sender..." "sdl-v1" "$INIT")
+CONTRACT=$(echo "$RESULT" | jq -r '.contract_address')
 
-## Performance Optimizations
+# Query template
+ergors_cw_query "$CONTRACT" '{"get_template": {}}'
 
-### 1. Caching Strategy
-
-- Compiled WASM modules cached in memory and disk
-- Frequently accessed contracts kept in memory
-- LRU eviction for cache management
-
-### 2. State Optimization
-
-- Lazy state loading for queries
-- Batch state updates for efficiency
-- Compression for large state values
-
-### 3. Gas Optimization
-
-- Efficient gas tracking with AtomicU64
-- Early termination on gas exhaustion
-- Configurable gas limits per operation type
-
-## Migration Path
-
-### From Current State
-
-1. Enable `cw` feature flag
-2. Initialize WasmRuntime in server startup
-3. Add cosmwasm routes to HTTP server
-4. Test with simple contracts
-5. Gradually enable advanced features
-
-### Backward Compatibility
-
-- Non-cw builds continue to work unchanged
-- Optional feature maintains clean separation
-- Configuration defaults prevent breaking changes
-
-## Success Metrics
-
-### **Functional**
-
-- ✅ Contract upload, instantiation, execution, and querying
-- ✅ **Node-wide state synchronization**: All writes committed before reads
-- ✅ **Cross-contract consistency**: Queries see latest committed state across all contracts
-- ✅ **No stale reads**: Impossible to read uncommitted state changes
-- ✅ Gas metering and limits enforcement
-- ✅ Partial state preservation on failures (CosmWasm standard)
-
-### **Performance**
-
-- ✅ Sub-second contract instantiation
-- ✅ Efficient gas tracking (<5% synchronization overhead)
-- ✅ Memory usage within configured limits
-- ✅ Concurrent queries allowed, exclusive writes for consistency
-
-### **Security**
-
-- ✅ Complete node-level contract isolation
-- ✅ Resource limit enforcement
-- ✅ Address collision resistance within node namespace
-- ✅ Thread-safe state operations with proper locking
-
-## Risk Mitigation
-
-### 1. Compilation Issues
-
-- Use trait objects for dynamic dispatch
-- Proper lifetime management
-- Comprehensive error handling
-
-### 2. Runtime Stability
-
-- Extensive testing before production deployment
-- Gradual feature rollout
-- Monitoring and alerting for anomalies
-
-### 3. Security Vulnerabilities
-
-- Regular security audits
-- Gas limit tuning based on real-world usage
-- Input validation for all contract inputs
-
-## Key Design Decisions
-
-### **State Synchronization vs Geometric Memory**
-
-**Decision**: Focus on state synchronization rather than geometric memory allocation.
-
-**Rationale**:
-
-- CosmWasm's linear memory model is compatible with ERGORS' geometric design
-- The actual friction point is state consistency, not memory allocation patterns
-- Geometric memory allocation would add unnecessary complexity for imported CosmWasm contracts
-- ERGORS-native contracts can implement geometric patterns at the application level
-
-### **Node-Wide vs Per-Contract Synchronization**
-
-**Decision**: Node-wide synchronization scope.
-
-**Rationale**:
-
-- Contracts can query other contracts within the same node
-- Ensures cross-contract consistency guarantees
-- Simpler to implement than per-contract isolation
-- Acceptable performance trade-off for correctness
-
-### **Partial State Preservation**
-
-**Decision**: Leave partial state on execution failures.
-
-**Rationale**:
-
-- Maintains compatibility with standard CosmWasm behavior
-- Allows for manual cleanup and error recovery
-- Avoids complex rollback logic that could introduce new bugs
-- Contract developers can implement their own error handling
-
-This specification provides a concrete, implementable plan for complete CosmWasm VM integration, addressing the core state synchronization friction points while maintaining compatibility with ERGORS' architectural principles.</content>
-<parameter name="filePath">docs/specs/cosmwasm.md
+# Render with variables
+ergors_cw_query "$CONTRACT" '{"render_sdl": {"variables": {"CPU": "4"}}}'
+```
