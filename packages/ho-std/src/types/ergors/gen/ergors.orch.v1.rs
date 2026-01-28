@@ -3360,6 +3360,9 @@ pub struct RunAkashDeploymentRequest {
     pub session_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "2")]
     pub options: ::core::option::Option<AkashWorkflowOptions>,
+    /// Password to unlock Cosmos key manager for transaction signing
+    #[prost(string, tag = "3")]
+    pub key_password: ::prost::alloc::string::String,
 }
 impl ::prost::Name for RunAkashDeploymentRequest {
     const NAME: &'static str = "RunAkashDeploymentRequest";

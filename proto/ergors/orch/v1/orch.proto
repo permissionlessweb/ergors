@@ -1427,6 +1427,8 @@ message TrustedProviderList {
 message RunAkashDeploymentRequest {
   string session_id = 1;
   AkashWorkflowOptions options = 2;
+  // Password to unlock Cosmos key manager for transaction signing
+  string key_password = 3;
 }
 
 // Response from running deployment workflow
