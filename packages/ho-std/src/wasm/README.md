@@ -376,7 +376,7 @@ The CosmWasm-VM integration is gated behind the `cw` feature flag:
 
 ```toml
 [features]
-cw = ["cosmwasm-vm", "wasmer", "wasmer-middlewares", "wasmer-types"]
+cw = ["cosmwasm-vm"]
 ```
 
 **Enable with:**
@@ -560,10 +560,6 @@ admin: Some("admin_address".to_string())
 - Cache directory: `./data/wasm_cache`
 - Modules are loaded from cache for subsequent executions
 
-### JIT Compilation
-
-- Uses Wasmer for JIT compilation
-- First execution compiles, subsequent executions use cached machine code
 
 ### Storage Optimization
 

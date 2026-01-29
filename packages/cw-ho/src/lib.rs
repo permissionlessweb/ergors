@@ -36,12 +36,13 @@ use crate::{
     config::ErgorsConfig,
     deploy::{
         automated::AutomatedDeployer, certificate::CertificateManager,
-        cosmos_client::CosmosClient, signer::TxSigner, tx_lifecycle::TxLifecycle,
+        cosmos_client::CosmosClient,
     },
     network::manager::PeerInfo,
     proxy::ProxyRouter,
     storage::ErgorsStorage,
 };
+use ho_std::types::ergors::orch::v1::AkashDeployConfig;
 use ho_std::{
     keys::encrypted_cosmos::EncryptedCosmosKeyManager,
     llm::LlmRouter,
@@ -81,19 +82,18 @@ pub struct ErgorsNetworkManifold {
 ///
 /// This is initialized lazily when Akash config is present and a key store exists.
 #[derive(Clone)]
+/// Akash deployment context using layer-climb for transaction signing.
 pub struct AkashDeploymentContext {
     /// CosmosClient for chain queries
     pub cosmos: Arc<CosmosClient>,
-    /// Transaction signer
-    pub signer: Arc<TxSigner>,
-    /// Transaction lifecycle manager
-    pub tx_lifecycle: Arc<TxLifecycle>,
     /// Certificate manager
     pub cert_manager: Arc<CertificateManager>,
     /// Key manager (unlocked with password)
     pub key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
     /// Key store
     pub key_store: Arc<RwLock<CosmosKeyStore>>,
+    /// Akash deployment config
+    pub akash_config: AkashDeployConfig,
 }
 
 impl AkashDeploymentContext {
@@ -103,8 +103,9 @@ impl AkashDeploymentContext {
             storage,
             self.cosmos.clone(),
             self.cert_manager.clone(),
-            self.tx_lifecycle.clone(),
-            self.signer.clone(),
+            self.key_manager.clone(),
+            self.key_store.clone(),
+            self.akash_config.clone(),
         )
     }
 }

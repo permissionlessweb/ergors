@@ -1991,8 +1991,10 @@ impl ManagementService for ManagementServiceImpl {
         };
         let node_endpoint = if !req.node_endpoint.is_empty() {
             req.node_endpoint.clone()
+        } else if !akash_config.rpc_endpoints.is_empty() {
+            akash_config.rpc_endpoints[0].clone()
         } else {
-            akash_config.rpc_endpoint.clone()
+            "https://rpc-akash.ecostake.com:443".to_string()
         };
 
         // Get key store and resolve account address

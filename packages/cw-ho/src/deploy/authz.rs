@@ -14,39 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::{Duration, SystemTime};
 
-/// Akash deployment message type URLs for authz grants
-pub mod msg_types {
-    /// Create deployment authorization
-    pub const MSG_CREATE_DEPLOYMENT: &str = "/akash.deployment.v1beta3.MsgCreateDeployment";
-    /// Update deployment authorization
-    pub const MSG_UPDATE_DEPLOYMENT: &str = "/akash.deployment.v1beta3.MsgUpdateDeployment";
-    /// Close deployment authorization
-    pub const MSG_CLOSE_DEPLOYMENT: &str = "/akash.deployment.v1beta3.MsgCloseDeployment";
-    /// Create lease authorization
-    pub const MSG_CREATE_LEASE: &str = "/akash.market.v1beta4.MsgCreateLease";
-    /// Close bid authorization
-    pub const MSG_CLOSE_BID: &str = "/akash.market.v1beta4.MsgCloseBid";
-    /// Withdraw lease authorization
-    pub const MSG_WITHDRAW_LEASE: &str = "/akash.market.v1beta4.MsgWithdrawLease";
-    /// Create certificate authorization
-    pub const MSG_CREATE_CERTIFICATE: &str = "/akash.cert.v1beta3.MsgCreateCertificate";
-    /// Revoke certificate authorization
-    pub const MSG_REVOKE_CERTIFICATE: &str = "/akash.cert.v1beta3.MsgRevokeCertificate";
-
-    /// All deployment-related message types for full workflow authorization
-    pub fn all_deployment_msg_types() -> Vec<&'static str> {
-        vec![
-            MSG_CREATE_DEPLOYMENT,
-            MSG_UPDATE_DEPLOYMENT,
-            MSG_CLOSE_DEPLOYMENT,
-            MSG_CREATE_LEASE,
-            MSG_CLOSE_BID,
-            MSG_WITHDRAW_LEASE,
-            MSG_CREATE_CERTIFICATE,
-            MSG_REVOKE_CERTIFICATE,
-        ]
-    }
-}
+use super::akash::msg_types;
 
 /// Default authz expiration (24 hours)
 pub const DEFAULT_AUTHZ_EXPIRATION_HOURS: u64 = 24;
@@ -92,7 +60,11 @@ impl AkashAuthzManager {
             if status.as_u16() == 404 {
                 return Ok(vec![]);
             }
-            return Err(anyhow!("Query authz grants failed ({}): {}", status, error_text));
+            return Err(anyhow!(
+                "Query authz grants failed ({}): {}",
+                status,
+                error_text
+            ));
         }
 
         let grants_response: AuthzGrantsResponse = response.json().await?;
@@ -119,7 +91,11 @@ impl AkashAuthzManager {
                 return Ok(None);
             }
             let error_text = response.text().await.unwrap_or_default();
-            return Err(anyhow!("Query feegrant failed ({}): {}", status, error_text));
+            return Err(anyhow!(
+                "Query feegrant failed ({}): {}",
+                status,
+                error_text
+            ));
         }
 
         let allowance_response: FeegrantAllowanceResponse = response.json().await?;
@@ -196,7 +172,8 @@ impl AkashAuthzManager {
         msg_type: &str,
         expiration_hours: Option<u64>,
     ) -> Value {
-        let expiration = calculate_expiration(expiration_hours.unwrap_or(DEFAULT_AUTHZ_EXPIRATION_HOURS));
+        let expiration =
+            calculate_expiration(expiration_hours.unwrap_or(DEFAULT_AUTHZ_EXPIRATION_HOURS));
 
         json!({
             "@type": "/cosmos.authz.v1beta1.MsgGrant",
@@ -230,7 +207,8 @@ impl AkashAuthzManager {
         spend_limit_uakt: Option<u64>,
         expiration_hours: Option<u64>,
     ) -> Value {
-        let expiration = calculate_expiration(expiration_hours.unwrap_or(DEFAULT_AUTHZ_EXPIRATION_HOURS));
+        let expiration =
+            calculate_expiration(expiration_hours.unwrap_or(DEFAULT_AUTHZ_EXPIRATION_HOURS));
         let spend_limit = spend_limit_uakt.unwrap_or(DEFAULT_SPEND_LIMIT_UAKT);
 
         json!({
@@ -267,7 +245,7 @@ impl AkashAuthzManager {
         msg_types::all_deployment_msg_types()
             .into_iter()
             .map(|msg_type| {
-                self.build_authz_grant_msg(granter, grantee, msg_type, expiration_hours)
+                self.build_authz_grant_msg(granter, grantee, &msg_type, expiration_hours)
             })
             .collect()
     }
@@ -275,16 +253,12 @@ impl AkashAuthzManager {
     // ==================== High-Level Operations ====================
 
     /// Check and track authz grants, returning which ones need to be created
-    pub async fn check_existing_grants(
-        &self,
-        granter: &str,
-        grantee: &str,
-    ) -> Result<AuthzStatus> {
+    pub async fn check_existing_grants(&self, granter: &str, grantee: &str) -> Result<AuthzStatus> {
         let mut status = AuthzStatus::default();
 
         // Check each deployment message type
         for msg_type in msg_types::all_deployment_msg_types() {
-            let has_grant = self.has_authz_grant(granter, grantee, msg_type).await?;
+            let has_grant = self.has_authz_grant(granter, grantee, &msg_type).await?;
             if has_grant {
                 status.existing_grants.push(msg_type.to_string());
             } else {
@@ -488,12 +462,8 @@ mod tests {
             "akashnet-2".to_string(),
         );
 
-        let msg = manager.build_feegrant_msg(
-            "akash1granter",
-            "akash1grantee",
-            Some(5_000_000),
-            Some(24),
-        );
+        let msg =
+            manager.build_feegrant_msg("akash1granter", "akash1grantee", Some(5_000_000), Some(24));
 
         assert_eq!(msg["@type"], "/cosmos.feegrant.v1beta1.MsgGrantAllowance");
         assert_eq!(msg["granter"], "akash1granter");
@@ -517,7 +487,10 @@ mod tests {
         let record = manager.create_grant_record(
             "akash1granter",
             "akash1grantee",
-            &[msg_types::MSG_CREATE_DEPLOYMENT, msg_types::MSG_CREATE_LEASE],
+            &[
+                msg_types::MSG_CREATE_DEPLOYMENT,
+                msg_types::MSG_CREATE_LEASE,
+            ],
             24,
             "ABC123TXHASH",
         );
@@ -534,11 +507,15 @@ mod tests {
         // Empty missing_grants means all grants are present
         assert!(status.has_all_grants());
 
-        status.missing_grants.push(msg_types::MSG_CREATE_DEPLOYMENT.to_string());
+        status
+            .missing_grants
+            .push(msg_types::MSG_CREATE_DEPLOYMENT.to_string());
         assert!(!status.has_all_grants());
 
         status.missing_grants.clear();
-        status.existing_grants.push(msg_types::MSG_CREATE_DEPLOYMENT.to_string());
+        status
+            .existing_grants
+            .push(msg_types::MSG_CREATE_DEPLOYMENT.to_string());
         assert!(status.has_all_grants());
     }
 }

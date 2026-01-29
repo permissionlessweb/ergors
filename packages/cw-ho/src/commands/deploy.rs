@@ -103,12 +103,8 @@ pub enum DeployCmd {
     Select {
         /// Session ID
         session_id: String,
-        /// Provider address
-        #[arg(long)]
-        provider: String,
-        /// Bid price in uakt
-        #[arg(long, default_value = "0")]
-        price: u64,
+        /// Bid selection: Either a numerical ID (1, 2, 3, ...) from the bids list, or a provider address (akash1...)
+        bid: String,
     },
     /// Cancel a deployment workflow
     Cancel {
@@ -516,29 +512,67 @@ impl DeployCmd {
                     if response.bids.is_empty() {
                         println!("No bids received yet.");
                     } else {
-                        for bid in &response.bids {
+                        for (idx, bid) in response.bids.iter().enumerate() {
+                            let price_akt = bid.price_uakt as f64 / 1_000_000.0;
                             println!(
-                                "  {} | {} uakt/block",
-                                bid.provider_address, bid.price_uakt
+                                "  [{}] {} | {:.6} AKT/block ({} uakt)",
+                                idx + 1,
+                                bid.provider_address,
+                                price_akt,
+                                bid.price_uakt
                             );
                         }
+                        println!();
+                        println!("To select a bid: ergors deploy select <session-id> <bid-number>");
+                        println!("Example: ergors deploy select {} 1", session_id);
                     }
                 }
                 Ok(())
             }
             DeployCmd::Select {
                 session_id,
-                provider,
-                price,
+                bid,
             } => {
+                // Determine if bid is a numeric ID or provider address
+                let (provider_address, price) = if let Ok(bid_idx) = bid.parse::<usize>() {
+                    // Numeric ID: query bids and get the provider at that index
+                    let bids_response = client.query_akash_bids(session_id).await?;
+
+                    if bid_idx == 0 || bid_idx > bids_response.bids.len() {
+                        return Err(anyhow::anyhow!(
+                            "Invalid bid number {}. Valid range: 1-{}",
+                            bid_idx,
+                            bids_response.bids.len()
+                        ));
+                    }
+
+                    let selected_bid = &bids_response.bids[bid_idx - 1];
+                    println!("Selected bid [{}]: {} ({} uakt/block)",
+                        bid_idx,
+                        selected_bid.provider_address,
+                        selected_bid.price_uakt
+                    );
+
+                    (selected_bid.provider_address.clone(), selected_bid.price_uakt)
+                } else if bid.starts_with("akash1") {
+                    // Provider address: use it directly
+                    (bid.clone(), 0)
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Invalid bid selection '{}'. Must be a number (e.g., 1, 2, 3) or provider address (akash1...)",
+                        bid
+                    ));
+                };
+
                 let response = client
-                    .select_akash_provider(session_id, provider, *price)
+                    .select_akash_provider(session_id, &provider_address, price)
                     .await?;
 
                 if ctx.json {
                     let mut json = serde_json::json!({
                         "success": response.success,
-                        "provider": provider,
+                        "provider": provider_address,
+                        "price_uakt": price,
                     });
                     if let Some(wf) = &response.workflow {
                         json["current_step"] = serde_json::json!(format_step(wf.current_step));
@@ -549,7 +583,10 @@ impl DeployCmd {
                     }
                     println!("{}", serde_json::to_string_pretty(&json)?);
                 } else if response.success {
-                    println!("Provider selected: {}", provider);
+                    println!("Provider selected: {}", provider_address);
+                    if price > 0 {
+                        println!("  Price: {} uakt/block", price);
+                    }
                     if let Some(wf) = &response.workflow {
                         println!("  Step: {}", format_step(wf.current_step));
                         println!("  Status: {}", format_status(wf.status));

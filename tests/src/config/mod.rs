@@ -254,7 +254,7 @@ mod akash_config {
         let config = ErgorsConfig::default_akash_config();
 
         // Check mainnet defaults
-        assert!(config.rpc_endpoint.contains("akash"));
+        assert!(config.rpc_endpoints.contains("akash".into()));
         assert_eq!(config.chain_id, "akashnet-2");
         assert_eq!(config.gas_prices, "0.025uakt");
         assert!((config.gas_adjustment - 1.3).abs() < 0.001);
@@ -282,7 +282,7 @@ mod akash_config {
 
         // Set empty Akash config
         config.set_akash(AkashDeployConfig {
-            rpc_endpoint: String::new(),
+            rpc_endpoints: Vec::new(),
             chain_id: String::new(),
             ..Default::default()
         });
@@ -466,9 +466,9 @@ mod config_mutation {
         let mut config = ErgorsConfig::new(&home);
 
         let new_akash = AkashDeployConfig {
-            rpc_endpoint: "https://custom.rpc".to_string(),
-            grpc_endpoint: "https://custom.grpc".to_string(),
-            rest_endpoint: "https://custom.rest".to_string(),
+            rpc_endpoints: vec!["https://custom.rpc".to_string()],
+            grpc_endpoints: vec!["https://custom.grpc".to_string()],
+            rest_endpoints: vec!["https://custom.rest".to_string()],
             chain_id: "testnet-1".to_string(),
             gas_prices: "0.05uakt".to_string(),
             gas_adjustment: 1.5,
@@ -480,7 +480,7 @@ mod config_mutation {
         config.set_akash(new_akash);
 
         let akash = config.akash();
-        assert_eq!(akash.rpc_endpoint, "https://custom.rpc");
+        assert_eq!(akash.rpc_endpoints[0], "https://custom.rpc");
         assert_eq!(akash.chain_id, "testnet-1");
         assert_eq!(akash.trusted_providers.len(), 1);
     }

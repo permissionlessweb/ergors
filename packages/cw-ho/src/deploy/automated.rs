@@ -12,25 +12,33 @@
 
 use anyhow::{anyhow, Result};
 use ho_std::types::ergors::orch::v1::{
-    AkashBidInfo, AkashBidState, AkashDeploymentWorkflow, AkashLeaseIdInfo,
-    AkashProviderSelection, AkashRuntime, AkashServiceEndpoint, AkashWorkflowOptions,
-    AkashWorkflowStatus, AkashWorkflowStep,
+    AkashBidInfo, AkashBidState, AkashDeploymentWorkflow, AkashLeaseIdInfo, AkashProviderSelection,
+    AkashRuntime, AkashServiceEndpoint, AkashWorkflowOptions, AkashWorkflowStatus,
+    AkashWorkflowStep,
 };
 use pbjson_types::Timestamp;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use super::akash::broadcast_akash_msg;
 use super::certificate::CertificateManager;
+use super::climb_signer::create_signing_client_with_failover;
 use super::cosmos_client::{BidInfo, CosmosClient};
 use super::deployment_builder::{
     build_close_deployment_msg, build_create_lease_msg, get_next_dseq, DeploymentBuilder,
     DEFAULT_DEPOSIT_UAKT,
 };
+use super::endpoint_manager::{EndpointManager, EndpointType};
 use super::manifest::{query_service_endpoints, ManifestSender};
-use super::signer::{msg_to_any, msg_types, TxSigner};
-use super::tx_lifecycle::{TxLifecycle, DEFAULT_GAS_LIMIT, DEFAULT_GAS_PRICE};
 use crate::storage::ErgorsStorage;
+use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
+use ho_std::types::ergors::akash::deployment::v1beta4::{MsgCloseDeployment, MsgCreateDeployment};
+use ho_std::types::ergors::akash::market::v1beta4::MsgCreateLease;
+use ho_std::types::ergors::orch::v1::{AkashDeployConfig, CosmosKeyStore};
+use layer_climb::prelude::SigningClient;
+use prost::Name;
+use tokio::sync::RwLock;
 
 /// Minimum balance required for deployment (5 AKT).
 const MIN_BALANCE_UAKT: u64 = 5_000_000;
@@ -44,30 +52,55 @@ const MAX_BID_POLL_ATTEMPTS: u32 = 10;
 /// Automated deployment runner.
 ///
 /// Executes the complete deployment flow without manual intervention.
+/// Now uses layer-climb for robust Cosmos SDK transaction signing.
 pub struct AutomatedDeployer {
     storage: Arc<ErgorsStorage>,
     cosmos: Arc<CosmosClient>,
     cert_manager: Arc<CertificateManager>,
-    tx_lifecycle: Arc<TxLifecycle>,
-    signer: Arc<TxSigner>,
+    /// Key manager (for decrypting mnemonics)
+    key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
+    /// Key store (for retrieving encrypted keys)
+    key_store: Arc<RwLock<CosmosKeyStore>>,
+    /// Akash deployment config (for creating chain config)
+    akash_config: AkashDeployConfig,
 }
 
 impl AutomatedDeployer {
-    /// Create a new automated deployer.
+    /// Create a new automated deployer with layer-climb integration.
     pub fn new(
         storage: Arc<ErgorsStorage>,
         cosmos: Arc<CosmosClient>,
         cert_manager: Arc<CertificateManager>,
-        tx_lifecycle: Arc<TxLifecycle>,
-        signer: Arc<TxSigner>,
+        key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
+        key_store: Arc<RwLock<CosmosKeyStore>>,
+        akash_config: AkashDeployConfig,
     ) -> Self {
         Self {
             storage,
             cosmos,
             cert_manager,
-            tx_lifecycle,
-            signer,
+            key_manager,
+            key_store,
+            akash_config,
         }
+    }
+
+    /// Create a layer-climb signing client for the workflow's key.
+    ///
+    /// Uses automatic endpoint failover for production resilience.
+    async fn create_climb_client(
+        &self,
+        key_name: &str,
+        account_index: u32,
+    ) -> Result<SigningClient> {
+        create_signing_client_with_failover(
+            self.key_manager.clone(),
+            self.key_store.clone(),
+            key_name,
+            account_index,
+            &self.akash_config,
+        )
+        .await
     }
 
     /// Run automated deployment.
@@ -83,7 +116,11 @@ impl AutomatedDeployer {
         tracing::info!("═══════════════════════════════════════════════════════════════");
         tracing::info!("Session ID: {}", workflow.session_id);
         tracing::info!("Account:    {}", workflow.account_address);
-        tracing::info!("Key:        {} (index {})", workflow.selected_key_name, workflow.hd_account_index);
+        tracing::info!(
+            "Key:        {} (index {})",
+            workflow.selected_key_name,
+            workflow.hd_account_index
+        );
         tracing::info!("Chain:      {}", workflow.chain_id);
         tracing::info!("───────────────────────────────────────────────────────────────");
 
@@ -92,39 +129,29 @@ impl AutomatedDeployer {
         workflow.options = Some(opts.clone());
         self.save_workflow(workflow).await?;
 
-        // Step 1: Connectivity check - verify we can reach Akash network
+        // Create SigningClient once for this workflow (reused for all txs)
+        // Uses QueryAndIncrement strategy for optimal performance
+        tracing::info!("Creating signing client for workflow...");
+        let signing_client = self
+            .create_climb_client(&workflow.selected_key_name, workflow.hd_account_index)
+            .await?;
+        tracing::info!("Signing client created successfully");
+
         self.step_connectivity_check(workflow).await?;
-
-        // Step 2: Check balance
         self.step_check_balance(workflow, opts).await?;
-
-        // Step 3: Grant request/wait (optional - only if request_grant_from is set)
         if !opts.request_grant_from.is_empty() {
             self.step_grant_request_and_wait(workflow, opts).await?;
         }
-
-        // Step 4: Setup certificate
         self.step_setup_certificate(workflow).await?;
-
-        // Step 5: Create deployment
-        let dseq = self.step_create_deployment(workflow, opts).await?;
-
-        // Step 6: Wait for and collect bids
+        let dseq = self
+            .step_create_deployment(workflow, opts, &signing_client)
+            .await?;
         let bids = self.step_wait_for_bids(workflow, dseq, opts).await?;
-
-        // Step 7: Select provider
         let selected_bid = self.step_select_provider(workflow, &bids, opts).await?;
-
-        // Step 8: Create lease
-        self.step_create_lease(workflow, &selected_bid).await?;
-
-        // Step 9: Send manifest
+        self.step_create_lease(workflow, &selected_bid, &signing_client)
+            .await?;
         self.step_send_manifest(workflow).await?;
-
-        // Step 10: Retrieve endpoints
         let endpoints = self.step_retrieve_endpoints(workflow).await?;
-
-        // Step 11: Save endpoints to storage
         self.step_save_endpoints(workflow, endpoints).await?;
 
         // Mark completed
@@ -159,78 +186,72 @@ impl AutomatedDeployer {
         workflow.current_step = AkashWorkflowStep::ConnectivityCheck as i32;
         self.save_workflow(workflow).await?;
 
-        let node_info_url = format!(
-            "{}/cosmos/base/tendermint/v1beta1/node_info",
-            self.cosmos.rest_endpoint().trim_end_matches('/')
-        );
+        tracing::info!("  Verifying network connectivity with endpoint failover...");
 
-        tracing::info!("  Endpoint: {}", self.cosmos.rest_endpoint());
-        tracing::info!("  Verifying network connectivity...");
+        // Create endpoint manager for failover
+        let endpoint_manager = EndpointManager::from_config(&self.akash_config);
 
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(10)) // Reduced to 10s per attempt
             .build()?;
 
-        let response = client.get(&node_info_url).send().await;
+        // Try connectivity check with automatic endpoint failover
+        let response = endpoint_manager
+            .execute_with_failover(EndpointType::Rest, |rest_endpoint| {
+                let client = client.clone();
+                let node_info_url = format!(
+                    "{}/cosmos/base/tendermint/v1beta1/node_info",
+                    rest_endpoint.trim_end_matches('/')
+                );
 
-        match response {
-            Ok(resp) if resp.status().is_success() => {
-                let info: serde_json::Value = resp.json().await?;
+                async move {
+                    tracing::info!("  Trying endpoint: {}", rest_endpoint);
+                    let resp = client.get(&node_info_url).send().await?;
 
-                // Extract network/chain info
-                let network = info
-                    .get("default_node_info")
-                    .and_then(|n| n.get("network"))
-                    .and_then(|n| n.as_str())
-                    .unwrap_or("unknown");
+                    if !resp.status().is_success() {
+                        return Err(anyhow!("HTTP {}: endpoint returned error", resp.status()));
+                    }
 
-                let moniker = info
-                    .get("default_node_info")
-                    .and_then(|n| n.get("moniker"))
-                    .and_then(|n| n.as_str())
-                    .unwrap_or("unknown");
-
-                tracing::info!("  Network:  {}", network);
-                tracing::info!("  Node:     {}", moniker);
-
-                // Verify chain ID matches if configured
-                if !workflow.chain_id.is_empty() && network != workflow.chain_id {
-                    tracing::error!(
-                        "  FAILED: Chain ID mismatch (expected {}, got {})",
-                        workflow.chain_id,
-                        network
-                    );
-                    return Err(anyhow!(
-                        "Chain ID mismatch: expected '{}', but connected to '{}'",
-                        workflow.chain_id,
-                        network
-                    ));
+                    Ok(resp)
                 }
+            })
+            .await?;
 
-                tracing::info!("  OK: Connected to Akash network");
-                Ok(())
-            }
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                tracing::error!("  FAILED: HTTP {} - {}", status, body);
-                Err(anyhow!(
-                    "Cannot reach Akash network at {}. HTTP {}: {}",
-                    self.cosmos.rest_endpoint(),
-                    status,
-                    body
-                ))
-            }
-            Err(e) => {
-                tracing::error!("  FAILED: Connection error");
-                tracing::error!("  Error: {}", e);
-                Err(anyhow!(
-                    "Cannot connect to Akash network at {}: {}",
-                    self.cosmos.rest_endpoint(),
-                    e
-                ))
-            }
+        // Response is already validated in the failover closure
+        let info: serde_json::Value = response.json().await?;
+
+        // Extract network/chain info
+        let network = info
+            .get("default_node_info")
+            .and_then(|n| n.get("network"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown");
+
+        let moniker = info
+            .get("default_node_info")
+            .and_then(|n| n.get("moniker"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown");
+
+        tracing::info!("  Network:  {}", network);
+        tracing::info!("  Node:     {}", moniker);
+
+        // Verify chain ID matches if configured
+        if !workflow.chain_id.is_empty() && network != workflow.chain_id {
+            tracing::error!(
+                "  FAILED: Chain ID mismatch (expected {}, got {})",
+                workflow.chain_id,
+                network
+            );
+            return Err(anyhow!(
+                "Chain ID mismatch: expected '{}', but connected to '{}'",
+                workflow.chain_id,
+                network
+            ));
         }
+
+        tracing::info!("  OK: Connected to Akash network");
+        Ok(())
     }
 
     /// Step 2: Check account balance.
@@ -243,7 +264,10 @@ impl AutomatedDeployer {
         workflow.current_step = AkashWorkflowStep::BalanceCheck as i32;
         self.save_workflow(workflow).await?;
 
-        tracing::info!("  Querying balance for wallet: {}", workflow.account_address);
+        tracing::info!(
+            "  Querying balance for wallet: {}",
+            workflow.account_address
+        );
 
         let balance = self
             .cosmos
@@ -262,7 +286,11 @@ impl AutomatedDeployer {
 
         tracing::info!("  Wallet:   {}", workflow.account_address);
         tracing::info!("  Balance:  {:.6} AKT ({} uakt)", akt_balance, amount);
-        tracing::info!("  Required: {:.6} AKT ({} uakt)", akt_required, min_required);
+        tracing::info!(
+            "  Required: {:.6} AKT ({} uakt)",
+            akt_required,
+            min_required
+        );
 
         if amount < min_required {
             tracing::error!("  FAILED: Insufficient balance");
@@ -356,6 +384,7 @@ impl AutomatedDeployer {
         &self,
         workflow: &mut AkashDeploymentWorkflow,
         opts: &AkashWorkflowOptions,
+        signing_client: &SigningClient,
     ) -> Result<u64> {
         tracing::info!("[Step 5/11] Create Deployment");
         workflow.current_step = AkashWorkflowStep::DeploymentCreate as i32;
@@ -366,7 +395,19 @@ impl AutomatedDeployer {
             .as_ref()
             .ok_or_else(|| anyhow!("No SDL configured"))?;
 
-        tracing::info!("  SDL Template: {}", sdl.template_name);
+        tracing::info!(
+            "  SDL Template: {}",
+            if sdl.template_name.is_empty() {
+                "(inline)"
+            } else {
+                &sdl.template_name
+            }
+        );
+        tracing::debug!("  SDL Content size: {} bytes", sdl.resolved_content.len());
+
+        if sdl.resolved_content.is_empty() {
+            return Err(anyhow!("SDL content is empty"));
+        }
 
         // Get next available dseq
         let dseq = get_next_dseq(self.cosmos.rest_endpoint(), &workflow.account_address).await?;
@@ -380,48 +421,37 @@ impl AutomatedDeployer {
         };
 
         let deposit_akt = deposit as f64 / 1_000_000.0;
-        tracing::info!("  Escrow Deposit: {:.6} AKT ({} uakt)", deposit_akt, deposit);
+        tracing::info!(
+            "  Escrow Deposit: {:.6} AKT ({} uakt)",
+            deposit_akt,
+            deposit
+        );
 
-        let builder = DeploymentBuilder::new(&workflow.account_address, dseq)
-            .with_deposit(deposit);
+        let builder = DeploymentBuilder::new(&workflow.account_address, dseq).with_deposit(deposit);
 
         let msg = builder.build_from_sdl(&sdl.resolved_content)?;
 
-        // Sign and broadcast
+        tracing::debug!(
+            "  MsgCreateDeployment: owner={}, dseq={}, groups={}",
+            msg.id.as_ref().map(|id| id.owner.as_str()).unwrap_or(""),
+            dseq,
+            msg.groups.len()
+        );
+
+        // Log the full message for debugging
+        if let Ok(msg_json) = serde_json::to_string_pretty(&msg) {
+            tracing::debug!("  Full MsgCreateDeployment JSON:\n{}", msg_json);
+        }
+
+        // Broadcast deployment transaction using type-safe helper
         tracing::info!("  Broadcasting MsgCreateDeployment...");
-        let msg_any = msg_to_any(&msg, msg_types::MSG_CREATE_DEPLOYMENT);
-
-        let result = self
-            .tx_lifecycle
-            .sign_broadcast_wait(
-                &workflow.selected_key_name,
-                workflow.hd_account_index,
-                msg_any,
-                DEFAULT_GAS_LIMIT,
-                DEFAULT_GAS_PRICE,
-                Some("ergors automated deployment"),
-            )
-            .await?;
-
-        if !result.is_success() {
-            tracing::error!("  FAILED: Deployment tx rejected (code {})", result.code);
-            tracing::error!("  Error: {}", result.raw_log);
-            return Err(anyhow!(
-                "Deployment creation failed (code {}): {}",
-                result.code,
-                result.raw_log
-            ));
-        }
-
-        tracing::info!("  Tx Hash:  {}", result.hash);
-        tracing::info!("  Height:   {}", result.height);
-        tracing::info!("  Gas Used: {}", result.gas_used);
-
-        // Extract dseq from events (verify it matches)
-        let event_dseq = result.extract_dseq().unwrap_or(dseq);
-        if event_dseq != dseq {
-            tracing::warn!("  Warning: DSEQ mismatch (expected {}, got {})", dseq, event_dseq);
-        }
+        let _tx_resp = broadcast_akash_msg(
+            signing_client,
+            &MsgCreateDeployment::type_url(),
+            &msg,
+            "ergors automated deployment",
+        )
+        .await?;
 
         // Store deployment info
         workflow.deployment = Some(AkashRuntime {
@@ -459,7 +489,11 @@ impl AutomatedDeployer {
 
         let wait_secs = wait_blocks * 6;
         tracing::info!("  DSEQ: {}", dseq);
-        tracing::info!("  Waiting ~{}s ({} blocks) for providers to bid...", wait_secs, wait_blocks);
+        tracing::info!(
+            "  Waiting ~{}s ({} blocks) for providers to bid...",
+            wait_secs,
+            wait_blocks
+        );
 
         // Initial wait for bids to arrive
         tokio::time::sleep(Duration::from_secs(wait_blocks as u64 * 6)).await;
@@ -471,7 +505,11 @@ impl AutomatedDeployer {
         while attempts < MAX_BID_POLL_ATTEMPTS {
             attempts += 1;
 
-            tracing::info!("  Polling for bids (attempt {}/{})...", attempts, MAX_BID_POLL_ATTEMPTS);
+            tracing::info!(
+                "  Polling for bids (attempt {}/{})...",
+                attempts,
+                MAX_BID_POLL_ATTEMPTS
+            );
 
             let query_result = self
                 .cosmos
@@ -487,11 +525,7 @@ impl AutomatedDeployer {
                         for (i, bid) in found_bids.iter().enumerate() {
                             let price: u64 = bid.price_amount.parse().unwrap_or(0);
                             let price_akt = price as f64 / 1_000_000.0;
-                            tracing::info!(
-                                "    [{}] Provider: {}",
-                                i + 1,
-                                bid.provider
-                            );
+                            tracing::info!("    [{}] Provider: {}", i + 1, bid.provider);
                             tracing::info!(
                                 "        Price: {:.6} AKT/block ({} {})",
                                 price_akt,
@@ -516,7 +550,10 @@ impl AutomatedDeployer {
         }
 
         if bids.is_empty() {
-            tracing::error!("  FAILED: No bids received after {} attempts", MAX_BID_POLL_ATTEMPTS);
+            tracing::error!(
+                "  FAILED: No bids received after {} attempts",
+                MAX_BID_POLL_ATTEMPTS
+            );
             return Err(anyhow!(
                 "No bids received after {} attempts. Check provider availability or increase max price.",
                 MAX_BID_POLL_ATTEMPTS
@@ -605,11 +642,18 @@ impl AutomatedDeployer {
                 .collect()
         };
 
-        tracing::info!("  Candidates: {} (from {} total bids)", candidates.len(), bids.len());
+        tracing::info!(
+            "  Candidates: {} (from {} total bids)",
+            candidates.len(),
+            bids.len()
+        );
 
         if candidates.is_empty() {
             tracing::error!("  FAILED: No bids from trusted providers");
-            tracing::error!("  Available providers: {:?}", bids.iter().map(|b| &b.provider).collect::<Vec<_>>());
+            tracing::error!(
+                "  Available providers: {:?}",
+                bids.iter().map(|b| &b.provider).collect::<Vec<_>>()
+            );
             return Err(anyhow!(
                 "No bids from trusted providers. Available providers: {:?}",
                 bids.iter().map(|b| &b.provider).collect::<Vec<_>>()
@@ -633,7 +677,12 @@ impl AutomatedDeployer {
 
         tracing::info!("  ─────────────────────────────────────────");
         tracing::info!("  Selected: {} (cheapest)", selected.provider);
-        tracing::info!("  Price:    {:.6} AKT/block ({} {})", price_akt, selected.price_amount, selected.price_denom);
+        tracing::info!(
+            "  Price:    {:.6} AKT/block ({} {})",
+            price_akt,
+            selected.price_amount,
+            selected.price_denom
+        );
         tracing::info!("  Trusted:  {}", if is_trusted { "YES" } else { "NO" });
         tracing::info!("  ─────────────────────────────────────────");
 
@@ -656,46 +705,37 @@ impl AutomatedDeployer {
         &self,
         workflow: &mut AkashDeploymentWorkflow,
         bid: &BidInfo,
+        signing_client: &SigningClient,
     ) -> Result<()> {
         tracing::info!("[Step 8/11] Create Lease");
         workflow.current_step = AkashWorkflowStep::LeaseCreate as i32;
         self.save_workflow(workflow).await?;
 
         tracing::info!("  Provider: {}", bid.provider);
-        tracing::info!("  DSEQ: {}, GSEQ: {}, OSEQ: {}", bid.dseq, bid.gseq, bid.oseq);
+        tracing::info!(
+            "  DSEQ: {}, GSEQ: {}, OSEQ: {}",
+            bid.dseq,
+            bid.gseq,
+            bid.oseq
+        );
 
         // Build MsgCreateLease
         let msg = build_create_lease_msg(&bid.owner, bid.dseq, bid.gseq, bid.oseq, &bid.provider);
-        let msg_any = msg_to_any(&msg, msg_types::MSG_CREATE_LEASE);
 
+        // Broadcast lease transaction using type-safe helper
         tracing::info!("  Broadcasting MsgCreateLease...");
+        let _tx_resp = broadcast_akash_msg(
+            signing_client,
+            &MsgCreateLease::type_url(),
+            &msg,
+            "ergors lease creation",
+        )
+        .await?;
 
-        let result = self
-            .tx_lifecycle
-            .sign_broadcast_wait(
-                &workflow.selected_key_name,
-                workflow.hd_account_index,
-                msg_any,
-                DEFAULT_GAS_LIMIT,
-                DEFAULT_GAS_PRICE,
-                Some("ergors lease creation"),
-            )
-            .await?;
-
-        if !result.is_success() {
-            tracing::error!("  FAILED: Lease tx rejected (code {})", result.code);
-            tracing::error!("  Error: {}", result.raw_log);
-            return Err(anyhow!(
-                "Lease creation failed (code {}): {}",
-                result.code,
-                result.raw_log
-            ));
-        }
-
-        let lease_id = format!("{}/{}/{}/{}/{}", bid.owner, bid.dseq, bid.gseq, bid.oseq, bid.provider);
-
-        tracing::info!("  Tx Hash:  {}", result.hash);
-        tracing::info!("  Height:   {}", result.height);
+        let lease_id = format!(
+            "{}/{}/{}/{}/{}",
+            bid.owner, bid.dseq, bid.gseq, bid.oseq, bid.provider
+        );
         tracing::info!("  Lease ID: {}", lease_id);
 
         // Store lease info
@@ -736,10 +776,7 @@ impl AutomatedDeployer {
 
         // Construct provider URI
         let provider_uri = format!("https://{}:8443", lease_info.provider);
-        let manifest_endpoint = format!(
-            "{}/deployment/{}/manifest",
-            provider_uri, lease_info.dseq
-        );
+        let manifest_endpoint = format!("{}/deployment/{}/manifest", provider_uri, lease_info.dseq);
 
         tracing::info!("  Provider URI: {}", provider_uri);
         tracing::info!("  Endpoint:     {}", manifest_endpoint);
@@ -810,7 +847,11 @@ impl AutomatedDeployer {
         while attempts < MAX_ENDPOINT_ATTEMPTS {
             attempts += 1;
 
-            tracing::info!("  Polling endpoints (attempt {}/{})...", attempts, MAX_ENDPOINT_ATTEMPTS);
+            tracing::info!(
+                "  Polling endpoints (attempt {}/{})...",
+                attempts,
+                MAX_ENDPOINT_ATTEMPTS
+            );
 
             match query_service_endpoints(
                 &provider_uri,
@@ -826,7 +867,12 @@ impl AutomatedDeployer {
                     for (name, ep) in eps {
                         tracing::info!("    ┌─ Service: {}", name);
                         tracing::info!("    │  URI:      {}", ep.external_uri);
-                        tracing::info!("    │  Port:     {}:{} ({})", ep.external_port, ep.internal_port, ep.protocol);
+                        tracing::info!(
+                            "    │  Port:     {}:{} ({})",
+                            ep.external_port,
+                            ep.internal_port,
+                            ep.protocol
+                        );
                         tracing::info!("    └──────────────────────────────");
                         endpoints.insert(name, ep);
                     }
@@ -879,7 +925,9 @@ impl AutomatedDeployer {
 
         // Also store in legacy endpoints map for backwards compatibility
         for ep in &endpoints {
-            workflow.endpoints.insert(ep.service_name.clone(), ep.external_uri.clone());
+            workflow
+                .endpoints
+                .insert(ep.service_name.clone(), ep.external_uri.clone());
         }
 
         self.save_workflow(workflow).await?;
@@ -919,10 +967,7 @@ impl AutomatedDeployer {
     }
 
     /// Close a deployment.
-    pub async fn close_deployment(
-        &self,
-        workflow: &AkashDeploymentWorkflow,
-    ) -> Result<()> {
+    pub async fn close_deployment(&self, workflow: &AkashDeploymentWorkflow) -> Result<()> {
         let deployment = workflow
             .deployment
             .as_ref()
@@ -936,29 +981,23 @@ impl AutomatedDeployer {
         tracing::info!("Closing deployment dseq {}", dseq);
 
         let msg = build_close_deployment_msg(&workflow.account_address, dseq);
-        let msg_any = msg_to_any(&msg, msg_types::MSG_CLOSE_DEPLOYMENT);
 
-        let result = self
-            .tx_lifecycle
-            .sign_broadcast_wait(
-                &workflow.selected_key_name,
-                workflow.hd_account_index,
-                msg_any,
-                DEFAULT_GAS_LIMIT,
-                DEFAULT_GAS_PRICE,
-                Some("ergors close deployment"),
-            )
+        // Create signing client for this operation
+        let signing_client = self
+            .create_climb_client(&workflow.selected_key_name, workflow.hd_account_index)
             .await?;
 
-        if !result.is_success() {
-            return Err(anyhow!(
-                "Close deployment failed (code {}): {}",
-                result.code,
-                result.raw_log
-            ));
-        }
+        // Broadcast close deployment transaction using type-safe helper
+        tracing::info!("  Broadcasting MsgCloseDeployment...");
+        let tx_resp = broadcast_akash_msg(
+            &signing_client,
+            &MsgCloseDeployment::type_url(),
+            &msg,
+            "ergors close deployment",
+        )
+        .await?;
 
-        tracing::info!("Deployment closed: tx_hash={}", result.hash);
+        tracing::info!("Deployment closed: tx_hash={}", tx_resp.txhash);
         Ok(())
     }
 }

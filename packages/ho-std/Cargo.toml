@@ -13,7 +13,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = ["grpc-transport", "cw", "rpc"]
 std = ["prost/std"]
-cw = ["cosmwasm-vm","wasmer","wasmer-middlewares","wasmer-types"] # cosmwasm vm features
+cw = ["cosmwasm-vm"] # cosmwasm vm features
 rpc = []
 grpc = ["std", "tonic", "tonic-prost"]
 grpc-transport = ["grpc", "tonic/transport"]
@@ -34,15 +34,11 @@ blake2b_simd = { workspace = true }
 bytes = { workspace = true }
 camino = { workspace = true }
 chrono = { workspace = true }
-clap = { workspace = true }
 cnidarium  = { workspace = true }
 commonware-codec = { workspace = true }
 commonware-cryptography = { workspace = true }
 chacha20poly1305 = {workspace = true}
 commonware-p2p = { workspace = true }
-commonware-runtime = { workspace = true }
-commonware-storage = { workspace = true }
-commonware-utils = { workspace = true }
 cosmwasm-std = { workspace = true }
 decaf377 = { workspace = true, features = ["r1cs"], default-features = true }
 decaf377-fmd = { workspace = true }
@@ -57,29 +53,20 @@ fmt = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 git2 = { workspace = true }
-governor = { workspace = true }
 hex = { workspace = true }
 hmac = "0.12.0"
 http-body-util = { workspace = true }
 ibc-proto = { workspace = true, default-features = false, features = ["server"] }
 jmt = { workspace = true }
-layer-climb-proto = { workspace = true }
-pbjson = { package = "informalsystems-pbjson", optional = true, default-features = false, version = "0.7" }
 pbjson-types = { workspace = true }
 pbkdf2 = "0.12.0"
 penumbra-sdk-tct = { workspace = true }
 prost = { workspace = true }
-prost-types = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 reqwest = { workspace = true }
 ripemd = "0.1"
-rocksdb = { workspace = true }
-rpassword = { workspace = true }
-rs-derive = { path = "../../proto/rs-derive" }
-schemars = { workspace = true }
 serde = { workspace = true }
-serde-cw-value = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
 sha2 = { workspace = true }
@@ -87,23 +74,15 @@ ssh-key = { workspace = true }
 termion = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-tungstenite = { workspace = true }
-tokio-util = { workspace = true }
 toml = { workspace = true }
 tonic = { version = "0.14.1", optional = true, default-features = false, features = ["codegen"] }
 tonic-prost = { version = "0.14.1", optional = true, default-features = false }
 tower = "0.5"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 zeroize = { version = "1.8", features = ["derive"] }
-
 cosmwasm-vm = { workspace = true, optional = true, features = ["stargate"] }
-wasmer = { workspace = true, default-features = false, features = ["singlepass"], optional = true }
-wasmer-middlewares = { workspace = true,   optional = true }
-wasmer-types = { workspace = true,   optional = true }
-
 
 
 [dev-dependencies]

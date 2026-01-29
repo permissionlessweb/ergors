@@ -2699,12 +2699,6 @@ impl ::prost::Name for CosmosKeyStore {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AkashDeployConfig {
-    /// RPC endpoint for the Akash node (e.g. "<https://rpc-akash.ecostake.com:443">)
-    #[prost(string, tag = "1")]
-    pub rpc_endpoint: ::prost::alloc::string::String,
-    /// gRPC endpoint for the Akash node (e.g. "<https://grpc-akash.ecostake.com:443">)
-    #[prost(string, tag = "2")]
-    pub grpc_endpoint: ::prost::alloc::string::String,
     /// Chain ID (e.g. "akashnet-2" for mainnet, "local" for dev)
     #[prost(string, tag = "3")]
     pub chain_id: ::prost::alloc::string::String,
@@ -2724,8 +2718,24 @@ pub struct AkashDeployConfig {
     #[prost(string, repeated, tag = "8")]
     pub trusted_providers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// REST/LCD endpoint for queries (e.g. "<https://rest-akash.ecostake.com">)
-    #[prost(string, tag = "9")]
-    pub rest_endpoint: ::prost::alloc::string::String,
+    /// Multiple RPC endpoints for automatic failover (preferred over rpc_endpoint)
+    #[prost(string, repeated, tag = "10")]
+    pub rpc_endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Multiple gRPC endpoints for automatic failover (preferred over grpc_endpoint)
+    #[prost(string, repeated, tag = "11")]
+    pub grpc_endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Multiple REST/LCD endpoints for automatic failover (preferred over rest_endpoint)
+    #[prost(string, repeated, tag = "12")]
+    pub rest_endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Maximum retry attempts per endpoint before moving to next (default: 2)
+    #[prost(uint32, tag = "13")]
+    pub max_retries_per_endpoint: u32,
+    /// Total maximum retry attempts across all endpoints (default: 6)
+    #[prost(uint32, tag = "14")]
+    pub max_total_retries: u32,
+    /// Timeout in seconds for each connection attempt (default: 10)
+    #[prost(uint32, tag = "15")]
+    pub connection_timeout_seconds: u32,
 }
 impl ::prost::Name for AkashDeployConfig {
     const NAME: &'static str = "AkashDeployConfig";

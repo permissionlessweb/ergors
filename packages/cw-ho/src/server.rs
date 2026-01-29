@@ -1,8 +1,5 @@
 use crate::{
-    deploy::{
-        certificate::CertificateManager, cosmos_client::CosmosClient, signer::TxSigner,
-        tx_lifecycle::TxLifecycle,
-    },
+    deploy::{certificate::CertificateManager, cosmos_client::CosmosClient},
     storage::ErgorsStorage,
     AkashDeploymentContext, ErgorsAppState, ErgorsConfig, ErgorsNetworkManifold, LlmRouter,
 };
@@ -252,15 +249,16 @@ impl Server {
         let akash_config = c.akash();
 
         // Skip if endpoints are empty (meaning Akash is intentionally disabled)
-        if akash_config.rpc_endpoint.is_empty() || akash_config.chain_id.is_empty() {
+        if akash_config.rpc_endpoints.is_empty() || akash_config.chain_id.is_empty() {
             tracing::info!("📋 Akash deployment disabled (empty endpoints in config)");
             return None;
         }
 
         tracing::info!("🚀 Initializing Akash deployment context...");
         tracing::info!("   Chain:    {}", akash_config.chain_id);
-        tracing::info!("   RPC:      {}", akash_config.rpc_endpoint);
-        tracing::info!("   REST:     {}", akash_config.rest_endpoint);
+        tracing::info!("   RPC:      {} endpoint(s)", akash_config.rpc_endpoints.len());
+        tracing::info!("   gRPC:     {} endpoint(s)", akash_config.grpc_endpoints.len());
+        tracing::info!("   REST:     {} endpoint(s)", akash_config.rest_endpoints.len());
 
         // Get Cosmos key store from storage (use empty store if not found)
         let key_store = match storage.get_cosmos_key_store().await {
@@ -292,8 +290,8 @@ impl Server {
 
         // Get endpoints from config
         let endpoints = CosmosEndpoints::from_akash_config(&akash_config);
-        let rest_endpoint = endpoints.rest.clone();
-        let chain_id = akash_config.chain_id.clone();
+        let _rest_endpoint = endpoints.rest.clone();
+        let _chain_id = akash_config.chain_id.clone();
 
         // Create CosmosClient
         let cosmos = match CosmosClient::new(endpoints) {
@@ -308,32 +306,22 @@ impl Server {
         let key_manager_arc = Arc::new(RwLock::new(key_manager));
         let key_store_arc = Arc::new(RwLock::new(key_store));
 
-        // Create TxSigner
-        let signer = Arc::new(TxSigner::new(
-            key_manager_arc.clone(),
-            key_store_arc.clone(),
-            chain_id,
-            rest_endpoint.clone(),
-        ));
-
-        // Create TxLifecycle
-        let tx_lifecycle = Arc::new(TxLifecycle::new(signer.clone(), rest_endpoint));
-
-        // Create CertificateManager
+        // Create CertificateManager with layer-climb integration
         let cert_manager = Arc::new(CertificateManager::new(
             cosmos.clone(),
-            tx_lifecycle.clone(),
+            key_manager_arc.clone(),
+            key_store_arc.clone(),
+            akash_config.clone(),
         ));
 
-        tracing::info!("✅ Akash deployment context initialized");
+        tracing::info!("✅ Akash deployment context initialized (using layer-climb)");
 
         Some(AkashDeploymentContext {
             cosmos,
-            signer,
-            tx_lifecycle,
             cert_manager,
             key_manager: key_manager_arc,
             key_store: key_store_arc,
+            akash_config,
         })
     }
 

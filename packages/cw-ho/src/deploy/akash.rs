@@ -14,6 +14,10 @@ use reqwest;
 use serde_json::Value;
 use tokio::time::sleep;
 
+use layer_climb::prelude::*;
+use layer_climb_proto::Any as ClimbAny;
+use prost::Message;
+
 // Import our API client and proto types
 use crate::deploy::api_client::{AkashApiClient, AkashApiConfig};
 use crate::deploy::transaction::{SimpleKeyring, TxBroadcaster, TxConfig};
@@ -23,6 +27,24 @@ use ho_std::types::ergors::akash::provider::lease::v1::{
     lease_rpc_client::LeaseRpcClient, ServiceStatusRequest,
 };
 use ho_std::types::ergors::orch::v1::{AkashDeployConfig, CosmosKeyStore};
+
+pub mod msg_types {
+    use prost::Name;
+
+    /// All deployment-related message types for full workflow authorization
+    pub fn all_deployment_msg_types() -> Vec<String> {
+        vec![
+            ho_std::types::ergors::akash::deployment::v1beta4::MsgCreateDeployment::type_url(),
+            ho_std::types::ergors::akash::deployment::v1beta4::MsgUpdateDeployment::type_url(),
+            ho_std::types::ergors::akash::deployment::v1beta4::MsgCloseDeployment::type_url(),
+            ho_std::types::ergors::akash::market::v1beta4::MsgCreateLease::type_url(),
+            ho_std::types::ergors::akash::market::v1beta4::MsgCloseBid::type_url(),
+            ho_std::types::ergors::akash::market::v1beta4::MsgWithdrawLease::type_url(),
+            ho_std::types::ergors::akash::cert::v1::MsgCreateCertificate::type_url(),
+            ho_std::types::ergors::akash::cert::v1::MsgRevokeCertificate::type_url(),
+        ]
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct AkashConfig {
@@ -66,10 +88,10 @@ impl AkashConfig {
             } else {
                 proto.keyring_backend.clone()
             },
-            node: if proto.rpc_endpoint.is_empty() {
+            node: if proto.rpc_endpoints.is_empty() {
                 "https://rpc-akash.ecostake.com:443".to_string()
             } else {
-                proto.rpc_endpoint.clone()
+                proto.rpc_endpoints[0].clone()
             },
             chain_id: if proto.chain_id.is_empty() {
                 "akashnet-2".to_string()
@@ -145,11 +167,8 @@ impl AkashClient {
         config: AkashConfig,
         trusted_providers: Vec<String>,
     ) -> Result<Self> {
-
         // Initialize API client - derive endpoints from node config
-        let grpc_endpoint = config
-            .node
-            .replace("https://rpc-", "https://grpc-");
+        let grpc_endpoint = config.node.replace("https://rpc-", "https://grpc-");
         let rest_endpoint_derived = config
             .node
             .replace("https://rpc-", "https://rest-")
@@ -388,7 +407,8 @@ impl AkashClient {
         sleep(Duration::from_secs(30)).await;
 
         // Get lease status and save deployment info
-        self.collect_deployment_info(&dseq, &provider, "deployment_endpoints.env").await?;
+        self.collect_deployment_info(&dseq, &provider, "deployment_endpoints.env")
+            .await?;
 
         // Store deployment info
         self.deployments.insert(
@@ -449,7 +469,12 @@ impl AkashClient {
     ///
     /// This queries the lease status and stores discovered endpoints.
     /// For workflow-specific logic, callers should use `query_lease_status` directly.
-    async fn collect_deployment_info(&self, dseq: &str, provider: &str, output_file: &str) -> Result<HashMap<String, String>> {
+    async fn collect_deployment_info(
+        &self,
+        dseq: &str,
+        provider: &str,
+        output_file: &str,
+    ) -> Result<HashMap<String, String>> {
         println!("[INFO] Checking lease status for deployment {}...", dseq);
 
         // Query actual lease status from provider
@@ -463,13 +488,15 @@ impl AkashClient {
         };
 
         // Query all services (empty vec = all)
-        let endpoints = self
-            .query_lease_status(provider, lease_id, vec![])
-            .await?;
+        let endpoints = self.query_lease_status(provider, lease_id, vec![]).await?;
 
         // Save endpoints to file
         for (service_name, endpoint) in &endpoints {
-            let env_content = format!("{}={}\n", service_name.to_uppercase().replace("-", "_"), endpoint);
+            let env_content = format!(
+                "{}={}\n",
+                service_name.to_uppercase().replace("-", "_"),
+                endpoint
+            );
             fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -480,8 +507,6 @@ impl AkashClient {
 
         Ok(endpoints)
     }
-
-
 
     /// Query lease status from Akash provider to retrieve service endpoints
     ///
@@ -601,3 +626,105 @@ async fn fetch_chain_id() -> Result<String> {
     Ok(response.trim().to_string())
 }
 
+/// Broadcast a single Akash message with standard error handling.
+///
+/// This helper:
+/// - Encodes the message to protobuf
+/// - Creates a TxBuilder with the provided memo
+/// - Broadcasts and waits for confirmation
+/// - Returns error if tx fails (code != 0)
+/// - Logs success with tx metadata
+pub async fn broadcast_akash_msg<M: Message>(
+    client: &SigningClient,
+    type_url: &str,
+    msg: &M,
+    memo: impl Into<String>,
+) -> Result<layer_climb_proto::abci::TxResponse> {
+    let msg_any = ClimbAny {
+        type_url: type_url.to_string(),
+        value: msg.encode_to_vec(),
+    };
+
+    tracing::debug!(
+        "Preparing tx: type={}, size={} bytes",
+        type_url,
+        msg_any.value.len()
+    );
+
+    let mut tx_builder = client.tx_builder();
+    tx_builder.set_memo(memo);
+
+    let tx_resp = match tx_builder.broadcast(vec![msg_any]).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            tracing::error!("Broadcast failed for {}: {}", type_url, e);
+            tracing::error!("Error details: {:?}", e);
+            return Err(anyhow!("Failed to broadcast {}: {}", type_url, e));
+        }
+    };
+
+    if tx_resp.code != 0 {
+        return Err(anyhow!(
+            "Akash tx failed (type: {}, code: {}): {}",
+            type_url,
+            tx_resp.code,
+            tx_resp.raw_log
+        ));
+    }
+
+    tracing::info!(
+        "Akash tx success: type={}, hash={}, height={}, gas={}",
+        type_url,
+        tx_resp.txhash,
+        tx_resp.height,
+        tx_resp.gas_used
+    );
+
+    Ok(tx_resp)
+}
+
+/// Broadcast multiple Akash messages in a single transaction (atomic).
+///
+/// This allows batching multiple operations into one transaction for:
+/// - Atomicity (all succeed or all fail)
+/// - Lower gas costs
+/// - Faster execution
+///
+/// # Arguments
+/// * `client` - SigningClient to use for broadcasting
+/// * `msgs` - Vector of (type_url, encoded_proto_bytes) tuples
+/// * `memo` - Transaction memo
+pub async fn broadcast_akash_msgs(
+    client: &SigningClient,
+    msgs: Vec<(&str, Vec<u8>)>, // (type_url, encoded_value)
+    memo: impl Into<String>,
+) -> Result<layer_climb_proto::abci::TxResponse> {
+    let msg_anys: Vec<ClimbAny> = msgs
+        .into_iter()
+        .map(|(type_url, value)| ClimbAny {
+            type_url: type_url.to_string(),
+            value,
+        })
+        .collect();
+
+    let mut tx_builder = client.tx_builder();
+    tx_builder.set_memo(memo);
+    let tx_resp = tx_builder.broadcast(msg_anys).await?;
+
+    if tx_resp.code != 0 {
+        return Err(anyhow!(
+            "Akash batch tx failed (code: {}): {}",
+            tx_resp.code,
+            tx_resp.raw_log
+        ));
+    }
+
+    tracing::info!(
+        "Akash batch tx success: hash={}, height={}, gas={}",
+        tx_resp.txhash,
+        tx_resp.height,
+        tx_resp.gas_used
+    );
+
+    Ok(tx_resp)
+}

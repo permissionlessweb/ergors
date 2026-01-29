@@ -50,37 +50,69 @@ ___
 ___
 <div align="center">
 
-This is a **Rust binary** LLM orchestration engine. A recursive tool for building tools. It interfaces with the AI agents; deterministically store requests, acknowledgements, process logs, and responses for actions during an agentic llm for:
+A **sovereign**, **verifiable**, **private**, and **programmable** LLM orchestration engine.
 
- reflection\
- reuse\
- context refinement
+Each node is a self-owned computational vertex with cryptographic identity, deterministic state, and embedded smart contract execution. No external dependencies for trust. No reliance on centralized infrastructure. Your team, your keys, your data.
 
-Engines create engines, strands become webs, task become distribution, accountably.
+*Engines create engines, strands become webs, tasks become distribution—accountably.*
 </div>
-
-By leveraging multiple LLMs with **Prompt Request Loops**, **Data Ingestion Sandloops**, **Testing Edge‑Case Loops**, and **Random Audit/Snapshot Loops**, we create a pipeline that maximizes each agent’s strengths while maintaining deterministic, auditable workflows across the entire network.  
 
 ___
 
-## Network‑Enhanced Creation Tools  
+## Core Principles
 
-The first feature of this rust binary is a an network node for our agent development workspace:
+| Principle | What It Means |
+|-----------|---------------|
+| **Sovereign** | Self-owned cryptographic identity (Ed25519). Nodes operate independently without permission from external authorities. |
+| **Verifiable** | Deterministic storage via Cnidarium/JMT with Merkle proofs. Every state transition is auditable. |
+| **Private** | Transport encryption (X25519 + ChaCha20-Poly1305), password-encrypted key custody, ZK commitment framework. |
+| **Programmable** | CosmWasm VM integration for smart contracts as isolated mini-chains. Contract-based authenticators. |
 
-* Nodes use cryptographic identities (**Call other nodes** for complex task coordination)
-* Nodes are self replicating: *(**Manage & request distributed state** across the network for comprehensive context)*
-* Nodes are self optimizing: *(**Execute prompt sandloops** for continuous quality improvement  )*
-* We implement the P2P network configuration & cryptographic identities with the **Commonware** library.  
-* We provide deterministic state management inside each node binary, via **Cnidarium**
-* Nodes ingest state back to the core orchestrator in **snapshot** form, reducing storage on all nodes during long‑running agent workflows and fallbacks.
+___
 
-## Agentic Alignment tech
+## Core Features
 
-1. Requirements Mgmt: Define verifiable goals to align autonomy & prevent drift.
-2. Risk Mgmt: Mitigate uncertainties like bias for reliable decisions.
-3. Verification & Validation: Test AI in real scenarios for safety & efficacy.
-4. Lifecycle Mgmt: Guide iterative dev from concept to ops.
-5. Design Definition: Optimize architectures via trades for goal-oriented behavior.
+### Cryptographic Identity & Custody
+
+Every node generates and manages its own Ed25519 keypair with password-encrypted storage (Argon2 + ChaCha20-Poly1305). Keys derive SSH credentials for git operations and encrypt API secrets. No plaintext keys at rest.
+
+→ *[Custody & Auth Spec](./docs/specs/custody-and-auth.md)*
+
+### CosmWasm Smart Contracts
+
+Each node runs an embedded CosmWasm VM, enabling smart contracts as programmable state machines. Store, instantiate, execute, and query contracts via HTTP API. Contracts can be configured as server authentication middleware, store and configure SDL templates, or implement custom logic during runtime of the engine for iterative, programmable feature enhancements (or not!).
+
+→ *[CosmWasm Spec](./docs/specs/cosmwasm.md)*
+
+### P2P Network (Tetrahedral Mesh)
+
+Nodes form a fully-connected mesh topology using Commonware P2P. using Ed25519-signed messages, Nodes discover peers, exchange capabilities, and coordinate without central servers. *There are lots of fun iteration to implement here ::)* 
+
+→ *[Network Spec](./docs/specs/network.md)*
+
+### Deterministic Storage
+
+Cnidarium provides ACID-compliant, snapshot-based state management with Jellyfish Merkle Tree (JMT) verification. Prefix-based multistore for logical separation. Every write is atomic and auditable.
+
+→ *[Storage Spec](./docs/specs/storage.md)*
+
+### Verifiable RAG
+
+Retrieval-Augmented Generation with cryptographic provenance. BLAKE3 content hashes, HNSW vector indexing, and optional JMT proofs. Query results include verification status and source attribution.
+
+→ *[RAG Spec](./docs/specs/rag.md)*
+
+### Multi-LLM Orchestration
+
+Route requests across multiple LLM providers (OpenAI, Anthropic, Ollama, Akash, etc.) via macro-based provider system. Golden ratio resource allocation. Fractal task decomposition. Möbius sandloop feedback cycles for continuous refinement.
+
+→ *[Orchestration Spec](./docs/specs/orch.md)*
+
+### Transport Encryption
+
+All node-to-node communication uses X25519 ephemeral key exchange with ChaCha20-Poly1305 AEAD. Three-message handshake with Ed25519 signatures. Forward secrecy for every session. (not sure if this is accurate as of right now, but thats the goal!)
+
+→ *[Privacy Spec](./docs/specs/privacy.md)*
 
 ## Packages
 

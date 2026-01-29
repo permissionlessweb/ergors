@@ -69,6 +69,9 @@ pub mod akash {
         pub mod v1beta3 {
             include!("gen/akash.deployment.v1beta3.rs");
         }
+        pub mod v1beta4 {
+            include!("gen/akash.deployment.v1beta4.rs");
+        }
         pub mod v1beta5 {
             include!("gen/akash.deployment.v1beta5.rs");
         }

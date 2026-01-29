@@ -261,16 +261,35 @@ impl ErgorsConfig {
     /// Check if Akash deployment is configured
     pub fn akash_enabled(&self) -> bool {
         self.0.akash.as_ref()
-            .map(|c| !c.rpc_endpoint.is_empty() && !c.chain_id.is_empty())
+            .map(|c| !c.rpc_endpoints.is_empty() && !c.chain_id.is_empty())
             .unwrap_or(false)
     }
+
+    
 
     /// Create default Akash deploy config for mainnet
     pub fn default_akash_config() -> AkashDeployConfig {
         AkashDeployConfig {
-            rpc_endpoint: "https://rpc-akash.ecostake.com:443".to_string(),
-            grpc_endpoint: "https://grpc-akash.ecostake.com:443".to_string(),
-            rest_endpoint: "https://rest-akash.ecostake.com".to_string(),
+            // New multi-endpoint support with failover
+            rpc_endpoints: vec![
+                "https://rpc-akash.ecostake.com:443".to_string(),
+                "https://akash-rpc.polkachu.com:443".to_string(),
+            ],
+            grpc_endpoints: vec![
+                "https://akash.grpc.kleomedes.network:443".to_string(),
+                "https://akash-grpc.publicnode.com:443".to_string(),
+                "https://akash-grpc.polkachu.com:443".to_string(),
+            ],
+            rest_endpoints: vec![
+                "https://rest-akash.ecostake.com".to_string(),
+                "https://akash-api.polkachu.com".to_string(),
+            ],
+
+            // Retry configuration
+            max_retries_per_endpoint: 2,
+            max_total_retries: 6,
+            connection_timeout_seconds: 10,
+
             chain_id: "akashnet-2".to_string(),
             gas_prices: "0.025uakt".to_string(),
             gas_adjustment: 1.3,

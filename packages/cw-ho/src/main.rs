@@ -144,6 +144,12 @@ fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Initialize rustls crypto provider (required for layer-climb/tonic TLS)
+    // This must be called before any gRPC/TLS operations
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("Failed to install rustls crypto provider"))?;
+
     // Route command based on type
     match &cli.command {
         // Local commands (synchronous, no daemon needed)

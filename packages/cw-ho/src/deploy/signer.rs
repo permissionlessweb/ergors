@@ -9,7 +9,6 @@ use cosmrs::{Any, Coin};
 use ho_std::keys::cosmos::CosmosKeyPair;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::ergors::orch::v1::CosmosKeyStore;
-use prost::Message;
 use reqwest::Client as HttpClient;
 use std::sync::Arc;
 use std::time::Duration;
@@ -292,17 +291,6 @@ pub fn msg_to_any<M: prost::Message>(msg: &M, type_url: &str) -> Any {
         type_url: type_url.to_string(),
         value: msg.encode_to_vec(),
     }
-}
-
-/// Common Akash message type URLs.
-pub mod msg_types {
-    pub const MSG_CREATE_DEPLOYMENT: &str = "/akash.deployment.v1beta3.MsgCreateDeployment";
-    pub const MSG_UPDATE_DEPLOYMENT: &str = "/akash.deployment.v1beta3.MsgUpdateDeployment";
-    pub const MSG_CLOSE_DEPLOYMENT: &str = "/akash.deployment.v1beta3.MsgCloseDeployment";
-    pub const MSG_CREATE_LEASE: &str = "/akash.market.v1beta4.MsgCreateLease";
-    pub const MSG_CLOSE_LEASE: &str = "/akash.market.v1beta4.MsgCloseLease";
-    pub const MSG_CREATE_CERTIFICATE: &str = "/akash.cert.v1beta3.MsgCreateCertificate";
-    pub const MSG_REVOKE_CERTIFICATE: &str = "/akash.cert.v1beta3.MsgRevokeCertificate";
 }
 
 #[cfg(test)]

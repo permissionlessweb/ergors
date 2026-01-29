@@ -19,17 +19,16 @@ path = "src/main.rs"
 [dependencies]
 zk-headstash  = { workspace = true }
 ho-std  = { workspace = true, features = ["rpc"] }
-ergors-proto = { path = "../../proto" }
 ergors-rag = { path = "../ergors-rag", features = ["openai"] }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 axum = { workspace = true }
 base64 = { workspace = true }
+bip32 = { workspace = true }
 bytes = { workspace = true }
 camino = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
-dirs = { workspace = true }
 cnidarium = { workspace = true }
 commonware-codec = { workspace = true }
 cosmwasm-std = { workspace = true }
@@ -40,6 +39,8 @@ commonware-runtime = { workspace = true }
 futures = { workspace = true }
 governor = { workspace = true }
 hex = { workspace = true }
+layer-climb = { workspace = true }
+layer-climb-proto = { workspace = true }
 http-body-util = { workspace = true }
 pbjson-types = { workspace = true }
 prost = { workspace = true }
@@ -47,11 +48,11 @@ rand = { workspace = true }
 rcgen = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
+rustls = { workspace = true }
 sha2 = { workspace = true }
 rpassword = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

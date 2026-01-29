@@ -9,30 +9,42 @@
 //! Akash provider mTLS requirements.
 
 use anyhow::{anyhow, Result};
+use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::akash::cert::v1::{Certificate, MsgCreateCertificate, State};
-use ho_std::types::ergors::orch::v1::{AkashCertState, AkashCertificateInfo};
-use prost::Name;
+use ho_std::types::ergors::orch::v1::{AkashCertState, AkashCertificateInfo, AkashDeployConfig, CosmosKeyStore};
+use prost::{Message, Name};
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 
+use super::climb_signer::{chain_config_from_akash, create_signing_client};
 use super::cosmos_client::CosmosClient;
-use super::signer::msg_to_any;
-use super::tx_lifecycle::{TxLifecycle, DEFAULT_GAS_LIMIT, DEFAULT_GAS_PRICE};
+use layer_climb_proto::Any as ClimbAny;
 
 /// Certificate manager for Akash deployments.
+/// Now uses layer-climb for robust transaction signing.
 pub struct CertificateManager {
     cosmos: Arc<CosmosClient>,
-    tx_lifecycle: Arc<TxLifecycle>,
+    key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
+    key_store: Arc<RwLock<CosmosKeyStore>>,
+    akash_config: AkashDeployConfig,
 }
 
 impl CertificateManager {
-    /// Create a new certificate manager.
-    pub fn new(cosmos: Arc<CosmosClient>, tx_lifecycle: Arc<TxLifecycle>) -> Self {
+    /// Create a new certificate manager with layer-climb integration.
+    pub fn new(
+        cosmos: Arc<CosmosClient>,
+        key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
+        key_store: Arc<RwLock<CosmosKeyStore>>,
+        akash_config: AkashDeployConfig,
+    ) -> Self {
         Self {
             cosmos,
-            tx_lifecycle,
+            key_manager,
+            key_store,
+            akash_config,
         }
     }
 
@@ -119,38 +131,42 @@ impl CertificateManager {
             pubkey: pubkey_bytes.clone(),
         };
 
-        let msg_any = msg_to_any(
-            &msg,
-            &MsgCreateCertificate::type_url(),
-        );
+        // Create layer-climb signing client
+        let chain_config = chain_config_from_akash(&self.akash_config)?;
+        let client = create_signing_client(
+            self.key_manager.clone(),
+            self.key_store.clone(),
+            key_name,
+            account_index,
+            chain_config,
+        )
+        .await?;
 
-        // Broadcast and wait for finality
+        // Convert our prost message to layer-climb's Any
+        let msg_any = ClimbAny {
+            type_url: MsgCreateCertificate::type_url(),
+            value: msg.encode_to_vec(),
+        };
+
+        // Broadcast with layer-climb
         tracing::info!("  Broadcasting MsgCreateCertificate...");
-        let result = self
-            .tx_lifecycle
-            .sign_broadcast_wait(
-                key_name,
-                account_index,
-                msg_any,
-                DEFAULT_GAS_LIMIT,
-                DEFAULT_GAS_PRICE,
-                Some("ergors certificate creation"),
-            )
-            .await?;
+        let mut tx_builder = client.tx_builder();
+        tx_builder.set_memo("ergors certificate creation");
+        let tx_resp = tx_builder.broadcast(vec![msg_any]).await?;
 
-        if !result.is_success() {
-            tracing::error!("  FAILED: Certificate tx rejected (code {})", result.code);
-            tracing::error!("  Error: {}", result.raw_log);
+        if tx_resp.code != 0 {
+            tracing::error!("  FAILED: Certificate tx rejected (code {})", tx_resp.code);
+            tracing::error!("  Error: {}", tx_resp.raw_log);
             return Err(anyhow!(
                 "Certificate creation failed (code {}): {}",
-                result.code,
-                result.raw_log
+                tx_resp.code,
+                tx_resp.raw_log
             ));
         }
 
         tracing::info!("  Certificate: CREATED NEW");
-        tracing::info!("    Tx Hash: {}", result.hash);
-        tracing::info!("    Height:  {}", result.height);
+        tracing::info!("    Tx Hash: {}", tx_resp.txhash);
+        tracing::info!("    Height:  {}", tx_resp.height);
         tracing::info!("    Serial:  {}", serial);
 
         Ok(AkashCertificateInfo {

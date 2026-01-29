@@ -18,3 +18,5 @@ captures/*
 archive
 
 work/*
+
+.DS_Store

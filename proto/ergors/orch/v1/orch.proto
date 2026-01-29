@@ -1057,10 +1057,6 @@ message CosmosKeyStore {
 
 // Configuration for Akash network deployment endpoints
 message AkashDeployConfig {
-  // RPC endpoint for the Akash node (e.g. "https://rpc-akash.ecostake.com:443")
-  string rpc_endpoint = 1;
-  // gRPC endpoint for the Akash node (e.g. "https://grpc-akash.ecostake.com:443")
-  string grpc_endpoint = 2;
   // Chain ID (e.g. "akashnet-2" for mainnet, "local" for dev)
   string chain_id = 3;
   // Gas prices (e.g. "0.0025uakt")
@@ -1074,7 +1070,19 @@ message AkashDeployConfig {
   // Trusted provider addresses (optional whitelist)
   repeated string trusted_providers = 8;
   // REST/LCD endpoint for queries (e.g. "https://rest-akash.ecostake.com")
-  string rest_endpoint = 9;
+  // Multiple RPC endpoints for automatic failover (preferred over rpc_endpoint)
+  repeated string rpc_endpoints = 10;
+  // Multiple gRPC endpoints for automatic failover (preferred over grpc_endpoint)
+  repeated string grpc_endpoints = 11;
+  // Multiple REST/LCD endpoints for automatic failover (preferred over rest_endpoint)
+  repeated string rest_endpoints = 12;
+
+  // Maximum retry attempts per endpoint before moving to next (default: 2)
+  uint32 max_retries_per_endpoint = 13;
+  // Total maximum retry attempts across all endpoints (default: 6)
+  uint32 max_total_retries = 14;
+  // Timeout in seconds for each connection attempt (default: 10)
+  uint32 connection_timeout_seconds = 15;
 }
 
 // ==============================================
