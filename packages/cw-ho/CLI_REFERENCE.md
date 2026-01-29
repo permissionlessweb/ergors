@@ -34,7 +34,7 @@ ergors [OPTIONS] <COMMAND>
 **Notes:**
 
 - Starts HTTP API server for LLM proxying and data capture
-- Starts gRPC management server for remote control via ergors-cli
+- Starts gRPC management server for remote control via ergors
 - Creates PID file to prevent multiple instances
 - Handles SIGTERM/SIGINT for graceful shutdown
 
@@ -195,7 +195,7 @@ When running, the engine exposes:
 
 ## gRPC Management Server
 
-Used by `ergors-cli` for remote management:
+Used by `ergors` for remote management:
 
 | Service | Methods |
 |---------|---------|
@@ -203,7 +203,26 @@ Used by `ergors-cli` for remote management:
 
 **Default Address:** `0.0.0.0:50051` (configurable via `--grpc-port`)
 
-See `ergors-cli` documentation for available management operations.
+### Deployment Management RPCs
+
+| RPC Method | Purpose |
+|------------|---------|
+| `CreateAkashDeployment` | Initialize new deployment workflow session |
+| `RunAkashDeployment` | Execute automated deployment workflow |
+| `GetAkashDeployment` | Get deployment workflow details |
+| `ListAkashDeployments` | List all deployment sessions |
+| `QueryAkashBids` | Query available provider bids |
+| `SelectAkashProvider` | Select provider and create lease |
+| `CloseAkashLease` | Close active lease (keeps deployment) |
+| `CloseAkashDeployment` | Close deployment and release funds |
+| `UpdateAkashDeployment` | Update deployment with new SDL |
+| `TopupAkashEscrow` | Add funds to escrow account |
+| `GetLeaseStatus` | Get lease status and endpoints |
+| `AddTrustedProvider` | Add provider to trusted list |
+| `RemoveTrustedProvider` | Remove provider from trusted list |
+| `ListTrustedProviders` | List all trusted providers |
+
+See `ergors` documentation for available management operations.
 
 ---
 
@@ -327,10 +346,168 @@ ergors deploy bids <session-id>
 ergors deploy select <session-id> --provider <address> [--price <uakt>]
 ```
 
+### Deployment Info (Unified View)
+
+Get comprehensive deployment information in formatted display:
+
+```bash
+ergors deploy info <session-id> [--json]
+```
+
+**Shows:**
+
+- Session ID, status, current workflow step
+- Account address, key name, chain ID
+- Deployment DSEQ and provider
+- Lease information (DSEQ, GSEQ, OSEQ, provider)
+- All service endpoints with URIs and ports
+- Last error (if any)
+
+**Example Output:**
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║             Akash Deployment Information                     ║
+╠══════════════════════════════════════════════════════════════╣
+║ Session ID: abc123                                           ║
+║ Status:     completed                                        ║
+║ Step:       Complete                                         ║
+╠══════════════════════════════════════════════════════════════╣
+║ Service Endpoints                                            ║
+╠══════════════════════════════════════════════════════════════╣
+║ Service:    sglang                                           ║
+║   URI:      xyz.provider.akash.network:8000                  ║
+║   Port:     8000:8000 (tcp)                                  ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+### Service Endpoints
+
+Get service endpoints for accessing deployed services:
+
+```bash
+ergors deploy endpoints <session-id> [--json]
+```
+
+**Shows:**
+
+- Service name
+- External URI (accessible endpoint)
+- Internal and external port mappings
+- Protocol (tcp, udp, http)
+
+**Example:**
+
+```bash
+ergors deploy endpoints my-session-123
+
+Service Endpoints for my-session-123
+═══════════════════════════════════════════
+
+Service: sglang
+  URI:          xyz.provider.akash.network:8000
+  Internal Port: 8000
+  External Port: 30001
+  Protocol:      tcp
+
+Total: 1 endpoint(s)
+```
+
 ### Close Lease
+
+Close the active lease (deployment remains on-chain):
 
 ```bash
 ergors deploy close-lease <session-id>
+```
+
+**Notes:**
+
+- Closes lease with provider
+- Deployment remains active on-chain
+- Can create new lease later
+
+### Close Deployment
+
+Close deployment completely (also closes any leases):
+
+```bash
+ergors deploy close-deployment <session-id>
+```
+
+**Process:**
+
+1. Broadcasts `MsgCloseDeployment` to Akash chain
+2. Closes deployment and any active leases
+3. Releases all escrow funds
+4. Updates workflow status to `Cancelled`
+
+**Notes:**
+
+- Permanent closure
+- All escrow funds returned
+- Cannot be reopened
+
+### Update Deployment
+
+Update deployment with new SDL specification:
+
+```bash
+ergors deploy update-deployment <session-id> --sdl <path>
+```
+
+**Process:**
+
+1. Reads new SDL file from path
+2. Hashes SDL with SHA256
+3. Broadcasts `MsgUpdateDeployment` to Akash chain
+4. Updates deployment resources
+
+**Example:**
+
+```bash
+ergors deploy update-deployment my-session-123 --sdl ./new-config.yml
+```
+
+**Notes:**
+
+- You may need to send new manifest to provider after update
+- Use this to scale resources or change configuration
+
+### Top Up Escrow
+
+Add funds to deployment escrow account:
+
+```bash
+ergors deploy topup-escrow <session-id> <amount-in-uakt>
+```
+
+**Arguments:**
+
+- `<amount-in-uakt>`: Amount in uakt (1 AKT = 1,000,000 uakt)
+
+**Process:**
+
+1. Creates escrow account ID with deployment scope
+2. Broadcasts `MsgAccountDeposit` to Akash chain
+3. Adds funds to deployment escrow
+
+**Examples:**
+
+```bash
+# Top up with 10 AKT
+ergors deploy topup-escrow my-session-123 10000000
+
+# Top up with 0.5 AKT
+ergors deploy topup-escrow my-session-123 500000
+```
+
+**Output:**
+
+```
+Escrow topped up for session: my-session-123
+  Amount: 10000000 uakt (10.000000 AKT)
+  Escrow topped up with 10000000 uakt for session my-session-123
 ```
 
 ### Deployment Status
@@ -420,7 +597,7 @@ ergors keys import-mnemonic \
 ergors start
 
 # 4. In another terminal, verify it's running
-ergors-cli status
+ergors status
 ```
 
 ---

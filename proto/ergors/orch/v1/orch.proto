@@ -1488,6 +1488,23 @@ message CloseAkashLeaseRequest {
   string session_id = 1;
 }
 
+// Request to close a deployment (also closes any leases)
+message CloseAkashDeploymentRequest {
+  string session_id = 1;
+}
+
+// Request to update a deployment with new SDL
+message UpdateAkashDeploymentRequest {
+  string session_id = 1;
+  string sdl_content = 2;
+}
+
+// Request to top up escrow account for a deployment
+message TopupAkashEscrowRequest {
+  string session_id = 1;
+  uint64 amount_uakt = 2;
+}
+
 // Request to get lease status
 message GetLeaseStatusRequest {
   string session_id = 1;

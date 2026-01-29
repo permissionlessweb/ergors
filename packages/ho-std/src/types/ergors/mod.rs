@@ -118,11 +118,6 @@ pub mod akash {
     }
 
     pub mod provider {
-        pub mod lease {
-            pub mod v1 {
-                include!("gen/akash.provider.lease.v1.rs");
-            }
-        }
         pub mod v1beta3 {
             include!("gen/akash.provider.v1beta3.rs");
         }

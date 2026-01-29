@@ -431,16 +431,65 @@ impl AutomatedDeployer {
 
         let msg = builder.build_from_sdl(&sdl.resolved_content)?;
 
-        tracing::debug!(
+        tracing::info!(
             "  MsgCreateDeployment: owner={}, dseq={}, groups={}",
             msg.id.as_ref().map(|id| id.owner.as_str()).unwrap_or(""),
             dseq,
             msg.groups.len()
         );
 
-        // Log the full message for debugging
-        if let Ok(msg_json) = serde_json::to_string_pretty(&msg) {
-            tracing::debug!("  Full MsgCreateDeployment JSON:\n{}", msg_json);
+        // Log readable deployment details for verification
+        if let Some(first_group) = msg.groups.first() {
+            tracing::info!("  Group: {}", first_group.name);
+
+            if let Some(first_resource) = first_group.resources.first() {
+                tracing::info!("  Resources:");
+
+                if let Some(resource) = &first_resource.resource {
+                    if let Some(cpu) = &resource.cpu {
+                        if let Some(units) = &cpu.units {
+                            let cpu_str = String::from_utf8_lossy(&units.val);
+                            tracing::info!("    - CPU: {} millicores", cpu_str);
+                        }
+                    }
+                    if let Some(memory) = &resource.memory {
+                        if let Some(qty) = &memory.quantity {
+                            let mem_str = String::from_utf8_lossy(&qty.val);
+                            let mem_bytes: u64 = mem_str.parse().unwrap_or(0);
+                            tracing::info!("    - Memory: {} bytes ({} GB)", mem_str, mem_bytes / 1_073_741_824);
+                        }
+                    }
+                    if let Some(gpu) = &resource.gpu {
+                        if let Some(units) = &gpu.units {
+                            let gpu_str = String::from_utf8_lossy(&units.val);
+                            tracing::info!("    - GPU: {} units", gpu_str);
+                            if !gpu.attributes.is_empty() {
+                                tracing::info!("      Attributes:");
+                                for attr in &gpu.attributes {
+                                    tracing::info!("        - {}: {}", attr.key, attr.value);
+                                }
+                            }
+                        }
+                    }
+                    if !resource.storage.is_empty() {
+                        tracing::info!("    - Storage:");
+                        for storage in &resource.storage {
+                            if let Some(qty) = &storage.quantity {
+                                let size_str = String::from_utf8_lossy(&qty.val);
+                                let size_bytes: u64 = size_str.parse().unwrap_or(0);
+                                tracing::info!("        - {}: {} bytes ({} GB)",
+                                    storage.name, size_str, size_bytes / 1_073_741_824);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(price) = &first_resource.price {
+                    tracing::info!("  Price: {} {}", price.amount, price.denom);
+                }
+
+                tracing::info!("  Count: {}", first_resource.count);
+            }
         }
 
         // Broadcast deployment transaction using type-safe helper
@@ -912,7 +961,7 @@ impl AutomatedDeployer {
         Ok(endpoint_infos)
     }
 
-    /// Step 9: Save endpoints.
+    /// Step 11: Save endpoints.
     async fn step_save_endpoints(
         &self,
         workflow: &mut AkashDeploymentWorkflow,
@@ -930,7 +979,17 @@ impl AutomatedDeployer {
                 .insert(ep.service_name.clone(), ep.external_uri.clone());
         }
 
+        // Save workflow first
         self.save_workflow(workflow).await?;
+
+        // Store endpoints in dedicated index for efficient retrieval
+        if let Err(e) = self
+            .storage
+            .put_akash_endpoints(&workflow.session_id, &endpoints)
+            .await
+        {
+            tracing::warn!("Failed to store endpoints in index: {}", e);
+        }
 
         // Store endpoints in a dedicated storage key for easy access
         let lease_info = workflow.lease_id_info.as_ref();
@@ -998,6 +1057,101 @@ impl AutomatedDeployer {
         .await?;
 
         tracing::info!("Deployment closed: tx_hash={}", tx_resp.txhash);
+        Ok(())
+    }
+
+    /// Update a deployment with new SDL.
+    pub async fn update_deployment(
+        &self,
+        workflow: &AkashDeploymentWorkflow,
+        sdl_content: &str,
+    ) -> Result<()> {
+        use super::deployment_builder::build_update_deployment_msg;
+        use ho_std::types::ergors::akash::deployment::v1beta5::MsgUpdateDeployment;
+        use sha2::{Sha256, Digest};
+
+        let deployment = workflow
+            .deployment
+            .as_ref()
+            .ok_or_else(|| anyhow!("No deployment info"))?;
+
+        let dseq: u64 = deployment.deployment_sequence.parse().unwrap_or(0);
+        if dseq == 0 {
+            return Err(anyhow!("Invalid dseq"));
+        }
+
+        tracing::info!("Updating deployment dseq {} with new SDL", dseq);
+
+        // Hash the SDL to create hash bytes
+        let mut hasher = Sha256::new();
+        hasher.update(sdl_content.as_bytes());
+        let hash = hasher.finalize().to_vec();
+
+        let msg = build_update_deployment_msg(&workflow.account_address, dseq, hash);
+
+        // Create signing client for this operation
+        let signing_client = self
+            .create_climb_client(&workflow.selected_key_name, workflow.hd_account_index)
+            .await?;
+
+        // Broadcast update deployment transaction
+        tracing::info!("  Broadcasting MsgUpdateDeployment...");
+        let tx_resp = broadcast_akash_msg(
+            &signing_client,
+            &MsgUpdateDeployment::type_url(),
+            &msg,
+            "ergors update deployment",
+        )
+        .await?;
+
+        tracing::info!("Deployment updated: tx_hash={}", tx_resp.txhash);
+        Ok(())
+    }
+
+    /// Top up escrow account for a deployment.
+    pub async fn topup_escrow(
+        &self,
+        workflow: &AkashDeploymentWorkflow,
+        amount_uakt: u64,
+    ) -> Result<()> {
+        use super::deployment_builder::build_escrow_deposit_msg;
+        use ho_std::types::ergors::akash::escrow::v1::MsgAccountDeposit;
+
+        let deployment = workflow
+            .deployment
+            .as_ref()
+            .ok_or_else(|| anyhow!("No deployment info"))?;
+
+        let dseq: u64 = deployment.deployment_sequence.parse().unwrap_or(0);
+        if dseq == 0 {
+            return Err(anyhow!("Invalid dseq"));
+        }
+
+        tracing::info!("Topping up escrow for deployment dseq {} with {} uakt", dseq, amount_uakt);
+
+        let msg = build_escrow_deposit_msg(
+            &workflow.account_address,
+            &workflow.account_address,
+            dseq,
+            amount_uakt,
+        )?;
+
+        // Create signing client for this operation
+        let signing_client = self
+            .create_climb_client(&workflow.selected_key_name, workflow.hd_account_index)
+            .await?;
+
+        // Broadcast escrow deposit transaction
+        tracing::info!("  Broadcasting MsgAccountDeposit...");
+        let tx_resp = broadcast_akash_msg(
+            &signing_client,
+            &MsgAccountDeposit::type_url(),
+            &msg,
+            "ergors topup escrow",
+        )
+        .await?;
+
+        tracing::info!("Escrow topped up: tx_hash={}, amount={} uakt", tx_resp.txhash, amount_uakt);
         Ok(())
     }
 }

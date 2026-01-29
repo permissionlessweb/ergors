@@ -113,7 +113,7 @@ impl EngineCmd {
                     match ManagementClient::connect(&ctx.grpc_addr).await {
                         Ok(mut c) => {
                             if c.get_status().await.is_ok() {
-                                println!("Engine is running. Use 'ergors-cli status' for details.");
+                                println!("Engine is running. Use 'ergors status' for details.");
                             } else {
                                 println!("Engine started but not responding yet. Check logs.");
                             }

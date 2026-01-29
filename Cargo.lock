@@ -4256,7 +4256,6 @@ dependencies = [
  "dirs 6.0.0",
  "dotenvy",
  "ed25519-consensus",
- "flate2",
  "fmt",
  "futures",
  "futures-util",
@@ -4291,7 +4290,6 @@ dependencies = [
  "tonic-prost",
  "tower",
  "tracing",
- "tracing-subscriber 0.3.22",
  "uuid",
  "zeroize",
 ]

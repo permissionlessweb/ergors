@@ -62,6 +62,7 @@ const OP_PREFIX: &str = "operations";
 const API_KEY_PREFIX: &str = "custody/api_keys";
 const COSMOS_KEY_STORE_KEY: &str = "custody/cosmos_key_store";
 const AKASH_WORKFLOW_PREFIX: &str = "akash_workflows";
+const AKASH_ENDPOINTS_PREFIX: &str = "akash_endpoints";
 const TRUSTED_PROVIDERS_KEY: &str = "config/trusted_providers";
 // const HEADSTASH: &str = "headstash";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions";
@@ -856,8 +857,66 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let key = storage_key(AKASH_WORKFLOW_PREFIX, session_id);
         delta.delete(key);
+
+        // Also delete associated endpoints
+        let endpoints_key = storage_key(AKASH_ENDPOINTS_PREFIX, session_id);
+        delta.delete(endpoints_key);
+
         self.cs.commit(delta).await?;
-        info!("🗑️  Deleted Akash workflow: {}", session_id);
+        info!("🗑️  Deleted Akash workflow and endpoints: {}", session_id);
+        Ok(())
+    }
+
+    // ========================================
+    // Akash Service Endpoints Storage
+    // ========================================
+
+    /// Store service endpoints for an Akash deployment
+    pub async fn put_akash_endpoints(
+        &self,
+        session_id: &str,
+        endpoints: &[AkashServiceEndpoint],
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(AKASH_ENDPOINTS_PREFIX, session_id);
+
+        // Store as JSON for easy retrieval
+        let data = serde_json::to_vec(endpoints)?;
+        delta.put_raw(key.clone(), data);
+
+        self.cs.commit(delta).await?;
+        info!("💾 Stored {} endpoints for session: {}", endpoints.len(), session_id);
+        Ok(())
+    }
+
+    /// Get service endpoints for an Akash deployment
+    pub async fn get_akash_endpoints(
+        &self,
+        session_id: &str,
+    ) -> HoResult<Vec<AkashServiceEndpoint>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(AKASH_ENDPOINTS_PREFIX, session_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let endpoints: Vec<AkashServiceEndpoint> = serde_json::from_slice(&data)?;
+                Ok(endpoints)
+            }
+            Ok(None) => Ok(Vec::new()),
+            Err(e) => Err(HoError::Storage(format!(
+                "Failed to retrieve endpoints for {}: {}",
+                session_id, e
+            ))),
+        }
+    }
+
+    /// Delete service endpoints for an Akash deployment
+    pub async fn delete_akash_endpoints(&self, session_id: &str) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(AKASH_ENDPOINTS_PREFIX, session_id);
+        delta.delete(key);
+        self.cs.commit(delta).await?;
+        info!("🗑️  Deleted endpoints for session: {}", session_id);
         Ok(())
     }
 

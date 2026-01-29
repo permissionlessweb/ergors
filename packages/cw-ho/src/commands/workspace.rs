@@ -5,8 +5,8 @@
 use anyhow::Result;
 use clap::Subcommand;
 
-use crate::client::ManagementClient;
 use super::CliContext;
+use crate::client::ManagementClient;
 
 /// Workspace management commands
 #[derive(Subcommand)]
@@ -163,7 +163,7 @@ impl WorkspaceCmd {
 
                     if response.workspaces.is_empty() {
                         println!("No workspaces registered.");
-                        println!("\nUse 'ergors-cli workspace add <name>' to add a workspace.");
+                        println!("\nUse 'ergors workspace add <name>' to add a workspace.");
                     } else {
                         for ws in &response.workspaces {
                             let remote = if ws.remote_url.is_empty() {

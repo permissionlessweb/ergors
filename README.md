@@ -119,7 +119,6 @@ All node-to-node communication uses X25519 ephemeral key exchange with ChaCha20-
 | Package | Binary | Description |
 |---------|--------|-------------|
 | [`ergors`](packages/cw-ho/) | `ergors` | Node engine - network, storage, orchestration |
-| [`ergors-cli`](packages/ergors-cli/) | `ergors-cli` | CLI client for node management |
 | [`ho-std`](packages/ho-std/) | — | Shared library - types, traits, custody |
 | [`ergors-proto`](./proto/) | — | Proto definitions & code generation |
 
@@ -143,7 +142,7 @@ cargo install just  # Task runner
 ### Install
 
 ```sh
-just install  # Builds and installs ergors + ergors-cli to ~/.cargo/bin
+just install  # Builds and installs ergors to ~/.cargo/bin
 ```
 
 ### Initialize & Run
@@ -187,7 +186,7 @@ just ci-quick         # Quick check without tests
 
 | Command | Description |
 |---------|-------------|
-| `just install` | Build release + install `ergors` and `ergors-cli` to PATH |
+| `just install` | Build release + install `ergors` to PATH |
 | `just install-engine` | Install only the engine |
 | `just install-cli` | Install only the CLI |
 | `just uninstall` | Remove installed binaries |

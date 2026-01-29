@@ -50,12 +50,12 @@ MOCK_IMAGE="mock-inference-provider:e2e"
 
 # ERGORS Network Config
 ERGORS_BIN="${ROOT_DIR}/target/release/ergors"
-# ERGORS_CLI="${ROOT_DIR}/target/release/ergors-cli"
+# ERGORS_CLI="${ROOT_DIR}/target/release/ergors"
 BASE_PORT=50100
 EXECUTOR_COUNT=2
 TEST_CUSTODY_PASSWORD="e2e-test-password-12345"
 
-# Akash Deployment Config (for ergors-cli deploy)
+# Akash Deployment Config (for ergors deploy)
 DEPLOY_SDL="${ROOT_DIR}/docker/mock-inference-provider/deploy.local.sdl.yaml"
 DEPLOY_SESSION_ID=""
 AKASH_LOCAL_NODE="http://localhost:26657"
@@ -1021,13 +1021,13 @@ cleanup_akash_environment() {
 
 # ==================== Engine Akash Deployment Workflow ====================
 
-# Helper: run ergors-cli deploy command against coordinator
+# Helper: run ergors deploy command against coordinator
 ergors_deploy() {
     local subcommand="$1"
     shift
 
     # if [ ! -f "$ERGORS_CLI" ]; then
-    #     echo '{"error": "ergors-cli binary not found at '"$ERGORS_CLI"'"}'
+    #     echo '{"error": "ergors binary not found at '"$ERGORS_CLI"'"}'
     #     return 1
     # fi
 
@@ -1050,7 +1050,7 @@ create_akash_deployment() {
         return 1
     fi
 
-    log "Submitting deployment via ergors-cli deploy create..."
+    log "Submitting deployment via ergors deploy create..."
     log "  SDL: ${DEPLOY_SDL}"
     log "  Node: ${AKASH_LOCAL_NODE}"
     log "  Chain: ${AKASH_LOCAL_CHAIN_ID}"
@@ -1317,7 +1317,7 @@ build_ergors() {
     fi
 
     # if [ ! -f "$ERGORS_CLI" ]; then
-    #     log_error "Failed to build ergors-cli binary"
+    #     log_error "Failed to build ergors binary"
     #     exit 1
     # fi
 
@@ -1540,11 +1540,11 @@ deploy_via_ergors() {
     log_step "Deploying via ERGORS Workflow"
 
     log "ERGORS deployment workflow (engine-driven):"
-    log "  1. ergors-cli deploy create → engine creates workflow"
-    log "  2. ergors-cli deploy bids   → engine queries Akash node for bids"
-    log "  3. ergors-cli deploy select → engine selects provider"
-    log "  4. ergors-cli deploy advance → engine creates lease + sends manifest"
-    log "  5. ergors-cli deploy get    → engine reports deployment status"
+    log "  1. ergors deploy create → engine creates workflow"
+    log "  2. ergors deploy bids   → engine queries Akash node for bids"
+    log "  3. ergors deploy select → engine selects provider"
+    log "  4. ergors deploy advance → engine creates lease + sends manifest"
+    log "  5. ergors deploy get    → engine reports deployment status"
 
     # Verify coordinator is reachable
     if ! nc -z 127.0.0.1 "${COORDINATOR_GRPC##*:}" 2>/dev/null; then

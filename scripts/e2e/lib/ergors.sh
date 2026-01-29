@@ -12,7 +12,6 @@ _E2E_ERGORS_LOADED=1
 # Configuration
 # =============================================================================
 ERGORS_BIN="${ERGORS_BIN:-${ROOT_DIR}/target/release/ergors}"
-# ERGORS_CLI="${ERGORS_CLI:-${ROOT_DIR}/target/release/ergors-cli}"
 TEST_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD:-e2e-test-password-12345}"
 
 # Network config
@@ -673,7 +672,7 @@ ergors_get_addresses() {
 
 # Import the Akash faucet mnemonic into the coordinator node
 # This gives the coordinator a pre-funded key (10B AKT from genesis)
-# Uses: ergors keys import-mnemonic (the engine binary, not ergors-cli)
+# Uses: ergors keys import-mnemonic
 ergors_import_faucet_key() {
     local key_name="${1:-faucet}"
     local home_dir="${2:-$TEST_DIR/coordinator}"

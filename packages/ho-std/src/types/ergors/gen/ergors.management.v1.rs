@@ -5276,6 +5276,102 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Close a deployment (also closes any active leases)
+        pub async fn close_akash_deployment(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::CloseAkashDeploymentRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/CloseAkashDeployment",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "CloseAkashDeployment",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Update a deployment with new SDL
+        pub async fn update_akash_deployment(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::UpdateAkashDeploymentRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/UpdateAkashDeployment",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "UpdateAkashDeployment",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Top up escrow account for a deployment
+        pub async fn topup_akash_escrow(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::TopupAkashEscrowRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/TopupAkashEscrow",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "TopupAkashEscrow",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Get lease status
         pub async fn get_lease_status(
             &mut self,
@@ -6367,6 +6463,27 @@ pub mod management_service_server {
             &self,
             request: tonic::Request<
                 super::super::super::orch::v1::CloseAkashLeaseRequest,
+            >,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Close a deployment (also closes any active leases)
+        async fn close_akash_deployment(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::CloseAkashDeploymentRequest,
+            >,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Update a deployment with new SDL
+        async fn update_akash_deployment(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::UpdateAkashDeploymentRequest,
+            >,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Top up escrow account for a deployment
+        async fn topup_akash_escrow(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::TopupAkashEscrowRequest,
             >,
         ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
         /// Get lease status
@@ -9372,6 +9489,162 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = CloseAkashLeaseSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/CloseAkashDeployment" => {
+                    #[allow(non_camel_case_types)]
+                    struct CloseAkashDeploymentSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::CloseAkashDeploymentRequest,
+                    > for CloseAkashDeploymentSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::CloseAkashDeploymentRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::close_akash_deployment(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CloseAkashDeploymentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/UpdateAkashDeployment" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateAkashDeploymentSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::UpdateAkashDeploymentRequest,
+                    > for UpdateAkashDeploymentSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::UpdateAkashDeploymentRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::update_akash_deployment(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateAkashDeploymentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/TopupAkashEscrow" => {
+                    #[allow(non_camel_case_types)]
+                    struct TopupAkashEscrowSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::TopupAkashEscrowRequest,
+                    > for TopupAkashEscrowSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::TopupAkashEscrowRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::topup_akash_escrow(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = TopupAkashEscrowSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

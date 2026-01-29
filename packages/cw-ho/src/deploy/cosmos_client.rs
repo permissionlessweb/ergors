@@ -163,6 +163,16 @@ impl CosmosClient {
         )
     }
 
+    /// Escrow accounts endpoint (v1)
+    fn escrow_accounts_endpoint(rest: &str, scope: &str, xid: &str) -> String {
+        format!(
+            "{}/akash/escrow/v1/accounts/list?scope={}&xid={}",
+            rest.trim_end_matches('/'),
+            scope,
+            xid
+        )
+    }
+
     /// Query balance for specific denom
     ///
     /// REST: /cosmos/bank/v1beta1/balances/{address}/by_denom?denom={denom}
@@ -708,6 +718,93 @@ impl CosmosClient {
             .filter(|l| l.state == LeaseState::Active)
             .collect())
     }
+
+    // ===== Akash Escrow Queries =====
+
+    /// Query escrow account for a deployment.
+    ///
+    /// REST: /akash/escrow/v1/accounts/list?scope=deployment&xid={owner}/{dseq}
+    pub async fn query_deployment_escrow(
+        &self,
+        owner: &str,
+        dseq: u64,
+    ) -> Result<Option<EscrowAccountInfo>> {
+        // Build xid in format: owner/dseq
+        let xid = format!("{}/{}", owner, dseq);
+        let url = Self::escrow_accounts_endpoint(&self.endpoints.rest, "deployment", &xid);
+
+        tracing::debug!("Querying escrow account: {}", url);
+
+        let resp = self.http.get(&url).send().await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("Escrow query failed ({}): {}", status, body));
+        }
+
+        let json: serde_json::Value = resp.json().await?;
+        let empty_vec = vec![];
+        let accounts = json
+            .get("accounts")
+            .and_then(|a| a.as_array())
+            .unwrap_or(&empty_vec);
+
+        // Should only be one account for a deployment
+        if let Some(account) = accounts.first() {
+            let state = account.get("state");
+            if let Some(s) = state {
+                let state_str = s
+                    .get("state")
+                    .and_then(|st| st.as_str())
+                    .unwrap_or("invalid");
+
+                // Get funds (array of balances)
+                let funds = s
+                    .get("funds")
+                    .and_then(|f| f.as_array())
+                    .unwrap_or(&empty_vec);
+
+                let mut total_uakt = 0u64;
+                let mut balances = Vec::new();
+
+                for fund in funds {
+                    let denom = fund
+                        .get("denom")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("");
+                    let amount_str = fund
+                        .get("amount")
+                        .and_then(|a| a.as_str())
+                        .unwrap_or("0");
+
+                    if denom == "uakt" {
+                        total_uakt = amount_str.parse().unwrap_or(0);
+                    }
+
+                    balances.push(EscrowBalance {
+                        denom: denom.to_string(),
+                        amount: amount_str.to_string(),
+                    });
+                }
+
+                return Ok(Some(EscrowAccountInfo {
+                    owner: owner.to_string(),
+                    dseq,
+                    state: match state_str {
+                        "open" => EscrowState::Open,
+                        "closed" => EscrowState::Closed,
+                        "overdrawn" => EscrowState::Overdrawn,
+                        _ => EscrowState::Invalid,
+                    },
+                    balances,
+                    total_uakt,
+                }));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 // ===== Query Result Types =====
@@ -768,6 +865,31 @@ pub enum LeaseState {
     Active,
     InsufficientFunds,
     Closed,
+}
+
+/// Escrow account information.
+#[derive(Debug, Clone)]
+pub struct EscrowAccountInfo {
+    pub owner: String,
+    pub dseq: u64,
+    pub state: EscrowState,
+    pub balances: Vec<EscrowBalance>,
+    pub total_uakt: u64,
+}
+
+/// Escrow balance entry.
+#[derive(Debug, Clone)]
+pub struct EscrowBalance {
+    pub denom: String,
+    pub amount: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EscrowState {
+    Invalid,
+    Open,
+    Closed,
+    Overdrawn,
 }
 
 #[cfg(test)]

@@ -7,8 +7,8 @@ use clap::Subcommand;
 use std::collections::HashMap;
 use std::io::IsTerminal;
 
-use crate::client::ManagementClient;
 use super::CliContext;
+use crate::client::ManagementClient;
 
 /// Akash deployment management commands
 #[derive(Subcommand)]
@@ -94,6 +94,11 @@ pub enum DeployCmd {
         /// Session ID
         session_id: String,
     },
+    /// Get comprehensive deployment information (unified view)
+    Info {
+        /// Session ID
+        session_id: String,
+    },
     /// Query bids for a deployment
     Bids {
         /// Session ID
@@ -105,6 +110,11 @@ pub enum DeployCmd {
         session_id: String,
         /// Bid selection: Either a numerical ID (1, 2, 3, ...) from the bids list, or a provider address (akash1...)
         bid: String,
+    },
+    /// Get service endpoints for a deployment
+    Endpoints {
+        /// Session ID
+        session_id: String,
     },
     /// Cancel a deployment workflow
     Cancel {
@@ -203,6 +213,26 @@ pub enum DeployCmd {
         /// Session ID
         session_id: String,
     },
+    /// Close a deployment (also closes any active leases)
+    CloseDeployment {
+        /// Session ID
+        session_id: String,
+    },
+    /// Update a deployment with new SDL
+    UpdateDeployment {
+        /// Session ID
+        session_id: String,
+        /// Path to new SDL file
+        #[arg(long)]
+        sdl: String,
+    },
+    /// Top up escrow account for a deployment
+    TopupEscrow {
+        /// Session ID
+        session_id: String,
+        /// Amount to deposit in uakt
+        amount: u64,
+    },
     /// Get lease status
     Status {
         /// Session ID
@@ -255,8 +285,9 @@ impl DeployCmd {
             } => {
                 // Resolve SDL content
                 let content = match (sdl, sdl_content) {
-                    (Some(path), _) => std::fs::read_to_string(path)
-                        .map_err(|e| anyhow::anyhow!("Failed to read SDL file '{}': {}", path, e))?,
+                    (Some(path), _) => std::fs::read_to_string(path).map_err(|e| {
+                        anyhow::anyhow!("Failed to read SDL file '{}': {}", path, e)
+                    })?,
                     (_, Some(raw)) => raw.clone(),
                     (None, None) => {
                         anyhow::bail!("Either --sdl <path> or --sdl-content <yaml> is required");
@@ -280,7 +311,11 @@ impl DeployCmd {
                     .await?;
 
                 if response.success {
-                    let session_id = response.workflow.as_ref().map(|wf| wf.session_id.clone()).unwrap_or_default();
+                    let session_id = response
+                        .workflow
+                        .as_ref()
+                        .map(|wf| wf.session_id.clone())
+                        .unwrap_or_default();
 
                     if !ctx.json {
                         println!("Deployment workflow created!");
@@ -311,7 +346,9 @@ impl DeployCmd {
                         // Get trusted providers list for auto-selection (unless interactive mode)
                         let trusted_providers = if !*interactive_bid {
                             match client.list_trusted_providers().await {
-                                Ok(resp) => resp.providers.iter().map(|p| p.address.clone()).collect(),
+                                Ok(resp) => {
+                                    resp.providers.iter().map(|p| p.address.clone()).collect()
+                                }
                                 Err(_) => vec![],
                             }
                         } else {
@@ -337,7 +374,8 @@ impl DeployCmd {
                                 "completed": run_response.completed,
                             });
                             if let Some(wf) = &run_response.workflow {
-                                json["current_step"] = serde_json::json!(format_step(wf.current_step));
+                                json["current_step"] =
+                                    serde_json::json!(format_step(wf.current_step));
                                 json["status"] = serde_json::json!(format_status(wf.status));
                             }
                             if let Some(input) = &run_response.input_required {
@@ -389,9 +427,7 @@ impl DeployCmd {
                     })
                     .unwrap_or(0);
 
-                let response = client
-                    .list_akash_deployments(status_filter, *limit)
-                    .await?;
+                let response = client.list_akash_deployments(status_filter, *limit).await?;
 
                 if ctx.json {
                     let workflows: Vec<_> = response
@@ -484,6 +520,183 @@ impl DeployCmd {
                 }
                 Ok(())
             }
+            DeployCmd::Info { session_id } => {
+                // Get workflow info
+                let wf_response = client.get_akash_deployment(session_id).await?;
+
+                if let Some(wf) = wf_response.workflow {
+                    if ctx.json {
+                        // Build comprehensive JSON output
+                        let mut info = serde_json::json!({
+                            "session_id": wf.session_id,
+                            "status": format_status(wf.status),
+                            "current_step": format_step(wf.current_step),
+                            "account_address": wf.account_address,
+                            "chain_id": wf.chain_id,
+                            "node_endpoint": wf.node_endpoint,
+                        });
+
+                        if let Some(runtime) = &wf.deployment {
+                            info["deployment"] = serde_json::json!({
+                                "dseq": runtime.deployment_sequence,
+                                "provider": runtime.provider_address,
+                                "lease_id": runtime.lease_id,
+                            });
+                        }
+
+                        if let Some(lease_id) = &wf.lease_id_info {
+                            info["lease"] = serde_json::json!({
+                                "owner": lease_id.owner,
+                                "dseq": lease_id.dseq,
+                                "gseq": lease_id.gseq,
+                                "oseq": lease_id.oseq,
+                                "provider": lease_id.provider,
+                            });
+                        }
+
+                        if !wf.service_endpoints.is_empty() {
+                            info["endpoints"] = serde_json::json!(wf
+                                .service_endpoints
+                                .iter()
+                                .map(|e| {
+                                    serde_json::json!({
+                                        "service": e.service_name,
+                                        "uri": e.external_uri,
+                                        "internal_port": e.internal_port,
+                                        "external_port": e.external_port,
+                                        "protocol": e.protocol,
+                                    })
+                                })
+                                .collect::<Vec<_>>());
+                        }
+
+                        println!("{}", serde_json::to_string_pretty(&info)?);
+                    } else {
+                        println!(
+                            "╔══════════════════════════════════════════════════════════════╗"
+                        );
+                        println!(
+                            "║             Akash Deployment Information                     ║"
+                        );
+                        println!(
+                            "╠══════════════════════════════════════════════════════════════╣"
+                        );
+                        println!("║ Session ID: {:44} ║", truncate_or_pad(&wf.session_id, 44));
+                        println!("║ Status:     {:44} ║", format_status(wf.status));
+                        println!("║ Step:       {:44} ║", format_step(wf.current_step));
+                        println!(
+                            "╠══════════════════════════════════════════════════════════════╣"
+                        );
+                        println!(
+                            "║ Account                                                      ║"
+                        );
+                        println!(
+                            "╠══════════════════════════════════════════════════════════════╣"
+                        );
+                        println!(
+                            "║ Address:    {:44} ║",
+                            truncate_or_pad(&wf.account_address, 44)
+                        );
+                        println!(
+                            "║ Key:        {:44} ║",
+                            truncate_or_pad(&wf.selected_key_name, 44)
+                        );
+                        println!("║ Chain:      {:44} ║", truncate_or_pad(&wf.chain_id, 44));
+
+                        if let Some(runtime) = &wf.deployment {
+                            println!(
+                                "╠══════════════════════════════════════════════════════════════╣"
+                            );
+                            println!(
+                                "║ Deployment                                                   ║"
+                            );
+                            println!(
+                                "╠══════════════════════════════════════════════════════════════╣"
+                            );
+                            println!(
+                                "║ DSEQ:       {:44} ║",
+                                format!("{}", runtime.deployment_sequence)
+                            );
+                            if !runtime.provider_address.is_empty() {
+                                println!(
+                                    "║ Provider:   {:44} ║",
+                                    truncate_or_pad(&runtime.provider_address, 44)
+                                );
+                            }
+                        }
+
+                        if let Some(lease_id) = &wf.lease_id_info {
+                            println!(
+                                "╠══════════════════════════════════════════════════════════════╣"
+                            );
+                            println!(
+                                "║ Lease                                                        ║"
+                            );
+                            println!(
+                                "╠══════════════════════════════════════════════════════════════╣"
+                            );
+                            println!("║ DSEQ:       {:44} ║", format!("{}", lease_id.dseq));
+                            println!("║ GSEQ:       {:44} ║", format!("{}", lease_id.gseq));
+                            println!("║ OSEQ:       {:44} ║", format!("{}", lease_id.oseq));
+                            println!(
+                                "║ Provider:   {:44} ║",
+                                truncate_or_pad(&lease_id.provider, 44)
+                            );
+                        }
+
+                        if !wf.service_endpoints.is_empty() {
+                            println!(
+                                "╠══════════════════════════════════════════════════════════════╣"
+                            );
+                            println!(
+                                "║ Service Endpoints                                            ║"
+                            );
+                            println!(
+                                "╠══════════════════════════════════════════════════════════════╣"
+                            );
+                            for ep in &wf.service_endpoints {
+                                println!(
+                                    "║ Service:    {:44} ║",
+                                    truncate_or_pad(&ep.service_name, 44)
+                                );
+                                println!(
+                                    "║   URI:      {:44} ║",
+                                    truncate_or_pad(&ep.external_uri, 44)
+                                );
+                                println!(
+                                    "║   Port:     {:44} ║",
+                                    format!(
+                                        "{}:{} ({})",
+                                        ep.external_port, ep.internal_port, ep.protocol
+                                    )
+                                );
+                            }
+                        }
+
+                        if !wf.last_error.is_empty() {
+                            println!(
+                                "╠══════════════════════════════════════════════════════════════╣"
+                            );
+                            println!(
+                                "║ Last Error                                                   ║"
+                            );
+                            println!(
+                                "╠══════════════════════════════════════════════════════════════╣"
+                            );
+                            for line in wf.last_error.lines() {
+                                println!("║ {:60} ║", truncate_or_pad(line, 60));
+                            }
+                        }
+
+                        println!(
+                            "╚══════════════════════════════════════════════════════════════╝"
+                        );
+                    }
+                } else {
+                    eprintln!("Deployment not found: {}", session_id);
+                }
+                Ok(())
+            }
             DeployCmd::Bids { session_id } => {
                 let response = client.query_akash_bids(session_id).await?;
 
@@ -529,10 +742,7 @@ impl DeployCmd {
                 }
                 Ok(())
             }
-            DeployCmd::Select {
-                session_id,
-                bid,
-            } => {
+            DeployCmd::Select { session_id, bid } => {
                 // Determine if bid is a numeric ID or provider address
                 let (provider_address, price) = if let Ok(bid_idx) = bid.parse::<usize>() {
                     // Numeric ID: query bids and get the provider at that index
@@ -547,13 +757,15 @@ impl DeployCmd {
                     }
 
                     let selected_bid = &bids_response.bids[bid_idx - 1];
-                    println!("Selected bid [{}]: {} ({} uakt/block)",
-                        bid_idx,
-                        selected_bid.provider_address,
-                        selected_bid.price_uakt
+                    println!(
+                        "Selected bid [{}]: {} ({} uakt/block)",
+                        bid_idx, selected_bid.provider_address, selected_bid.price_uakt
                     );
 
-                    (selected_bid.provider_address.clone(), selected_bid.price_uakt)
+                    (
+                        selected_bid.provider_address.clone(),
+                        selected_bid.price_uakt,
+                    )
                 } else if bid.starts_with("akash1") {
                     // Provider address: use it directly
                     (bid.clone(), 0)
@@ -596,6 +808,62 @@ impl DeployCmd {
                 }
                 Ok(())
             }
+            DeployCmd::Endpoints { session_id } => {
+                // Query the workflow to get endpoints
+                let wf_response = client.get_akash_deployment(session_id).await?;
+
+                if let Some(wf) = wf_response.workflow {
+                    if ctx.json {
+                        let endpoints: Vec<_> = wf
+                            .service_endpoints
+                            .iter()
+                            .map(|ep| {
+                                serde_json::json!({
+                                    "service": ep.service_name,
+                                    "uri": ep.external_uri,
+                                    "internal_port": ep.internal_port,
+                                    "external_port": ep.external_port,
+                                    "protocol": ep.protocol,
+                                })
+                            })
+                            .collect();
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "session_id": session_id,
+                                "endpoints": endpoints,
+                                "total": wf.service_endpoints.len(),
+                            }))?
+                        );
+                    } else {
+                        println!("Service Endpoints for {}", session_id);
+                        println!("═══════════════════════════════════════════");
+
+                        if wf.service_endpoints.is_empty() {
+                            println!("No endpoints available yet.");
+                            println!();
+                            println!("The deployment may still be starting up.");
+                            println!("Wait a moment and try again.");
+                        } else {
+                            for (idx, ep) in wf.service_endpoints.iter().enumerate() {
+                                if idx > 0 {
+                                    println!();
+                                }
+                                println!("Service: {}", ep.service_name);
+                                println!("  URI:          {}", ep.external_uri);
+                                println!("  Internal Port: {}", ep.internal_port);
+                                println!("  External Port: {}", ep.external_port);
+                                println!("  Protocol:      {}", ep.protocol);
+                            }
+                            println!();
+                            println!("Total: {} endpoint(s)", wf.service_endpoints.len());
+                        }
+                    }
+                } else {
+                    eprintln!("Deployment not found: {}", session_id);
+                }
+                Ok(())
+            }
             DeployCmd::Cancel { session_id } => {
                 let result = client.cancel_akash_deployment(session_id).await?;
 
@@ -611,9 +879,7 @@ impl DeployCmd {
                 endpoint,
             } => {
                 let endpoints: HashMap<String, String> = endpoint.iter().cloned().collect();
-                let response = client
-                    .set_workflow_endpoints(session_id, endpoints)
-                    .await?;
+                let response = client.set_workflow_endpoints(session_id, endpoints).await?;
 
                 if ctx.json {
                     let mut json = serde_json::json!({
@@ -776,11 +1042,7 @@ impl DeployCmd {
                 status,
             } => {
                 let response = client
-                    .list_grant_requests(
-                        granter.as_deref(),
-                        grantee.as_deref(),
-                        status.as_deref(),
-                    )
+                    .list_grant_requests(granter.as_deref(), grantee.as_deref(), status.as_deref())
                     .await?;
 
                 if ctx.json {
@@ -798,7 +1060,10 @@ impl DeployCmd {
                             })
                         })
                         .collect();
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({"requests": requests}))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({"requests": requests}))?
+                    );
                 } else {
                     println!("Grant Requests ({} total)", response.requests.len());
                     println!("=======================");
@@ -928,6 +1193,73 @@ impl DeployCmd {
                 }
                 Ok(())
             }
+            DeployCmd::CloseDeployment { session_id } => {
+                let result = client.close_akash_deployment(session_id).await?;
+
+                if ctx.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": result.success,
+                            "message": result.message,
+                        }))?
+                    );
+                } else if result.success {
+                    println!("Deployment closed for session: {}", session_id);
+                    println!("  {}", result.message);
+                } else {
+                    eprintln!("Failed to close deployment: {}", result.message);
+                }
+                Ok(())
+            }
+            DeployCmd::UpdateDeployment { session_id, sdl } => {
+                // Read SDL file
+                let sdl_content = std::fs::read_to_string(sdl)
+                    .map_err(|e| anyhow::anyhow!("Failed to read SDL file '{}': {}", sdl, e))?;
+
+                let result = client
+                    .update_akash_deployment(session_id, &sdl_content)
+                    .await?;
+
+                if ctx.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": result.success,
+                            "message": result.message,
+                        }))?
+                    );
+                } else if result.success {
+                    println!("Deployment updated for session: {}", session_id);
+                    println!("  {}", result.message);
+                    println!("\nNote: You may need to send a new manifest to the provider");
+                } else {
+                    eprintln!("Failed to update deployment: {}", result.message);
+                }
+                Ok(())
+            }
+            DeployCmd::TopupEscrow { session_id, amount } => {
+                let result = client.topup_akash_escrow(session_id, *amount).await?;
+
+                if ctx.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": result.success,
+                            "message": result.message,
+                            "amount_uakt": amount,
+                        }))?
+                    );
+                } else if result.success {
+                    let amount_akt = *amount as f64 / 1_000_000.0;
+                    println!("Escrow topped up for session: {}", session_id);
+                    println!("  Amount: {} uakt ({:.6} AKT)", amount, amount_akt);
+                    println!("  {}", result.message);
+                } else {
+                    eprintln!("Failed to top up escrow: {}", result.message);
+                }
+                Ok(())
+            }
             DeployCmd::Status { session_id, follow } => {
                 loop {
                     let response = client.get_lease_status(session_id).await?;
@@ -946,13 +1278,17 @@ impl DeployCmd {
                             });
                         }
                         if !response.endpoints.is_empty() {
-                            json["endpoints"] = serde_json::json!(response.endpoints.iter().map(|e| {
-                                serde_json::json!({
-                                    "service": e.service_name,
-                                    "uri": e.external_uri,
-                                    "port": e.external_port,
+                            json["endpoints"] = serde_json::json!(response
+                                .endpoints
+                                .iter()
+                                .map(|e| {
+                                    serde_json::json!({
+                                        "service": e.service_name,
+                                        "uri": e.external_uri,
+                                        "port": e.external_port,
+                                    })
                                 })
-                            }).collect::<Vec<_>>());
+                                .collect::<Vec<_>>());
                         }
                         println!("{}", serde_json::to_string_pretty(&json)?);
                     } else {
@@ -962,11 +1298,17 @@ impl DeployCmd {
                             println!("  DSEQ:     {}", lease.dseq);
                             println!("  Provider: {}", lease.provider);
                         }
-                        println!("  Balance:  {} uakt remaining", response.balance_remaining_uakt);
+                        println!(
+                            "  Balance:  {} uakt remaining",
+                            response.balance_remaining_uakt
+                        );
                         if !response.endpoints.is_empty() {
                             println!("  Endpoints:");
                             for ep in &response.endpoints {
-                                println!("    {} -> {}:{}", ep.service_name, ep.external_uri, ep.external_port);
+                                println!(
+                                    "    {} -> {}:{}",
+                                    ep.service_name, ep.external_uri, ep.external_port
+                                );
                             }
                         }
                     }
@@ -992,7 +1334,10 @@ impl DeployCmd {
                             })
                         })
                         .collect();
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({"providers": providers}))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({"providers": providers}))?
+                    );
                 } else {
                     println!("Trusted Providers ({} total)", response.providers.len());
                     println!("=======================");
@@ -1086,5 +1431,14 @@ fn format_status(status: i32) -> &'static str {
         5 => "failed",
         6 => "cancelled",
         _ => "unknown",
+    }
+}
+
+/// Truncate or pad a string to a specific length
+fn truncate_or_pad(s: &str, len: usize) -> String {
+    if s.len() > len {
+        format!("{}...", &s[..len - 3])
+    } else {
+        format!("{:width$}", s, width = len)
     }
 }

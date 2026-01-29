@@ -3505,6 +3505,61 @@ impl ::prost::Name for CloseAkashLeaseRequest {
         "/ergors.orch.v1.CloseAkashLeaseRequest".into()
     }
 }
+/// Request to close a deployment (also closes any leases)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CloseAkashDeploymentRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for CloseAkashDeploymentRequest {
+    const NAME: &'static str = "CloseAkashDeploymentRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.CloseAkashDeploymentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.CloseAkashDeploymentRequest".into()
+    }
+}
+/// Request to update a deployment with new SDL
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UpdateAkashDeploymentRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub sdl_content: ::prost::alloc::string::String,
+}
+impl ::prost::Name for UpdateAkashDeploymentRequest {
+    const NAME: &'static str = "UpdateAkashDeploymentRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.UpdateAkashDeploymentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.UpdateAkashDeploymentRequest".into()
+    }
+}
+/// Request to top up escrow account for a deployment
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TopupAkashEscrowRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub amount_uakt: u64,
+}
+impl ::prost::Name for TopupAkashEscrowRequest {
+    const NAME: &'static str = "TopupAkashEscrowRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.TopupAkashEscrowRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.TopupAkashEscrowRequest".into()
+    }
+}
 /// Request to get lease status
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

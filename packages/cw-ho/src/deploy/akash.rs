@@ -23,9 +23,11 @@ use crate::deploy::api_client::{AkashApiClient, AkashApiConfig};
 use crate::deploy::transaction::{SimpleKeyring, TxBroadcaster, TxConfig};
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::ergors::akash::market::v1beta4::LeaseId;
-use ho_std::types::ergors::akash::provider::lease::v1::{
-    lease_rpc_client::LeaseRpcClient, ServiceStatusRequest,
-};
+// Note: Provider gRPC lease queries not available in v1beta4
+// Using REST API for lease status instead
+// use ho_std::types::ergors::akash::provider::v1beta4::{
+//     query_client::QueryClient,
+// };
 use ho_std::types::ergors::orch::v1::{AkashDeployConfig, CosmosKeyStore};
 
 pub mod msg_types {
@@ -425,44 +427,116 @@ impl AkashClient {
         Ok(())
     }
 
-    async fn wait_for_bids(&self, _dseq: &str) -> Result<()> {
+    async fn wait_for_bids(&self, dseq: &str) -> Result<()> {
+        use crate::deploy::cosmos_client::{CosmosClient, CosmosEndpoints};
+
         println!("[INFO] Waiting for bids...");
 
-        // TODO: Implement bid querying using akash.market.v1beta4.Query/Bids
-        // For now, simulate waiting for bids
-        for attempt in 1..=12 {
-            println!(
-                "[INFO] Attempt {}/12: Checking for bids (API implementation pending)...",
-                attempt
-            );
+        let dseq_u64: u64 = dseq.parse()?;
+        let owner = &self.config.account_address;
 
-            // Simulate receiving bids after a few attempts
-            if attempt >= 3 {
-                println!("[INFO] Received bids after {} attempts", attempt);
-                return Ok(());
+        // Create CosmosClient for querying bids
+        let endpoints = CosmosEndpoints {
+            rest: self.config.node.replace("https://rpc-", "https://rest-").replace(":443", ""),
+            chain_id: self.config.chain_id.clone(),
+            timeout: Duration::from_secs(30),
+        };
+        let cosmos_client = CosmosClient::new(endpoints)?;
+
+        // Poll for bids (12 attempts x 5s = 60s total)
+        for attempt in 1..=12 {
+            tracing::info!("Attempt {}/12: Querying bids for dseq {}", attempt, dseq);
+
+            match cosmos_client.query_open_bids(owner, dseq_u64).await {
+                Ok(bids) if !bids.is_empty() => {
+                    println!("[INFO] Received {} bid(s) after {} attempt(s)", bids.len(), attempt);
+                    for bid in &bids {
+                        println!(
+                            "[INFO]   - Provider: {}, Price: {} {}",
+                            bid.provider, bid.price_amount, bid.price_denom
+                        );
+                    }
+                    return Ok(());
+                }
+                Ok(_) => {
+                    println!("[INFO] Attempt {}/12: No bids yet, waiting 5s...", attempt);
+                }
+                Err(e) => {
+                    tracing::warn!("Bid query failed (attempt {}): {}", attempt, e);
+                }
             }
 
-            println!("[INFO] Attempt {}/12: No bids yet, waiting 5s...", attempt);
             sleep(Duration::from_secs(5)).await;
         }
 
-        Err(anyhow!("No bids received after 12 attempts"))
+        Err(anyhow!("No bids received after 12 attempts (60 seconds)"))
     }
 
-    async fn select_provider(&self, _dseq: &str) -> Result<String> {
+    async fn select_provider(&self, dseq: &str) -> Result<String> {
+        use crate::deploy::cosmos_client::{CosmosClient, CosmosEndpoints};
+
         println!("[INFO] Finding optimal bid from trusted providers...");
 
-        // TODO: Implement bid querying using akash.market.v1beta4.Query/Bids
-        // For now, select the first trusted provider
-        if let Some(provider) = self.trusted_providers.first() {
-            println!(
-                "[INFO] Selected provider {} (API implementation pending)",
-                provider
-            );
-            Ok(provider.clone())
-        } else {
-            Err(anyhow!("No trusted providers available!"))
+        let dseq_u64: u64 = dseq.parse()?;
+        let owner = &self.config.account_address;
+
+        // Create CosmosClient for querying bids
+        let endpoints = CosmosEndpoints {
+            rest: self.config.node.replace("https://rpc-", "https://rest-").replace(":443", ""),
+            chain_id: self.config.chain_id.clone(),
+            timeout: Duration::from_secs(30),
+        };
+        let cosmos_client = CosmosClient::new(endpoints)?;
+
+        // Query open bids
+        let all_bids = cosmos_client.query_open_bids(owner, dseq_u64).await?;
+
+        if all_bids.is_empty() {
+            return Err(anyhow!("No open bids available for deployment {}", dseq));
         }
+
+        // Filter to trusted providers if configured
+        let filtered_bids: Vec<_> = if self.trusted_providers.is_empty() {
+            // No trusted providers configured - use all bids
+            println!("[INFO] No trusted providers configured, considering all {} bid(s)", all_bids.len());
+            all_bids
+        } else {
+            // Filter to only trusted providers
+            let trusted: Vec<_> = all_bids
+                .into_iter()
+                .filter(|bid| self.trusted_providers.contains(&bid.provider))
+                .collect();
+
+            if trusted.is_empty() {
+                return Err(anyhow!(
+                    "No bids from trusted providers. Configured: {:?}",
+                    self.trusted_providers
+                ));
+            }
+
+            println!(
+                "[INFO] Filtered to {} bid(s) from trusted providers",
+                trusted.len()
+            );
+            trusted
+        };
+
+        // Select cheapest bid
+        let best_bid = filtered_bids
+            .iter()
+            .min_by_key(|bid| {
+                bid.price_amount
+                    .parse::<u64>()
+                    .unwrap_or(u64::MAX)
+            })
+            .ok_or_else(|| anyhow!("Failed to select best bid"))?;
+
+        println!(
+            "[INFO] Selected provider: {}, Price: {} {}",
+            best_bid.provider, best_bid.price_amount, best_bid.price_denom
+        );
+
+        Ok(best_bid.provider.clone())
     }
 
     /// Generic method to collect deployment information and save to a file
@@ -518,6 +592,15 @@ impl AkashClient {
     /// * `lease_id` - The lease ID (owner, dseq, gseq, oseq, provider)
     /// * `service_names` - Optional list of service names to query (empty = all services)
     ///
+    /// Query lease status from provider.
+    ///
+    /// Queries the provider's REST API for lease status and service endpoints.
+    ///
+    /// # Arguments
+    /// * `provider_uri` - Provider URI (e.g., "https://provider.mainnet.akash.com:8443")
+    /// * `lease_id` - Lease identifier
+    /// * `service_names` - Specific services to query (empty vec = all services)
+    ///
     /// # Returns
     /// HashMap mapping service name -> endpoint URL (e.g., "web" -> "http://host:port")
     pub async fn query_lease_status(
@@ -526,70 +609,46 @@ impl AkashClient {
         lease_id: LeaseId,
         service_names: Vec<String>,
     ) -> Result<HashMap<String, String>> {
+        use crate::deploy::manifest::query_service_endpoints;
+
         tracing::info!(
             "Querying lease status from provider {} for dseq {}",
             provider_uri,
             lease_id.dseq
         );
 
-        // Connect to provider's gRPC endpoint
-        let mut client = LeaseRpcClient::connect(provider_uri.to_string())
-            .await
-            .map_err(|e| anyhow!("Failed to connect to provider {}: {}", provider_uri, e))?;
+        // Query service endpoints from provider
+        let endpoints = query_service_endpoints(
+            provider_uri,
+            &lease_id.owner,
+            lease_id.dseq,
+            lease_id.gseq,
+            lease_id.oseq,
+        )
+        .await?;
 
-        // Query service status
-        let request = ServiceStatusRequest {
-            lease_id: Some(lease_id.clone()),
-            services: service_names.clone(),
-        };
+        // Convert to simple HashMap<String, String>
+        let mut result = HashMap::new();
 
-        let response = client
-            .service_status(request)
-            .await
-            .map_err(|e| anyhow!("Failed to query service status: {}", e))?
-            .into_inner();
-
-        // Parse response to extract endpoints
-        let mut endpoints = HashMap::new();
-
-        for service in response.services {
-            let service_name = service.name.clone();
-
-            // Try to construct endpoint from forwarded ports
-            if let Some(port_status) = service.ports.first() {
-                // Use the external port (provider's forwarded port)
-                let endpoint = format!("http://{}:{}", port_status.host, port_status.external_port);
-                tracing::info!("Discovered endpoint for '{}': {}", service_name, endpoint);
-                endpoints.insert(service_name.clone(), endpoint);
+        for (name, endpoint) in endpoints {
+            // Filter by service names if specified
+            if !service_names.is_empty() && !service_names.contains(&name) {
                 continue;
             }
 
-            // Fallback: try to construct from IPs
-            if let Some(ip_status) = service.ips.first() {
-                // Use the port from the IP status
-                let endpoint = format!("http://{}:{}", lease_id.provider, ip_status.port);
-                tracing::info!(
-                    "Discovered endpoint (via IP) for '{}': {}",
-                    service_name,
-                    endpoint
-                );
-                endpoints.insert(service_name.clone(), endpoint);
-                continue;
-            }
-
-            tracing::warn!(
-                "Could not determine endpoint for service '{}' - no ports or IPs in status",
-                service_name
-            );
+            result.insert(name, endpoint.external_uri);
         }
 
-        if endpoints.is_empty() {
+        if result.is_empty() && !service_names.is_empty() {
             return Err(anyhow!(
-                "No service endpoints discovered from provider lease status"
+                "No endpoints found for services: {:?}",
+                service_names
             ));
         }
 
-        Ok(endpoints)
+        tracing::info!("Found {} service endpoint(s)", result.len());
+
+        Ok(result)
     }
 
     /// Convenience method to query all services for a deployment
@@ -649,6 +708,12 @@ pub async fn broadcast_akash_msg<M: Message>(
         "Preparing tx: type={}, size={} bytes",
         type_url,
         msg_any.value.len()
+    );
+
+    // Debug: log the protobuf bytes in hex for comparison with official tool
+    tracing::debug!(
+        "  Protobuf bytes (first 200): {}",
+        hex::encode(&msg_any.value[..msg_any.value.len().min(200)])
     );
 
     let mut tx_builder = client.tx_builder();

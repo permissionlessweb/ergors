@@ -126,6 +126,12 @@ service ManagementService {
   rpc RunAkashDeployment(ergors.orch.v1.RunAkashDeploymentRequest) returns (ergors.orch.v1.RunAkashDeploymentResponse);
   // Close an active lease
   rpc CloseAkashLease(ergors.orch.v1.CloseAkashLeaseRequest) returns (OperationResult);
+  // Close a deployment (also closes any active leases)
+  rpc CloseAkashDeployment(ergors.orch.v1.CloseAkashDeploymentRequest) returns (OperationResult);
+  // Update a deployment with new SDL
+  rpc UpdateAkashDeployment(ergors.orch.v1.UpdateAkashDeploymentRequest) returns (OperationResult);
+  // Top up escrow account for a deployment
+  rpc TopupAkashEscrow(ergors.orch.v1.TopupAkashEscrowRequest) returns (OperationResult);
   // Get lease status
   rpc GetLeaseStatus(ergors.orch.v1.GetLeaseStatusRequest) returns (ergors.orch.v1.LeaseStatusResponse);
   // Add trusted provider

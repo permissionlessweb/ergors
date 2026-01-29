@@ -3,7 +3,7 @@
 # Configured for local Kind cluster testing (no signedBy, no auditor requirements)
 #
 # Usage:
-#   ergors-cli deploy create --sdl deploy.local.sdl.yaml \
+#   ergors deploy create --sdl deploy.local.sdl.yaml \
 #     --node http://localhost:26657 --chain-id local
 
 version: "2.0"

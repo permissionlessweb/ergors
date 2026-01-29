@@ -46,48 +46,48 @@ ERGORS provides git-based workspace management for coordinating project files ac
 
 ```bash
 # Register a new workspace (clone from remote)
-ergors-cli workspace add my-project --remote git@github.com:org/repo.git
+ergors workspace add my-project --remote git@github.com:org/repo.git
 
 # Register a local workspace (no remote)
-ergors-cli workspace add local-project
+ergors workspace add local-project
 
 # List all registered workspaces
-ergors-cli workspace list
-ergors-cli workspace list --limit 20
+ergors workspace list
+ergors workspace list --limit 20
 
 # Show workspace details
-ergors-cli workspace show <workspace_id>
+ergors workspace show <workspace_id>
 
 # Remove a workspace
-ergors-cli workspace remove <workspace_id>
-ergors-cli workspace remove <workspace_id> --force  # Remove even with active tasks
+ergors workspace remove <workspace_id>
+ergors workspace remove <workspace_id> --force  # Remove even with active tasks
 
 # Sync with remote
-ergors-cli workspace sync <workspace_id>
-ergors-cli workspace sync <workspace_id> --push     # Push local changes
-ergors-cli workspace sync <workspace_id> --remote upstream  # Specify remote
+ergors workspace sync <workspace_id>
+ergors workspace sync <workspace_id> --push     # Push local changes
+ergors workspace sync <workspace_id> --remote upstream  # Specify remote
 ```
 
 ### Task Worktree Management
 
 ```bash
 # Create a task worktree (isolated branch)
-ergors-cli workspace task create <workspace_id>
-ergors-cli workspace task create <workspace_id> --task-id my-task-123
-ergors-cli workspace task create <workspace_id> --assign-to <node_id>
+ergors workspace task create <workspace_id>
+ergors workspace task create <workspace_id> --task-id my-task-123
+ergors workspace task create <workspace_id> --assign-to <node_id>
 
 # List active task worktrees
-ergors-cli workspace task list
-ergors-cli workspace task list --workspace <workspace_id>
-ergors-cli workspace task list --node <node_id>
+ergors workspace task list
+ergors workspace task list --workspace <workspace_id>
+ergors workspace task list --node <node_id>
 
 # Complete a task (commit and optionally merge)
-ergors-cli workspace task complete <task_id> --message "Implement feature X"
-ergors-cli workspace task complete <task_id> --message "Fix bug Y" --merge
+ergors workspace task complete <task_id> --message "Implement feature X"
+ergors workspace task complete <task_id> --message "Fix bug Y" --merge
 
 # Fail/abandon a task
-ergors-cli workspace task fail <task_id> --reason "Requirements changed"
-ergors-cli workspace task fail <task_id> --reason "Blocked" --cleanup
+ergors workspace task fail <task_id> --reason "Requirements changed"
+ergors workspace task fail <task_id> --reason "Blocked" --cleanup
 ```
 
 ### JSON Output
@@ -95,8 +95,8 @@ ergors-cli workspace task fail <task_id> --reason "Blocked" --cleanup
 All commands support `--json` for scripting:
 
 ```bash
-ergors-cli workspace list --json | jq '.workspaces[].name'
-ergors-cli workspace task list --json | jq '.worktrees[] | select(.status == "active")'
+ergors workspace list --json | jq '.workspaces[].name'
+ergors workspace task list --json | jq '.worktrees[] | select(.status == "active")'
 ```
 
 ---
@@ -325,7 +325,7 @@ packages/
 │   └── network/
 │       └── manager.rs      # WorkspaceSync message handling
 │
-└── ergors-cli/src/
+└── ergors/src/
     ├── commands/
     │   └── workspace.rs    # CLI workspace commands
     └── client/
@@ -336,7 +336,7 @@ packages/
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        ergors-cli                           │
+│                        ergors                           │
 │  workspace add/list/sync/task create/complete/fail          │
 └─────────────────────────┬───────────────────────────────────┘
                           │ gRPC
@@ -362,32 +362,32 @@ packages/
 
 ```bash
 # 1. Register the workspace
-ergors-cli workspace add my-project --remote git@github.com:myorg/myproject.git
+ergors workspace add my-project --remote git@github.com:myorg/myproject.git
 
 # 2. Create a task worktree
-ergors-cli workspace task create ws_abc123 --task-id feature-auth
+ergors workspace task create ws_abc123 --task-id feature-auth
 
 # 3. Work on files in the worktree
 cd ~/.ergors/workspaces/my-project/tasks/task-feature-auth/
 # ... make changes ...
 
 # 4. Complete the task
-ergors-cli workspace task complete feature-auth --message "Add authentication" --merge
+ergors workspace task complete feature-auth --message "Add authentication" --merge
 ```
 
 ### Multi-Node Task Distribution
 
 ```bash
 # On coordinator node:
-ergors-cli workspace add shared-repo --remote git@internal:org/shared.git
-ergors-cli workspace task create ws_shared --task-id implement-api --assign-to node_executor_1
+ergors workspace add shared-repo --remote git@internal:org/shared.git
+ergors workspace task create ws_shared --task-id implement-api --assign-to node_executor_1
 
 # On executor node (receives task via P2P):
 # Automatically creates worktree at ~/.ergors/workspaces/shared-repo/tasks/task-implement-api/
 # ... executor agent works on files ...
 
 # Executor completes:
-ergors-cli workspace task complete implement-api --message "Implement REST API"
+ergors workspace task complete implement-api --message "Implement REST API"
 
 # Coordinator receives PUSH_NOTIFY, fetches, and merges
 ```
@@ -397,7 +397,7 @@ ergors-cli workspace task complete implement-api --message "Implement REST API"
 ```bash
 #!/bin/bash
 # Check for stuck tasks older than 1 hour
-stuck=$(ergors-cli workspace task list --json | jq -r '
+stuck=$(ergors workspace task list --json | jq -r '
   .worktrees[]
   | select(.status == "active")
   | select((.created_at | fromdateiso8601) < (now - 3600))
@@ -406,7 +406,7 @@ stuck=$(ergors-cli workspace task list --json | jq -r '
 
 for task in $stuck; do
   echo "Failing stuck task: $task"
-  ergors-cli workspace task fail "$task" --reason "Timeout" --cleanup
+  ergors workspace task fail "$task" --reason "Timeout" --cleanup
 done
 ```
 
@@ -419,7 +419,7 @@ done
 git2 = "0.19"           # libgit2 bindings
 ssh-key = "0.6"         # ED25519 → SSH format
 
-# ergors-cli/Cargo.toml
+# ergors/Cargo.toml
 uuid = { version = "1.0", features = ["v4"] }
 hex = "0.4"
 ```
@@ -440,9 +440,9 @@ GIT_SSH_COMMAND="ssh -i ~/.ergors/ssh/id_ed25519" git ls-remote git@github.com:o
 
 ### Worktree Not Created
 
-1. Check workspace exists: `ergors-cli workspace show <id>`
+1. Check workspace exists: `ergors workspace show <id>`
 2. Verify git repo is valid: `git -C ~/.ergors/workspaces/<name>/main status`
-3. Check for existing task: `ergors-cli workspace task list --workspace <id>`
+3. Check for existing task: `ergors workspace task list --workspace <id>`
 
 ### Sync Fails
 

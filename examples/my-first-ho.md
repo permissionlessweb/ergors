@@ -55,7 +55,6 @@ just install
 This installs:
 
 - `ergors` — Node engine (HTTP API + gRPC management)
-- `ergors-cli` — CLI for managing the engine
 
 Verify installation:
 
@@ -63,7 +62,6 @@ Verify installation:
 just which
 # Output:
 #   ergors: /Users/you/.cargo/bin/ergors
-#   ergors-cli: /Users/you/.cargo/bin/ergors-cli
 ```
 
 ### 2. Initialize Node
@@ -209,10 +207,10 @@ just check
 ### CLI Commands
 
 ```bash
-ergors-cli status              # Check engine status
-ergors-cli node info           # View node identity
-ergors-cli provider list       # List LLM providers
-ergors-cli provider test anthropic  # Test connectivity
+ergors status              # Check engine status
+ergors node info           # View node identity
+ergors provider list       # List LLM providers
+ergors provider test anthropic  # Test connectivity
 ```
 
 ### Ports Reference
@@ -322,7 +320,7 @@ Capture these from the respective applications with the proxy configured.
 | Initialize | `ergors init` |
 | Configure LLMs | `ergors init llms` |
 | Start | `ergors start` |
-| Status | `ergors-cli status` |
+| Status | `ergors status` |
 | Dev mode | `just dev start` |
 | Check health | `curl localhost:8080/health` |
 | Query sessions | `curl localhost:8080/api/proxy/sessions` |

@@ -81,6 +81,9 @@ use ho_std::types::ergors::orch::v1::{
     AddTrustedProviderRequest,
     AkashWorkflowOptions,
     CloseAkashLeaseRequest,
+    CloseAkashDeploymentRequest,
+    UpdateAkashDeploymentRequest,
+    TopupAkashEscrowRequest,
     GetLeaseStatusRequest,
     LeaseStatusResponse,
     ListTrustedProvidersRequest,
@@ -879,6 +882,47 @@ impl ManagementClient {
             })
             .await
             .context("Failed to close Akash lease")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Close a deployment (also closes any active leases)
+    pub async fn close_akash_deployment(&mut self, session_id: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .close_akash_deployment(CloseAkashDeploymentRequest {
+                session_id: session_id.to_string(),
+            })
+            .await
+            .context("Failed to close Akash deployment")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Update a deployment with new SDL
+    pub async fn update_akash_deployment(&mut self, session_id: &str, sdl_content: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .update_akash_deployment(UpdateAkashDeploymentRequest {
+                session_id: session_id.to_string(),
+                sdl_content: sdl_content.to_string(),
+            })
+            .await
+            .context("Failed to update Akash deployment")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Top up escrow account for a deployment
+    pub async fn topup_akash_escrow(&mut self, session_id: &str, amount_uakt: u64) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .topup_akash_escrow(TopupAkashEscrowRequest {
+                session_id: session_id.to_string(),
+                amount_uakt,
+            })
+            .await
+            .context("Failed to top up Akash escrow")?;
 
         Ok(response.into_inner())
     }

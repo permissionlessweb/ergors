@@ -139,7 +139,8 @@ use ho_std::types::ergors::orch::v1::{
     AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep, ConfiguredSdl,
     // Automated workflow types
     RunAkashDeploymentRequest, RunAkashDeploymentResponse,
-    CloseAkashLeaseRequest, GetLeaseStatusRequest, LeaseStatusResponse,
+    CloseAkashLeaseRequest, CloseAkashDeploymentRequest, UpdateAkashDeploymentRequest, TopupAkashEscrowRequest,
+    GetLeaseStatusRequest, LeaseStatusResponse,
     AddTrustedProviderRequest, RemoveTrustedProviderRequest,
     ListTrustedProvidersRequest, ListTrustedProvidersResponse, AkashWorkflowOptions, AkashLeaseInfo, AkashLeaseState,
     // RAG types
@@ -2615,6 +2616,194 @@ impl ManagementService for ManagementServiceImpl {
                 Ok(Response::new(OperationResult {
                     success: false,
                     message: format!("Failed to close lease: {}", e),
+                }))
+            }
+        }
+    }
+
+    /// Close a deployment (also closes any active leases)
+    async fn close_akash_deployment(
+        &self,
+        request: Request<CloseAkashDeploymentRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        // Check if Akash context is available
+        let akash_ctx = self
+            .state
+            .akash
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition(
+                "Akash deployment context not initialized"
+            ))?;
+
+        let workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // Verify there's a deployment to close
+        if workflow.deployment.is_none() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "No deployment found for this workflow".to_string(),
+            }));
+        }
+
+        tracing::info!("Closing deployment for session {}", req.session_id);
+
+        // Create deployer and close the deployment
+        let deployer = akash_ctx.create_deployer(self.state.s.clone());
+
+        match deployer.close_deployment(&workflow).await {
+            Ok(()) => {
+                // Update workflow status
+                let mut updated_workflow = workflow;
+                updated_workflow.status = AkashWorkflowStatus::Cancelled as i32;
+                updated_workflow.updated_at = Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                });
+                self.state.s.put_akash_workflow(&updated_workflow).await.ok();
+
+                Ok(Response::new(OperationResult {
+                    success: true,
+                    message: format!("Deployment closed successfully for session {}", req.session_id),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to close deployment: {}", e);
+                Ok(Response::new(OperationResult {
+                    success: false,
+                    message: format!("Failed to close deployment: {}", e),
+                }))
+            }
+        }
+    }
+
+    /// Update a deployment with new SDL
+    async fn update_akash_deployment(
+        &self,
+        request: Request<UpdateAkashDeploymentRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        // Check if Akash context is available
+        let akash_ctx = self
+            .state
+            .akash
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition(
+                "Akash deployment context not initialized"
+            ))?;
+
+        let workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // Verify there's a deployment to update
+        if workflow.deployment.is_none() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "No deployment found for this workflow".to_string(),
+            }));
+        }
+
+        if req.sdl_content.is_empty() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "SDL content is required".to_string(),
+            }));
+        }
+
+        tracing::info!("Updating deployment for session {}", req.session_id);
+
+        // Create deployer and update the deployment
+        let deployer = akash_ctx.create_deployer(self.state.s.clone());
+
+        match deployer.update_deployment(&workflow, &req.sdl_content).await {
+            Ok(()) => {
+                Ok(Response::new(OperationResult {
+                    success: true,
+                    message: format!("Deployment updated successfully for session {}", req.session_id),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to update deployment: {}", e);
+                Ok(Response::new(OperationResult {
+                    success: false,
+                    message: format!("Failed to update deployment: {}", e),
+                }))
+            }
+        }
+    }
+
+    /// Top up escrow account for a deployment
+    async fn topup_akash_escrow(
+        &self,
+        request: Request<TopupAkashEscrowRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        // Check if Akash context is available
+        let akash_ctx = self
+            .state
+            .akash
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition(
+                "Akash deployment context not initialized"
+            ))?;
+
+        let workflow = self
+            .state
+            .s
+            .get_akash_workflow(&req.session_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+
+        // Verify there's a deployment to top up
+        if workflow.deployment.is_none() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "No deployment found for this workflow".to_string(),
+            }));
+        }
+
+        if req.amount_uakt == 0 {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "Amount must be greater than 0".to_string(),
+            }));
+        }
+
+        tracing::info!("Topping up escrow for session {} with {} uakt", req.session_id, req.amount_uakt);
+
+        // Create deployer and top up escrow
+        let deployer = akash_ctx.create_deployer(self.state.s.clone());
+
+        match deployer.topup_escrow(&workflow, req.amount_uakt).await {
+            Ok(()) => {
+                Ok(Response::new(OperationResult {
+                    success: true,
+                    message: format!("Escrow topped up with {} uakt for session {}", req.amount_uakt, req.session_id),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to top up escrow: {}", e);
+                Ok(Response::new(OperationResult {
+                    success: false,
+                    message: format!("Failed to top up escrow: {}", e),
                 }))
             }
         }

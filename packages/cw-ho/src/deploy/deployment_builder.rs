@@ -79,7 +79,8 @@ impl DeploymentBuilder {
                     denom: "uakt".to_string(),
                     amount: self.deposit_uakt.to_string(),
                 }),
-                sources: vec![Source::Balance as i32],
+                // Use both grant and balance sources (official Akash behavior)
+                sources: vec![Source::Grant as i32, Source::Balance as i32],
             }),
         })
     }
@@ -135,12 +136,6 @@ impl DeploymentBuilder {
                     .and_then(|p| p.as_str())
                     .unwrap_or(service_name_str);
 
-                // Get count from placement config
-                let count = placement_config
-                    .get("count")
-                    .and_then(|c| c.as_u64())
-                    .unwrap_or(1) as u32;
-
                 // Get compute profile resources
                 let compute_profile = compute_profiles.get(profile_name).ok_or_else(|| {
                     anyhow!(
@@ -150,32 +145,30 @@ impl DeploymentBuilder {
                     )
                 })?;
 
-                let resources =
-                    self.parse_resources(compute_profile, services, service_name_str)?;
-
-                // Get placement requirements
-                let requirements = self.parse_placement_requirements(
-                    placement_profiles,
-                    placement_name_str,
-                    compute_profile,
-                )?;
-
-                // Create resource unit with price (default pricing)
-                let resource_unit = ResourceUnit {
-                    resource: Some(resources),
-                    count,
-                    price: Some(DecCoin {
-                        denom: "uakt".to_string(),
-                        amount: "10000".to_string(), // Default bid price
-                    }),
-                };
-
-                // Create group spec
-                let group_name = format!("{}-{}", service_name_str, placement_name_str);
+                // Group name is the placement name (e.g., "dcloud"), not service-placement
                 let group = GroupSpec {
-                    name: group_name,
-                    requirements: Some(requirements),
-                    resources: vec![resource_unit],
+                    name: placement_name_str.to_string(),
+                    requirements: Some(self.parse_placement_requirements(
+                        placement_profiles,
+                        placement_name_str,
+                        compute_profile,
+                    )?),
+                    resources: vec![ResourceUnit {
+                        resource: Some(self.parse_resources(
+                            compute_profile,
+                            services,
+                            service_name_str,
+                        )?),
+                        count: placement_config
+                            .get("count")
+                            .and_then(|c| c.as_u64())
+                            .unwrap_or(1) as u32,
+                        price: Some(self.parse_price(
+                            placement_profiles,
+                            placement_name_str,
+                            service_name_str,
+                        )?),
+                    }],
                 };
 
                 groups.push(group);
@@ -246,12 +239,17 @@ impl DeploymentBuilder {
     }
 
     /// Parse a resource value (could be string or number).
+    /// Always converts to millicores (x1000) to match Akash format.
     fn parse_resource_value(&self, value: &serde_yaml::Value) -> Result<u64> {
         match value {
-            serde_yaml::Value::Number(n) => n
-                .as_u64()
-                .or_else(|| n.as_f64().map(|f| f as u64))
-                .ok_or_else(|| anyhow!("Invalid resource number")),
+            serde_yaml::Value::Number(n) => {
+                let cores = n
+                    .as_u64()
+                    .or_else(|| n.as_f64().map(|f| f as u64))
+                    .ok_or_else(|| anyhow!("Invalid resource number"))?;
+                // Convert cores to millicores (Akash uses millicores: 1 core = 1000 millicores)
+                Ok(cores * 1000)
+            }
             serde_yaml::Value::String(s) => {
                 // Handle strings like "4" or "1.5"
                 s.parse::<f64>()
@@ -399,17 +397,18 @@ impl DeploymentBuilder {
                                 if let Some(model_map) = model_entry.as_mapping() {
                                     // Extract model name and ram from the mapping
                                     let model_name = model_map
-                                        .get(&serde_yaml::Value::String("model".to_string()))
+                                        .get(serde_yaml::Value::String("model".to_string()))
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("");
 
                                     let ram = model_map
-                                        .get(&serde_yaml::Value::String("ram".to_string()))
+                                        .get(serde_yaml::Value::String("ram".to_string()))
                                         .and_then(|v| v.as_str());
 
                                     if !model_name.is_empty() {
                                         // Build composite key
-                                        let mut key = format!("vendor/{}/model/{}", vendor, model_name);
+                                        let mut key =
+                                            format!("vendor/{}/model/{}", vendor, model_name);
 
                                         // Add ram if specified
                                         if let Some(ram_value) = ram {
@@ -498,7 +497,7 @@ impl DeploymentBuilder {
         &self,
         placement_profiles: Option<&serde_yaml::Value>,
         placement_name: &str,
-        compute_profile: &serde_yaml::Value,
+        _compute_profile: &serde_yaml::Value,
     ) -> Result<PlacementRequirements> {
         let mut attributes = Vec::new();
 
@@ -562,6 +561,186 @@ impl DeploymentBuilder {
             attributes,
         })
     }
+
+    /// Parse price from placement profile.
+    /// Returns price as DecCoin with Cosmos SDK decimal format (18 decimal places).
+    fn parse_price(
+        &self,
+        placement_profiles: Option<&serde_yaml::Value>,
+        placement_name: &str,
+        service_name: &str,
+    ) -> Result<DecCoin> {
+        // Default price: 1000000 uakt
+        let mut amount_base = 1_000_000u64;
+        let mut denom = "uakt".to_string();
+
+        if let Some(profiles) = placement_profiles {
+            if let Some(placement) = profiles.get(placement_name) {
+                if let Some(pricing) = placement.get("pricing") {
+                    if let Some(service_price) = pricing.get(service_name) {
+                        // Get denom
+                        if let Some(d) = service_price.get("denom").and_then(|d| d.as_str()) {
+                            denom = d.to_string();
+                        }
+                        // Get amount
+                        if let Some(amt) = service_price.get("amount") {
+                            if let Some(n) = amt.as_u64() {
+                                amount_base = n;
+                            } else if let Some(s) = amt.as_str() {
+                                amount_base = s.parse().unwrap_or(amount_base);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Use integer string format (decimal format causes simulation error)
+        Ok(DecCoin {
+            denom,
+            amount: amount_base.to_string(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod deccoin_tests {
+    use super::*;
+    use prost::Message;
+
+    #[test]
+    fn test_deccoin_formats_comparison() {
+        let amount_base = 1_000_000u64;
+        let denom = "uakt";
+
+        println!("\n=== DecCoin Format Comparison ===\n");
+
+        // 1. cosmwasm_std::DecCoin
+        let cosmwasm_deccoin = cosmwasm_std::DecCoin::new(
+            Decimal::from_ratio(amount_base, 1u64),
+            denom,
+        );
+        println!("1. cosmwasm_std::DecCoin:");
+        println!("   - amount field: {}", cosmwasm_deccoin.amount);
+        println!("   - JSON: {}",cosmwasm_deccoin.amount.to_string());
+
+        // 2. Our proto DecCoin (ho_std)
+        let proto_deccoin = DecCoin {
+            denom: denom.to_string(),
+            amount: cosmwasm_deccoin.amount.to_string(),
+        };
+        println!("\n2. Proto DecCoin (ho_std):");
+        println!("   - amount field: {}", proto_deccoin.amount);
+        println!("   - JSON: {}", serde_json::to_string(&proto_deccoin).unwrap());
+
+        // Encode to protobuf bytes
+        let proto_bytes = proto_deccoin.encode_to_vec();
+        println!("   - Protobuf bytes (hex): {}", hex::encode(&proto_bytes));
+        println!("   - Protobuf size: {} bytes", proto_bytes.len());
+
+        // 3. Proto DecCoin with integer format
+        let proto_deccoin_int = DecCoin {
+            denom: denom.to_string(),
+            amount: amount_base.to_string(),
+        };
+        println!("\n3. Proto DecCoin (integer format):");
+        println!("   - amount field: {}", proto_deccoin_int.amount);
+        println!("   - JSON: {}", serde_json::to_string(&proto_deccoin_int).unwrap());
+
+        let proto_int_bytes = proto_deccoin_int.encode_to_vec();
+        println!("   - Protobuf bytes (hex): {}", hex::encode(&proto_int_bytes));
+        println!("   - Protobuf size: {} bytes", proto_int_bytes.len());
+
+        // 4. Proto DecCoin with full decimal format
+        let proto_deccoin_decimal = DecCoin {
+            denom: denom.to_string(),
+            amount: format!("{}.000000000000000000", amount_base),
+        };
+        println!("\n4. Proto DecCoin (full decimal format):");
+        println!("   - amount field: {}", proto_deccoin_decimal.amount);
+        println!("   - JSON: {}", serde_json::to_string(&proto_deccoin_decimal).unwrap());
+
+        let proto_decimal_bytes = proto_deccoin_decimal.encode_to_vec();
+        println!("   - Protobuf bytes (hex): {}", hex::encode(&proto_decimal_bytes));
+        println!("   - Protobuf size: {} bytes", proto_decimal_bytes.len());
+
+        // Compare byte sizes
+        println!("\n=== Size Comparison ===");
+        println!("Integer format:        {} bytes", proto_int_bytes.len());
+        println!("cosmwasm_std format:   {} bytes", proto_bytes.len());
+        println!("Full decimal format:   {} bytes", proto_decimal_bytes.len());
+
+        // Check if they decode properly
+        println!("\n=== Decode Test ===");
+        match DecCoin::decode(&proto_decimal_bytes[..]) {
+            Ok(decoded) => {
+                println!("Full decimal format decodes successfully:");
+                println!("   - denom: {}", decoded.denom);
+                println!("   - amount: {}", decoded.amount);
+            }
+            Err(e) => println!("Full decimal format decode FAILED: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_parse_price_output() {
+        let builder = DeploymentBuilder::new("akash1test", 1);
+
+        // Create minimal SDL YAML with pricing
+        let sdl = r#"
+version: "2.0"
+services:
+  test:
+    image: nginx:1.25.3
+    expose:
+      - port: 80
+        to:
+          - global: true
+
+profiles:
+  compute:
+    test:
+      resources:
+        cpu:
+          units: 1
+        memory:
+          size: 512Mi
+        storage:
+          size: 1Gi
+  placement:
+    dcloud:
+      pricing:
+        test:
+          denom: uakt
+          amount: 1000000.000000000000000000
+
+deployment:
+  test:
+    dcloud:
+      profile: test
+      count: 1
+"#;
+
+        let yaml: serde_yaml::Value = serde_yaml::from_str(sdl).unwrap();
+        let placement_profiles = yaml.get("profiles").and_then(|p| p.get("placement"));
+
+        let price = builder.parse_price(placement_profiles, "dcloud", "test").unwrap();
+
+        println!("\n=== parse_price() Output ===");
+        println!("denom: {}", price.denom);
+        println!("amount: {}", price.amount);
+        println!("amount length: {} chars", price.amount.len());
+
+        // Check format
+        assert_eq!(price.denom, "uakt");
+        println!("Format check: {}",
+            if price.amount.contains('.') {
+                "DECIMAL format (has decimal point)"
+            } else {
+                "INTEGER format (no decimal point)"
+            }
+        );
+    }
 }
 
 /// Build MsgCreateLease from bid info.
@@ -591,6 +770,52 @@ pub fn build_close_deployment_msg(owner: &str, dseq: u64) -> MsgCloseDeployment 
             dseq,
         }),
     }
+}
+
+/// Build MsgUpdateDeployment.
+pub fn build_update_deployment_msg(
+    owner: &str,
+    dseq: u64,
+    hash: Vec<u8>,
+) -> ho_std::types::ergors::akash::deployment::v1beta5::MsgUpdateDeployment {
+    use ho_std::types::ergors::akash::deployment::v1beta5::MsgUpdateDeployment;
+
+    MsgUpdateDeployment {
+        id: Some(DeploymentId {
+            owner: owner.to_string(),
+            dseq,
+        }),
+        hash,
+    }
+}
+
+/// Build MsgAccountDeposit for topping up escrow.
+pub fn build_escrow_deposit_msg(
+    signer: &str,
+    owner: &str,
+    dseq: u64,
+    amount_uakt: u64,
+) -> Result<ho_std::types::ergors::akash::escrow::v1::MsgAccountDeposit> {
+    use ho_std::types::ergors::{
+        akash::base::deposit::v1::{Deposit, Source},
+        akash::escrow::{id::v1 as escrow_id, v1::MsgAccountDeposit},
+        cosmos::base::v1beta1::Coin,
+    };
+
+    Ok(MsgAccountDeposit {
+        signer: signer.to_string(),
+        id: Some(escrow_id::Account {
+            scope: escrow_id::Scope::Deployment as i32,
+            xid: format!("{}/{}", owner, dseq),
+        }),
+        deposit: Some(Deposit {
+            amount: Some(Coin {
+                denom: "uakt".to_string(),
+                amount: amount_uakt.to_string(),
+            }),
+            sources: vec![Source::Balance as i32],
+        }),
+    })
 }
 
 /// Get next available dseq by querying account's deployment count.

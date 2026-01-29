@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use ho_std::types::akash::deployment::v1beta5::QueryDeploymentsResponse;
+use ho_std::types::akash::deployment::v1beta4::QueryDeploymentsResponse;
 use reqwest::Client as HttpClient;
 use serde_json::Value;
 

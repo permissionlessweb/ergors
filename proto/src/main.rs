@@ -150,7 +150,7 @@ fn main() -> anyhow::Result<()> {
                 "./ergors/akash/deployment/v1beta5/query.proto",
                 "./ergors/akash/deployment/v1beta5/resourceunit.proto",
                 "./ergors/akash/deployment/v1beta5/service.proto",
-                // discovery 
+                // discovery
                 "./ergors/akash/discovery/v1/akash.proto",
                 "./ergors/akash/discovery/v1/client_info.proto",
                 // escrow
@@ -194,6 +194,9 @@ fn main() -> anyhow::Result<()> {
                 "./ergors/akash/provider/v1beta4/provider.proto",
                 "./ergors/akash/provider/v1beta4/query.proto",
                 "./ergors/akash/provider/v1beta4/service.proto",
+                // manifest
+
+                // inventory
             ],
             &["./headstash/", "./ergors/", "./rust-vendored/"],
         )?;
@@ -218,7 +221,9 @@ fn main() -> anyhow::Result<()> {
     // Post-process generated files to remove serde and problematic derives from types
     use std::fs;
 
-    let types_to_remove_serde = [
+    // Types that have serde derives mixed with other derives in the same #[derive(...)]
+    // The post-processor will remove serde traits from these derives
+    let types_to_remove_serde_from_mixed_derives = [
         "QueryCertificatesRequest",
         "QueryCertificatesResponse",
         "QueryDeploymentsResponse",
@@ -240,8 +245,11 @@ fn main() -> anyhow::Result<()> {
         "QueryBidsResponse",
         "QueryLeasesRequest",
         "QueryLeasesResponse",
-        "SctFrontierResponse",
     ];
+
+    // Types that have a separate #[derive(serde::Serialize, serde::Deserialize)] line
+    // The post-processor will remove the entire separate serde derive line
+    let types_to_remove_separate_serde_derive = ["SctFrontierResponse"];
 
     for entry in walkdir::WalkDir::new(&target_dir)
         .into_iter()
@@ -250,25 +258,36 @@ fn main() -> anyhow::Result<()> {
         if entry.path().extension().is_some_and(|ext| ext == "rs") {
             let content = fs::read_to_string(entry.path())?;
             let lines: Vec<&str> = content.lines().collect();
-            let mut new_lines = Vec::new();
+            let mut new_lines: Vec<String> = Vec::new();
             let mut i = 0;
 
             while i < lines.len() {
                 let line = lines[i];
 
-                // Check if this line defines one of the types we want to modify
-                let mut is_target_type = false;
-                for type_name in &types_to_remove_serde {
+                // Check if this is a type with serde in mixed derives (same #[derive(...)] line)
+                let mut is_mixed_derive_type = false;
+                for type_name in &types_to_remove_serde_from_mixed_derives {
                     if line.contains(&format!("struct {}", type_name))
                         || line.contains(&format!("enum {}", type_name))
                     {
-                        is_target_type = true;
+                        is_mixed_derive_type = true;
                         break;
                     }
                 }
 
-                if is_target_type && i > 0 {
-                    // Check if the previous line is a derive with serde
+                // Check if this is a type with separate serde derive line
+                let mut is_separate_derive_type = false;
+                for type_name in &types_to_remove_separate_serde_derive {
+                    if line.contains(&format!("struct {}", type_name))
+                        || line.contains(&format!("enum {}", type_name))
+                    {
+                        is_separate_derive_type = true;
+                        break;
+                    }
+                }
+
+                // Handle types with serde mixed in the same derive line
+                if is_mixed_derive_type && i > 0 {
                     let prev_line = lines[i - 1];
                     if prev_line.contains("#[derive(") && prev_line.contains("serde::Serialize") {
                         // Remove serde from the derive
@@ -278,14 +297,40 @@ fn main() -> anyhow::Result<()> {
                             .replace(", serde::Deserialize", "")
                             .replace("serde::Deserialize, ", "")
                             .replace("serde::Serialize", "")
-                            .replace("serde::Deserialize", "")
-                            .replace("serde::Serialize, serde::Deserialize,", "");
+                            .replace("serde::Deserialize", "");
 
-                        if new_derive.contains("#[derive()") || new_derive == "#[derive" {
+                        if new_derive.contains("#[derive()]") || new_derive == "#[derive" {
                             // Remove the derive line entirely if empty
-                            new_lines.pop(); // Remove the derive line
+                            new_lines.pop();
                         } else {
-                            new_lines[i - 1] = new_derive;
+                            // Replace the last added derive line with the cleaned version
+                            new_lines.pop();
+                            new_lines.push(new_derive);
+                        }
+                    }
+                }
+
+                // Handle types with separate serde derive line
+                // Example:
+                //   #[derive(serde::Serialize, serde::Deserialize)]  <- Remove this entire line
+                //   #[derive(Clone, PartialEq, ::prost::Message)]    <- Keep this
+                //   pub struct SctFrontierResponse {
+                if is_separate_derive_type && i > 1 {
+                    let prev_line = lines[i - 1];
+                    let prev_prev_line = lines[i - 2];
+
+                    // Check if i-2 is a serde-only derive and i-1 is a non-serde derive
+                    if prev_prev_line.contains("#[derive(")
+                        && (prev_prev_line.contains("serde::Serialize")
+                            || prev_prev_line.contains("serde::Deserialize"))
+                        && prev_line.contains("#[derive(")
+                        && !prev_line.contains("serde::")
+                    {
+                        // Remove the serde derive line (second-to-last in new_lines)
+                        if new_lines.len() >= 2 {
+                            let last = new_lines.pop().unwrap(); // Pop non-serde derive
+                            new_lines.pop(); // Pop serde derive (discard)
+                            new_lines.push(last); // Push non-serde derive back
                         }
                     }
                 }

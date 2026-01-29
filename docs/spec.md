@@ -29,7 +29,6 @@ This document serves as the central index for all ERGORS specification documents
 | [Open Responses](./OPEN_RESPONSES.md) | Request/response format guide for the `/v1/responses` endpoint and Open Responses compatibility. |
 | [API Authentication](./API.md) | Endpoint reference, authentication requirements, and request examples. |
 | [Proxy Integration](./specs/proxy-integration.md) | Configuring CLI tools to route through the ERGORS proxy for prompt/response capture and retention. |
-| [CLI & Engine Separation](./specs/cli-engine-separation.md) | Architecture separating the `ergors` daemon from `ergors-cli`, communicating via gRPC. |
 
 ## Security & Privacy
 

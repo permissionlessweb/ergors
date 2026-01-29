@@ -163,8 +163,15 @@ sequenceDiagram
 | `ergors deploy create --sdl <path> --interactive-bid` | Manual provider selection |
 | `ergors deploy list` | List all deployment sessions |
 | `ergors deploy get <session-id>` | Get deployment details |
+| `ergors deploy info <session-id>` | Get comprehensive deployment info (unified view) |
 | `ergors deploy status <session-id>` | Get lease status and endpoints |
-| `ergors deploy close-lease <session-id>` | Close deployment and release funds |
+| `ergors deploy endpoints <session-id>` | Get service endpoints |
+| `ergors deploy bids <session-id>` | Query available provider bids |
+| `ergors deploy select <session-id> <bid-id>` | Select provider by bid number |
+| `ergors deploy close-lease <session-id>` | Close lease (keeps deployment) |
+| `ergors deploy close-deployment <session-id>` | Close deployment and release all funds |
+| `ergors deploy update-deployment <session-id> --sdl <path>` | Update deployment with new SDL |
+| `ergors deploy topup-escrow <session-id> <amount>` | Top up escrow balance |
 
 ### Deploy Options
 
@@ -323,6 +330,121 @@ flowchart TD
     F --> G[Create Lease]
 ```
 
+## Deployment Management
+
+### Unified Info View
+
+Get comprehensive deployment information in a single command:
+
+```bash
+ergors deploy info <session-id>
+
+# JSON output
+ergors deploy info <session-id> --json
+```
+
+**Output:**
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║             Akash Deployment Information                     ║
+╠══════════════════════════════════════════════════════════════╣
+║ Session ID: abc123                                           ║
+║ Status:     completed                                        ║
+║ Step:       Complete                                         ║
+╠══════════════════════════════════════════════════════════════╣
+║ Account                                                      ║
+╠══════════════════════════════════════════════════════════════╣
+║ Address:    akash1abc...                                     ║
+║ Key:        default                                          ║
+║ Chain:      akashnet-2                                       ║
+╠══════════════════════════════════════════════════════════════╣
+║ Deployment                                                   ║
+╠══════════════════════════════════════════════════════════════╣
+║ DSEQ:       12345                                            ║
+║ Provider:   akash1provider...                                ║
+╠══════════════════════════════════════════════════════════════╣
+║ Lease                                                        ║
+╠══════════════════════════════════════════════════════════════╣
+║ DSEQ:       12345                                            ║
+║ GSEQ:       1                                                ║
+║ OSEQ:       1                                                ║
+║ Provider:   akash1provider...                                ║
+╠══════════════════════════════════════════════════════════════╣
+║ Service Endpoints                                            ║
+╠══════════════════════════════════════════════════════════════╣
+║ Service:    sglang                                           ║
+║   URI:      xyz.provider.akash.network:8000                  ║
+║   Port:     8000:8000 (tcp)                                  ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+### Closing Deployments
+
+Two options for closing:
+
+**Close Lease (keeps deployment):**
+
+```bash
+ergors deploy close-lease <session-id>
+```
+
+- Closes the active lease with provider
+- Deployment remains on-chain
+- Can create new lease later
+
+**Close Deployment (complete shutdown):**
+
+```bash
+ergors deploy close-deployment <session-id>
+```
+
+- Closes deployment on-chain
+- Automatically closes any active leases
+- Releases all escrow funds
+- Permanent closure
+
+### Updating Deployments
+
+Update deployment resources with new SDL:
+
+```bash
+ergors deploy update-deployment <session-id> --sdl new-config.yml
+```
+
+**Process:**
+
+1. Reads new SDL file
+2. Hashes SDL with SHA256
+3. Broadcasts `MsgUpdateDeployment` to chain
+4. Updates deployment specifications
+
+**Note:** After updating, you may need to send a new manifest to the provider.
+
+### Escrow Management
+
+**Top Up Escrow:**
+
+```bash
+# Add 10 AKT (10,000,000 uakt)
+ergors deploy topup-escrow <session-id> 10000000
+```
+
+**Check Escrow Balance:**
+
+Escrow balance is shown in the info command or can be queried via:
+
+```bash
+ergors deploy info <session-id>
+```
+
+**Escrow Details:**
+
+- Balance tracked per deployment (owner/dseq pair)
+- Automatically deducted for lease payments
+- Can be topped up at any time
+- Released when deployment closes
+
 ## Monitoring
 
 ### Status Tracking
@@ -370,13 +492,122 @@ ergors deploy query-balance <address>
 |------|---------|
 | `packages/cw-ho/src/lib.rs` | `AkashDeploymentContext` definition |
 | `packages/cw-ho/src/server.rs` | Context initialization on startup |
-| `packages/cw-ho/src/deploy/signer.rs` | Transaction signing |
-| `packages/cw-ho/src/deploy/tx_lifecycle.rs` | Broadcast and finality |
+| `packages/cw-ho/src/deploy/signer.rs` | Transaction signing with layer-climb |
+| `packages/cw-ho/src/deploy/akash.rs` | Transaction broadcasting helpers |
 | `packages/cw-ho/src/deploy/certificate.rs` | Certificate management |
-| `packages/cw-ho/src/deploy/automated.rs` | Workflow orchestration |
-| `packages/cw-ho/src/deploy/cosmos_client.rs` | Chain queries |
-| `packages/cw-ho/src/grpc/management.rs` | gRPC handlers |
+| `packages/cw-ho/src/deploy/automated.rs` | Workflow orchestration and lifecycle methods |
+| `packages/cw-ho/src/deploy/deployment_builder.rs` | Message builders (create, close, update, escrow) |
+| `packages/cw-ho/src/deploy/cosmos_client.rs` | Chain queries (balance, bids, leases, escrow) |
+| `packages/cw-ho/src/deploy/manifest.rs` | Manifest generation and provider communication |
+| `packages/cw-ho/src/grpc/management.rs` | gRPC handlers for deployment management |
 | `packages/cw-ho/src/commands/deploy.rs` | CLI implementation |
+| `packages/cw-ho/src/client/mod.rs` | gRPC client methods |
+| `packages/cw-ho/src/storage.rs` | Cnidarium storage for workflows and endpoints |
+| `proto/ergors/orch/v1/orch.proto` | Deployment workflow proto definitions |
+| `proto/ergors/management/v1/management.proto` | Management service proto definitions |
+
+## Complete Lifecycle Examples
+
+### Example 1: Deploy, Monitor, and Close
+
+```bash
+# 1. Create deployment
+ergors deploy create --sdl sdls/embeddings/qwen.yml
+# Output: Session ID: abc123
+
+# 2. View comprehensive info
+ergors deploy info abc123
+
+# 3. Get service endpoints
+ergors deploy endpoints abc123
+
+# 4. Access your service
+curl http://xyz.provider.akash.network:8000/health
+
+# 5. Monitor status
+ergors deploy status abc123
+
+# 6. Close when done
+ergors deploy close-deployment abc123
+```
+
+### Example 2: Deploy, Update, and Scale
+
+```bash
+# 1. Initial deployment (2 CPU, 4Gi RAM)
+ergors deploy create --sdl sdls/api-small.yml
+# Output: Session ID: def456
+
+# 2. Check info
+ergors deploy info def456
+
+# 3. Update to larger resources (4 CPU, 8Gi RAM)
+ergors deploy update-deployment def456 --sdl sdls/api-large.yml
+
+# 4. Verify update
+ergors deploy info def456
+```
+
+### Example 3: Manage Escrow Balance
+
+```bash
+# 1. Deploy with initial balance
+ergors deploy create --sdl sdls/long-running.yml
+# Output: Session ID: ghi789
+
+# 2. Check escrow balance
+ergors deploy info ghi789
+# Shows: Balance remaining
+
+# 3. Top up before running out
+ergors deploy topup-escrow ghi789 5000000
+
+# 4. Verify balance increased
+ergors deploy info ghi789
+```
+
+### Example 4: Manual Provider Selection
+
+```bash
+# 1. Create deployment (auto workflow)
+ergors deploy create --sdl sdls/gpu-task.yml
+# Output: Session ID: jkl012
+
+# 2. Query available bids
+ergors deploy bids jkl012
+# Output:
+#   [1] akash1provider1... | 0.025 AKT/block
+#   [2] akash1provider2... | 0.030 AKT/block
+#   [3] akash1provider3... | 0.028 AKT/block
+
+# 3. Select specific provider
+ergors deploy select jkl012 2
+
+# 4. Continue workflow
+ergors deploy run jkl012
+```
+
+### Example 5: Troubleshooting Failed Deployment
+
+```bash
+# 1. Deployment fails during bid wait
+ergors deploy create --sdl sdls/high-gpu.yml
+# Output: Session ID: mno345
+
+# 2. Check detailed info
+ergors deploy info mno345
+# Shows: Last Error: "No bids received"
+
+# 3. Query bids directly
+ergors deploy bids mno345
+# Output: No bids available
+
+# 4. Update SDL with lower price
+ergors deploy update-deployment mno345 --sdl sdls/high-gpu-adjusted.yml
+
+# 5. Retry workflow
+ergors deploy run mno345
+```
 
 ## Quick Reference
 
@@ -386,5 +617,11 @@ ergors init new
 ergors keys import-mnemonic --phrase "..." --label "Akash" --make-default
 ergors start &
 ergors deploy create --sdl sdls/embeddings/qwen.yml
-ergors deploy status <session-id>
+ergors deploy info <session-id>
+
+# Management operations
+ergors deploy endpoints <session-id>
+ergors deploy topup-escrow <session-id> 10000000
+ergors deploy update-deployment <session-id> --sdl new.yml
+ergors deploy close-deployment <session-id>
 ```

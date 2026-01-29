@@ -20,3 +20,5 @@ archive
 work/*
 
 .DS_Store
+
+PROJECT_*

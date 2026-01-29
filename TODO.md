@@ -6,9 +6,15 @@
 
 **Issues**: [#2 CosmWasm Integration](https://github.com/permissionlessweb/ergors/issues/2)
 
+- correctly implement instantiate2 functionality
+- add flags for permissions to access cosmwasm contracts (mimicing wasmd functionality)
+- implement various authenticator middleware contracts (see smart-account implementations)
+
 ## NETWORK
 
 **Issues**: [#4 Network Identity & Consensus](https://github.com/permissionlessweb/ergors/issues/4)
+
+- implement bft between nodes (state-sync application-state root hashes, bft-consensus of per-node state commitments)
 
 ## NODE ACTIONS
 
@@ -23,6 +29,14 @@
 ## DEPLOYMENTS
 
 **Issues**: [#16 1-Click Deployment System](https://github.com/permissionlessweb/ergors/issues/16) | [#1 Akash Deployment](https://github.com/permissionlessweb/ergors/issues/1)
+
+- generating certificates to send during MsgCreateCertificate needs full implementation
+- query deployments needs full implementation
+- cancel deployment should also send close deployment msg to deployment
+- improve labeling of deployments
+- on successful wallet password provision, escape process as workflow has been invoked
+- 
+
 
 ### STORAGE LAYER ARCHITECTURE
 
@@ -90,4 +104,22 @@
 
 **Issues**: [#13 Embedding & RAG](https://github.com/permissionlessweb/ergors/issues/13)
 
-## COMPLETE
+## REVIEWS
+
+- review the server level integration. can we improve how:
+  - we expect de/serialization into more standard (proto/Any type format)
+  - the amount of hard-coding is implemented
+  - how we cache api request for jit/first-come-first serve authentication (to implement support for cw-implementations that require rate-limits/access grant limits to be in serial)
+- review cosmwasmvm level integration. can we improve how:
+  - we can be more certain that there are no issues to runtime/ atomic/parallel access & state updates?
+- review the node networking and communication layer. can we:
+  - improve by introducing mempool/block building (each node is its own blockchain, has mempool)
+  - make use of ibc protocol for inter-node communication (will work seamlessly with cosmwasmvm layer)
+- review the node storage layer. can we improve:
+  - how we have implemented network wide state snapshot and compression
+  - saving/loading/classifying sessions (comptibilitiy with opencode,goose,claude sessions)
+- review the node encryption layer. can we improve:
+  - the scatteredness of the encryption impelmentation
+  - make use of the custody and keys crates to handle actions in more standardized modular manner (review how penumbra uses actionplans)
+- review the configuration layer.
+- review the bootstrapping layer.
