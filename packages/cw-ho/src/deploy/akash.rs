@@ -39,9 +39,9 @@ pub mod msg_types {
             ho_std::types::ergors::akash::deployment::v1beta4::MsgCreateDeployment::type_url(),
             ho_std::types::ergors::akash::deployment::v1beta4::MsgUpdateDeployment::type_url(),
             ho_std::types::ergors::akash::deployment::v1beta4::MsgCloseDeployment::type_url(),
-            ho_std::types::ergors::akash::market::v1beta4::MsgCreateLease::type_url(),
-            ho_std::types::ergors::akash::market::v1beta4::MsgCloseBid::type_url(),
-            ho_std::types::ergors::akash::market::v1beta4::MsgWithdrawLease::type_url(),
+            ho_std::types::ergors::akash::market::v1beta5::MsgCreateLease::type_url(),
+            ho_std::types::ergors::akash::market::v1beta5::MsgCloseBid::type_url(),
+            ho_std::types::ergors::akash::market::v1beta5::MsgWithdrawLease::type_url(),
             ho_std::types::ergors::akash::cert::v1::MsgCreateCertificate::type_url(),
             ho_std::types::ergors::akash::cert::v1::MsgRevokeCertificate::type_url(),
         ]
@@ -437,7 +437,11 @@ impl AkashClient {
 
         // Create CosmosClient for querying bids
         let endpoints = CosmosEndpoints {
-            rest: self.config.node.replace("https://rpc-", "https://rest-").replace(":443", ""),
+            rest: self
+                .config
+                .node
+                .replace("https://rpc-", "https://rest-")
+                .replace(":443", ""),
             chain_id: self.config.chain_id.clone(),
             timeout: Duration::from_secs(30),
         };
@@ -449,7 +453,11 @@ impl AkashClient {
 
             match cosmos_client.query_open_bids(owner, dseq_u64).await {
                 Ok(bids) if !bids.is_empty() => {
-                    println!("[INFO] Received {} bid(s) after {} attempt(s)", bids.len(), attempt);
+                    println!(
+                        "[INFO] Received {} bid(s) after {} attempt(s)",
+                        bids.len(),
+                        attempt
+                    );
                     for bid in &bids {
                         println!(
                             "[INFO]   - Provider: {}, Price: {} {}",
@@ -482,7 +490,11 @@ impl AkashClient {
 
         // Create CosmosClient for querying bids
         let endpoints = CosmosEndpoints {
-            rest: self.config.node.replace("https://rpc-", "https://rest-").replace(":443", ""),
+            rest: self
+                .config
+                .node
+                .replace("https://rpc-", "https://rest-")
+                .replace(":443", ""),
             chain_id: self.config.chain_id.clone(),
             timeout: Duration::from_secs(30),
         };
@@ -498,7 +510,10 @@ impl AkashClient {
         // Filter to trusted providers if configured
         let filtered_bids: Vec<_> = if self.trusted_providers.is_empty() {
             // No trusted providers configured - use all bids
-            println!("[INFO] No trusted providers configured, considering all {} bid(s)", all_bids.len());
+            println!(
+                "[INFO] No trusted providers configured, considering all {} bid(s)",
+                all_bids.len()
+            );
             all_bids
         } else {
             // Filter to only trusted providers
@@ -524,11 +539,7 @@ impl AkashClient {
         // Select cheapest bid
         let best_bid = filtered_bids
             .iter()
-            .min_by_key(|bid| {
-                bid.price_amount
-                    .parse::<u64>()
-                    .unwrap_or(u64::MAX)
-            })
+            .min_by_key(|bid| bid.price_amount.parse::<u64>().unwrap_or(u64::MAX))
             .ok_or_else(|| anyhow!("Failed to select best bid"))?;
 
         println!(

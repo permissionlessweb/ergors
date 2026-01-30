@@ -34,7 +34,7 @@ use super::manifest::{query_service_endpoints, ManifestSender};
 use crate::storage::ErgorsStorage;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::ergors::akash::deployment::v1beta4::{MsgCloseDeployment, MsgCreateDeployment};
-use ho_std::types::ergors::akash::market::v1beta4::MsgCreateLease;
+use ho_std::types::ergors::akash::market::v1beta5::MsgCreateLease;
 use ho_std::types::ergors::orch::v1::{AkashDeployConfig, CosmosKeyStore};
 use layer_climb::prelude::SigningClient;
 use prost::Name;
@@ -494,6 +494,14 @@ impl AutomatedDeployer {
 
         // Broadcast deployment transaction using type-safe helper
         tracing::info!("  Broadcasting MsgCreateDeployment...");
+
+        // Log protobuf encoding for comparison with official tool
+        use prost::Message;
+        let msg_bytes = msg.encode_to_vec();
+        tracing::debug!("  Protobuf size: {} bytes", msg_bytes.len());
+        tracing::debug!("  Protobuf hex (first 500 bytes): {}",
+            hex::encode(&msg_bytes[..msg_bytes.len().min(500)]));
+
         let _tx_resp = broadcast_akash_msg(
             signing_client,
             &MsgCreateDeployment::type_url(),
@@ -650,8 +658,10 @@ impl AutomatedDeployer {
             tracing::info!("  Mode: INTERACTIVE (user selection)");
             tracing::info!("  Available bids:");
             for (i, bid) in bids.iter().enumerate() {
-                let price: u64 = bid.price_amount.parse().unwrap_or(0);
-                let price_akt = price as f64 / 1_000_000.0;
+                // Price is in decimal format (e.g., "6002.811140000000000000")
+                // Parse as f64, then convert to uakt integer
+                let price_decimal: f64 = bid.price_amount.parse().unwrap_or(0.0);
+                let price_akt = price_decimal / 1_000_000.0;
                 let trusted = if opts.trusted_providers.contains(&bid.provider) {
                     " [TRUSTED]"
                 } else {
@@ -710,18 +720,19 @@ impl AutomatedDeployer {
         }
 
         // Select cheapest bid (auto-selection)
+        // Note: Prices are in decimal format (e.g., "6002.811140000000000000" uakt)
         let selected = candidates
             .iter()
             .min_by(|a, b| {
-                let price_a: u64 = a.price_amount.parse().unwrap_or(u64::MAX);
-                let price_b: u64 = b.price_amount.parse().unwrap_or(u64::MAX);
-                price_a.cmp(&price_b)
+                let price_a: f64 = a.price_amount.parse().unwrap_or(f64::MAX);
+                let price_b: f64 = b.price_amount.parse().unwrap_or(f64::MAX);
+                price_a.partial_cmp(&price_b).unwrap_or(std::cmp::Ordering::Equal)
             })
             .cloned()
             .ok_or_else(|| anyhow!("Failed to select bid"))?;
 
-        let price: u64 = selected.price_amount.parse().unwrap_or(0);
-        let price_akt = price as f64 / 1_000_000.0;
+        let price_uakt: f64 = selected.price_amount.parse().unwrap_or(0.0);
+        let price_akt = price_uakt / 1_000_000.0;
         let is_trusted = opts.trusted_providers.contains(&selected.provider);
 
         tracing::info!("  ─────────────────────────────────────────");
@@ -738,7 +749,7 @@ impl AutomatedDeployer {
         workflow.provider = Some(AkashProviderSelection {
             provider_address: selected.provider.clone(),
             reputation_score: 100, // Would query reputation system in production
-            bid_price_uakt: price,
+            bid_price_uakt: price_uakt as u64, // Convert decimal to integer uakt
             total_bids_received: bids.len() as u32,
             selected_at: Some(current_timestamp()),
             is_trusted_provider: is_trusted,
@@ -769,7 +780,7 @@ impl AutomatedDeployer {
         );
 
         // Build MsgCreateLease
-        let msg = build_create_lease_msg(&bid.owner, bid.dseq, bid.gseq, bid.oseq, &bid.provider);
+        let msg = build_create_lease_msg(&bid.owner, bid.dseq, bid.gseq, bid.oseq, &bid.provider, bid.bseq);
 
         // Broadcast lease transaction using type-safe helper
         tracing::info!("  Broadcasting MsgCreateLease...");
@@ -782,8 +793,8 @@ impl AutomatedDeployer {
         .await?;
 
         let lease_id = format!(
-            "{}/{}/{}/{}/{}",
-            bid.owner, bid.dseq, bid.gseq, bid.oseq, bid.provider
+            "{}/{}/{}/{}/{}/{}",
+            bid.owner, bid.dseq, bid.gseq, bid.oseq, bid.provider, bid.bseq
         );
         tracing::info!("  Lease ID: {}", lease_id);
 

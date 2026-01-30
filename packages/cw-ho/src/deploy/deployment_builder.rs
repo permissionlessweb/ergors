@@ -13,7 +13,7 @@ use ho_std::types::ergors::akash::deployment::v1::DeploymentId;
 use ho_std::types::ergors::akash::deployment::v1beta4::{
     GroupSpec, MsgCloseDeployment, MsgCreateDeployment, ResourceUnit,
 };
-use ho_std::types::ergors::akash::market::v1beta4::{BidId, MsgCreateLease};
+use ho_std::types::ergors::akash::market::{v1::BidId, v1beta5::MsgCreateLease};
 use ho_std::types::ergors::cosmos::base::v1beta1::{Coin, DecCoin};
 use sha2::{Digest, Sha256};
 
@@ -563,14 +563,45 @@ impl DeploymentBuilder {
     }
 
     /// Parse price from placement profile.
-    /// Returns price as DecCoin with Cosmos SDK decimal format (18 decimal places).
+    ///
+    /// Returns price as DecCoin with proper decimal precision.
+    ///
+    /// # DecCoin Format (CRITICAL)
+    ///
+    /// The Akash chain treats `DecCoin` amounts differently from `Coin`:
+    ///
+    /// - `Coin` (deposits): Direct integer amounts (e.g., "5000000" = 5 AKT)
+    /// - `DecCoin` (prices): Integer amounts **divided by 10^18** for decimal precision
+    ///
+    /// ## The Problem
+    ///
+    /// Three formats were tested:
+    /// 1. `"1000000"` (integer) → Chain interprets as `0.000000000001` uakt ❌ TOO CHEAP
+    /// 2. `"1000000.000000000000000000"` (decimal string) → Simulation fails ❌
+    ///    Error: `math/big: cannot unmarshal "..." into a *big.Int`
+    /// 3. `"1000000000000000000000000"` (integer × 10^18) → Works correctly ✅
+    ///
+    /// ## The Solution
+    ///
+    /// To represent 1,000,000 uakt (1 AKT):
+    /// - Multiply by 10^18: `1000000 * 10^18 = 1000000000000000000000000`
+    /// - Send as integer string: `"1000000000000000000000000"`
+    /// - Chain divides by 10^18: `1000000.000000000000000000` uakt ✅
+    ///
+    /// ## Why Decimal String Fails
+    ///
+    /// The simulation code parses DecCoin amounts as `*big.Int`:
+    /// - `"1000000.000000000000000000"` → Can't parse (has decimal point)
+    /// - `"1000000000000000000000000"` → Parses successfully as big integer
+    ///
+    /// See tests: `test_deccoin_formats_comparison` and `test_msg_create_deployment_deccoin_encoding`
     fn parse_price(
         &self,
         placement_profiles: Option<&serde_yaml::Value>,
         placement_name: &str,
         service_name: &str,
     ) -> Result<DecCoin> {
-        // Default price: 1000000 uakt
+        // Default price: 1000000 uakt (1 AKT)
         let mut amount_base = 1_000_000u64;
         let mut denom = "uakt".to_string();
 
@@ -595,10 +626,15 @@ impl DeploymentBuilder {
             }
         }
 
-        // Use integer string format (decimal format causes simulation error)
+        // CRITICAL: Multiply by 10^18 for DecCoin decimal precision
+        // The chain divides DecCoin amounts by 10^18 to get the actual value
+        // Use u128 to avoid overflow (u64 max is ~1.8×10^19, but we need up to 10^24)
+        const DECIMAL_PRECISION: u128 = 1_000_000_000_000_000_000; // 10^18
+        let amount_with_decimals = (amount_base as u128) * DECIMAL_PRECISION;
+
         Ok(DecCoin {
             denom,
-            amount: amount_base.to_string(),
+            amount: amount_with_decimals.to_string(),
         })
     }
 }
@@ -606,6 +642,7 @@ impl DeploymentBuilder {
 #[cfg(test)]
 mod deccoin_tests {
     use super::*;
+    use cosmwasm_std::Decimal;
     use prost::Message;
 
     #[test]
@@ -616,13 +653,11 @@ mod deccoin_tests {
         println!("\n=== DecCoin Format Comparison ===\n");
 
         // 1. cosmwasm_std::DecCoin
-        let cosmwasm_deccoin = cosmwasm_std::DecCoin::new(
-            Decimal::from_ratio(amount_base, 1u64),
-            denom,
-        );
+        let cosmwasm_deccoin =
+            cosmwasm_std::DecCoin::new(Decimal::from_ratio(amount_base, 1u64), denom);
         println!("1. cosmwasm_std::DecCoin:");
         println!("   - amount field: {}", cosmwasm_deccoin.amount);
-        println!("   - JSON: {}",cosmwasm_deccoin.amount.to_string());
+        println!("   - JSON: {}", cosmwasm_deccoin.amount.to_string());
 
         // 2. Our proto DecCoin (ho_std)
         let proto_deccoin = DecCoin {
@@ -631,7 +666,10 @@ mod deccoin_tests {
         };
         println!("\n2. Proto DecCoin (ho_std):");
         println!("   - amount field: {}", proto_deccoin.amount);
-        println!("   - JSON: {}", serde_json::to_string(&proto_deccoin).unwrap());
+        println!(
+            "   - JSON: {}",
+            serde_json::to_string(&proto_deccoin).unwrap()
+        );
 
         // Encode to protobuf bytes
         let proto_bytes = proto_deccoin.encode_to_vec();
@@ -645,10 +683,16 @@ mod deccoin_tests {
         };
         println!("\n3. Proto DecCoin (integer format):");
         println!("   - amount field: {}", proto_deccoin_int.amount);
-        println!("   - JSON: {}", serde_json::to_string(&proto_deccoin_int).unwrap());
+        println!(
+            "   - JSON: {}",
+            serde_json::to_string(&proto_deccoin_int).unwrap()
+        );
 
         let proto_int_bytes = proto_deccoin_int.encode_to_vec();
-        println!("   - Protobuf bytes (hex): {}", hex::encode(&proto_int_bytes));
+        println!(
+            "   - Protobuf bytes (hex): {}",
+            hex::encode(&proto_int_bytes)
+        );
         println!("   - Protobuf size: {} bytes", proto_int_bytes.len());
 
         // 4. Proto DecCoin with full decimal format
@@ -658,17 +702,55 @@ mod deccoin_tests {
         };
         println!("\n4. Proto DecCoin (full decimal format):");
         println!("   - amount field: {}", proto_deccoin_decimal.amount);
-        println!("   - JSON: {}", serde_json::to_string(&proto_deccoin_decimal).unwrap());
+        println!(
+            "   - JSON: {}",
+            serde_json::to_string(&proto_deccoin_decimal).unwrap()
+        );
 
         let proto_decimal_bytes = proto_deccoin_decimal.encode_to_vec();
-        println!("   - Protobuf bytes (hex): {}", hex::encode(&proto_decimal_bytes));
+        println!(
+            "   - Protobuf bytes (hex): {}",
+            hex::encode(&proto_decimal_bytes)
+        );
         println!("   - Protobuf size: {} bytes", proto_decimal_bytes.len());
+
+        // 5. TEST USER'S HYPOTHESIS: Integer multiplied by 10^18
+        // Note: Use u128 to avoid overflow (u64 maxes at ~1.8*10^19, but 1M * 10^18 = 10^24)
+        let amount_with_18_decimals = (amount_base as u128) * 1_000_000_000_000_000_000u128;
+        let proto_deccoin_big_int = DecCoin {
+            denom: denom.to_string(),
+            amount: amount_with_18_decimals.to_string(),
+        };
+        println!("\n5. Proto DecCoin (integer * 10^18 format):");
+        println!(
+            "   - Input: {} * 10^18 = {}",
+            amount_base, amount_with_18_decimals
+        );
+        println!("   - amount field: {}", proto_deccoin_big_int.amount);
+        println!(
+            "   - JSON: {}",
+            serde_json::to_string(&proto_deccoin_big_int).unwrap()
+        );
+
+        let proto_big_int_bytes = proto_deccoin_big_int.encode_to_vec();
+        println!(
+            "   - Protobuf bytes (hex): {}",
+            hex::encode(&proto_big_int_bytes)
+        );
+        println!("   - Protobuf size: {} bytes", proto_big_int_bytes.len());
 
         // Compare byte sizes
         println!("\n=== Size Comparison ===");
         println!("Integer format:        {} bytes", proto_int_bytes.len());
         println!("cosmwasm_std format:   {} bytes", proto_bytes.len());
         println!("Full decimal format:   {} bytes", proto_decimal_bytes.len());
+        println!("Integer * 10^18:       {} bytes", proto_big_int_bytes.len());
+
+        // Compare actual protobuf bytes
+        println!("\n=== Protobuf Bytes Comparison ===");
+        println!("Integer:       {}", hex::encode(&proto_int_bytes));
+        println!("Decimal:       {}", hex::encode(&proto_decimal_bytes));
+        println!("Integer*10^18: {}", hex::encode(&proto_big_int_bytes));
 
         // Check if they decode properly
         println!("\n=== Decode Test ===");
@@ -724,7 +806,9 @@ deployment:
         let yaml: serde_yaml::Value = serde_yaml::from_str(sdl).unwrap();
         let placement_profiles = yaml.get("profiles").and_then(|p| p.get("placement"));
 
-        let price = builder.parse_price(placement_profiles, "dcloud", "test").unwrap();
+        let price = builder
+            .parse_price(placement_profiles, "dcloud", "test")
+            .unwrap();
 
         println!("\n=== parse_price() Output ===");
         println!("denom: {}", price.denom);
@@ -733,7 +817,8 @@ deployment:
 
         // Check format
         assert_eq!(price.denom, "uakt");
-        println!("Format check: {}",
+        println!(
+            "Format check: {}",
             if price.amount.contains('.') {
                 "DECIMAL format (has decimal point)"
             } else {
@@ -741,15 +826,185 @@ deployment:
             }
         );
     }
+
+    /// Test to investigate DecCoin encoding in MsgCreateDeployment
+    ///
+    /// This test builds a full MsgCreateDeployment with different DecCoin amount formats
+    /// and shows how each gets encoded to protobuf bytes. This helps us understand
+    /// what format the Akash chain expects.
+    #[test]
+    fn test_msg_create_deployment_deccoin_encoding() {
+        use prost::Message;
+
+        println!("\n=== MsgCreateDeployment DecCoin Encoding Test ===\n");
+
+        let owner = "akash1test".to_string();
+        let dseq = 12345u64;
+        let amount_base = 1_000_000u64; // 1 AKT in uakt
+
+        // Minimal SDL for testing
+        let sdl = r#"
+version: "2.0"
+services:
+  web:
+    image: nginx:latest
+    expose:
+      - port: 80
+        to:
+          - global: true
+profiles:
+  compute:
+    web:
+      resources:
+        cpu:
+          units: 1
+        memory:
+          size: 512Mi
+        storage:
+          size: 1Gi
+  placement:
+    dcloud:
+      pricing:
+        web:
+          denom: uakt
+          amount: 1000000
+deployment:
+  web:
+    dcloud:
+      profile: web
+      count: 1
+"#;
+
+        let builder = DeploymentBuilder::new(&owner, dseq).with_deposit(DEFAULT_DEPOSIT_UAKT);
+        let mut msg = builder.build_from_sdl(sdl).unwrap();
+
+        // Test 1: Integer format (current implementation)
+        if let Some(group) = msg.groups.first_mut() {
+            if let Some(resource_unit) = group.resources.first_mut() {
+                resource_unit.price = Some(DecCoin {
+                    denom: "uakt".to_string(),
+                    amount: amount_base.to_string(), // "1000000"
+                });
+            }
+        }
+
+        let msg_bytes_int = msg.encode_to_vec();
+        println!("1. INTEGER FORMAT (\"1000000\"):");
+        println!(
+            "   - DecCoin amount: {}",
+            msg.groups
+                .first()
+                .and_then(|g| g.resources.first())
+                .and_then(|r| r.price.as_ref())
+                .map(|p| p.amount.as_str())
+                .unwrap_or("N/A")
+        );
+        println!("   - Message size: {} bytes", msg_bytes_int.len());
+        println!(
+            "   - Protobuf hex (first 300 bytes): {}",
+            hex::encode(&msg_bytes_int[..msg_bytes_int.len().min(300)])
+        );
+
+        // Test 2: Full decimal format
+        if let Some(group) = msg.groups.first_mut() {
+            if let Some(resource_unit) = group.resources.first_mut() {
+                resource_unit.price = Some(DecCoin {
+                    denom: "uakt".to_string(),
+                    amount: format!("{}.000000000000000000", amount_base), // "1000000.000000000000000000"
+                });
+            }
+        }
+
+        let msg_bytes_decimal = msg.encode_to_vec();
+        println!("\n2. DECIMAL FORMAT (\"1000000.000000000000000000\"):");
+        println!(
+            "   - DecCoin amount: {}",
+            msg.groups
+                .first()
+                .and_then(|g| g.resources.first())
+                .and_then(|r| r.price.as_ref())
+                .map(|p| p.amount.as_str())
+                .unwrap_or("N/A")
+        );
+        println!("   - Message size: {} bytes", msg_bytes_decimal.len());
+        println!(
+            "   - Protobuf hex (first 300 bytes): {}",
+            hex::encode(&msg_bytes_decimal[..msg_bytes_decimal.len().min(300)])
+        );
+
+        // Test 3: Integer * 10^18 format (user's hypothesis)
+        // Use u128 to avoid overflow
+        let amount_with_18_decimals = (amount_base as u128) * 1_000_000_000_000_000_000u128;
+        if let Some(group) = msg.groups.first_mut() {
+            if let Some(resource_unit) = group.resources.first_mut() {
+                resource_unit.price = Some(DecCoin {
+                    denom: "uakt".to_string(),
+                    amount: amount_with_18_decimals.to_string(), // "1000000000000000000000000"
+                });
+            }
+        }
+
+        let msg_bytes_big_int = msg.encode_to_vec();
+        println!(
+            "\n3. INTEGER * 10^18 FORMAT (\"{}\"):",
+            amount_with_18_decimals
+        );
+        println!(
+            "   - DecCoin amount: {}",
+            msg.groups
+                .first()
+                .and_then(|g| g.resources.first())
+                .and_then(|r| r.price.as_ref())
+                .map(|p| p.amount.as_str())
+                .unwrap_or("N/A")
+        );
+        println!("   - Message size: {} bytes", msg_bytes_big_int.len());
+        println!(
+            "   - Protobuf hex (first 300 bytes): {}",
+            hex::encode(&msg_bytes_big_int[..msg_bytes_big_int.len().min(300)])
+        );
+
+        // Compare the bytes
+        println!("\n=== Comparison ===");
+        println!("Size difference:");
+        println!("  Integer:       {} bytes", msg_bytes_int.len());
+        println!(
+            "  Decimal:       {} bytes (diff: {:+})",
+            msg_bytes_decimal.len(),
+            msg_bytes_decimal.len() as i64 - msg_bytes_int.len() as i64
+        );
+        println!(
+            "  Integer*10^18: {} bytes (diff: {:+})",
+            msg_bytes_big_int.len(),
+            msg_bytes_big_int.len() as i64 - msg_bytes_int.len() as i64
+        );
+
+        println!("\n=== Analysis ===");
+        println!("The protobuf encoding stores the DecCoin amount as-is (string field).");
+        println!("There is NO automatic decimal point insertion by protobuf.");
+        println!("The format you use in Rust is EXACTLY what gets sent to the chain.");
+        println!("\nHowever, the simulation error suggests the chain rejects decimal format.");
+        println!("This is likely a chain-side parsing issue, not a client encoding issue.");
+    }
 }
 
 /// Build MsgCreateLease from bid info.
+/// Build MsgCreateLease from bid info.
+///
+/// # Arguments
+/// * `owner` - Deployment owner address
+/// * `dseq` - Deployment sequence number
+/// * `gseq` - Group sequence number
+/// * `oseq` - Order sequence number
+/// * `provider` - Provider address
+/// * `bseq` - Bid sequence number (distinguishes multiple bids from same provider)
 pub fn build_create_lease_msg(
     owner: &str,
     dseq: u64,
     gseq: u32,
     oseq: u32,
     provider: &str,
+    bseq: u32,
 ) -> MsgCreateLease {
     MsgCreateLease {
         bid_id: Some(BidId {
@@ -758,6 +1013,7 @@ pub fn build_create_lease_msg(
             gseq,
             oseq,
             provider: provider.to_string(),
+            bseq,
         }),
     }
 }
@@ -927,7 +1183,7 @@ deployment:
 
     #[test]
     fn test_build_create_lease_msg() {
-        let msg = build_create_lease_msg("akash1owner", 12345, 1, 1, "akash1provider");
+        let msg = build_create_lease_msg("akash1owner", 12345, 1, 1, "akash1provider", 0);
 
         let bid_id = msg.bid_id.as_ref().unwrap();
         assert_eq!(bid_id.owner, "akash1owner");
@@ -935,5 +1191,6 @@ deployment:
         assert_eq!(bid_id.gseq, 1);
         assert_eq!(bid_id.oseq, 1);
         assert_eq!(bid_id.provider, "akash1provider");
+        assert_eq!(bid_id.bseq, 0);
     }
 }

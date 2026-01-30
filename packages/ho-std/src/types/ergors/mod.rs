@@ -112,6 +112,9 @@ pub mod akash {
         pub mod v1beta4 {
             include!("gen/akash.market.v1beta4.rs");
         }
+        pub mod v1beta5 {
+            include!("gen/akash.market.v1beta5.rs");
+        }
         pub mod v2beta1 {
             include!("gen/akash.market.v2beta1.rs");
         }

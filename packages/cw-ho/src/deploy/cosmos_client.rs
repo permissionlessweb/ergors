@@ -493,7 +493,8 @@ impl CosmosClient {
         for bid_entry in bids {
             let bid = bid_entry.get("bid");
             if let Some(b) = bid {
-                let bid_id = b.get("bid_id");
+                // FIX: API returns "id", not "bid_id"
+                let bid_id = b.get("id");
                 let price = b.get("price");
 
                 if let (Some(id), Some(p)) = (bid_id, price) {
@@ -523,6 +524,10 @@ impl CosmosClient {
                             .and_then(|p| p.as_str())
                             .unwrap_or("")
                             .to_string(),
+                        bseq: id
+                            .get("bseq")
+                            .and_then(|b| b.as_u64())
+                            .unwrap_or(0) as u32,
                         price_denom: p
                             .get("denom")
                             .and_then(|d| d.as_str())
@@ -832,6 +837,7 @@ pub struct BidInfo {
     pub gseq: u32,
     pub oseq: u32,
     pub provider: String,
+    pub bseq: u32,
     pub price_denom: String,
     pub price_amount: String,
     pub state: BidState,
