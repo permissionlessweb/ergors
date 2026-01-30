@@ -724,6 +724,57 @@ impl CosmosClient {
             .collect())
     }
 
+    // ===== Akash Provider Queries =====
+
+    /// Query provider information by address.
+    ///
+    /// REST: /akash/provider/v1beta4/providers/{owner}
+    pub async fn query_provider(&self, owner: &str) -> Result<ProviderInfo> {
+        let url = format!("{}/akash/provider/v1beta4/providers/{}", self.endpoints.rest, owner);
+
+        tracing::debug!("Querying provider: {}", url);
+
+        let resp = self.http.get(&url).send().await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("Provider query failed ({}): {}", status, body));
+        }
+
+        let json: serde_json::Value = resp.json().await?;
+        let provider = json
+            .get("provider")
+            .ok_or_else(|| anyhow!("Missing 'provider' in response"))?;
+
+        let host_uri = provider
+            .get("host_uri")
+            .and_then(|h| h.as_str())
+            .ok_or_else(|| anyhow!("Missing 'host_uri' in provider info"))?
+            .to_string();
+
+        let email = provider
+            .get("info")
+            .and_then(|i| i.get("email"))
+            .and_then(|e| e.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let website = provider
+            .get("info")
+            .and_then(|i| i.get("website"))
+            .and_then(|w| w.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        Ok(ProviderInfo {
+            owner: owner.to_string(),
+            host_uri,
+            email,
+            website,
+        })
+    }
+
     // ===== Akash Escrow Queries =====
 
     /// Query escrow account for a deployment.
@@ -896,6 +947,15 @@ pub enum EscrowState {
     Open,
     Closed,
     Overdrawn,
+}
+
+/// Provider information from chain query.
+#[derive(Debug, Clone)]
+pub struct ProviderInfo {
+    pub owner: String,
+    pub host_uri: String,
+    pub email: String,
+    pub website: String,
 }
 
 #[cfg(test)]

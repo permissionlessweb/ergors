@@ -178,18 +178,22 @@ When running, the engine exposes:
 
 | Endpoint | Description |
 |----------|-------------|
-| `/v1/chat/completions` | OpenAI-compatible chat completions (proxies to configured provider) |
+| `/v1/chat/completions` | OpenAI-compatible chat completions (proxies to configured provider or deployment) |
 | `/v1/messages` | Anthropic-compatible messages API |
+| `/v1/models` | List available models (configured providers + active Akash deployments) |
 | `/health` | Health check endpoint |
 | `/metrics` | Prometheus-compatible metrics |
 
 **API Features:**
 
 - Automatic LLM provider routing based on model name
-- Request/response capture to Cnidarium storage
+- **Deployment-first routing**: Active Akash deployments prioritized over configured providers
+- Deployment labels usable as model names in inference requests
+- Request/response capture to Cnidarium storage with token usage tracking
 - Session management with fractal hierarchy
 - Rate limiting via token bucket (configurable)
 - Streaming support for both OpenAI and Anthropic formats
+- Automated cache refresh (30s) syncs deployments with inference router
 
 ---
 
@@ -281,6 +285,7 @@ ergors deploy create --sdl <path> [OPTIONS]
 |--------|-------------|---------|
 | `--sdl <PATH>` | Path to SDL YAML file | Required (or --sdl-content) |
 | `--sdl-content <YAML>` | Raw SDL YAML content | - |
+| `--label <LABEL>` | User-friendly label for deployment (must be unique across active deployments) | - |
 | `--key-name <NAME>` | Key name for signing | `default` |
 | `--account-index <N>` | HD account index | `0` |
 | `--node <URL>` | Akash RPC endpoint | env: `AKASH_NODE` |
@@ -305,14 +310,33 @@ ergors deploy create --sdl <path> [OPTIONS]
 **Example:**
 
 ```bash
-# Fully automated deployment
+# Fully automated deployment with label
 ergors deploy create \
   --sdl sdls/embeddings/qwen.yml \
+  --label qwen-inference \
   --key-name default \
   --auto \
   --auto-select-bid \
   --min-balance 10000000
 ```
+
+**Label-Based Access:**
+
+Once a deployment is created with a label, you can use the label instead of session-id in all commands:
+
+```bash
+# Access by label instead of session-id
+ergors deploy info qwen-inference
+ergors deploy endpoints qwen-inference
+ergors deploy close-lease qwen-inference
+```
+
+**Label Behavior:**
+
+- Labels must be unique across active deployments (collision check on creation)
+- Labels become inactive when deployment completes/fails
+- Historical labels remain queryable but don't conflict with new deployments
+- O(1) lookups via in-memory cache for fast access
 
 ### Run Deployment
 
@@ -331,8 +355,10 @@ ergors deploy list [--status <STATUS>] [--limit <N>]
 ### Get Deployment
 
 ```bash
-ergors deploy get <session-id>
+ergors deploy get <session-id-or-label>
 ```
+
+**Note:** All deployment commands accept either session-id OR label for lookups.
 
 ### Query Bids
 
@@ -554,6 +580,108 @@ ergors deploy list-grants [--granter <addr>] [--grantee <addr>] [--status <pendi
 ```bash
 ergors deploy query-balance <address> [--denom uakt]
 ```
+
+---
+
+## Deployment → Inference Integration
+
+ERGORS automatically integrates completed Akash deployments into the inference routing system, enabling seamless model access.
+
+### Workflow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant CLI as ergors CLI
+    participant Engine as ERGORS Engine
+    participant Cache as Deployment Cache
+    participant Router as LLM Router
+    participant Akash as Akash Deployment
+
+    U->>CLI: deploy create --label qwen-inference --auto
+    CLI->>Engine: CreateAkashDeployment(label: qwen-inference)
+    Engine->>Engine: Run automated workflow
+    Engine->>Akash: Deploy service
+    Akash-->>Engine: Endpoints ready
+    Engine->>Cache: Add deployment to cache
+    Note over Cache: O(1) lookup by label
+
+    U->>Router: POST /v1/chat/completions (model: qwen-inference)
+    Router->>Cache: Get deployment by label
+    Cache-->>Router: Deployment endpoint
+    Router->>Akash: Forward request to deployment
+    Akash-->>Router: Response with token usage
+    Router-->>U: Inference response
+```
+
+### Usage Example
+
+```bash
+# 1. Deploy inference service with label
+ergors deploy create \
+  --sdl sdls/embeddings/qwen.yml \
+  --label qwen-inference \
+  --auto \
+  --auto-select-bid
+
+# 2. Wait for completion (~2-5 minutes)
+ergors deploy info qwen-inference
+
+# 3. Use deployment as model in inference requests
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen-inference",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+
+# 4. List all available models (includes active deployments)
+curl http://localhost:8080/v1/models
+```
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Label-as-Model** | Deployment labels become model names directly |
+| **Priority Routing** | Deployments checked before configured providers (OpenAI, Anthropic) |
+| **O(1) Lookup** | In-memory cache for fast routing |
+| **Auto-sync** | Cache refreshes every 30s from storage |
+| **Token Tracking** | Extracts token usage from OpenAI-compatible responses |
+| **Lifecycle Management** | Auto-add on completion, auto-remove on close |
+
+### Cache Behavior
+
+- **Add to cache**: When deployment status → `Completed` with service endpoints
+- **Remove from cache**: When `deploy close-lease` or `deploy close-deployment` called
+- **Refresh interval**: 30 seconds (automatic background task)
+- **Storage**: Backed by Cnidarium for persistence across restarts
+- **Collision prevention**: Labels validated at creation time (gRPC handler)
+
+### OpenAI Compatibility
+
+Deployments must expose OpenAI-compatible endpoints:
+
+| Endpoint | Request Type | Response Format |
+|----------|--------------|-----------------|
+| `/v1/chat/completions` | Chat messages | OpenAI ChatCompletion |
+| `/v1/embeddings` | Embedding request | OpenAI Embedding |
+
+**Token Usage Extraction:**
+
+The router automatically extracts token counts from the `usage` field:
+
+```json
+{
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 45,
+    "total_tokens": 57
+  }
+}
+```
+
+These are stored in `PromptResponse.tokens_used` for observability.
 
 ---
 

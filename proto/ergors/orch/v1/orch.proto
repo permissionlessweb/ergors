@@ -1281,6 +1281,10 @@ message AkashDeploymentWorkflow {
 
   // Service endpoints with port mappings (after manifest send)
   repeated AkashServiceEndpoint service_endpoints = 34;
+
+    // User-defined label for easy access (e.g., "embeddings-model", "inference-gpu")
+  // Must be unique across active deployments for O(1) label lookups
+  string label = 35;
 }
 
 // Workflow step log entry for audit

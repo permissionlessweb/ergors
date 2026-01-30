@@ -2246,6 +2246,9 @@ pub struct CreateAkashDeploymentRequest {
     /// Whether to auto-advance through all steps
     #[prost(bool, tag = "8")]
     pub auto_run: bool,
+    /// User-friendly label for this deployment (must be unique across active deployments)
+    #[prost(string, tag = "9")]
+    pub label: ::prost::alloc::string::String,
 }
 impl ::prost::Name for CreateAkashDeploymentRequest {
     const NAME: &'static str = "CreateAkashDeploymentRequest";

@@ -34,7 +34,6 @@ pub mod manifest {
 }
 
 pub mod akash {
-
     pub mod base {
         pub mod attributes {
             pub mod v1 {
@@ -100,6 +99,9 @@ pub mod akash {
     }
 
     pub mod manifest {
+        pub mod v2beta3 {
+            include!("gen/akash.manifest.v2beta3.rs");
+        }
         pub mod v2beta2 {
             include!("gen/akash.manifest.v2beta2.rs");
         }
@@ -120,7 +122,15 @@ pub mod akash {
         }
     }
 
+    pub mod inventory {
+        pub mod v1 {
+            include!("gen/akash.inventory.v1.rs");
+        }
+    }
     pub mod provider {
+        pub mod v1 {
+            include!("gen/akash.provider.v1.rs");
+        }
         pub mod v1beta3 {
             include!("gen/akash.provider.v1beta3.rs");
         }
@@ -162,6 +172,19 @@ pub mod cosmwasm {
     pub mod wasm {
         pub mod v1 {
             include!("gen/cosmwasm.wasm.v1.rs");
+        }
+    }
+}
+pub mod k8s {
+    pub mod io {
+        pub mod apimachinery {
+            pub mod pkg {
+                pub mod api {
+                    pub mod resource {
+                        include!("gen/k8s.io.apimachinery.pkg.api.resource.rs");
+                    }
+                }
+            }
         }
     }
 }
@@ -216,7 +239,6 @@ pub mod proxy {
 }
 
 pub mod storage {
-
     pub mod v1 {
         include!("gen/ergors.storage.v1.rs");
     }

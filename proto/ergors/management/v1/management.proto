@@ -1061,6 +1061,8 @@ message CreateAkashDeploymentRequest {
   string chain_id = 7;
   // Whether to auto-advance through all steps
   bool auto_run = 8;
+  // User-friendly label for this deployment (must be unique across active deployments)
+  string label = 9;
 }
 
 // Create deployment response

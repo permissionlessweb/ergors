@@ -625,3 +625,40 @@ pub async fn handle_get_session(
         }
     }
 }
+
+/// List available models (OpenAI-compatible /v1/models endpoint).
+/// Returns configured provider models + active Akash deployment models.
+pub async fn handle_list_models(State(state): State<ErgorsAppState>) -> Json<serde_json::Value> {
+    let mut models = Vec::new();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    // Get models from configured providers
+    for provider in state.r.get_providers() {
+        for model in provider.supported_models() {
+            models.push(serde_json::json!({
+                "id": model,
+                "object": "model",
+                "created": now,
+                "owned_by": provider.name(),
+            }));
+        }
+    }
+
+    // Get models from active deployments (O(1) cache lookup)
+    for deployment_model in state.r.deployment_cache().list_models().await {
+        models.push(serde_json::json!({
+            "id": deployment_model,
+            "object": "model",
+            "created": now,
+            "owned_by": "akash-deployment",
+        }));
+    }
+
+    Json(serde_json::json!({
+        "object": "list",
+        "data": models,
+    }))
+}

@@ -1,5 +1,6 @@
 mod api_keys;
 mod cost;
+pub mod deployment_cache;
 pub mod embed;
 mod encrypted_keys;
 mod joints;
@@ -13,6 +14,7 @@ use anyhow::Result;
 // pub use macros::{find_entity, registered_entities, LlmEntityDescriptor};
 pub use api_keys::*;
 pub use cost::*;
+pub use deployment_cache::*;
 pub use encrypted_keys::*;
 pub use joints::*;
 pub use prompt::*;
@@ -21,7 +23,7 @@ pub use router::*;
 pub use state_ext::{StateReadExt, StateWriteExt};
 
 use {
-    crate::{constants::*, orchestrate::*, traits::LlmModelTrait},
+    crate::{constants::*, traits::LlmModelTrait, types::ergors::orch::v1::*},
     camino::Utf8Path,
 };
 

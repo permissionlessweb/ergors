@@ -4,6 +4,10 @@ sub-modules
 node_modules
 data
 
+# proto vendored dependencies (from go mod vendor)
+proto/vendor
+proto/go.sum
+
 ## private data 
 logs
 .ho

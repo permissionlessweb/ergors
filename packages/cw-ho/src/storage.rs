@@ -63,6 +63,8 @@ const API_KEY_PREFIX: &str = "custody/api_keys";
 const COSMOS_KEY_STORE_KEY: &str = "custody/cosmos_key_store";
 const AKASH_WORKFLOW_PREFIX: &str = "akash_workflows";
 const AKASH_ENDPOINTS_PREFIX: &str = "akash_endpoints";
+const AKASH_LABEL_INDEX_PREFIX: &str = "akash_labels";
+const AKASH_ACTIVE_LABELS_PREFIX: &str = "akash_active_labels";
 const TRUSTED_PROVIDERS_KEY: &str = "config/trusted_providers";
 // const HEADSTASH: &str = "headstash";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions";
@@ -792,10 +794,33 @@ impl ErgorsStorage {
         let key = storage_key(AKASH_WORKFLOW_PREFIX, &workflow.session_id);
         let data = serde_json::to_vec(workflow)?;
         delta.put_raw(key.clone(), data);
+
+        // Create label index if label is provided and deployment is active
+        if !workflow.label.is_empty() {
+            let is_active = matches!(
+                workflow.status,
+                0 | 1 // Pending or Running
+            );
+
+            if is_active {
+                // Store label -> session_id mapping
+                let label_key = storage_key(AKASH_LABEL_INDEX_PREFIX, &workflow.label);
+                delta.put_raw(label_key.clone(), workflow.session_id.as_bytes().to_vec());
+
+                // Store in active labels set for quick uniqueness checks
+                let active_label_key = storage_key(AKASH_ACTIVE_LABELS_PREFIX, &workflow.label);
+                delta.put_raw(active_label_key, workflow.session_id.as_bytes().to_vec());
+
+                info!("🏷️  Indexed active deployment label: {} -> {}", workflow.label, workflow.session_id);
+            }
+        }
+
         self.cs.commit(delta).await?;
         info!(
-            "💾 Stored Akash workflow: {} (step: {:?})",
-            workflow.session_id, workflow.current_step
+            "💾 Stored Akash workflow: {} (step: {:?}, label: {})",
+            workflow.session_id,
+            workflow.current_step,
+            if workflow.label.is_empty() { "<none>" } else { &workflow.label }
         );
         Ok(())
     }
@@ -852,11 +877,98 @@ impl ErgorsStorage {
         Ok(workflows)
     }
 
+    /// Get an Akash deployment workflow by label (O(1) lookup)
+    pub async fn get_akash_workflow_by_label(
+        &self,
+        label: &str,
+    ) -> HoResult<Option<AkashDeploymentWorkflow>> {
+        let snapshot = self.cs.latest_snapshot();
+        let label_key = storage_key(AKASH_LABEL_INDEX_PREFIX, label);
+
+        match snapshot.get_raw(&label_key).await {
+            Ok(Some(session_id_bytes)) => {
+                let session_id = String::from_utf8(session_id_bytes)
+                    .map_err(|e| HoError::Storage(format!("Invalid session_id in label index: {}", e)))?;
+                self.get_akash_workflow(&session_id).await
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get Akash workflow by label {}: {}", label, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Check if a label is already in use by an active deployment
+    /// Returns the session_id if label is in use, None otherwise
+    pub async fn check_label_collision(&self, label: &str) -> HoResult<Option<String>> {
+        let snapshot = self.cs.latest_snapshot();
+        let active_label_key = storage_key(AKASH_ACTIVE_LABELS_PREFIX, label);
+
+        match snapshot.get_raw(&active_label_key).await {
+            Ok(Some(session_id_bytes)) => {
+                let session_id = String::from_utf8(session_id_bytes)
+                    .map_err(|e| HoError::Storage(format!("Invalid session_id in active labels: {}", e)))?;
+                Ok(Some(session_id))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to check label collision for {}: {}", label, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Get an Akash deployment workflow by either session-id OR label.
+    ///
+    /// This helper tries to resolve the identifier as:
+    /// 1. First as a session-id (UUID format check)
+    /// 2. Then as a label (if not UUID format)
+    ///
+    /// Returns the workflow if found, or an error with helpful message if not found.
+    pub async fn get_akash_workflow_by_id_or_label(
+        &self,
+        id_or_label: &str,
+    ) -> HoResult<AkashDeploymentWorkflow> {
+        // First try as session-id (direct lookup)
+        if let Some(workflow) = self.get_akash_workflow(id_or_label).await? {
+            return Ok(workflow);
+        }
+
+        // If not found as session-id, try as label
+        match self.get_akash_workflow_by_label(id_or_label).await? {
+            Some(workflow) => Ok(workflow),
+            None => {
+                // Not found by either session-id or label
+                Err(HoError::Storage(format!(
+                    "No deployment found with session-id or label: '{}'. Use 'ergors-cli deploy list' to see available deployments.",
+                    id_or_label
+                )))
+            }
+        }
+    }
+
     /// Delete an Akash workflow
     pub async fn delete_akash_workflow(&self, session_id: &str) -> HoResult<()> {
+        // Get workflow first to remove label index
+        let workflow = self.get_akash_workflow(session_id).await?;
+
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let key = storage_key(AKASH_WORKFLOW_PREFIX, session_id);
         delta.delete(key);
+
+        // Delete label indices if workflow had a label
+        if let Some(ref wf) = workflow {
+            if !wf.label.is_empty() {
+                let label_key = storage_key(AKASH_LABEL_INDEX_PREFIX, &wf.label);
+                delta.delete(label_key);
+
+                let active_label_key = storage_key(AKASH_ACTIVE_LABELS_PREFIX, &wf.label);
+                delta.delete(active_label_key);
+
+                info!("🏷️  Removed label index: {}", wf.label);
+            }
+        }
 
         // Also delete associated endpoints
         let endpoints_key = storage_key(AKASH_ENDPOINTS_PREFIX, session_id);
@@ -864,6 +976,22 @@ impl ErgorsStorage {
 
         self.cs.commit(delta).await?;
         info!("🗑️  Deleted Akash workflow and endpoints: {}", session_id);
+        Ok(())
+    }
+
+    /// Remove label from active index when deployment completes/fails
+    /// (keeps historical label index for queries)
+    pub async fn deactivate_deployment_label(&self, label: &str) -> HoResult<()> {
+        if label.is_empty() {
+            return Ok(());
+        }
+
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let active_label_key = storage_key(AKASH_ACTIVE_LABELS_PREFIX, label);
+        delta.delete(active_label_key);
+        self.cs.commit(delta).await?;
+
+        info!("🏷️  Deactivated label: {}", label);
         Ok(())
     }
 

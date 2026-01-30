@@ -527,6 +527,7 @@ impl ManagementClient {
         node_endpoint: &str,
         chain_id: &str,
         auto_run: bool,
+        label: &str,
     ) -> Result<CreateAkashDeploymentResponse> {
         let response = self
             .inner
@@ -539,6 +540,7 @@ impl ManagementClient {
                 node_endpoint: node_endpoint.to_string(),
                 chain_id: chain_id.to_string(),
                 auto_run,
+                label: label.to_string(),
             })
             .await
             .context("Failed to create Akash deployment")?;

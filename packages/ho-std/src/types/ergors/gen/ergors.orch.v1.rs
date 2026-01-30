@@ -3058,6 +3058,10 @@ pub struct AkashDeploymentWorkflow {
     /// Service endpoints with port mappings (after manifest send)
     #[prost(message, repeated, tag = "34")]
     pub service_endpoints: ::prost::alloc::vec::Vec<AkashServiceEndpoint>,
+    /// User-defined label for easy access (e.g., "embeddings-model", "inference-gpu")
+    /// Must be unique across active deployments for O(1) label lookups
+    #[prost(string, tag = "35")]
+    pub label: ::prost::alloc::string::String,
 }
 impl ::prost::Name for AkashDeploymentWorkflow {
     const NAME: &'static str = "AkashDeploymentWorkflow";

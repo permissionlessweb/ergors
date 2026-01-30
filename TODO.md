@@ -9,6 +9,8 @@
 - correctly implement instantiate2 functionality
 - add flags for permissions to access cosmwasm contracts (mimicing wasmd functionality)
 - implement various authenticator middleware contracts (see smart-account implementations)
+- implement cw-oline: cosmwasm contract to organize sdl and deployment sequence of [o-line](https://github.com/permissionlessweb/o-line/tree/master/playbook/oline-sdl)
+- add custom proxy from vm to invoke engine actions (have a contract call the api endpoint of an engine to bootstrap,make infernece call, etc)
 
 ## NETWORK
 
@@ -35,7 +37,7 @@
 - cancel deployment should also send close deployment msg to deployment
 - improve labeling of deployments
 - on successful wallet password provision, escape process as workflow has been invoked
-- 
+- Do not use REST + polling + “is it done?” endpoints, use async jobs + webhook/callbacks + idempotency keys.
 
 
 ### STORAGE LAYER ARCHITECTURE
@@ -123,3 +125,5 @@
   - make use of the custody and keys crates to handle actions in more standardized modular manner (review how penumbra uses actionplans)
 - review the configuration layer.
 - review the bootstrapping layer.
+
+- review https://github.com/jgarzik/brainpro implementation of agent loops, defining permissions for each agent policy, built in protections, rules, ZDR registry, Resilience Architecture, Persona system, and review how well we would be able to implement these features into our engine 

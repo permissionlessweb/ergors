@@ -15,6 +15,10 @@ use crate::client::ManagementClient;
 pub enum DeployCmd {
     /// Create a new Akash deployment (automated by default)
     Create {
+        /// User-friendly label for this deployment (e.g., "embeddings-gpu", "inference-1")
+        /// Must be unique across active deployments. Use this label in other commands instead of session-id.
+        #[arg(long)]
+        label: Option<String>,
         /// Path to SDL file
         #[arg(long)]
         sdl: Option<String>,
@@ -270,6 +274,7 @@ impl DeployCmd {
     pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
             DeployCmd::Create {
+                label,
                 sdl,
                 sdl_content,
                 key_name,
@@ -307,6 +312,7 @@ impl DeployCmd {
                         node.as_deref().unwrap_or(""),
                         chain_id.as_deref().unwrap_or("akashnet-2"),
                         true, // auto is always true now
+                        label.as_deref().unwrap_or(""),
                     )
                     .await?;
 

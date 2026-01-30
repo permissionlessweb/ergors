@@ -73,7 +73,7 @@ impl AkashWorkflowManager {
             .ok_or_else(|| anyhow!("No default key set. Use `ergors keys set-default --key-name <name>`"))?
             .to_string();
 
-        self.create_workflow(&default_key_name, 0).await
+        self.create_workflow(&default_key_name, 0, None).await
     }
 
     /// Create a new deployment workflow session
@@ -81,6 +81,7 @@ impl AkashWorkflowManager {
         &self,
         key_name: &str,
         hd_account_index: u32,
+        label: Option<String>,
     ) -> Result<AkashDeploymentWorkflow> {
         let session_id = Uuid::new_v4().to_string();
 
@@ -135,6 +136,8 @@ impl AkashWorkflowManager {
             lease_id_info: None,
             options: None,
             service_endpoints: vec![],
+            // User-defined label for easy access
+            label: label.unwrap_or_default(),
         };
 
         // Persist to storage

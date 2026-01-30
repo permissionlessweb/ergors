@@ -160,6 +160,15 @@ impl AutomatedDeployer {
         workflow.completed_at = Some(current_timestamp());
         self.save_workflow(workflow).await?;
 
+        // Deactivate label from active deployments set
+        if !workflow.label.is_empty() {
+            if let Err(e) = self.storage.deactivate_deployment_label(&workflow.label).await {
+                tracing::warn!("Failed to deactivate label '{}': {}", workflow.label, e);
+            } else {
+                tracing::info!("Deactivated label '{}' from active deployments", workflow.label);
+            }
+        }
+
         tracing::info!("───────────────────────────────────────────────────────────────");
         tracing::info!("  DEPLOYMENT COMPLETE");
         tracing::info!("───────────────────────────────────────────────────────────────");
@@ -746,6 +755,17 @@ impl AutomatedDeployer {
         tracing::info!("  Trusted:  {}", if is_trusted { "YES" } else { "NO" });
         tracing::info!("  ─────────────────────────────────────────");
 
+        // Query provider info to get the actual host_uri
+        tracing::info!("  Querying provider info...");
+        let provider_info = self.cosmos.query_provider(&selected.provider).await?;
+        tracing::info!("  Host URI: {}", provider_info.host_uri);
+        if !provider_info.email.is_empty() {
+            tracing::info!("  Email:    {}", provider_info.email);
+        }
+        if !provider_info.website.is_empty() {
+            tracing::info!("  Website:  {}", provider_info.website);
+        }
+
         workflow.provider = Some(AkashProviderSelection {
             provider_address: selected.provider.clone(),
             reputation_score: 100, // Would query reputation system in production
@@ -755,8 +775,13 @@ impl AutomatedDeployer {
             is_trusted_provider: is_trusted,
         });
 
+        // Store provider host_uri in the deployment runtime for future use
+        if let Some(ref mut runtime) = workflow.deployment {
+            runtime.provider_host_uri = provider_info.host_uri.clone();
+        }
+
         self.save_workflow(workflow).await?;
-        tracing::info!("  OK: Provider selected");
+        tracing::info!("  OK: Provider selected with host_uri");
         Ok(selected)
     }
 
@@ -834,8 +859,17 @@ impl AutomatedDeployer {
             .as_ref()
             .ok_or_else(|| anyhow!("No SDL configured"))?;
 
-        // Construct provider URI
-        let provider_uri = format!("https://{}:8443", lease_info.provider);
+        // Get provider host_uri from runtime (queried during bid selection)
+        let provider_uri = workflow
+            .deployment
+            .as_ref()
+            .map(|r| r.provider_host_uri.clone())
+            .ok_or_else(|| anyhow!("No provider host_uri in runtime"))?;
+
+        if provider_uri.is_empty() {
+            return Err(anyhow!("Provider host_uri is empty - provider info query may have failed"));
+        }
+
         let manifest_endpoint = format!("{}/deployment/{}/manifest", provider_uri, lease_info.dseq);
 
         tracing::info!("  Provider URI: {}", provider_uri);
@@ -863,11 +897,6 @@ impl AutomatedDeployer {
             }
         }
 
-        // Store provider URI in runtime
-        if let Some(ref mut runtime) = workflow.deployment {
-            runtime.provider_host_uri = provider_uri;
-        }
-
         self.save_workflow(workflow).await?;
         Ok(())
     }
@@ -886,7 +915,17 @@ impl AutomatedDeployer {
             .as_ref()
             .ok_or_else(|| anyhow!("No lease info"))?;
 
-        let provider_uri = format!("https://{}:8443", lease_info.provider);
+        // Get provider host_uri from runtime (queried during bid selection)
+        let provider_uri = workflow
+            .deployment
+            .as_ref()
+            .map(|r| r.provider_host_uri.clone())
+            .ok_or_else(|| anyhow!("No provider host_uri in runtime"))?;
+
+        if provider_uri.is_empty() {
+            return Err(anyhow!("Provider host_uri is empty - provider info query may have failed"));
+        }
+
         let status_endpoint = format!(
             "{}/lease/{}/{}/{}/{}/status",
             provider_uri, lease_info.dseq, lease_info.gseq, lease_info.oseq, lease_info.provider

@@ -93,8 +93,22 @@ watch:
 # Proto generation
 # ════════════════════════════════════════════════════════════════════════════
 
-# Regenerate proto types
-proto:
+# Vendor external proto dependencies (k8s, etc.) using Go modules
+modvendor:
+    #!/bin/bash
+    set -e
+    echo "📦 Vendoring external proto dependencies..."
+
+    # Use Go modules to vendor k8s.io/apimachinery and other dependencies
+    cd proto
+    go mod tidy
+    go mod vendor
+
+    echo "✅ Vendored dependencies installed to proto/vendor/"
+    echo "   (This directory is in .gitignore and will not be committed)"
+
+# Regenerate proto types (vendors dependencies first)
+proto: modvendor
     @echo "🔄 Regenerating proto types..."
     cargo run -p {{proto}}
     @echo "✅ Proto types regenerated"

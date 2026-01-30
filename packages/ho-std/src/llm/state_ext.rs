@@ -15,9 +15,8 @@
 //! ### Key Design Rationale
 
 use crate::error::{HoError, HoResult};
-
-use crate::orchestrate::{LlmEntity, LlmRouterConfig};
 use crate::traits::StateWrite;
+use crate::types::ergors::orch::v1::{LlmEntity, LlmRouterConfig};
 use async_trait::async_trait;
 use cnidarium::StateRead;
 use futures::StreamExt;

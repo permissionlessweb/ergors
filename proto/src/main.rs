@@ -159,6 +159,21 @@ fn main() -> anyhow::Result<()> {
                 "./ergors/akash/escrow/v1/msg.proto",
                 "./ergors/akash/escrow/v1/query.proto",
                 "./ergors/akash/escrow/v1/service.proto",
+                // inventory
+                "./ergors/akash/inventory/v1/cluster.proto",
+                "./ergors/akash/inventory/v1/cpu.proto",
+                "./ergors/akash/inventory/v1/gpu.proto",
+                "./ergors/akash/inventory/v1/memory.proto",
+                "./ergors/akash/inventory/v1/node.proto",
+                "./ergors/akash/inventory/v1/resourcepair.proto",
+                "./ergors/akash/inventory/v1/resources.proto",
+                "./ergors/akash/inventory/v1/service.proto",
+                "./ergors/akash/inventory/v1/storage.proto",
+                // manifest
+                "./ergors/akash/manifest/v2beta3/group.proto",
+                "./ergors/akash/manifest/v2beta3/httpoptions.proto",
+                "./ergors/akash/manifest/v2beta3/service.proto",
+                "./ergors/akash/manifest/v2beta3/serviceexpose.proto",
                 // market
                 "./ergors/akash/market/v1/bid.proto",
                 "./ergors/akash/market/v1/event.proto",
@@ -197,6 +212,8 @@ fn main() -> anyhow::Result<()> {
                 "./ergors/akash/market/v2beta1/service.proto",
                 "./ergors/akash/market/v2beta1/types.proto",
                 // provider
+                "./ergors/akash/provider/v1/service.proto",
+                "./ergors/akash/provider/v1/status.proto",
                 "./ergors/akash/provider/v1beta3/genesis.proto",
                 "./ergors/akash/provider/v1beta3/provider.proto",
                 "./ergors/akash/provider/v1beta4/event.proto",
@@ -209,7 +226,7 @@ fn main() -> anyhow::Result<()> {
 
                 // inventory
             ],
-            &["./headstash/", "./ergors/", "./rust-vendored/"],
+            &["./headstash/", "./ergors/", "./rust-vendored/", "./vendor/"],
         )?;
 
     // "./rust-vendored/cosmwasm/wasm/v1/authz.proto",

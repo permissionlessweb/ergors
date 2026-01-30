@@ -178,12 +178,32 @@ sequenceDiagram
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--sdl <path>` | Path to SDL YAML file | required |
+| `--label <label>` | User-friendly label (unique across active deployments) | - |
 | `--key-name <name>` | Signing key name | `default` |
 | `--account-index <n>` | HD derivation index | `0` |
 | `--min-balance <uakt>` | Minimum required balance | `5000000` |
 | `--interactive-bid` | Prompt for provider selection | `false` |
 | `--node <url>` | Override RPC endpoint | config |
 | `--chain-id <id>` | Override chain ID | config |
+
+### Label-Based Access
+
+Deployments can be created with user-friendly labels instead of session IDs:
+
+```bash
+# Create deployment with label
+ergors deploy create --sdl qwen.yml --label qwen-inference --auto
+
+# Access by label
+ergors deploy info qwen-inference
+ergors deploy endpoints qwen-inference
+```
+
+**Label Constraints:**
+- Must be unique across active deployments (collision check at creation)
+- Becomes inactive when deployment completes/fails
+- O(1) storage lookups via index: `akash_labels/{label} → session_id`
+- Active labels tracked separately: `akash_active_labels/{label} → session_id`
 
 ## SDL Format
 
@@ -609,19 +629,196 @@ ergors deploy update-deployment mno345 --sdl sdls/high-gpu-adjusted.yml
 ergors deploy run mno345
 ```
 
+## Deployment → Inference Integration
+
+ERGORS automatically integrates completed Akash deployments into the LLM routing system, enabling deployments to be used as inference endpoints.
+
+### Architecture
+
+```mermaid
+flowchart LR
+    subgraph Deployment["Akash Deployment"]
+        SDL[SDL with Label]
+        Deploy[Automated Workflow]
+        Complete[Status: Completed]
+        Endpoints[Service Endpoints]
+    end
+
+    subgraph Cache["Deployment Cache"]
+        Memory[In-Memory HashMap]
+        Storage[Cnidarium Storage]
+        Refresh[30s Background Task]
+    end
+
+    subgraph Router["LLM Router"]
+        Request[Inference Request]
+        Lookup[O1 Label Lookup]
+        Forward[Forward to Deployment]
+    end
+
+    SDL --> Deploy
+    Deploy --> Complete
+    Complete --> Endpoints
+    Endpoints --> Memory
+    Memory <--> Storage
+    Storage --> Refresh
+    Refresh --> Memory
+
+    Request --> Lookup
+    Lookup --> Memory
+    Memory --> Forward
+    Forward --> Endpoints
+```
+
+### How It Works
+
+1. **Deployment Creation with Label:**
+   ```bash
+   ergors deploy create \
+     --sdl sdls/embeddings/qwen.yml \
+     --label qwen-inference \
+     --auto
+   ```
+
+2. **Automatic Cache Registration:**
+   - When deployment status → `Completed` (step 10)
+   - gRPC handler calls `deployment_cache().add_deployment()`
+   - Label → endpoint mapping cached in memory (O(1) lookup)
+   - Backed by Cnidarium for persistence
+
+3. **Inference Routing:**
+   ```bash
+   curl http://localhost:8080/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -d '{"model": "qwen-inference", "messages": [...]}'
+   ```
+
+4. **Routing Priority:**
+   - **First**: Check deployment cache by label
+   - **Second**: Check configured providers (OpenAI, Anthropic, etc.)
+   - **Fallback**: Error if no match found
+
+### Cache Management
+
+| Event | Action |
+|-------|--------|
+| Deployment completes | Add to cache with label → endpoint mapping |
+| Close lease/deployment | Remove from cache |
+| Background refresh (30s) | Sync cache with Cnidarium storage |
+| Server restart | Rebuild cache from storage on startup |
+
+### Storage Keys
+
+```
+akash_labels/{label} → session_id          # Historical (all deployments)
+akash_active_labels/{label} → session_id   # Active only (collision check)
+akash_workflows/{session_id} → workflow    # Full workflow data
+```
+
+### OpenAI Compatibility
+
+Deployments must expose OpenAI-compatible endpoints:
+
+| Endpoint | Expected Format |
+|----------|----------------|
+| `/v1/chat/completions` | OpenAI ChatCompletion API |
+| `/v1/embeddings` | OpenAI Embeddings API |
+
+**Response Format:**
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "content": "Hello! How can I help you today?"
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 45,
+    "total_tokens": 57
+  }
+}
+```
+
+Token usage is automatically extracted and stored in `PromptResponse.tokens_used`.
+
+### Example Workflow
+
+```bash
+# 1. Deploy inference service
+ergors deploy create \
+  --sdl sdls/embeddings/qwen.yml \
+  --label qwen-inference \
+  --auto
+
+# 2. Wait for completion (~2-5 minutes)
+ergors deploy info qwen-inference
+# Status: completed
+# Endpoints: https://provider.akash.network:8443
+
+# 3. Use as model in inference (automatic routing)
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen-inference",
+    "messages": [{"role": "user", "content": "Explain quantum computing"}]
+  }'
+
+# 4. List all available models (includes active deployments)
+curl http://localhost:8080/v1/models
+# {
+#   "object": "list",
+#   "data": [
+#     {"id": "gpt-4", "owned_by": "openai"},
+#     {"id": "claude-3-5-sonnet-20241022", "owned_by": "anthropic"},
+#     {"id": "qwen-inference", "owned_by": "akash-deployment"}
+#   ]
+# }
+
+# 5. Close deployment (removes from cache automatically)
+ergors deploy close-deployment qwen-inference
+```
+
+### File Reference
+
+| File | Purpose |
+|------|---------|
+| `packages/ho-std/src/llm/deployment_cache.rs` | In-memory O(1) cache for deployments |
+| `packages/ho-std/src/llm/router.rs` | LLM router with deployment-first routing |
+| `packages/cw-ho/src/grpc/management.rs` | Cache add/remove lifecycle hooks |
+| `packages/cw-ho/src/storage.rs` | Label storage indices and collision checks |
+| `packages/cw-ho/src/server.rs` | Background cache refresh task (30s) |
+| `packages/cw-ho/src/proxy/endpoints.rs` | `/v1/models` endpoint handler |
+
+### Features
+
+- **Zero-config integration**: Deployments auto-register on completion
+- **O(1) routing**: In-memory HashMap lookup by label
+- **Token tracking**: Automatic extraction from OpenAI responses
+- **Lifecycle sync**: Auto-add on complete, auto-remove on close
+- **Persistence**: Cnidarium-backed for restart recovery
+- **Collision prevention**: Label uniqueness enforced at creation time
+
 ## Quick Reference
 
 ```bash
-# Full setup → deployment flow
+# Full setup → deployment → inference flow
 ergors init new
 ergors keys import-mnemonic --phrase "..." --label "Akash" --make-default
 ergors start &
-ergors deploy create --sdl sdls/embeddings/qwen.yml
-ergors deploy info <session-id>
+ergors deploy create --sdl sdls/embeddings/qwen.yml --label qwen-inference --auto
+ergors deploy info qwen-inference
+
+# Use deployment as inference endpoint
+curl http://localhost:8080/v1/chat/completions \
+  -d '{"model": "qwen-inference", "messages": [...]}'
 
 # Management operations
-ergors deploy endpoints <session-id>
-ergors deploy topup-escrow <session-id> 10000000
-ergors deploy update-deployment <session-id> --sdl new.yml
-ergors deploy close-deployment <session-id>
+ergors deploy endpoints qwen-inference
+ergors deploy topup-escrow qwen-inference 10000000
+ergors deploy update-deployment qwen-inference --sdl new.yml
+ergors deploy close-deployment qwen-inference
 ```

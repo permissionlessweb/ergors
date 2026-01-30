@@ -45,6 +45,30 @@ impl Server {
         self,
         shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
     ) -> HoResult<()> {
+        // Spawn deployment cache refresh background task
+        let cache_refresh_handle = {
+            let storage = self.state.s.clone();
+            let cache = self.state.r.deployment_cache();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+
+                    match storage.cs.latest_snapshot() {
+                        snapshot => match cache.refresh(&snapshot).await {
+                            Ok(count) => {
+                                if count > 0 {
+                                    tracing::debug!("Refreshed deployment cache: {} active deployments", count);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to refresh deployment cache: {}", e);
+                            }
+                        }
+                    }
+                }
+            })
+        };
+
         // Use the new generic route structure from ho-std
         let (public_router, protected_router) = ho_std::define_routes! {
             public_routes: [
@@ -60,6 +84,7 @@ impl Server {
                 // Proxy endpoints for CLI tools (Claude Code, opencode)
                 { path: "/v1/messages", method: post, handler: crate::proxy::handle_anthropic_proxy },
                 { path: "/v1/chat/completions", method: post, handler: crate::proxy::handle_openai_proxy },
+                { path: "/v1/models", method: get, handler: crate::proxy::handle_list_models },
                 // Ollama-compatible proxy endpoint
                 { path: "/api/chat", method: post, handler: crate::proxy::handle_ollama_proxy },
                 { path: "/api/generate", method: post, handler: crate::proxy::handle_ollama_proxy },
@@ -110,6 +135,9 @@ impl Server {
             .with_graceful_shutdown(shutdown_signal)
             .await
             .map_err(|e| HoError::Cfg(format!("Server error: {}", e)))?;
+
+        // Stop cache refresh task
+        cache_refresh_handle.abort();
 
         info!("HTTP server shut down gracefully");
         Ok(())

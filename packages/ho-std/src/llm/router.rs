@@ -1,4 +1,4 @@
-use crate::llm::{HoError, HoResult, StateReadExt};
+use crate::llm::{DeploymentProviderCache, HoError, HoResult, StateReadExt};
 use crate::traits::LlmProviderTrait;
 use crate::types::ergors::orch::v1::*;
 use cnidarium::StateRead;
@@ -16,6 +16,8 @@ pub struct LlmRouter {
     c: Client,
     /// Registered ps mapped by name
     ps: HashMap<String, Arc<dyn LlmProviderTrait>>,
+    /// In-memory cache of active Akash deployments for inference
+    deployment_cache: Arc<DeploymentProviderCache>,
 }
 
 impl LlmRouter {
@@ -25,27 +27,52 @@ impl LlmRouter {
     /// * `s` - StateRead implementation to read provider configs from storage
     /// * `cfg` - LLM r configuration
     pub async fn new<S: StateRead>(s: &S, cfg: &LlmRouterConfig) -> HoResult<Self> {
+        let deployment_cache = Arc::new(DeploymentProviderCache::new());
+
         let mut r = Self {
             c: Client::builder()
                 .timeout(Duration::from_secs(cfg.timeout_seconds))
                 .build()
                 .map_err(|e| HoError::Cfg(format!("Failed to create HTTP c: {}", e)))?,
             ps: HashMap::new(),
+            deployment_cache,
         };
 
         r.register_all_providers(s, cfg.entities.clone()).await?;
 
+        // TODO: Initial cache refresh from storage
+        // r.deployment_cache.refresh(s).await?;
+
         Ok(r)
+    }
+
+    /// Get a reference to the deployment cache.
+    /// Used to add/remove deployments when they complete/fail.
+    pub fn deployment_cache(&self) -> Arc<DeploymentProviderCache> {
+        Arc::clone(&self.deployment_cache)
     }
 
     /// Process a prompt req using the appropriate provider
     /// This is the single unified entrypoint for all LLM inference
+    ///
+    /// Routing priority:
+    /// 1. Check active Akash deployments by label (O(1) cache lookup)
+    /// 2. Fall back to configured providers (OpenAI, Anthropic, etc.)
     pub async fn handle_request(&self, req: &PromptRequest, m: &str) -> HoResult<PromptResponse> {
-        // Find provider that supports this m
+        // PRIORITY 1: Check if this model name matches an active deployment label
+        if let Some(deployment) = self.deployment_cache.get(m).await {
+            debug!(
+                "Routing request for model '{}' to Akash deployment: {}",
+                m, deployment.session_id
+            );
+            return self.route_to_deployment(req, &deployment).await;
+        }
+
+        // PRIORITY 2: Check configured providers
         let provider = self.find_provider_for_model(m).ok_or_else(|| {
             let ap: Vec<String> = self.ps.keys().cloned().collect();
             HoError::Llm(format!(
-                "No {} provider found, available provider: {:?}",
+                "No provider found for model '{}'. Available providers: {:?}",
                 m, ap
             ))
         })?;
@@ -54,6 +81,134 @@ impl LlmRouter {
 
         // Call the provider
         provider.call(&self.c, req).await
+    }
+
+    /// Route a request to an Akash deployment endpoint.
+    ///
+    /// Constructs an OpenAI-compatible request to the deployment's external URI.
+    /// Auth headers are stripped as per design (Option C: deployment-specific auth).
+    async fn route_to_deployment(
+        &self,
+        req: &PromptRequest,
+        deployment: &crate::llm::DeploymentEndpoint,
+    ) -> HoResult<PromptResponse> {
+        // Get base URL from deployment endpoint
+        let base_url = deployment.base_url().ok_or_else(|| {
+            HoError::Llm(format!(
+                "Deployment '{}' has no primary endpoint",
+                deployment.label
+            ))
+        })?;
+
+        debug!(
+            "Forwarding to deployment endpoint: {} (DSEQ: {})",
+            base_url, deployment.dseq
+        );
+
+        // Determine the endpoint path based on the request type
+        let endpoint_path = if req.messages.is_empty() {
+            "/v1/embeddings" // Embeddings request
+        } else {
+            "/v1/chat/completions" // Chat request
+        };
+
+        let full_url = format!("{}{}", base_url, endpoint_path);
+
+        debug!("Deployment request URL: {}", full_url);
+
+        // Extract temperature and max_tokens from llm_config
+        let (temperature, max_tokens) = req
+            .llm_config
+            .as_ref()
+            .map(|cfg| (cfg.temperature as f64, cfg.max_tokens as i64))
+            .unwrap_or((0.7f64, 1024i64));
+
+        // Convert PromptRequest to OpenAI-compatible JSON
+        let openai_request = serde_json::json!({
+            "model": deployment.label, // Use deployment label as model name
+            "messages": req.messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": false, // TODO: Support streaming
+        });
+
+        // Make the request (auth headers stripped)
+        let response = self
+            .c
+            .post(&full_url)
+            .json(&openai_request)
+            .send()
+            .await
+            .map_err(|e| HoError::Llm(format!("Deployment request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(HoError::Llm(format!(
+                "Deployment returned error {}: {}",
+                status, body
+            )));
+        }
+
+        // Parse OpenAI response format
+        let openai_response: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| HoError::Llm(format!("Failed to parse deployment response: {}", e)))?;
+
+        // Extract content from OpenAI response format
+        let content = openai_response
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        // Extract token usage from OpenAI response
+        let tokens_used = openai_response.get("usage").and_then(|usage| {
+            let prompt = usage
+                .get("prompt_tokens")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0) as u32;
+            let completion = usage
+                .get("completion_tokens")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0) as u32;
+            let total = usage
+                .get("total_tokens")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0) as u32;
+
+            Some(crate::types::ergors::orch::v1::TokenUsage {
+                prompt,
+                completion,
+                total,
+            })
+        });
+
+        // Build PromptResponse using the expected format
+        Ok(PromptResponse {
+            id: vec![], // TODO: Generate unique ID
+            provider: format!("akash-deployment:{}", deployment.session_id),
+            model: deployment.label.clone(),
+            prompt: String::new(), // Original prompt not needed in response
+            response: vec![content], // Response text as Vec<String>
+            timestamp: Some(pbjson_types::Timestamp {
+                seconds: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+                nanos: 0,
+            }),
+            tokens_used,
+            cost: 0.0,         // TODO: Calculate deployment cost
+            latency_ms: 0,     // TODO: Track latency
+            status: Some("completed".to_string()),
+            output: vec![], // TODO: Populate for Open Responses compatibility
+            response_metadata: None, // TODO: Add metadata if needed
+        })
     }
 
     /// Register all ps configured in storage

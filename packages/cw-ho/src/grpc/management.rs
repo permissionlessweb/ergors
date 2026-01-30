@@ -2054,6 +2054,33 @@ impl ManagementService for ManagementServiceImpl {
         let account_address = account.address.clone();
         tracing::info!("Resolved account address: {}", account_address);
 
+        // Check for label collision if label is provided
+        if !req.label.is_empty() {
+            match self.state.s.check_label_collision(&req.label).await {
+                Ok(Some(existing_session_id)) => {
+                    return Ok(Response::new(CreateAkashDeploymentResponse {
+                        success: false,
+                        workflow: None,
+                        error_message: format!(
+                            "Label '{}' is already in use by active deployment: {}. Please choose a different label or close the existing deployment first.",
+                            req.label, existing_session_id
+                        ),
+                    }));
+                }
+                Ok(None) => {
+                    tracing::info!("Label '{}' is available", req.label);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to check label collision: {}", e);
+                    return Ok(Response::new(CreateAkashDeploymentResponse {
+                        success: false,
+                        workflow: None,
+                        error_message: format!("Failed to validate label: {}", e),
+                    }));
+                }
+            }
+        }
+
         let now = pbjson_types::Timestamp {
             seconds: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2109,6 +2136,8 @@ impl ManagementService for ManagementServiceImpl {
             lease_id_info: None,
             options: None,
             service_endpoints: vec![],
+            // User-defined label for easy access (empty if not provided)
+            label: req.label.clone(),
         };
 
         // Persist to storage
@@ -2169,12 +2198,21 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<GetAkashDeploymentResponse>, Status> {
         let req = request.into_inner();
 
-        let workflow = self
+        // Support both session-id and label lookups
+        let workflow = match self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?;
+        {
+            Ok(wf) => Some(wf),
+            Err(ho_std::error::HoError::Storage(ref msg)) if msg.contains("No deployment found") => {
+                None
+            }
+            Err(e) => {
+                return Err(Status::internal(format!("Failed to get workflow: {}", e)));
+            }
+        };
 
         Ok(Response::new(GetAkashDeploymentResponse { workflow }))
     }
@@ -2490,69 +2528,126 @@ impl ManagementService for ManagementServiceImpl {
         // Create deployer from context
         let deployer = akash_ctx.create_deployer(self.state.s.clone());
 
-        // Run the automated deployment
-        match deployer.deploy(&mut workflow, &options).await {
-            Ok(result) => {
-                tracing::info!(
-                    "Deployment completed successfully: session={}, dseq={}, provider={}, endpoints={}",
-                    result.session_id,
-                    result.dseq,
-                    result.provider,
-                    result.endpoints.len()
-                );
+        // Capture state for background task
+        let storage = self.state.s.clone();
+        let router = self.state.r.clone();
+        let label = workflow.label.clone();
+        let session_id = workflow.session_id.clone();
 
-                Ok(Response::new(RunAkashDeploymentResponse {
-                    workflow: Some(workflow),
-                    completed: true,
-                    input_required: None,
-                }))
-            }
-            Err(e) => {
-                // Determine which step failed based on current_step
-                let failed_step = AkashWorkflowStep::try_from(workflow.current_step)
-                    .map(|s| format!("{:?}", s))
-                    .unwrap_or_else(|_| format!("step_{}", workflow.current_step));
+        // Update workflow to running status before spawning
+        workflow.status = AkashWorkflowStatus::Running as i32;
+        workflow.updated_at = Some(pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        });
 
-                tracing::error!(
-                    "Automated deployment FAILED at step '{}': {}",
-                    failed_step,
-                    e
-                );
+        // Clone workflow for response (before moving into background task)
+        let response_workflow = workflow.clone();
 
-                // Update workflow status to failed with detailed error
-                workflow.status = AkashWorkflowStatus::Failed as i32;
-                workflow.last_error = format!("[{}] {}", failed_step, e);
-                workflow.updated_at = Some(pbjson_types::Timestamp {
-                    seconds: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64,
-                    nanos: 0,
-                });
+        tracing::info!(
+            "🚀 Spawning automated deployment workflow in background for session {}",
+            session_id
+        );
 
-                // Persist failed state - log any storage errors
-                if let Err(storage_err) = self.state.s.put_akash_workflow(&workflow).await {
-                    tracing::error!(
-                        "Failed to persist workflow failure state: {} (session: {})",
-                        storage_err,
-                        workflow.session_id
-                    );
-                } else {
+        // Spawn the automated deployment in a background task
+        // This allows the CLI to exit immediately after password validation
+        tokio::spawn(async move {
+            match deployer.deploy(&mut workflow, &options).await {
+                Ok(result) => {
                     tracing::info!(
-                        "💾 Persisted failed workflow state: session={}, step={}, error={}",
-                        workflow.session_id,
+                        "✅ Deployment completed successfully: session={}, dseq={}, provider={}, endpoints={}",
+                        result.session_id,
+                        result.dseq,
+                        result.provider,
+                        result.endpoints.len()
+                    );
+
+                    // Add deployment to inference cache if it has a label
+                    if !label.is_empty() {
+                        if let Err(e) = router.deployment_cache().add_deployment(&workflow).await {
+                            tracing::warn!(
+                                "Failed to add deployment '{}' to inference cache: {}",
+                                label,
+                                e
+                            );
+                        } else {
+                            tracing::info!(
+                                "Added deployment '{}' to inference cache - now available as model",
+                                label
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Determine which step failed based on current_step
+                    let failed_step = AkashWorkflowStep::try_from(workflow.current_step)
+                        .map(|s| format!("{:?}", s))
+                        .unwrap_or_else(|_| format!("step_{}", workflow.current_step));
+
+                    tracing::error!(
+                        "❌ Automated deployment FAILED at step '{}': {}",
                         failed_step,
                         e
                     );
-                }
 
-                Ok(Response::new(RunAkashDeploymentResponse {
-                    workflow: Some(workflow),
-                    completed: false,
-                    input_required: None,
-                }))
+                    // Update workflow status to failed with detailed error
+                    workflow.status = AkashWorkflowStatus::Failed as i32;
+                    workflow.last_error = format!("[{}] {}", failed_step, e);
+                    workflow.updated_at = Some(pbjson_types::Timestamp {
+                        seconds: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        nanos: 0,
+                    });
+
+                    // Persist failed state - log any storage errors
+                    if let Err(storage_err) = storage.put_akash_workflow(&workflow).await {
+                        tracing::error!(
+                            "Failed to persist workflow failure state: {} (session: {})",
+                            storage_err,
+                            workflow.session_id
+                        );
+                    } else {
+                        tracing::info!(
+                            "💾 Persisted failed workflow state: session={}, step={}, error={}",
+                            workflow.session_id,
+                            failed_step,
+                            e
+                        );
+                    }
+
+                    // Deactivate label from active deployments set on failure
+                    if !label.is_empty() {
+                        if let Err(e) = storage.deactivate_deployment_label(&label).await {
+                            tracing::warn!("Failed to deactivate label '{}': {}", label, e);
+                        } else {
+                            tracing::info!("Deactivated label '{}' from active deployments (workflow failed)", label);
+                        }
+                    }
+                }
             }
-        }
+        });
+
+        // Return immediately with running status
+        // The CLI will exit and the workflow continues in the engine
+        tracing::info!(
+            "✅ Deployment workflow started successfully for session {}",
+            session_id
+        );
+        tracing::info!(
+            "   Use 'ergors deploy get {}' to check status",
+            session_id
+        );
+
+        Ok(Response::new(RunAkashDeploymentResponse {
+            workflow: Some(response_workflow),
+            completed: false,
+            input_required: None,
+        }))
     }
 
     /// Close an active lease by submitting MsgCloseDeployment transaction.
@@ -2595,7 +2690,7 @@ impl ManagementService for ManagementServiceImpl {
         match deployer.close_deployment(&workflow).await {
             Ok(()) => {
                 // Update workflow status
-                let mut updated_workflow = workflow;
+                let mut updated_workflow = workflow.clone();
                 updated_workflow.status = AkashWorkflowStatus::Cancelled as i32;
                 updated_workflow.updated_at = Some(pbjson_types::Timestamp {
                     seconds: std::time::SystemTime::now()
@@ -2605,6 +2700,22 @@ impl ManagementService for ManagementServiceImpl {
                     nanos: 0,
                 });
                 self.state.s.put_akash_workflow(&updated_workflow).await.ok();
+
+                // Remove from inference cache
+                if !workflow.label.is_empty() {
+                    if let Err(e) = self.state.r.deployment_cache().remove_deployment(&workflow.label).await {
+                        tracing::warn!(
+                            "Failed to remove deployment '{}' from inference cache: {}",
+                            workflow.label,
+                            e
+                        );
+                    } else {
+                        tracing::info!(
+                            "Removed deployment '{}' from inference cache",
+                            workflow.label
+                        );
+                    }
+                }
 
                 Ok(Response::new(OperationResult {
                     success: true,
@@ -2661,7 +2772,7 @@ impl ManagementService for ManagementServiceImpl {
         match deployer.close_deployment(&workflow).await {
             Ok(()) => {
                 // Update workflow status
-                let mut updated_workflow = workflow;
+                let mut updated_workflow = workflow.clone();
                 updated_workflow.status = AkashWorkflowStatus::Cancelled as i32;
                 updated_workflow.updated_at = Some(pbjson_types::Timestamp {
                     seconds: std::time::SystemTime::now()
@@ -2671,6 +2782,22 @@ impl ManagementService for ManagementServiceImpl {
                     nanos: 0,
                 });
                 self.state.s.put_akash_workflow(&updated_workflow).await.ok();
+
+                // Remove from inference cache
+                if !workflow.label.is_empty() {
+                    if let Err(e) = self.state.r.deployment_cache().remove_deployment(&workflow.label).await {
+                        tracing::warn!(
+                            "Failed to remove deployment '{}' from inference cache: {}",
+                            workflow.label,
+                            e
+                        );
+                    } else {
+                        tracing::info!(
+                            "Removed deployment '{}' from inference cache",
+                            workflow.label
+                        );
+                    }
+                }
 
                 Ok(Response::new(OperationResult {
                     success: true,

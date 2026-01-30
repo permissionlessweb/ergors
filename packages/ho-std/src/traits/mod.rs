@@ -30,7 +30,10 @@ pub use {domain::*, file_ops::*, message::*};
 use crate::{
     error::HoResult,
     keys::commonware::{NodePrivKey, NodePubkey},
-    types::ergors::network::v1::*,
+    types::ergors::{
+        network::v1::*,
+        orch::v1::{LlmEntity, PromptRequest, PromptResponse},
+    },
 };
 
 use async_trait::async_trait;
@@ -715,7 +718,6 @@ pub trait TokenUsageTrait {
     fn update_total(&mut self);
 }
 
-use crate::orchestrate::{LlmEntity, PromptRequest, PromptResponse};
 /// Core trait that all LLM providers must implement
 /// This allows for a modular, provider-agnostic approach to LLM routing
 // LLM-related traits for ERGORS system

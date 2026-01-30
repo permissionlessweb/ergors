@@ -1,5 +1,4 @@
 use crate::llm::{CostCalculator, HoError, HoResult};
-use crate::orchestrate::PromptRequest;
 use crate::traits::{ApiJoint, ApiKeyProvider, MessageExt};
 use crate::types::ergors::orch::v1::*;
 use async_trait::async_trait;
