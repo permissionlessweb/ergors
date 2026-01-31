@@ -184,6 +184,81 @@ impl CertificateManager {
         }
     }
 
+    /// Create a new certificate and broadcast to chain.
+    ///
+    /// Unlike `get_or_create`, this always creates a new certificate.
+    /// Use this for explicit `cert create` CLI command.
+    /// Returns (tx_hash, serial) on success.
+    pub async fn create_new_certificate(
+        &self,
+        key_name: &str,
+        account_index: u32,
+        address: &str,
+        encryption_password: &str,
+    ) -> Result<(String, String)> {
+        tracing::info!("Creating new certificate for {}", address);
+
+        // Generate certificate and key pair
+        let generated = generate_akash_certificate(address)?;
+        tracing::info!("  Generated serial: {}", generated.serial);
+
+        // Encrypt the private key for secure storage
+        let encrypted_private_key = encrypt_private_key(&generated.privkey_pem, encryption_password)?;
+        tracing::info!("  Encrypted key size: {} bytes", encrypted_private_key.len());
+
+        // Build MsgCreateCertificate
+        let msg = MsgCreateCertificate {
+            owner: address.to_string(),
+            cert: generated.cert_pem.clone(),
+            pubkey: generated.pubkey_pem.clone(),
+        };
+
+        // Create signing client
+        let chain_config = chain_config_from_akash(&self.akash_config)?;
+        let client = create_signing_client(
+            self.key_manager.clone(),
+            self.key_store.clone(),
+            key_name,
+            account_index,
+            chain_config,
+        )
+        .await?;
+
+        // Broadcast
+        let msg_any = ClimbAny {
+            type_url: MsgCreateCertificate::type_url(),
+            value: msg.encode_to_vec(),
+        };
+
+        tracing::info!("  Broadcasting MsgCreateCertificate...");
+        let mut tx_builder = client.tx_builder();
+        tx_builder.set_memo("ergors certificate creation");
+        let tx_resp = tx_builder.broadcast(vec![msg_any]).await?;
+
+        if tx_resp.code != 0 {
+            return Err(anyhow!(
+                "Certificate creation failed (code {}): {}",
+                tx_resp.code,
+                tx_resp.raw_log
+            ));
+        }
+
+        tracing::info!("  Certificate created: tx_hash={}", tx_resp.txhash);
+
+        // Store encrypted private key
+        if let Err(e) = self
+            .storage
+            .put_akash_cert_key(address, &encrypted_private_key)
+            .await
+        {
+            tracing::warn!("  Failed to store encrypted private key: {}", e);
+        } else {
+            tracing::info!("  Encrypted private key stored");
+        }
+
+        Ok((tx_resp.txhash, generated.serial))
+    }
+
     /// Revoke a certificate on chain and delete stored private key.
     pub async fn revoke_certificate(
         &self,

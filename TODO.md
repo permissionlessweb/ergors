@@ -17,12 +17,16 @@
 **Issues**: [#4 Network Identity & Consensus](https://github.com/permissionlessweb/ergors/issues/4)
 
 - implement bft between nodes (state-sync application-state root hashes, bft-consensus of per-node state commitments)
+- implement network topology data and access (alot of TODO's currently)
+- ensure api endpionts access/use are standardize thorughout logic (cosmos grpc,api/rpc)
 
 ## NODE ACTIONS
 
 ## SECURITY
 
 **Issues**: [#6 Key Management & Auth](https://github.com/permissionlessweb/ergors/issues/6)
+
+- condense key sharing/rotation,Oauth, threshold signatures into custody and keys libraries
 
 ## COMMUNICATION
 
@@ -39,7 +43,6 @@
 - on successful wallet password provision, escape process as workflow has been invoked
 - Do not use REST + polling + “is it done?” endpoints, use async jobs + webhook/callbacks + idempotency keys.
 
-
 ### STORAGE LAYER ARCHITECTURE
 
 **Issues**: [#3 Storage & State Architecture](https://github.com/permissionlessweb/ergors/issues/3)
@@ -51,6 +54,8 @@
 ## ORCHESTRATOR SERVICE
 
 **Issues**: [#11 Agentic Workflow Enhancements](https://github.com/permissionlessweb/ergors/issues/11) | [#8 Testing Infrastructure](https://github.com/permissionlessweb/ergors/issues/8)
+
+- spec out spawining/bootstrapping clones of images, with custom configurations, key generations
 
 ## Secret Values
 
@@ -72,31 +77,13 @@
 
 **Issues**: [#11 Agentic Workflow Enhancements](https://github.com/permissionlessweb/ergors/issues/11)
 
-### GROK TOOLS
+- spec out background worker processe design
 
-**Issues**: [#12 Tool Integrations](https://github.com/permissionlessweb/ergors/issues/12)
-
-### OPENAI TOOLS
-
-**Issues**: [#12 Tool Integrations](https://github.com/permissionlessweb/ergors/issues/12)
-
-### CLAUDE TOOLS
+### OPENAI,CLAUDE,GROK,KIMI TOOLS
 
 **Issues**: [#12 Tool Integrations](https://github.com/permissionlessweb/ergors/issues/12)
 
 - ergo-rs cli hooks:
-
-### KIMI TOOLS
-
-**Issues**: [#12 Tool Integrations](https://github.com/permissionlessweb/ergors/issues/12)
-
-### Quen Code
-
-**Issues**: [#12 Tool Integrations](https://github.com/permissionlessweb/ergors/issues/12)
-
-### Kimi
-
-**Issues**: [#12 Tool Integrations](https://github.com/permissionlessweb/ergors/issues/12)
 
 ## TEXTUALIZE
 
@@ -126,4 +113,4 @@
 - review the configuration layer.
 - review the bootstrapping layer.
 
-- review https://github.com/jgarzik/brainpro implementation of agent loops, defining permissions for each agent policy, built in protections, rules, ZDR registry, Resilience Architecture, Persona system, and review how well we would be able to implement these features into our engine 
+- review <https://github.com/jgarzik/brainpro> implementation of agent loops, defining permissions for each agent policy, built in protections, rules, ZDR registry, Resilience Architecture, Persona system, and review how well we would be able to implement these features into our engine

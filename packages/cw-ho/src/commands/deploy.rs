@@ -1451,24 +1451,22 @@ impl DeployCmd {
                     CertCmd::Create { key_name, account_index } => {
                         println!("Creating Akash mTLS certificate...");
                         println!("  Key:   {} (index {})", key_name, account_index);
+                        println!();
 
                         let response = client.create_akash_certificate(key_name, *account_index).await?;
 
                         if response.success {
-                            println!();
-                            println!("Certificate created/found successfully!");
-                            if !response.serial.is_empty() {
-                                println!("  Serial: {}", response.serial);
-                            }
-                            if !response.tx_hash.is_empty() {
-                                println!("  Tx:     {}", response.tx_hash);
-                            }
+                            println!("Certificate created successfully!");
+                            println!("  Tx Hash: {}", response.tx_hash);
+                            println!("  Serial:  {}", response.serial);
                             println!();
                             println!("The encrypted private key has been stored locally.");
                             println!("You can now run automated deployments with mTLS authentication.");
                         } else {
-                            eprintln!();
                             eprintln!("Failed to create certificate: {}", response.error_message);
+                            eprintln!();
+                            eprintln!("If a certificate already exists, revoke it first:");
+                            eprintln!("  ergors deploy cert revoke --key-name {}", key_name);
                             std::process::exit(1);
                         }
                         Ok(())

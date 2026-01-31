@@ -3140,21 +3140,18 @@ impl ManagementService for ManagementServiceImpl {
 
         tracing::info!("Creating certificate for address: {}", address);
 
-        // Create certificate using the CertificateManager
-        match akash_ctx.cert_manager.get_or_create(
+        // Create certificate and broadcast to chain
+        match akash_ctx.cert_manager.create_new_certificate(
             &key_name,
             req.account_index,
             &address,
             &akash_ctx.custody_password,
         ).await {
-            Ok(cert_with_key) => {
-                // Extract serial from certificate (simplified - use first 32 chars of cert hash)
-                let serial = hex::encode(&cert_with_key.certificate.cert[..16.min(cert_with_key.certificate.cert.len())]);
-
-                tracing::info!("Certificate created/found for {}", address);
+            Ok((tx_hash, serial)) => {
+                tracing::info!("Certificate created: tx_hash={}, serial={}", tx_hash, serial);
                 Ok(Response::new(CreateAkashCertificateResponse {
                     success: true,
-                    tx_hash: String::new(), // Not tracked at this level
+                    tx_hash,
                     serial,
                     error_message: String::new(),
                 }))
