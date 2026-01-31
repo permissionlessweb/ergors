@@ -3,6 +3,9 @@
 //! Provides `ergors keys` subcommands for importing mnemonic seed phrases,
 //! listing keys, setting defaults, and deleting keys.
 //!
+//! When the engine daemon is running (holding the storage lock), commands
+//! are routed through gRPC. Otherwise, direct storage access is used.
+//!
 //! All keys are stored encrypted using Argon2id + ChaCha20Poly1305 via the
 //! EncryptedCosmosKeyManager. Mnemonics are never persisted in plaintext.
 
@@ -11,13 +14,21 @@ use camino::Utf8Path;
 use ho_std::constants::DATA_FOLDER_NAME;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 
+use crate::client::ManagementClient;
 use crate::storage::ErgorsStorage;
+
+/// Default gRPC address for the engine
+const DEFAULT_GRPC_ADDR: &str = "http://localhost:50051";
 
 /// CLI command for cosmos key management
 #[derive(Debug, clap::Parser)]
 pub struct KeysCmd {
     #[clap(subcommand)]
     pub subcmd: KeysSubCmd,
+
+    /// Override gRPC address (uses daemon if available)
+    #[arg(long, default_value = DEFAULT_GRPC_ADDR, env = "ERGORS_GRPC_ADDR", global = true)]
+    pub grpc_addr: String,
 }
 
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -73,20 +84,40 @@ pub enum KeysSubCmd {
 
 impl KeysCmd {
     pub fn exec(&self, home_dir: &Utf8Path) -> Result<()> {
-        // Create a tokio runtime for async storage operations
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(self.exec_async(home_dir))
     }
 
     async fn exec_async(&self, home_dir: &Utf8Path) -> Result<()> {
-        // Use same storage path as server config (home/memories)
-        let data_dir = home_dir.join(DATA_FOLDER_NAME);
+        // Try gRPC first (daemon might be running with storage lock)
+        if let Ok(mut client) = ManagementClient::connect(&self.grpc_addr).await {
+            return self.exec_via_grpc(&mut client).await;
+        }
 
-        // Open storage
+        // Fallback to direct storage access
+        let data_dir = home_dir.join(DATA_FOLDER_NAME);
         let storage = ErgorsStorage::new(&data_dir, vec![])
             .await
-            .map_err(|e| anyhow!("Failed to open storage: {}", e))?;
+            .map_err(|e| {
+                // Give helpful error if lock is held
+                let err_str = e.to_string();
+                if err_str.contains("LOCK") || err_str.contains("Resource temporarily unavailable") {
+                    anyhow!(
+                        "Storage is locked by running engine. Either:\n\
+                         1. Stop the engine: `ergors stop`\n\
+                         2. Or the engine will handle this automatically via gRPC (check if it's healthy: `ergors status`)"
+                    )
+                } else {
+                    anyhow!("Failed to open storage: {}", e)
+                }
+            })?;
 
+        self.exec_via_storage(&storage).await
+    }
+
+    // ============ gRPC execution (daemon running) ============
+
+    async fn exec_via_grpc(&self, client: &mut ManagementClient) -> Result<()> {
         match &self.subcmd {
             KeysSubCmd::ImportMnemonic {
                 phrase,
@@ -96,8 +127,93 @@ impl KeysCmd {
                 address_prefix,
                 make_default,
             } => {
-                self.import_mnemonic(
-                    &storage,
+                // Get password
+                let password = get_password(true)?;
+
+                let resp = client
+                    .import_cosmos_key(
+                        phrase,
+                        label,
+                        key_name,
+                        chain_id,
+                        address_prefix,
+                        *make_default,
+                        &password,
+                    )
+                    .await?;
+
+                if resp.success {
+                    if let Some(key) = resp.key {
+                        println!("Key imported successfully:");
+                        println!("  Name:    {}", key.key_name);
+                        println!("  Label:   {}", key.label);
+                        println!("  Address: {}", key.address);
+                        println!("  Chain:   {}", key.chain_id);
+                        println!("  Default: {}", if key.is_default { "yes" } else { "no" });
+                    }
+                } else {
+                    return Err(anyhow!("Import failed: {}", resp.error_message));
+                }
+            }
+            KeysSubCmd::List {} => {
+                let keys = client.list_cosmos_keys().await?;
+
+                if keys.is_empty() {
+                    println!("No keys stored.");
+                    return Ok(());
+                }
+
+                println!(
+                    "{:<15} {:<20} {:<45} {:<12} DEFAULT",
+                    "NAME", "LABEL", "ADDRESS", "CHAIN"
+                );
+                println!("{}", "-".repeat(100));
+
+                for key in keys {
+                    println!(
+                        "{:<15} {:<20} {:<45} {:<12} {}",
+                        key.key_name,
+                        if key.label.is_empty() { "-" } else { &key.label },
+                        key.address,
+                        if key.chain_id.is_empty() { "-" } else { &key.chain_id },
+                        if key.is_default { "*" } else { "" },
+                    );
+                }
+            }
+            KeysSubCmd::Delete { key_name } => {
+                let resp = client.delete_cosmos_key(key_name).await?;
+                if resp.success {
+                    println!("Key '{}' deleted.", key_name);
+                } else {
+                    return Err(anyhow!("{}", resp.message));
+                }
+            }
+            KeysSubCmd::SetDefault { key_name } => {
+                let resp = client.set_default_cosmos_key(key_name).await?;
+                if resp.success {
+                    println!("Key '{}' set as default.", key_name);
+                } else {
+                    return Err(anyhow!("{}", resp.message));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // ============ Direct storage execution (daemon not running) ============
+
+    async fn exec_via_storage(&self, storage: &ErgorsStorage) -> Result<()> {
+        match &self.subcmd {
+            KeysSubCmd::ImportMnemonic {
+                phrase,
+                label,
+                key_name,
+                chain_id,
+                address_prefix,
+                make_default,
+            } => {
+                self.import_mnemonic_direct(
+                    storage,
                     phrase,
                     label,
                     key_name,
@@ -107,13 +223,13 @@ impl KeysCmd {
                 )
                 .await
             }
-            KeysSubCmd::List {} => self.list_keys(&storage).await,
-            KeysSubCmd::Delete { key_name } => self.delete_key(&storage, key_name).await,
-            KeysSubCmd::SetDefault { key_name } => self.set_default(&storage, key_name).await,
+            KeysSubCmd::List {} => self.list_keys_direct(storage).await,
+            KeysSubCmd::Delete { key_name } => self.delete_key_direct(storage, key_name).await,
+            KeysSubCmd::SetDefault { key_name } => self.set_default_direct(storage, key_name).await,
         }
     }
 
-    async fn import_mnemonic(
+    async fn import_mnemonic_direct(
         &self,
         storage: &ErgorsStorage,
         phrase: &str,
@@ -123,30 +239,7 @@ impl KeysCmd {
         address_prefix: &str,
         make_default: bool,
     ) -> Result<()> {
-        // Check for password in environment variable first (for automation/scripting)
-        let password = if let Ok(env_password) = std::env::var("ERGORS_CUSTODY_PASSWORD") {
-            if env_password.is_empty() {
-                return Err(anyhow!("ERGORS_CUSTODY_PASSWORD is set but empty"));
-            }
-            env_password
-        } else {
-            // Prompt for password interactively
-            let password = rpassword::prompt_password("Enter encryption password: ")
-                .map_err(|e| anyhow!("Failed to read password: {}", e))?;
-
-            if password.is_empty() {
-                return Err(anyhow!("Password cannot be empty"));
-            }
-
-            // Confirm password for new stores
-            let confirm = rpassword::prompt_password("Confirm password: ")
-                .map_err(|e| anyhow!("Failed to read password confirmation: {}", e))?;
-
-            if password != confirm {
-                return Err(anyhow!("Passwords do not match"));
-            }
-            password
-        };
+        let password = get_password(true)?;
 
         // Load or create key store
         let mut store = match storage.get_cosmos_key_store().await {
@@ -208,7 +301,7 @@ impl KeysCmd {
         Ok(())
     }
 
-    async fn list_keys(&self, storage: &ErgorsStorage) -> Result<()> {
+    async fn list_keys_direct(&self, storage: &ErgorsStorage) -> Result<()> {
         let store = match storage.get_cosmos_key_store().await {
             Ok(Some(s)) => s,
             Ok(None) => {
@@ -225,7 +318,10 @@ impl KeysCmd {
 
         let default_name = EncryptedCosmosKeyManager::get_default_key_name(&store);
 
-        println!("{:<15} {:<20} {:<45} {:<12} DEFAULT", "NAME", "LABEL", "ADDRESS", "CHAIN");
+        println!(
+            "{:<15} {:<20} {:<45} {:<12} DEFAULT",
+            "NAME", "LABEL", "ADDRESS", "CHAIN"
+        );
         println!("{}", "-".repeat(100));
 
         for key in &store.keys {
@@ -252,7 +348,7 @@ impl KeysCmd {
         Ok(())
     }
 
-    async fn delete_key(&self, storage: &ErgorsStorage, key_name: &str) -> Result<()> {
+    async fn delete_key_direct(&self, storage: &ErgorsStorage, key_name: &str) -> Result<()> {
         let mut store = match storage.get_cosmos_key_store().await {
             Ok(Some(s)) => s,
             Ok(None) => return Err(anyhow!("No key store found")),
@@ -270,7 +366,7 @@ impl KeysCmd {
         Ok(())
     }
 
-    async fn set_default(&self, storage: &ErgorsStorage, key_name: &str) -> Result<()> {
+    async fn set_default_direct(&self, storage: &ErgorsStorage, key_name: &str) -> Result<()> {
         let mut store = match storage.get_cosmos_key_store().await {
             Ok(Some(s)) => s,
             Ok(None) => return Err(anyhow!("No key store found")),
@@ -287,4 +383,34 @@ impl KeysCmd {
         println!("Key '{}' set as default.", key_name);
         Ok(())
     }
+}
+
+/// Get password from environment or prompt.
+fn get_password(confirm: bool) -> Result<String> {
+    // Check environment variable first
+    if let Ok(env_password) = std::env::var("ERGORS_CUSTODY_PASSWORD") {
+        if env_password.is_empty() {
+            return Err(anyhow!("ERGORS_CUSTODY_PASSWORD is set but empty"));
+        }
+        return Ok(env_password);
+    }
+
+    // Prompt interactively
+    let password = rpassword::prompt_password("Enter encryption password: ")
+        .map_err(|e| anyhow!("Failed to read password: {}", e))?;
+
+    if password.is_empty() {
+        return Err(anyhow!("Password cannot be empty"));
+    }
+
+    if confirm {
+        let confirmation = rpassword::prompt_password("Confirm password: ")
+            .map_err(|e| anyhow!("Failed to read password confirmation: {}", e))?;
+
+        if password != confirmation {
+            return Err(anyhow!("Passwords do not match"));
+        }
+    }
+
+    Ok(password)
 }

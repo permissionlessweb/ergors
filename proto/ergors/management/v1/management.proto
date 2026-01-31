@@ -22,6 +22,14 @@ service ManagementService {
   // Cosmos Key Address Query - derive bech32 address for any cosmos chain
   rpc GetKeyAddress(GetKeyAddressRequest) returns (GetKeyAddressResponse);
 
+  // ============================================
+  // Cosmos Key Management (for CLI when daemon holds storage lock)
+  // ============================================
+  rpc ListCosmosKeys(Empty) returns (ListCosmosKeysResponse);
+  rpc ImportCosmosKey(ImportCosmosKeyRequest) returns (ImportCosmosKeyResponse);
+  rpc DeleteCosmosKey(DeleteCosmosKeyRequest) returns (OperationResult);
+  rpc SetDefaultCosmosKey(SetDefaultCosmosKeyRequest) returns (OperationResult);
+
   // Configuration - returns raw TOML or JSON
   rpc GetConfig(Empty) returns (ConfigData);
   rpc UpdateConfig(ConfigUpdate) returns (OperationResult);
@@ -285,6 +293,53 @@ message GetKeyAddressResponse {
   string address_prefix = 5;
   // Coin type used
   uint32 coin_type = 6;
+}
+
+// ============================================
+// Cosmos Key Management Messages
+// ============================================
+
+message CosmosKeyInfo {
+  string key_name = 1;
+  string label = 2;
+  string address = 3;
+  string chain_id = 4;
+  bool is_default = 5;
+}
+
+message ListCosmosKeysResponse {
+  repeated CosmosKeyInfo keys = 1;
+}
+
+message ImportCosmosKeyRequest {
+  // BIP-39 mnemonic phrase (24 words)
+  string mnemonic = 1;
+  // Human-readable label
+  string label = 2;
+  // Key name (internal identifier)
+  string key_name = 3;
+  // Chain ID (e.g., "akashnet-2")
+  string chain_id = 4;
+  // Bech32 address prefix (e.g., "akash")
+  string address_prefix = 5;
+  // Set as default key
+  bool make_default = 6;
+  // Encryption password (from env var or prompt)
+  string password = 7;
+}
+
+message ImportCosmosKeyResponse {
+  bool success = 1;
+  CosmosKeyInfo key = 2;
+  string error_message = 3;
+}
+
+message DeleteCosmosKeyRequest {
+  string key_name = 1;
+}
+
+message SetDefaultCosmosKeyRequest {
+  string key_name = 1;
 }
 
 // Config

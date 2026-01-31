@@ -134,6 +134,13 @@ use ho_std::types::ergors::management::v1::{
     // Key address query types
     GetKeyAddressRequest,
     GetKeyAddressResponse,
+    // Cosmos key management types
+    ListCosmosKeysResponse,
+    ImportCosmosKeyRequest,
+    ImportCosmosKeyResponse,
+    DeleteCosmosKeyRequest,
+    SetDefaultCosmosKeyRequest,
+    CosmosKeyInfo,
 };
 use ho_std::types::ergors::orch::v1::{
     AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep, ConfiguredSdl,
@@ -422,6 +429,214 @@ impl ManagementService for ManagementServiceImpl {
             key_name,
             address_prefix,
             coin_type,
+        }))
+    }
+
+    // ============ Cosmos Key Management ============
+
+    async fn list_cosmos_keys(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<ListCosmosKeysResponse>, Status> {
+        let key_store = match self.state.s.get_cosmos_key_store().await {
+            Ok(Some(s)) => s,
+            Ok(None) => {
+                return Ok(Response::new(ListCosmosKeysResponse { keys: vec![] }));
+            }
+            Err(e) => {
+                return Err(Status::internal(format!("Failed to access key store: {}", e)));
+            }
+        };
+
+        let default_name = EncryptedCosmosKeyManager::get_default_key_name(&key_store);
+
+        let keys: Vec<CosmosKeyInfo> = key_store
+            .keys
+            .iter()
+            .map(|k| {
+                let address = key_store
+                    .derived_accounts
+                    .iter()
+                    .find(|a| a.key_name == k.key_name)
+                    .map(|a| a.address.clone())
+                    .unwrap_or_default();
+
+                CosmosKeyInfo {
+                    key_name: k.key_name.clone(),
+                    label: k.label.clone(),
+                    address,
+                    chain_id: k.chain_id.clone(),
+                    is_default: default_name == Some(k.key_name.as_str()),
+                }
+            })
+            .collect();
+
+        Ok(Response::new(ListCosmosKeysResponse { keys }))
+    }
+
+    async fn import_cosmos_key(
+        &self,
+        request: Request<ImportCosmosKeyRequest>,
+    ) -> Result<Response<ImportCosmosKeyResponse>, Status> {
+        let req = request.into_inner();
+
+        if req.mnemonic.is_empty() {
+            return Err(Status::invalid_argument("Mnemonic cannot be empty"));
+        }
+        if req.password.is_empty() {
+            return Err(Status::invalid_argument("Password cannot be empty"));
+        }
+
+        let key_name = if req.key_name.is_empty() {
+            "default".to_string()
+        } else {
+            req.key_name
+        };
+        let chain_id = if req.chain_id.is_empty() {
+            "akashnet-2".to_string()
+        } else {
+            req.chain_id
+        };
+        let address_prefix = if req.address_prefix.is_empty() {
+            "akash".to_string()
+        } else {
+            req.address_prefix
+        };
+
+        // Load or create key store
+        let mut store = match self.state.s.get_cosmos_key_store().await {
+            Ok(Some(s)) => s,
+            Ok(None) => EncryptedCosmosKeyManager::create_empty_store(),
+            Err(e) => return Err(Status::internal(format!("Failed to load key store: {}", e))),
+        };
+
+        // Check for duplicate key name
+        if store.keys.iter().any(|k| k.key_name == key_name) {
+            return Ok(Response::new(ImportCosmosKeyResponse {
+                success: false,
+                key: None,
+                error_message: format!("Key '{}' already exists", key_name),
+            }));
+        }
+
+        // Create key manager
+        let mut manager = if store.keys.is_empty() {
+            EncryptedCosmosKeyManager::new()
+        } else {
+            EncryptedCosmosKeyManager::from_store(&store)
+        };
+
+        // Unlock with password
+        if let Err(e) = manager.unlock(&req.password) {
+            return Ok(Response::new(ImportCosmosKeyResponse {
+                success: false,
+                key: None,
+                error_message: format!("Failed to unlock key manager: {}", e),
+            }));
+        }
+
+        // Import the mnemonic
+        let (encrypted, account_info) = match manager.import_mnemonic_with_label(
+            &key_name,
+            &req.mnemonic,
+            &chain_id,
+            &address_prefix,
+            &req.label,
+            req.make_default,
+        ) {
+            Ok(result) => result,
+            Err(e) => {
+                return Ok(Response::new(ImportCosmosKeyResponse {
+                    success: false,
+                    key: None,
+                    error_message: format!("Import failed: {}", e),
+                }));
+            }
+        };
+
+        // Check for duplicate address
+        if EncryptedCosmosKeyManager::address_exists(&store, &account_info.address) {
+            return Ok(Response::new(ImportCosmosKeyResponse {
+                success: false,
+                key: None,
+                error_message: format!("Address {} already exists", account_info.address),
+            }));
+        }
+
+        // Add to store and persist
+        manager.add_key_to_store(&mut store, encrypted, account_info.clone());
+        if let Err(e) = self.state.s.put_cosmos_key_store(&store).await {
+            return Err(Status::internal(format!("Failed to save key store: {}", e)));
+        }
+
+        Ok(Response::new(ImportCosmosKeyResponse {
+            success: true,
+            key: Some(CosmosKeyInfo {
+                key_name,
+                label: req.label,
+                address: account_info.address,
+                chain_id,
+                is_default: req.make_default,
+            }),
+            error_message: String::new(),
+        }))
+    }
+
+    async fn delete_cosmos_key(
+        &self,
+        request: Request<DeleteCosmosKeyRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        let mut store = match self.state.s.get_cosmos_key_store().await {
+            Ok(Some(s)) => s,
+            Ok(None) => return Err(Status::not_found("No key store found")),
+            Err(e) => return Err(Status::internal(format!("Failed to load key store: {}", e))),
+        };
+
+        if let Err(e) = EncryptedCosmosKeyManager::delete_key(&mut store, &req.key_name) {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: format!("Failed to delete key: {}", e),
+            }));
+        }
+
+        if let Err(e) = self.state.s.put_cosmos_key_store(&store).await {
+            return Err(Status::internal(format!("Failed to save key store: {}", e)));
+        }
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!("Key '{}' deleted", req.key_name),
+        }))
+    }
+
+    async fn set_default_cosmos_key(
+        &self,
+        request: Request<SetDefaultCosmosKeyRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        let mut store = match self.state.s.get_cosmos_key_store().await {
+            Ok(Some(s)) => s,
+            Ok(None) => return Err(Status::not_found("No key store found")),
+            Err(e) => return Err(Status::internal(format!("Failed to load key store: {}", e))),
+        };
+
+        if let Err(e) = EncryptedCosmosKeyManager::set_default_key(&mut store, &req.key_name) {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: format!("Failed to set default: {}", e),
+            }));
+        }
+
+        if let Err(e) = self.state.s.put_cosmos_key_store(&store).await {
+            return Err(Status::internal(format!("Failed to save key store: {}", e)));
+        }
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!("Key '{}' set as default", req.key_name),
         }))
     }
 

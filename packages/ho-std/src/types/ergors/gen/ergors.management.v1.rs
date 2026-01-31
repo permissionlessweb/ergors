@@ -209,6 +209,133 @@ impl ::prost::Name for GetKeyAddressResponse {
         "/ergors.management.v1.GetKeyAddressResponse".into()
     }
 }
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CosmosKeyInfo {
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub address: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub chain_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "5")]
+    pub is_default: bool,
+}
+impl ::prost::Name for CosmosKeyInfo {
+    const NAME: &'static str = "CosmosKeyInfo";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.CosmosKeyInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.CosmosKeyInfo".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCosmosKeysResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub keys: ::prost::alloc::vec::Vec<CosmosKeyInfo>,
+}
+impl ::prost::Name for ListCosmosKeysResponse {
+    const NAME: &'static str = "ListCosmosKeysResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListCosmosKeysResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListCosmosKeysResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ImportCosmosKeyRequest {
+    /// BIP-39 mnemonic phrase (24 words)
+    #[prost(string, tag = "1")]
+    pub mnemonic: ::prost::alloc::string::String,
+    /// Human-readable label
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+    /// Key name (internal identifier)
+    #[prost(string, tag = "3")]
+    pub key_name: ::prost::alloc::string::String,
+    /// Chain ID (e.g., "akashnet-2")
+    #[prost(string, tag = "4")]
+    pub chain_id: ::prost::alloc::string::String,
+    /// Bech32 address prefix (e.g., "akash")
+    #[prost(string, tag = "5")]
+    pub address_prefix: ::prost::alloc::string::String,
+    /// Set as default key
+    #[prost(bool, tag = "6")]
+    pub make_default: bool,
+    /// Encryption password (from env var or prompt)
+    #[prost(string, tag = "7")]
+    pub password: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ImportCosmosKeyRequest {
+    const NAME: &'static str = "ImportCosmosKeyRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ImportCosmosKeyRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ImportCosmosKeyRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ImportCosmosKeyResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(message, optional, tag = "2")]
+    pub key: ::core::option::Option<CosmosKeyInfo>,
+    #[prost(string, tag = "3")]
+    pub error_message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ImportCosmosKeyResponse {
+    const NAME: &'static str = "ImportCosmosKeyResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ImportCosmosKeyResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ImportCosmosKeyResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteCosmosKeyRequest {
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeleteCosmosKeyRequest {
+    const NAME: &'static str = "DeleteCosmosKeyRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.DeleteCosmosKeyRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.DeleteCosmosKeyRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetDefaultCosmosKeyRequest {
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SetDefaultCosmosKeyRequest {
+    const NAME: &'static str = "SetDefaultCosmosKeyRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SetDefaultCosmosKeyRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SetDefaultCosmosKeyRequest".into()
+    }
+}
 /// Config
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -3731,6 +3858,124 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// # ============================================
+        /// Cosmos Key Management (for CLI when daemon holds storage lock)
+        pub async fn list_cosmos_keys(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListCosmosKeysResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListCosmosKeys",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListCosmosKeys",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn import_cosmos_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ImportCosmosKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ImportCosmosKeyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ImportCosmosKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ImportCosmosKey",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn delete_cosmos_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteCosmosKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/DeleteCosmosKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "DeleteCosmosKey",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn set_default_cosmos_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetDefaultCosmosKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/SetDefaultCosmosKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "SetDefaultCosmosKey",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Configuration - returns raw TOML or JSON
         pub async fn get_config(
             &mut self,
@@ -6204,6 +6449,30 @@ pub mod management_service_server {
             tonic::Response<super::GetKeyAddressResponse>,
             tonic::Status,
         >;
+        /// # ============================================
+        /// Cosmos Key Management (for CLI when daemon holds storage lock)
+        async fn list_cosmos_keys(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListCosmosKeysResponse>,
+            tonic::Status,
+        >;
+        async fn import_cosmos_key(
+            &self,
+            request: tonic::Request<super::ImportCosmosKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ImportCosmosKeyResponse>,
+            tonic::Status,
+        >;
+        async fn delete_cosmos_key(
+            &self,
+            request: tonic::Request<super::DeleteCosmosKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        async fn set_default_cosmos_key(
+            &self,
+            request: tonic::Request<super::SetDefaultCosmosKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
         /// Configuration - returns raw TOML or JSON
         async fn get_config(
             &self,
@@ -7124,6 +7393,191 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetKeyAddressSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListCosmosKeys" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListCosmosKeysSvc<T: ManagementService>(pub Arc<T>);
+                    impl<T: ManagementService> tonic::server::UnaryService<super::Empty>
+                    for ListCosmosKeysSvc<T> {
+                        type Response = super::ListCosmosKeysResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_cosmos_keys(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListCosmosKeysSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ImportCosmosKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct ImportCosmosKeySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ImportCosmosKeyRequest>
+                    for ImportCosmosKeySvc<T> {
+                        type Response = super::ImportCosmosKeyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ImportCosmosKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::import_cosmos_key(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ImportCosmosKeySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/DeleteCosmosKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteCosmosKeySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::DeleteCosmosKeyRequest>
+                    for DeleteCosmosKeySvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteCosmosKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::delete_cosmos_key(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteCosmosKeySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/SetDefaultCosmosKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetDefaultCosmosKeySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::SetDefaultCosmosKeyRequest>
+                    for SetDefaultCosmosKeySvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetDefaultCosmosKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::set_default_cosmos_key(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetDefaultCosmosKeySvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -69,6 +69,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "akash-deploy"
+version = "0.0.1"
+dependencies = [
+ "argon2",
+ "chacha20poly1305 0.9.1",
+ "hex",
+ "rand 0.8.5",
+ "rcgen",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "thiserror 2.0.17",
+ "time",
+ "tokio",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"

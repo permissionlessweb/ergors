@@ -29,6 +29,13 @@ use ho_std::types::ergors::management::v1::{
     // Key address query types
     GetKeyAddressRequest,
     GetKeyAddressResponse,
+    // Cosmos key management types
+    ListCosmosKeysResponse,
+    ImportCosmosKeyRequest,
+    ImportCosmosKeyResponse,
+    DeleteCosmosKeyRequest,
+    SetDefaultCosmosKeyRequest,
+    CosmosKeyInfo,
     GetSdlDefaultsRequest,
     GetSdlDefaultsResponse,
     GetSdlTemplateRequest,
@@ -200,6 +207,73 @@ impl ManagementClient {
             })
             .await
             .context("Failed to get key address")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ Cosmos Key Management ============
+
+    /// List all stored cosmos keys
+    pub async fn list_cosmos_keys(&mut self) -> Result<Vec<CosmosKeyInfo>> {
+        let response = self
+            .inner
+            .list_cosmos_keys(Empty {})
+            .await
+            .context("Failed to list cosmos keys")?;
+
+        Ok(response.into_inner().keys)
+    }
+
+    /// Import a cosmos key from mnemonic
+    pub async fn import_cosmos_key(
+        &mut self,
+        mnemonic: &str,
+        label: &str,
+        key_name: &str,
+        chain_id: &str,
+        address_prefix: &str,
+        make_default: bool,
+        password: &str,
+    ) -> Result<ImportCosmosKeyResponse> {
+        let response = self
+            .inner
+            .import_cosmos_key(ImportCosmosKeyRequest {
+                mnemonic: mnemonic.to_string(),
+                label: label.to_string(),
+                key_name: key_name.to_string(),
+                chain_id: chain_id.to_string(),
+                address_prefix: address_prefix.to_string(),
+                make_default,
+                password: password.to_string(),
+            })
+            .await
+            .context("Failed to import cosmos key")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Delete a cosmos key
+    pub async fn delete_cosmos_key(&mut self, key_name: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .delete_cosmos_key(DeleteCosmosKeyRequest {
+                key_name: key_name.to_string(),
+            })
+            .await
+            .context("Failed to delete cosmos key")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Set default cosmos key
+    pub async fn set_default_cosmos_key(&mut self, key_name: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .set_default_cosmos_key(SetDefaultCosmosKeyRequest {
+                key_name: key_name.to_string(),
+            })
+            .await
+            .context("Failed to set default cosmos key")?;
 
         Ok(response.into_inner())
     }
