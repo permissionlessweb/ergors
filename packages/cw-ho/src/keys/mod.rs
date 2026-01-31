@@ -34,12 +34,11 @@ pub struct KeysCmd {
 #[derive(Debug, Clone, clap::Subcommand)]
 pub enum KeysSubCmd {
     /// Import a BIP-39 mnemonic seed phrase as a funding key
+    ///
+    /// The mnemonic is entered interactively (hidden input) for security.
+    /// It is never stored in shell history or visible in process listings.
     #[clap(display_order = 100)]
     ImportMnemonic {
-        /// The mnemonic phrase (24 words, space-separated)
-        #[arg(long)]
-        phrase: String,
-
         /// Human-readable label for this key
         #[arg(long)]
         label: String,
@@ -120,19 +119,21 @@ impl KeysCmd {
     async fn exec_via_grpc(&self, client: &mut ManagementClient) -> Result<()> {
         match &self.subcmd {
             KeysSubCmd::ImportMnemonic {
-                phrase,
                 label,
                 key_name,
                 chain_id,
                 address_prefix,
                 make_default,
             } => {
-                // Get password
+                // Prompt for mnemonic (hidden input - never stored in history)
+                let phrase = get_mnemonic()?;
+
+                // Get encryption password
                 let password = get_password(true)?;
 
                 let resp = client
                     .import_cosmos_key(
-                        phrase,
+                        &phrase,
                         label,
                         key_name,
                         chain_id,
@@ -205,16 +206,18 @@ impl KeysCmd {
     async fn exec_via_storage(&self, storage: &ErgorsStorage) -> Result<()> {
         match &self.subcmd {
             KeysSubCmd::ImportMnemonic {
-                phrase,
                 label,
                 key_name,
                 chain_id,
                 address_prefix,
                 make_default,
             } => {
+                // Prompt for mnemonic (hidden input - never stored in history)
+                let phrase = get_mnemonic()?;
+
                 self.import_mnemonic_direct(
                     storage,
-                    phrase,
+                    &phrase,
                     label,
                     key_name,
                     chain_id,
@@ -383,6 +386,44 @@ impl KeysCmd {
         println!("Key '{}' set as default.", key_name);
         Ok(())
     }
+}
+
+/// Get mnemonic phrase from environment or prompt (hidden input).
+///
+/// SECURITY: The mnemonic is never stored in shell history or visible in `ps`.
+/// For automation, use ERGORS_MNEMONIC environment variable (also not in history
+/// if set via `read -s` or similar).
+fn get_mnemonic() -> Result<String> {
+    // Check environment variable first (for scripting)
+    if let Ok(env_mnemonic) = std::env::var("ERGORS_MNEMONIC") {
+        if env_mnemonic.is_empty() {
+            return Err(anyhow!("ERGORS_MNEMONIC is set but empty"));
+        }
+        // Clear the env var immediately after reading for extra security
+        std::env::remove_var("ERGORS_MNEMONIC");
+        return Ok(env_mnemonic);
+    }
+
+    // Prompt interactively (hidden input like password)
+    let mnemonic = rpassword::prompt_password("Enter mnemonic (hidden): ")
+        .map_err(|e| anyhow!("Failed to read mnemonic: {}", e))?;
+
+    let mnemonic = mnemonic.trim().to_string();
+
+    if mnemonic.is_empty() {
+        return Err(anyhow!("Mnemonic cannot be empty"));
+    }
+
+    // Basic validation: should have 12, 15, 18, 21, or 24 words
+    let word_count = mnemonic.split_whitespace().count();
+    if ![12, 15, 18, 21, 24].contains(&word_count) {
+        return Err(anyhow!(
+            "Invalid mnemonic: expected 12, 15, 18, 21, or 24 words, got {}",
+            word_count
+        ));
+    }
+
+    Ok(mnemonic)
 }
 
 /// Get password from environment or prompt.

@@ -54,10 +54,20 @@ impl PidFile {
         Ok(())
     }
 
-    /// Check if a process with the stored PID is running
+    /// Check if a process with the stored PID is running.
+    /// Returns false and cleans up the PID file if the process is stale.
     pub fn is_process_running(&self) -> bool {
         match self.read_pid() {
-            Ok(pid) => process_exists(pid),
+            Ok(pid) => {
+                if process_is_ergors(pid) {
+                    true
+                } else {
+                    // Stale PID file - clean it up
+                    tracing::info!("Cleaning up stale PID file (PID {} is not running)", pid);
+                    let _ = self.remove();
+                    false
+                }
+            }
             Err(_) => false,
         }
     }
@@ -68,23 +78,43 @@ impl PidFile {
     }
 }
 
-/// Check if a process with the given PID exists
+/// Check if a process with the given PID exists AND is an ergors process.
+/// This prevents false positives when PIDs are reused by different processes.
 #[cfg(unix)]
-fn process_exists(pid: u32) -> bool {
+fn process_is_ergors(pid: u32) -> bool {
     use std::process::Command;
 
-    // Use kill -0 to check if process exists without actually killing it
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
+    // First, check if the process exists using kill -0
+    let exists = unsafe { libc::kill(pid as i32, 0) } == 0;
+    if !exists {
+        return false;
+    }
+
+    // Verify it's actually ergors by checking the process name via ps
+    // This handles PID reuse by other processes
+    match Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
         .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+    {
+        Ok(output) if output.status.success() => {
+            let name = String::from_utf8_lossy(&output.stdout);
+            let name = name.trim();
+            // Check if process name contains "ergors"
+            name.contains("ergors")
+        }
+        _ => {
+            // ps failed, fall back to just checking if process exists
+            // (might be a permission issue)
+            true
+        }
+    }
 }
 
 #[cfg(not(unix))]
-fn process_exists(pid: u32) -> bool {
-    // On non-Unix systems, just check if PID file exists
+fn process_is_ergors(pid: u32) -> bool {
+    // On non-Unix systems, just assume running if PID file exists
     // A more robust implementation would use platform-specific APIs
+    let _ = pid;
     true
 }
 

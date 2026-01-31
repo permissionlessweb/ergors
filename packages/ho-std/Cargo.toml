@@ -81,7 +81,6 @@ tracing = "0.1"
 uuid = { version = "1.10", features = ["v4", "serde"] }
 zeroize = { version = "1.8", features = ["derive"] }
 cosmwasm-vm = { workspace = true, optional = true, features = ["stargate"] }
-smalloc = { version = "7.6.2", package = "smmalloc" }
 
 
 [dev-dependencies]

@@ -40,6 +40,28 @@ use tracing_subscriber::util::SubscriberInitExt;
 /// Default gRPC address for the engine
 const DEFAULT_GRPC_ADDR: &str = "http://localhost:50051";
 
+/// Install a panic hook to restore terminal state on crash.
+///
+/// This prevents terminal corruption (echo disabled) when a panic occurs
+/// during password input (rpassword disables echo while reading).
+fn install_terminal_restore_hook() {
+    let original_hook = std::panic::take_hook();
+
+    std::panic::set_hook(Box::new(move |info| {
+        // Restore terminal state before panicking
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            if let Ok(mut termios) = termios::Termios::from_fd(std::io::stdin().as_raw_fd()) {
+                termios.c_lflag |= termios::ECHO | termios::ICANON;
+                let _ = termios::tcsetattr(std::io::stdin().as_raw_fd(), termios::TCSANOW, &termios);
+            }
+        }
+        eprintln!();
+        original_hook(info);
+    }));
+}
+
 #[derive(Parser)]
 #[command(name = "ergors", version = "0.1.0")]
 #[command(about = "Ergors: Ergodic Recursive Systems - unified CLI and daemon")]
@@ -129,6 +151,10 @@ pub enum Commands {
 }
 
 fn main() -> Result<()> {
+    // Install panic hook to restore terminal state on crash/abort
+    // This prevents terminal corruption if process is killed during password input
+    install_terminal_restore_hook();
+
     let cli = Cli::parse();
 
     // Ensure that the home directory exists

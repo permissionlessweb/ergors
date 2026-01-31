@@ -128,19 +128,21 @@ Manage Cosmos blockchain funding keys (Akash, Cosmos Hub, etc.) for deployment o
 
 | Command | Description | Options/Arguments | Example |
 |---------|-------------|-------------------|---------|
-| `keys import-mnemonic` | Import BIP-39 mnemonic seed phrase | `--phrase <MNEMONIC>` - 24-word seed phrase (required)<br>`--label <LABEL>` - Human-readable label (required)<br>`--key-name <NAME>` - Internal identifier (default: `default`)<br>`--chain-id <ID>` - Chain ID (default: `akashnet-2`)<br>`--address-prefix <PREFIX>` - Bech32 prefix (default: `akash`)<br>`--make-default` - Set as default key | `ergors keys import-mnemonic --phrase "word1 word2 ..." --label "My Akash Key" --key-name prod --make-default` |
+| `keys import-mnemonic` | Import BIP-39 mnemonic seed phrase | `--label <LABEL>` - Human-readable label (required)<br>`--key-name <NAME>` - Internal identifier (default: `default`)<br>`--chain-id <ID>` - Chain ID (default: `akashnet-2`)<br>`--address-prefix <PREFIX>` - Bech32 prefix (default: `akash`)<br>`--make-default` - Set as default key | `ergors keys import-mnemonic --label "My Akash Key" --make-default` |
 | `keys list` | List all stored keys | Shows: name, label, address, chain ID, default marker | `ergors keys list` |
 | `keys delete` | Delete a key by name | `--key-name <NAME>` - Key name to delete (required) | `ergors keys delete --key-name old-key` |
 | `keys set-default` | Set a key as the default | `--key-name <NAME>` - Key name to make default (required) | `ergors keys set-default --key-name prod` |
 
 **Security:**
 
+- **Mnemonic input is hidden** - entered interactively like a password (never visible, never in shell history)
 - All mnemonics encrypted with Argon2id + ChaCha20Poly1305
 - Password-protected key store
 - Mnemonics never persisted in plaintext
 - Secure password prompt (hidden input)
 - Password confirmation required for new stores
 - File permissions set to 0600 (owner read/write only) on Unix
+- For automation: use `ERGORS_MNEMONIC` env var (cleared after reading)
 
 **Example Output:**
 
@@ -827,8 +829,8 @@ RAG (Retrieval-Augmented Generation) vector database management.
 ergors init new
 
 # 2. (Optional) Import Akash funding key for deployments
+# Mnemonic is entered interactively (hidden input, never in shell history)
 ergors keys import-mnemonic \
-  --phrase "your 24 word mnemonic here" \
   --label "Akash Main" \
   --chain-id akashnet-2 \
   --make-default

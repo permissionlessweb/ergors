@@ -73,6 +73,7 @@ name = "akash-deploy"
 version = "0.0.1"
 dependencies = [
  "argon2",
+ "base64 0.22.1",
  "chacha20poly1305 0.9.1",
  "hex",
  "rand 0.8.5",
@@ -3145,6 +3146,8 @@ dependencies = [
  "http-body-util",
  "layer-climb",
  "layer-climb-proto",
+ "libc",
+ "mimalloc",
  "pbjson-types 0.8.0",
  "prost 0.14.1",
  "rand 0.8.5",
@@ -3158,6 +3161,7 @@ dependencies = [
  "serde_yaml",
  "sha2 0.10.9",
  "tempfile",
+ "termios",
  "time",
  "tokio",
  "tokio-stream",
@@ -4319,7 +4323,6 @@ dependencies = [
  "serde_with",
  "serde_yaml",
  "sha2 0.10.9",
- "smmalloc",
  "ssh-key",
  "tempfile",
  "termion",
@@ -5807,6 +5810,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "667f4fec20f29dfc6bc7357c582d91796c169ad7e2fce709468aefeb2c099870"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "libredox"
 version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5891,15 +5904,6 @@ checksum = "6bd8c0d6c6ed0cd30b3652886bb8711dc4bb01d637a68105a3d5158039b418e6"
 dependencies = [
  "cc",
  "libc",
-]
-
-[[package]]
-name = "mach-sys"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48460c2e82a3a0de197152fdf8d2c2d5e43adc501501553e439bf2156e6f87c7"
-dependencies = [
- "fastrand",
 ]
 
 [[package]]
@@ -6018,6 +6022,15 @@ checksum = "5d5312e9ba3771cfa961b585728215e3d972c950a3eed9252aa093d6301277e8"
 dependencies = [
  "ahash",
  "portable-atomic",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.48"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1ee66a4b64c74f4ef288bcbb9192ad9c3feaad75193129ac8509af543894fd8"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -8937,17 +8950,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
-name = "smmalloc"
-version = "7.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c1df4744706f5f7f2862648d8a931c6ea364628e6fb4e2967cce67e989e956d"
-dependencies = [
- "mach-sys",
- "rustix",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "socket2"
 version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9443,6 +9445,15 @@ dependencies = [
  "libredox 0.0.2",
  "numtoa",
  "redox_termios",
+]
+
+[[package]]
+name = "termios"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "411c5bf740737c7918b8b1fe232dca4dc9f8e754b8ad5e20966814001ed0ac6b"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

@@ -29,6 +29,9 @@ use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{error, info, warn};
 
+#[cfg(unix)]
+use termios;
+
 pub struct Server {
     state: ErgorsAppState,
 }
@@ -544,8 +547,12 @@ impl Server {
                     }
                 }
                 _ = tokio::signal::ctrl_c() => {
-                    eprintln!(); // Newline after prompt
-                    Err(HoError::Cfg("Password entry cancelled (Ctrl+C)".to_string()))
+                    // Restore terminal state - rpassword disables echo
+                    restore_terminal_echo();
+                    // Exit immediately - the spawn_blocking thread is stuck waiting for input
+                    // and cannot be cancelled, so we must force exit to avoid hanging
+                    eprintln!("Password entry cancelled (Ctrl+C)");
+                    std::process::exit(130) // Standard exit code for SIGINT
                 }
             }
         } else {
@@ -558,7 +565,26 @@ impl Server {
             }
         }
     }
+}
 
+/// Restore terminal echo after password prompt interruption.
+/// rpassword disables echo during input; if interrupted, we must re-enable it.
+#[cfg(unix)]
+fn restore_terminal_echo() {
+    use std::os::unix::io::AsRawFd;
+    if let Ok(mut termios) = termios::Termios::from_fd(std::io::stdin().as_raw_fd()) {
+        termios.c_lflag |= termios::ECHO | termios::ICANON;
+        let _ = termios::tcsetattr(std::io::stdin().as_raw_fd(), termios::TCSANOW, &termios);
+    }
+    eprintln!(); // Newline after prompt
+}
+
+#[cfg(not(unix))]
+fn restore_terminal_echo() {
+    eprintln!(); // Newline after prompt
+}
+
+impl Server {
     /// Import an existing private key to encrypted custody
     ///
     /// Used when migrating from external key sources or restoring from backup.

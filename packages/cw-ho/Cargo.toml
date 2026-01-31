@@ -65,6 +65,12 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 serde_yaml = { workspace = true }
+mimalloc = { version = "0.1", default-features = false }
+
+# Unix-specific dependencies
+[target.'cfg(unix)'.dependencies]
+termios = "0.3"
+libc = "0.2"
 
 [dev-dependencies]
 tokio-test = "0.4"

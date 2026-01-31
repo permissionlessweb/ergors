@@ -2,6 +2,8 @@
 
 **Issues**: [#7 Privacy Primitives](https://github.com/permissionlessweb/ergors/issues/7) | [#13 Embedding & RAG](https://github.com/permissionlessweb/ergors/issues/13) | [#3 Storage Architecture](https://github.com/permissionlessweb/ergors/issues/3) | [#14 Cosmos Query Macro](https://github.com/permissionlessweb/ergors/issues/14) | [#1 Akash Deployment](https://github.com/permissionlessweb/ergors/issues/1)
 
+- toad support: <https://github.com/batrachianai/toad>
+
 ## COSMWASM
 
 **Issues**: [#2 CosmWasm Integration](https://github.com/permissionlessweb/ergors/issues/2)
@@ -56,6 +58,9 @@
 **Issues**: [#11 Agentic Workflow Enhancements](https://github.com/permissionlessweb/ergors/issues/11) | [#8 Testing Infrastructure](https://github.com/permissionlessweb/ergors/issues/8)
 
 - spec out spawining/bootstrapping clones of images, with custom configurations, key generations
+- Python REPL:
+  - <https://github.com/shobrook/suss>: diff code reviews
+  - <https://github.com/shobrook/weightgain>: improve embeddings
 
 ## Secret Values
 
@@ -114,3 +119,5 @@
 - review the bootstrapping layer.
 
 - review <https://github.com/jgarzik/brainpro> implementation of agent loops, defining permissions for each agent policy, built in protections, rules, ZDR registry, Resilience Architecture, Persona system, and review how well we would be able to implement these features into our engine
+
+- remove depreceated
