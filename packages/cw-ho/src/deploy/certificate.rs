@@ -10,6 +10,7 @@
 //! Akash provider mTLS requirements.
 
 use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::akash::cert::v1::{Certificate, MsgCreateCertificate, MsgRevokeCertificate, State};
 use ho_std::types::ergors::orch::v1::{AkashDeployConfig, CosmosKeyStore};
@@ -447,9 +448,10 @@ pub fn generate_akash_certificate(address: &str) -> Result<GeneratedCertificate>
     params.not_before = time::OffsetDateTime::now_utc();
     params.not_after = time::OffsetDateTime::now_utc() + Duration::from_secs(365 * 24 * 60 * 60);
 
-    // Get public key PEM before moving key_pair
-    let pubkey_pem = key_pair.public_key_pem();
-    let pubkey_bytes = pubkey_pem.as_bytes().to_vec();
+    // Get public key in SEC1 EC format (Akash requirement)
+    // rcgen produces SPKI format ("BEGIN PUBLIC KEY"), but Akash expects
+    // SEC1 format ("BEGIN EC PUBLIC KEY") - same DER bytes, different PEM label
+    let pubkey_bytes = convert_to_ec_public_key_pem(&key_pair)?;
 
     // Get private key PEM (for mTLS)
     let privkey_pem = key_pair.serialize_pem();
@@ -474,6 +476,28 @@ pub fn generate_akash_certificate(address: &str) -> Result<GeneratedCertificate>
         privkey_pem: privkey_bytes,
         serial,
     })
+}
+
+/// Convert SPKI public key to "EC PUBLIC KEY" PEM format for Akash.
+///
+/// rcgen produces `-----BEGIN PUBLIC KEY-----` (SPKI format)
+/// Akash expects `-----BEGIN EC PUBLIC KEY-----` (same DER, different label)
+fn convert_to_ec_public_key_pem(key_pair: &KeyPair) -> Result<Vec<u8>> {
+    let spki_der = key_pair.public_key_der();
+
+    // Encode as PEM with "EC PUBLIC KEY" header
+    let b64 = BASE64.encode(&spki_der);
+    let mut pem = String::with_capacity(b64.len() + 60);
+    pem.push_str("-----BEGIN EC PUBLIC KEY-----\n");
+
+    // Wrap at 64 characters per line (PEM standard)
+    for chunk in b64.as_bytes().chunks(64) {
+        pem.push_str(std::str::from_utf8(chunk).unwrap());
+        pem.push('\n');
+    }
+    pem.push_str("-----END EC PUBLIC KEY-----\n");
+
+    Ok(pem.into_bytes())
 }
 
 // ============ Private Key Encryption ============

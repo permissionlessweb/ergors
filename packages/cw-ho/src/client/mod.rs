@@ -29,8 +29,6 @@ use ho_std::types::ergors::management::v1::{
     // Key address query types
     GetKeyAddressRequest,
     GetKeyAddressResponse,
-    // Cosmos key management types
-    ListCosmosKeysResponse,
     ImportCosmosKeyRequest,
     ImportCosmosKeyResponse,
     DeleteCosmosKeyRequest,

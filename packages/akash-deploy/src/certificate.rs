@@ -3,11 +3,17 @@
 //! This module handles X.509 certificate generation for Akash provider mTLS.
 //! Pure generation — no storage, no signing, no chain interaction.
 //! The backend handles persistence and broadcasting.
+//!
+//! **Important**: Akash expects the public key in SEC1 EC format with header
+//! `-----BEGIN EC PUBLIC KEY-----`, NOT SPKI format (`-----BEGIN PUBLIC KEY-----`).
 
 use crate::error::DeployError;
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
+
+// Base64 engine for PEM encoding
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
 /// Generated certificate with all components for mTLS.
 #[derive(Debug, Clone)]
@@ -53,8 +59,10 @@ pub fn generate_certificate(address: &str) -> Result<GeneratedCertificate, Deplo
     params.not_before = time::OffsetDateTime::now_utc();
     params.not_after = time::OffsetDateTime::now_utc() + Duration::from_secs(365 * 24 * 60 * 60);
 
-    // Extract public key PEM before moving key_pair
-    let pubkey_pem = key_pair.public_key_pem().into_bytes();
+    // Extract public key in SEC1 EC format (Akash requirement)
+    // rcgen produces SPKI format ("BEGIN PUBLIC KEY"), but Akash expects
+    // SEC1 format ("BEGIN EC PUBLIC KEY")
+    let pubkey_pem = convert_spki_to_sec1_pem(&key_pair)?;
 
     // Extract private key PEM
     let privkey_pem = key_pair.serialize_pem().into_bytes();
@@ -82,6 +90,72 @@ fn generate_serial(address: &str) -> String {
     hasher.update(address.as_bytes());
     let hash = hasher.finalize();
     hex::encode(&hash[..16])
+}
+
+/// Convert SPKI public key PEM to SEC1 EC PUBLIC KEY PEM format.
+///
+/// rcgen produces SPKI format: `-----BEGIN PUBLIC KEY-----`
+/// Akash expects SEC1 format: `-----BEGIN EC PUBLIC KEY-----`
+///
+/// For P-256, SPKI structure is:
+/// - 26 bytes: Algorithm identifier (OID for ecPublicKey + P-256 curve)
+/// - Remaining: The actual EC point (65 bytes: 0x04 || X || Y)
+fn convert_spki_to_sec1_pem(key_pair: &KeyPair) -> Result<Vec<u8>, DeployError> {
+    // Get raw public key bytes (DER-encoded SPKI)
+    let spki_der = key_pair.public_key_der();
+
+    // SPKI for P-256 has a fixed 26-byte header before the EC point
+    // Structure: SEQUENCE { SEQUENCE { OID, OID }, BIT STRING { EC point } }
+    // The EC point starts at offset 26 for P-256
+    const P256_SPKI_HEADER_LEN: usize = 26;
+    const P256_EC_POINT_LEN: usize = 65; // 0x04 || 32-byte X || 32-byte Y
+
+    if spki_der.len() < P256_SPKI_HEADER_LEN + P256_EC_POINT_LEN {
+        return Err(DeployError::Certificate(format!(
+            "unexpected SPKI length: {} (expected at least {})",
+            spki_der.len(),
+            P256_SPKI_HEADER_LEN + P256_EC_POINT_LEN
+        )));
+    }
+
+    // Extract the EC point (skip the SPKI header)
+    let ec_point = &spki_der[P256_SPKI_HEADER_LEN..];
+
+    // Verify it's an uncompressed point (starts with 0x04)
+    if ec_point.first() != Some(&0x04) {
+        return Err(DeployError::Certificate(
+            "expected uncompressed EC point (0x04 prefix)".into(),
+        ));
+    }
+
+    // Build SEC1 EC PUBLIC KEY structure
+    // This is just the raw EC point wrapped in a BIT STRING, no algorithm OID
+    // Format: 30 <len> 03 <len> 00 <ec_point>
+    // But actually, looking at Akash's expected format, it's the SubjectPublicKeyInfo
+    // with just the EC point part re-wrapped
+
+    // Actually, examining the working example more closely:
+    // The "EC PUBLIC KEY" format Akash uses is the same as SPKI but with different header text
+    // Let me check the actual bytes...
+
+    // Looking at the working pubkey from Akash:
+    // MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+    // This decodes to SPKI structure! So Akash just wants the same DER bytes
+    // but with "EC PUBLIC KEY" PEM label instead of "PUBLIC KEY"
+
+    // Encode as PEM with "EC PUBLIC KEY" header
+    let b64 = BASE64.encode(&spki_der);
+    let mut pem = String::with_capacity(b64.len() + 60);
+    pem.push_str("-----BEGIN EC PUBLIC KEY-----\n");
+
+    // Wrap at 64 characters per line (PEM standard)
+    for chunk in b64.as_bytes().chunks(64) {
+        pem.push_str(std::str::from_utf8(chunk).unwrap());
+        pem.push('\n');
+    }
+    pem.push_str("-----END EC PUBLIC KEY-----\n");
+
+    Ok(pem.into_bytes())
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -195,7 +269,8 @@ mod tests {
 
         assert!(cert_str.contains("BEGIN CERTIFICATE"));
         assert!(key_str.contains("BEGIN PRIVATE KEY"));
-        assert!(pub_str.contains("BEGIN PUBLIC KEY"));
+        // Akash requires "EC PUBLIC KEY" format, not "PUBLIC KEY"
+        assert!(pub_str.contains("BEGIN EC PUBLIC KEY"), "pubkey should be EC PUBLIC KEY format");
     }
 
     #[test]
