@@ -146,12 +146,12 @@ sequenceDiagram
 |------|------|--------|--------------|
 | 1 | KeySelection | Validate signing key exists | "Key not found" |
 | 2 | BalanceCheck | Verify balance >= min_balance | "Insufficient balance" |
-| 3 | CertificateSetup | Get or create Akash mTLS cert | "Certificate creation failed" |
+| 3 | CertificateSetup | Get or create Akash mTLS cert (with key persistence) | "Certificate creation failed" |
 | 4 | DeploymentCreate | Broadcast MsgCreateDeployment | "Deployment tx failed" |
 | 5 | BidWait | Poll for provider bids (12-30s) | "No bids received" |
 | 6 | ProviderSelection | Select cheapest (or from trusted list) | "No matching providers" |
 | 7 | LeaseCreate | Broadcast MsgCreateLease | "Lease creation failed" |
-| 8 | ManifestSend | POST manifest to provider | "Manifest send failed" |
+| 8 | ManifestSend | POST manifest to provider (mTLS with stored cert key) | "Manifest send failed" |
 | 9 | EndpointRetrieval | Query service endpoints | "Endpoints unavailable" |
 | 10 | Complete | Store endpoints, mark complete | - |
 
@@ -312,6 +312,104 @@ deployment:
       profile: sglang
       count: 1
 ```
+
+## Certificate Management
+
+Akash requires mTLS certificates for provider communication. Certificates are persisted in Cnidarium storage with encrypted private keys.
+
+### Certificate Lifecycle
+
+```mermaid
+flowchart TD
+    A[CertificateSetup Step] --> B{Cert exists on chain?}
+    B -->|Yes| C{Key in storage?}
+    B -->|No| D[Generate X.509 cert]
+    C -->|Yes| E[Load encrypted key from storage]
+    C -->|No| F[Workflow FAILS - orphaned cert]
+    D --> G[Broadcast MsgCreateCertificate]
+    G --> H[Encrypt key with ChaCha20Poly1305 + Argon2id]
+    H --> I[Store encrypted key in Cnidarium]
+    I --> J[Continue workflow]
+    E --> J
+```
+
+### Storage Keys
+
+| Key Pattern | Description |
+|-------------|-------------|
+| `akash_cert_keys/{owner_address}` | Encrypted certificate private key |
+| `akash_provider_info/{provider_address}` | Cached provider metadata |
+
+### Certificate Commands
+
+| Command | Description |
+|---------|-------------|
+| `ergors deploy cert create` | Create new Akash certificate for default key |
+| `ergors deploy cert create --key-name <name>` | Create certificate for specific key |
+| `ergors deploy cert revoke` | Revoke current certificate |
+| `ergors deploy cert revoke --serial <serial>` | Revoke certificate by serial number |
+| `ergors deploy cert show` | Show current certificate info |
+
+### Certificate Storage Format
+
+Encrypted private keys use the same encryption as the key store:
+- **Cipher**: ChaCha20Poly1305
+- **KDF**: Argon2id (memory: 64MB, iterations: 3, parallelism: 4)
+- **Key derivation**: From custody password
+
+### Revocation
+
+When revoking a certificate:
+1. Broadcast `MsgRevokeCertificate` to chain
+2. Delete encrypted key from Cnidarium storage
+3. Any active deployments using this cert will fail mTLS handshakes
+
+## Provider Info Caching
+
+Provider metadata is cached locally for human-readable bid display and O(1) lookups.
+
+### Cached Information
+
+```rust
+pub struct CachedProviderInfo {
+    pub address: String,      // akash1...
+    pub host_uri: String,     // https://provider.domain.com:8443
+    pub email: String,
+    pub website: String,
+    pub attributes: Vec<(String, String)>,  // capability tags
+    pub cached_at: i64,       // unix timestamp
+}
+```
+
+### Cache Behavior
+
+| Event | Action |
+|-------|--------|
+| Bid received | Check cache, query chain if miss, cache result |
+| Provider query | Return cached if < 24h old, refresh otherwise |
+| Manual refresh | `ergors deploy provider-info <address> --refresh` |
+
+### Bid Display
+
+Bids show human-readable provider names:
+
+```
+Available Bids for session abc123:
+╔════╦════════════════════════╦════════════════════╦═══════════════╗
+║ #  ║ Provider               ║ Name               ║ Price         ║
+╠════╬════════════════════════╬════════════════════╬═══════════════╣
+║ 1  ║ akash1h4h33c8rv...     ║ Overclock Labs     ║ 0.025 AKT/blk ║
+║ 2  ║ akash1u5cdg7k3g...     ║ d3akash            ║ 0.028 AKT/blk ║
+║ 3  ║ akash1kqzpqqhm3...     ║ leet.haus          ║ 0.030 AKT/blk ║
+╚════╩════════════════════════╩════════════════════╩═══════════════╝
+```
+
+### Provider Info Commands
+
+| Command | Description |
+|---------|-------------|
+| `ergors deploy provider-info <address>` | Show cached provider info |
+| `ergors deploy provider-info <address> --refresh` | Force refresh from chain |
 
 ## Provider Management
 
@@ -495,6 +593,46 @@ Lease Status: active
 ergors deploy query-balance <address>
 ```
 
+## Automatic Cleanup on Failure
+
+After `MsgCreateDeployment` succeeds, if any subsequent step fails, the workflow automatically broadcasts `MsgCloseDeployment` to:
+
+1. **Recover escrow deposit** - Initial deposit is returned to wallet
+2. **Prevent hanging deployments** - No orphaned deployments on-chain
+3. **Clean state** - Workflow marked as failed with error message
+
+### Cleanup Sequence
+
+```mermaid
+flowchart TD
+    A[MsgCreateDeployment SUCCESS] --> B[Post-deployment steps]
+    B -->|Success| C[Deployment Complete]
+    B -->|Failure| D[Cleanup triggered]
+    D --> E[Broadcast MsgCloseDeployment]
+    E -->|Success| F[Escrow returned]
+    E -->|Failure| G[Manual cleanup required]
+    F --> H[Mark workflow FAILED]
+    G --> H
+```
+
+### Steps Covered by Cleanup
+
+| Step | On Failure | Cleanup Action |
+|------|------------|----------------|
+| BidWait | No bids received | Close deployment |
+| ProviderSelection | No matching providers | Close deployment |
+| LeaseCreate | Tx failed | Close deployment |
+| ManifestSend | mTLS or provider error | Close deployment |
+| EndpointRetrieval | Endpoints unavailable | Close deployment |
+
+### Manual Cleanup
+
+If automatic cleanup fails, manually close:
+
+```bash
+ergors deploy close-deployment <session-id>
+```
+
 ## Error Handling
 
 | Error | Cause | Resolution |
@@ -504,7 +642,10 @@ ergors deploy query-balance <address>
 | `No bids received` | No providers available | Increase max price in SDL |
 | `Key not found` | Key name doesn't exist | Check `ergors keys list` |
 | `Certificate creation failed` | Network or key issue | Restart engine |
-| `Manifest send failed` | Provider unreachable | Select different provider |
+| `No encrypted certificate private key` | Cert exists on chain but key not in storage | Revoke cert and create new one |
+| `Manifest send failed` | Provider unreachable or mTLS failure | Check cert validity, select different provider |
+| `Certificate revocation failed` | Network or invalid serial | Check `ergors deploy cert show` for correct serial |
+| `Failed to close deployment during cleanup` | Network error during cleanup | Manual cleanup: `ergors deploy close-deployment <session>` |
 
 ## File Reference
 
@@ -514,17 +655,27 @@ ergors deploy query-balance <address>
 | `packages/cw-ho/src/server.rs` | Context initialization on startup |
 | `packages/cw-ho/src/deploy/signer.rs` | Transaction signing with layer-climb |
 | `packages/cw-ho/src/deploy/akash.rs` | Transaction broadcasting helpers |
-| `packages/cw-ho/src/deploy/certificate.rs` | Certificate management |
-| `packages/cw-ho/src/deploy/automated.rs` | Workflow orchestration and lifecycle methods |
+| `packages/cw-ho/src/deploy/certificate.rs` | Certificate management (with key persistence) |
+| `packages/cw-ho/src/deploy/automated.rs` | Workflow orchestration, provider info caching |
 | `packages/cw-ho/src/deploy/deployment_builder.rs` | Message builders (create, close, update, escrow) |
 | `packages/cw-ho/src/deploy/cosmos_client.rs` | Chain queries (balance, bids, leases, escrow) |
 | `packages/cw-ho/src/deploy/manifest.rs` | Manifest generation and provider communication |
 | `packages/cw-ho/src/grpc/management.rs` | gRPC handlers for deployment management |
-| `packages/cw-ho/src/commands/deploy.rs` | CLI implementation |
+| `packages/cw-ho/src/commands/deploy.rs` | CLI implementation (including cert commands) |
 | `packages/cw-ho/src/client/mod.rs` | gRPC client methods |
-| `packages/cw-ho/src/storage.rs` | Cnidarium storage for workflows and endpoints |
+| `packages/cw-ho/src/storage.rs` | Cnidarium storage for workflows, cert keys, provider info |
 | `proto/ergors/orch/v1/orch.proto` | Deployment workflow proto definitions |
 | `proto/ergors/management/v1/management.proto` | Management service proto definitions |
+
+### Storage Keys Reference
+
+| Prefix | Key Pattern | Value |
+|--------|-------------|-------|
+| `akash_workflows` | `akash_workflows/{session_id}` | Serialized workflow state |
+| `akash_labels` | `akash_labels/{label}` | Session ID (historical) |
+| `akash_active_labels` | `akash_active_labels/{label}` | Session ID (active only) |
+| `akash_cert_keys` | `akash_cert_keys/{owner_address}` | Encrypted certificate private key |
+| `akash_provider_info` | `akash_provider_info/{provider_address}` | Cached provider metadata |
 
 ## Complete Lifecycle Examples
 

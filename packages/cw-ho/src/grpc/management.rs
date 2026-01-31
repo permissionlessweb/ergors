@@ -143,6 +143,9 @@ use ho_std::types::ergors::orch::v1::{
     GetLeaseStatusRequest, LeaseStatusResponse,
     AddTrustedProviderRequest, RemoveTrustedProviderRequest,
     ListTrustedProvidersRequest, ListTrustedProvidersResponse, AkashWorkflowOptions, AkashLeaseInfo, AkashLeaseState,
+    // Certificate management types
+    CreateAkashCertificateRequest, CreateAkashCertificateResponse,
+    RevokeAkashCertificateRequest, ListAkashCertificatesRequest, ListAkashCertificatesResponse, AkashCertificateInfo,
     // RAG types
     RagIngestRequest, RagIngestResponse, RagQueryRequest, RagQueryResponse,
     RagStatusRequest, RagStatusResponse, RagDeleteRequest, RagOperationResult,
@@ -2132,7 +2135,8 @@ impl ManagementService for ManagementServiceImpl {
             grant_purpose: String::new(),
             // Automated workflow fields
             available_bids: vec![],
-            certificate_info: None,
+            certificate: None,
+            encrypted_cert_private_key: vec![],
             lease_id_info: None,
             options: None,
             service_endpoints: vec![],
@@ -3084,6 +3088,263 @@ impl ManagementService for ManagementServiceImpl {
                 Err(Status::internal(format!("Failed to list trusted providers: {}", e)))
             }
         }
+    }
+
+    // ============ Akash Certificate Management Handlers ============
+
+    /// Create a new Akash mTLS certificate and broadcast to chain
+    async fn create_akash_certificate(
+        &self,
+        request: Request<CreateAkashCertificateRequest>,
+    ) -> Result<Response<CreateAkashCertificateResponse>, Status> {
+        let req = request.into_inner();
+
+        // Check if Akash context is available
+        let akash_ctx = self
+            .state
+            .akash
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition(
+                "Akash deployment context not initialized. Configure Akash settings first."
+            ))?;
+
+        // Get key name (default to "default")
+        let key_name = if req.key_name.is_empty() {
+            "default".to_string()
+        } else {
+            req.key_name.clone()
+        };
+
+        // Derive address from key
+        let encrypted_key = {
+            let key_store = akash_ctx.key_store.read().await;
+            EncryptedCosmosKeyManager::get_key_by_name(&key_store, &key_name)
+                .ok_or_else(|| Status::not_found(format!("Key '{}' not found", key_name)))?
+                .clone()
+        };
+
+        let address = {
+            let mut manager = akash_ctx.key_manager.write().await;
+            // Unlock if needed using custody password from context
+            if !manager.is_unlocked() {
+                manager.unlock(&akash_ctx.custody_password).map_err(|e| {
+                    Status::internal(format!("Failed to unlock key manager: {}", e))
+                })?;
+            }
+            let keypair = manager
+                .get_keypair(&encrypted_key, req.account_index)
+                .map_err(|e| Status::internal(format!("Failed to derive keypair: {}", e)))?;
+            cosmos_address_from_pubkey(keypair.public_key(), "akash")
+                .map_err(|e| Status::internal(format!("Failed to generate address: {}", e)))?
+        };
+
+        tracing::info!("Creating certificate for address: {}", address);
+
+        // Create certificate using the CertificateManager
+        match akash_ctx.cert_manager.get_or_create(
+            &key_name,
+            req.account_index,
+            &address,
+            &akash_ctx.custody_password,
+        ).await {
+            Ok(cert_with_key) => {
+                // Extract serial from certificate (simplified - use first 32 chars of cert hash)
+                let serial = hex::encode(&cert_with_key.certificate.cert[..16.min(cert_with_key.certificate.cert.len())]);
+
+                tracing::info!("Certificate created/found for {}", address);
+                Ok(Response::new(CreateAkashCertificateResponse {
+                    success: true,
+                    tx_hash: String::new(), // Not tracked at this level
+                    serial,
+                    error_message: String::new(),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to create certificate: {}", e);
+                Ok(Response::new(CreateAkashCertificateResponse {
+                    success: false,
+                    tx_hash: String::new(),
+                    serial: String::new(),
+                    error_message: format!("{}", e),
+                }))
+            }
+        }
+    }
+
+    /// Revoke an existing Akash certificate
+    async fn revoke_akash_certificate(
+        &self,
+        request: Request<RevokeAkashCertificateRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        // Check if Akash context is available
+        let akash_ctx = self
+            .state
+            .akash
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition(
+                "Akash deployment context not initialized. Configure Akash settings first."
+            ))?;
+
+        // Get key name (default to "default")
+        let key_name = if req.key_name.is_empty() {
+            "default".to_string()
+        } else {
+            req.key_name.clone()
+        };
+
+        // Derive address from key
+        let encrypted_key = {
+            let key_store = akash_ctx.key_store.read().await;
+            EncryptedCosmosKeyManager::get_key_by_name(&key_store, &key_name)
+                .ok_or_else(|| Status::not_found(format!("Key '{}' not found", key_name)))?
+                .clone()
+        };
+
+        let address = {
+            let mut manager = akash_ctx.key_manager.write().await;
+            // Unlock if needed using custody password from context
+            if !manager.is_unlocked() {
+                manager.unlock(&akash_ctx.custody_password).map_err(|e| {
+                    Status::internal(format!("Failed to unlock key manager: {}", e))
+                })?;
+            }
+            let keypair = manager
+                .get_keypair(&encrypted_key, req.account_index)
+                .map_err(|e| Status::internal(format!("Failed to derive keypair: {}", e)))?;
+            cosmos_address_from_pubkey(keypair.public_key(), "akash")
+                .map_err(|e| Status::internal(format!("Failed to generate address: {}", e)))?
+        };
+
+        // If no serial provided, query for first valid cert
+        let serial = if req.serial.is_empty() {
+            // Query chain for existing certs
+            let certs = akash_ctx.cosmos.query_certificates(&address).await
+                .map_err(|e| Status::internal(format!("Failed to query certificates: {}", e)))?;
+
+            // Find first valid cert
+            let valid_cert = certs.iter().find(|c| {
+                c.certificate.as_ref().map(|cert| cert.state == 1).unwrap_or(false) // State::Valid = 1
+            });
+
+            match valid_cert {
+                Some(c) => c.serial.clone(),
+                None => {
+                    return Ok(Response::new(OperationResult {
+                        success: false,
+                        message: "No valid certificate found to revoke".to_string(),
+                    }));
+                }
+            }
+        } else {
+            req.serial.clone()
+        };
+
+        tracing::info!("Revoking certificate for {} (serial: {})", address, serial);
+
+        match akash_ctx.cert_manager.revoke_certificate(
+            &key_name,
+            req.account_index,
+            &address,
+            &serial,
+        ).await {
+            Ok(tx_hash) => {
+                tracing::info!("Certificate revoked: tx_hash={}", tx_hash);
+                Ok(Response::new(OperationResult {
+                    success: true,
+                    message: format!("Certificate revoked. tx_hash: {}", tx_hash),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to revoke certificate: {}", e);
+                Ok(Response::new(OperationResult {
+                    success: false,
+                    message: format!("Failed to revoke certificate: {}", e),
+                }))
+            }
+        }
+    }
+
+    /// List certificates for an address from chain
+    async fn list_akash_certificates(
+        &self,
+        request: Request<ListAkashCertificatesRequest>,
+    ) -> Result<Response<ListAkashCertificatesResponse>, Status> {
+        let req = request.into_inner();
+
+        // Check if Akash context is available
+        let akash_ctx = self
+            .state
+            .akash
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition(
+                "Akash deployment context not initialized. Configure Akash settings first."
+            ))?;
+
+        // Determine address to query
+        let address = if !req.address.is_empty() {
+            req.address.clone()
+        } else {
+            // Derive from key
+            let key_name = if req.key_name.is_empty() {
+                "default".to_string()
+            } else {
+                req.key_name.clone()
+            };
+
+            let encrypted_key = {
+                let key_store = akash_ctx.key_store.read().await;
+                EncryptedCosmosKeyManager::get_key_by_name(&key_store, &key_name)
+                    .ok_or_else(|| Status::not_found(format!("Key '{}' not found", key_name)))?
+                    .clone()
+            };
+
+            let mut manager = akash_ctx.key_manager.write().await;
+            // Unlock if needed using custody password from context
+            if !manager.is_unlocked() {
+                manager.unlock(&akash_ctx.custody_password).map_err(|e| {
+                    Status::internal(format!("Failed to unlock key manager: {}", e))
+                })?;
+            }
+            let keypair = manager
+                .get_keypair(&encrypted_key, req.account_index)
+                .map_err(|e| Status::internal(format!("Failed to derive keypair: {}", e)))?;
+
+            cosmos_address_from_pubkey(keypair.public_key(), "akash")
+                .map_err(|e| Status::internal(format!("Failed to generate address: {}", e)))?
+        };
+
+        tracing::info!("Listing certificates for address: {}", address);
+
+        // Query chain for certificates
+        let certs = akash_ctx.cosmos.query_certificates(&address).await
+            .map_err(|e| Status::internal(format!("Failed to query certificates: {}", e)))?;
+
+        // Check storage for which certs have stored keys
+        let mut cert_infos = Vec::new();
+        for cert_resp in certs {
+            let state_str = cert_resp.certificate.as_ref()
+                .map(|c| if c.state == 1 { "valid" } else { "revoked" })
+                .unwrap_or("unknown")
+                .to_string();
+
+            // Check if we have the private key stored
+            let has_stored_key = self.state.s.get_akash_cert_key(&address).await
+                .map(|opt| opt.is_some())
+                .unwrap_or(false);
+
+            cert_infos.push(AkashCertificateInfo {
+                serial: cert_resp.serial,
+                state: state_str,
+                has_stored_key,
+            });
+        }
+
+        Ok(Response::new(ListAkashCertificatesResponse {
+            certificates: cert_infos,
+            address,
+        }))
     }
 
     // ============ RAG Vector Database Handlers ============

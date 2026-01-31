@@ -307,6 +307,20 @@ ergors deploy create --sdl <path> [OPTIONS]
 7. Send manifest to provider
 8. Retrieve and save service endpoints
 
+**Automatic Cleanup on Failure:**
+
+If any step fails after MsgCreateDeployment succeeds, the workflow automatically:
+- Broadcasts `MsgCloseDeployment` to close the deployment
+- Returns the escrow deposit to your wallet
+- Marks the workflow as failed with error message
+
+This prevents hanging deployments and ensures you don't lose funds on failed deployments.
+
+If automatic cleanup fails, manually close with:
+```bash
+ergors deploy close-deployment <session-id>
+```
+
 **Example:**
 
 ```bash
@@ -473,6 +487,104 @@ ergors deploy close-deployment <session-id>
 - Permanent closure
 - All escrow funds returned
 - Cannot be reopened
+
+### Certificate Management
+
+Akash deployments require X.509 certificates for mTLS authentication with providers.
+
+#### Create Certificate
+
+Create or retrieve an Akash mTLS certificate:
+
+```bash
+ergors deploy cert create [--key-name <NAME>] [--account-index <N>]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--key-name <NAME>` | Key name for signing | `default` |
+| `--account-index <N>` | HD account index | `0` |
+
+**Process:**
+
+1. Derives Akash address from key
+2. Queries chain for existing valid certificate
+3. If found and key is stored locally, reuses it
+4. If not found, generates new X.509 certificate
+5. Broadcasts `MsgCreateCertificate` to Akash chain
+6. Stores encrypted private key in cnidarium storage
+
+#### Show Certificates
+
+List certificates for an address from chain:
+
+```bash
+ergors deploy cert show [--key-name <NAME>] [--account-index <N>]
+```
+
+**Output:**
+- Lists all certificates (valid and revoked)
+- Shows whether private key is stored locally
+- Warns if valid cert exists but key is missing
+
+#### Revoke Certificate
+
+Revoke an Akash certificate:
+
+```bash
+ergors deploy cert revoke [--key-name <NAME>] [--account-index <N>] [--serial <SERIAL>]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--key-name <NAME>` | Key name for signing | `default` |
+| `--account-index <N>` | HD account index | `0` |
+| `--serial <SERIAL>` | Certificate serial to revoke | First valid cert |
+
+**Process:**
+
+1. Broadcasts `MsgRevokeCertificate` to Akash chain
+2. Deletes encrypted private key from local storage
+3. Certificate marked as revoked on-chain
+
+**Certificate Storage:**
+
+- Encrypted private keys are stored by owner address in cnidarium
+- Keys persist across deployments and server restarts
+- Uses ChaCha20Poly1305 encryption with Argon2id key derivation
+- Storage key: `akash_cert_keys/{owner_address}`
+
+**Common Issue: Missing Private Key**
+
+If a certificate exists on chain but the private key is not in storage (created outside ERGORS):
+
+```
+WARNING: Certificate exists but private key is missing!
+mTLS authentication may fail
+```
+
+**Solution:**
+
+1. Revoke the existing certificate using Akash CLI:
+   ```bash
+   akash tx cert revoke --from <key>
+   ```
+2. Run a new deployment - ERGORS will create and store a new certificate
+
+### Provider Information
+
+Provider info is automatically queried and cached during bid selection:
+
+```bash
+ergors deploy provider-info <address> [--refresh]
+```
+
+**Provider Info Caching:**
+
+- Provider info (host_uri, email, website) is cached in cnidarium storage
+- Cache lookup is O(1) by provider address
+- Storage key: `akash_provider_info/{provider_address}`
+- Human-readable provider names shown in bid listings
 
 ### Update Deployment
 
@@ -727,6 +839,54 @@ ergors start
 # 4. In another terminal, verify it's running
 ergors status
 ```
+
+---
+
+## Background Services
+
+The engine runs several background services when started:
+
+### Deployment Cache Refresh
+
+Maintains an in-memory cache of active Akash deployments for fast inference routing.
+
+**Refresh Interval:** Every 30 seconds
+
+**Process:**
+
+1. Lists all workflows from storage
+2. Filters to completed deployments with labels
+3. Verifies lease is still active on chain
+4. Checks escrow balance and reports low balance warnings
+5. Updates cache with verified active deployments
+
+**Chain Verification:**
+
+- Queries lease status from Akash chain
+- Removes inactive deployments from cache automatically
+- Reports deployments with `InsufficientFunds` state
+
+**Escrow Monitoring:**
+
+- Checks escrow balance against threshold (default: 20% of initial deposit)
+- Logs warnings for deployments with low balance
+- Auto top-up available (disabled by default)
+
+**Auto Top-Up (Optional):**
+
+When enabled, automatically deposits funds to deployments with low escrow balance:
+
+- Threshold: Configurable percentage (default: 20%)
+- Top-up amount: Configurable (default: 5 AKT / 5,000,000 uakt)
+- Requires signing components configured
+
+**Cache Operations:**
+
+| Operation | Trigger | Description |
+|-----------|---------|-------------|
+| Add deployment | Workflow completion | Adds deployment to cache for inference routing |
+| Remove deployment | Lease closed/inactive | Removes from cache |
+| Refresh | Every 30s | Verifies all cached deployments |
 
 ---
 

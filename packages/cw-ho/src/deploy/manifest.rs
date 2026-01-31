@@ -433,14 +433,14 @@ pub struct ManifestGpu {
 
 // ============ Manifest Sender ============
 
-/// Manifest sender for provider communication.
+/// Manifest sender for provider communication with mTLS support.
 pub struct ManifestSender {
     provider_uri: String,
     http: HttpClient,
 }
 
 impl ManifestSender {
-    /// Create a new manifest sender.
+    /// Create a new manifest sender without mTLS (for testing or local providers).
     pub fn new(provider_uri: &str) -> Self {
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(60))
@@ -452,6 +452,36 @@ impl ManifestSender {
             provider_uri: provider_uri.to_string(),
             http,
         }
+    }
+
+    /// Create a new manifest sender with mTLS client certificate.
+    ///
+    /// The `cert_pem` and `privkey_pem` are the PEM-encoded certificate and private key
+    /// for mutual TLS authentication with Akash providers.
+    pub fn with_mtls(provider_uri: &str, cert_pem: &[u8], privkey_pem: &[u8]) -> Result<Self> {
+        // Combine cert and key into PKCS12/Identity format
+        // reqwest expects both in a single Identity
+        let mut pem_bundle = Vec::new();
+        pem_bundle.extend_from_slice(cert_pem);
+        pem_bundle.extend_from_slice(b"\n");
+        pem_bundle.extend_from_slice(privkey_pem);
+
+        let identity = reqwest::Identity::from_pem(&pem_bundle)
+            .map_err(|e| anyhow!("Failed to create identity from PEM: {}", e))?;
+
+        let http = HttpClient::builder()
+            .timeout(Duration::from_secs(60))
+            .danger_accept_invalid_certs(true) // Providers use self-signed certs
+            .identity(identity)
+            .build()
+            .map_err(|e| anyhow!("Failed to create mTLS client: {}", e))?;
+
+        tracing::info!("Created mTLS client for {}", provider_uri);
+
+        Ok(Self {
+            provider_uri: provider_uri.to_string(),
+            http,
+        })
     }
 
     /// Send manifest to provider via REST API.
@@ -520,7 +550,7 @@ pub struct ServiceEndpoint {
     pub protocol: String,
 }
 
-/// Query service endpoints from provider.
+/// Query service endpoints from provider (without mTLS - for testing).
 pub async fn query_service_endpoints(
     provider_uri: &str,
     owner: &str,
@@ -532,6 +562,47 @@ pub async fn query_service_endpoints(
         .timeout(Duration::from_secs(30))
         .danger_accept_invalid_certs(true)
         .build()?;
+
+    query_service_endpoints_with_client(&http, provider_uri, owner, dseq, gseq, oseq).await
+}
+
+/// Query service endpoints from provider with mTLS.
+pub async fn query_service_endpoints_mtls(
+    provider_uri: &str,
+    owner: &str,
+    dseq: u64,
+    gseq: u32,
+    oseq: u32,
+    cert_pem: &[u8],
+    privkey_pem: &[u8],
+) -> Result<HashMap<String, ServiceEndpoint>> {
+    // Build mTLS client
+    let mut pem_bundle = Vec::new();
+    pem_bundle.extend_from_slice(cert_pem);
+    pem_bundle.extend_from_slice(b"\n");
+    pem_bundle.extend_from_slice(privkey_pem);
+
+    let identity = reqwest::Identity::from_pem(&pem_bundle)
+        .map_err(|e| anyhow!("Failed to create identity from PEM: {}", e))?;
+
+    let http = HttpClient::builder()
+        .timeout(Duration::from_secs(30))
+        .danger_accept_invalid_certs(true)
+        .identity(identity)
+        .build()?;
+
+    query_service_endpoints_with_client(&http, provider_uri, owner, dseq, gseq, oseq).await
+}
+
+/// Internal: Query endpoints with provided HTTP client.
+async fn query_service_endpoints_with_client(
+    http: &HttpClient,
+    provider_uri: &str,
+    owner: &str,
+    dseq: u64,
+    gseq: u32,
+    oseq: u32,
+) -> Result<HashMap<String, ServiceEndpoint>> {
 
     // Provider lease status endpoint
     let url = format!(

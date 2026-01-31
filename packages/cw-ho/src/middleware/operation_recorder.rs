@@ -30,8 +30,8 @@ pub async fn record_operation(
     tracing::Span::current().record("operation_id", operation_id.as_str());
     tracing::Span::current().record("endpoint", endpoint.as_str());
 
-    // Extract session_id if present (could come from headers or body)
-    let session_id = extract_session_id(&req);
+    // Try to extract session_id from headers first
+    let header_session_id = extract_session_id(&req);
 
     info!(
         operation_id = %operation_id,
@@ -49,6 +49,15 @@ pub async fn record_operation(
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
+
+    // Try to extract session_id from body if not found in headers
+    let session_id = header_session_id.or_else(|| {
+        if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&request_bytes) {
+            extract_session_id_from_body(&json)
+        } else {
+            None
+        }
+    });
 
     // Store the request
     if let Err(e) = state
@@ -158,9 +167,46 @@ async fn capture_body(body: Body) -> Result<Bytes, HoError> {
         .map_err(|e| HoError::Cfg(format!("Failed to read body: {}", e)))
 }
 
-/// Extract session ID from request (from headers or body)
-fn extract_session_id(_req: &Request) -> Option<String> {
-    // TODO: Implement extraction from headers or parsed body
-    // For now, return None
+/// Extract a non-empty header value by key.
+fn get_header(req: &Request, key: &str) -> Option<String> {
+    req.headers()
+        .get(key)
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+/// Extract session ID from request, checking x-session-id header.
+fn extract_session_id(req: &Request) -> Option<String> {
+    get_header(req, "x-session-id")
+}
+
+/// Extract session ID from parsed request body (for use when body is available).
+///
+/// This can be called after the body has been captured and parsed.
+pub fn extract_session_id_from_body(body: &serde_json::Value) -> Option<String> {
+    // Check for previous_response_id (Open Responses format)
+    if let Some(prev_id) = body.get("previous_response_id").and_then(|v| v.as_str()) {
+        if !prev_id.is_empty() {
+            return Some(format!("resp_{}", &prev_id[..12.min(prev_id.len())]));
+        }
+    }
+
+    // Check for metadata.session_id (custom format)
+    if let Some(metadata) = body.get("metadata") {
+        if let Some(session_id) = metadata.get("session_id").and_then(|v| v.as_str()) {
+            if !session_id.is_empty() {
+                return Some(session_id.to_string());
+            }
+        }
+    }
+
+    // Check for conversation_id (common in some APIs)
+    if let Some(conv_id) = body.get("conversation_id").and_then(|v| v.as_str()) {
+        if !conv_id.is_empty() {
+            return Some(conv_id.to_string());
+        }
+    }
+
     None
 }

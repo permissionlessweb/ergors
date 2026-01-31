@@ -132,7 +132,8 @@ impl AkashWorkflowManager {
             grant_purpose: String::new(),
             // Automated workflow fields
             available_bids: vec![],
-            certificate_info: None,
+            certificate: None,
+            encrypted_cert_private_key: vec![],
             lease_id_info: None,
             options: None,
             service_endpoints: vec![],

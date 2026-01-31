@@ -5503,6 +5503,106 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Create a new mTLS certificate and broadcast to chain
+        pub async fn create_akash_certificate(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::CreateAkashCertificateRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<
+                super::super::super::orch::v1::CreateAkashCertificateResponse,
+            >,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/CreateAkashCertificate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "CreateAkashCertificate",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Revoke an existing certificate
+        pub async fn revoke_akash_certificate(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RevokeAkashCertificateRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RevokeAkashCertificate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RevokeAkashCertificate",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List certificates for an address from chain
+        pub async fn list_akash_certificates(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::ListAkashCertificatesRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<
+                super::super::super::orch::v1::ListAkashCertificatesResponse,
+            >,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListAkashCertificates",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListAkashCertificates",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Ingest document into vector database
         pub async fn rag_ingest(
             &mut self,
@@ -6519,6 +6619,37 @@ pub mod management_service_server {
             >,
         ) -> std::result::Result<
             tonic::Response<super::super::super::orch::v1::ListTrustedProvidersResponse>,
+            tonic::Status,
+        >;
+        /// Create a new mTLS certificate and broadcast to chain
+        async fn create_akash_certificate(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::CreateAkashCertificateRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<
+                super::super::super::orch::v1::CreateAkashCertificateResponse,
+            >,
+            tonic::Status,
+        >;
+        /// Revoke an existing certificate
+        async fn revoke_akash_certificate(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::RevokeAkashCertificateRequest,
+            >,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// List certificates for an address from chain
+        async fn list_akash_certificates(
+            &self,
+            request: tonic::Request<
+                super::super::super::orch::v1::ListAkashCertificatesRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<
+                super::super::super::orch::v1::ListAkashCertificatesResponse,
+            >,
             tonic::Status,
         >;
         /// Ingest document into vector database
@@ -9853,6 +9984,162 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListTrustedProvidersSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/CreateAkashCertificate" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateAkashCertificateSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::CreateAkashCertificateRequest,
+                    > for CreateAkashCertificateSvc<T> {
+                        type Response = super::super::super::orch::v1::CreateAkashCertificateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::CreateAkashCertificateRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::create_akash_certificate(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CreateAkashCertificateSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RevokeAkashCertificate" => {
+                    #[allow(non_camel_case_types)]
+                    struct RevokeAkashCertificateSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RevokeAkashCertificateRequest,
+                    > for RevokeAkashCertificateSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RevokeAkashCertificateRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::revoke_akash_certificate(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RevokeAkashCertificateSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListAkashCertificates" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListAkashCertificatesSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::ListAkashCertificatesRequest,
+                    > for ListAkashCertificatesSvc<T> {
+                        type Response = super::super::super::orch::v1::ListAkashCertificatesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::ListAkashCertificatesRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_akash_certificates(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListAkashCertificatesSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

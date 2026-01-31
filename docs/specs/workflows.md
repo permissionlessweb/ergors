@@ -734,3 +734,293 @@ mod tests {
 ### i24 as 24 bit-true-color storage keys
 
 This allows us to store a storage key as a specific color value. We Know this is a range from  [-8,388,608, 8,388,607]
+
+
+# Session & Response ID Tracking
+
+Hierarchical session and response ID system for tracing agentic workflows.
+
+---
+
+## Overview
+
+ERGORS uses a recursive ID system that enables:
+
+- **Session continuity** across multiple requests
+- **Response chaining** via parent-child relationships
+- **Classification** of request types for routing and analytics
+- **Latency tracking** per request
+
+This supports the fractal task decomposition described in [agents.md](./agents.md).
+
+---
+
+## Session IDs
+
+A session groups related requests. Sessions are extracted from request headers.
+
+### Header Extraction
+
+The `get_header(req, key)` function extracts any header value:
+
+```rust
+fn get_header(req: &Request, key: &str) -> Option<String>
+```
+
+Callers specify the header key relevant to their context:
+
+| Context | Header Key | Example |
+|---------|-----------|---------|
+| Default session | `x-session-id` | `sess_abc123` |
+| Request tracing | `x-request-id` | `req_def456` |
+| Distributed tracing | `x-correlation-id` | `trace_789` |
+| Anthropic clients | `anthropic-session-id` | `ant_xyz` |
+
+### Body-Based Session
+
+When headers are absent, session can be extracted from request body:
+
+```rust
+fn extract_session_id_from_body(body: &serde_json::Value) -> Option<String>
+```
+
+Checks (in order):
+
+1. `previous_response_id` - Chains from prior response
+2. `metadata.session_id` - Explicit session in metadata
+3. `conversation_id` - Common API pattern
+
+---
+
+## Response IDs
+
+Each response gets a unique, traceable ID.
+
+### Structure
+
+```rust
+pub struct ResponseId {
+    pub id: Uuid,                    // Unique identifier
+    pub parent_id: Option<Uuid>,     // For conversation chaining
+    pub classification: String,       // Request type (chat, embedding, etc)
+    pub timestamp_ms: u64,           // Generation time
+    pub sequence: u32,               // Position in conversation
+    pub provider_id: Option<String>, // Upstream provider's ID
+}
+```
+
+### Chaining
+
+Responses form a tree via `parent_id`:
+
+```
+Session: sess_abc123
+│
+├── resp_001 (chat, seq=0)
+│   ├── resp_002 (tool_call, seq=1, parent=001)
+│   │   └── resp_003 (chat, seq=2, parent=002)
+│   └── resp_004 (embedding, seq=1, parent=001)
+│
+└── resp_005 (chat, seq=0)  // New conversation in same session
+```
+
+### Creating Chained Responses
+
+```rust
+// First response in conversation
+let root = ResponseId::new("chat", None, 0);
+
+// Chained from previous
+let child = ResponseId::from_parent(&root, "tool_call");
+// child.parent_id = Some(root.id)
+// child.sequence = 1
+```
+
+### Parsing Previous Response ID
+
+Open Responses format uses `previous_response_id` in requests:
+
+```rust
+let parent_uuid = ResponseId::parse_previous("resp_abc123def456");
+```
+
+Handles both UUID and `resp_` prefixed formats.
+
+---
+
+## Request Classification
+
+Requests are classified for routing and analytics:
+
+```rust
+pub enum RequestClassification {
+    Chat,       // Conversational inference
+    Embedding,  // Vector embeddings
+    Completion, // Text completion (non-chat)
+    ToolCall,   // Function/tool invocation
+    Image,      // Image generation
+    Audio,      // Audio processing
+    Vision,     // Image understanding
+}
+```
+
+### Inference from Endpoint
+
+```rust
+let class = RequestClassification::from_endpoint("/v1/chat/completions");
+// Returns: Chat
+
+let class = RequestClassification::from_endpoint("/v1/embeddings");
+// Returns: Embedding
+```
+
+---
+
+## Request Context
+
+Bundles all tracking state for a request:
+
+```rust
+pub struct RequestContext {
+    pub session_id: String,
+    pub previous_response_id: Option<Uuid>,
+    pub sequence: u32,
+    pub endpoint_path: String,
+    pub classification: RequestClassification,
+    pub start_time: Option<Instant>,
+    pub provider_request_id: Option<String>,
+}
+```
+
+### Factory Methods
+
+```rust
+// Chat request with conversation history
+let ctx = RequestContext::for_chat("sess_123", Some("resp_prev"));
+
+// Embedding request (no conversation)
+let ctx = RequestContext::for_embedding("sess_123");
+
+// Anthropic messages endpoint
+let ctx = RequestContext::for_anthropic("sess_123", None);
+```
+
+### Generating Response ID
+
+```rust
+let response_id = ctx.generate_response_id();
+// Uses ctx.classification, ctx.previous_response_id, ctx.sequence
+```
+
+### Latency Tracking
+
+```rust
+let ctx = RequestContext::for_chat("sess_123", None);
+// ... perform request ...
+let latency = ctx.latency_ms(); // Milliseconds since start_time
+```
+
+---
+
+## Serialization
+
+### Compact (16 bytes)
+
+For `PromptResponse.id` field:
+
+```rust
+let bytes = response_id.to_bytes(); // UUID bytes only
+```
+
+### Extended (variable)
+
+Full metadata for storage:
+
+```rust
+let bytes = response_id.to_extended_bytes();
+// Layout: id(16) + parent(16) + timestamp(8) + sequence(4) + class_len(4) + class(N)
+
+let parsed = ResponseId::from_extended_bytes(&bytes);
+```
+
+### Open Responses Format
+
+Compatible with OpenAI/Anthropic response format:
+
+```rust
+let formatted = response_id.to_open_responses_format();
+// "resp_abc123def456789..."
+```
+
+---
+
+## Agentic Task Trees
+
+This system enables tracing complex agentic workflows:
+
+```
+Task: "Research and summarize topic X"
+Session: sess_research_001
+│
+├── resp_001 (chat) - Initial planning
+│   │
+│   ├── resp_002 (tool_call) - Web search
+│   │   └── resp_003 (chat) - Process results
+│   │
+│   ├── resp_004 (tool_call) - Database query
+│   │   └── resp_005 (chat) - Analyze data
+│   │
+│   └── resp_006 (embedding) - Semantic comparison
+│
+└── resp_007 (chat) - Final synthesis
+    └── parent_id = resp_001 (returns to root context)
+```
+
+Each response knows:
+
+- Its classification (what type of work)
+- Its parent (where it came from)
+- Its sequence (order in conversation)
+- Its session (which task tree)
+
+---
+
+## Integration Points
+
+### Middleware (operation_recorder.rs)
+
+```rust
+// Extract session from header
+let session_id = get_header(&req, "x-session-id");
+
+// Or from body after parsing
+let session_id = extract_session_id_from_body(&json_body);
+```
+
+### Router (router.rs)
+
+```rust
+// Route with full context tracking
+let response = router
+    .route_to_deployment_with_context(&req, &deployment, Some(ctx))
+    .await?;
+
+// Response includes:
+// - response.id = ResponseId bytes
+// - response.latency_ms = tracked duration
+// - response.cost = estimated from tokens
+// - response.output = Open Responses format items
+```
+
+### Storage
+
+Response IDs are stored in `PromptResponse.id` as bytes. Extended format can be used for audit trails requiring full metadata.
+
+---
+
+## Design Principles
+
+1. **Caller specifies context** - No magic header lists; caller knows their key
+2. **Minimal allocation** - UUID bytes for hot path, extended only when needed
+3. **Open Responses compatible** - `resp_` prefix format works with existing clients
+4. **Recursive by design** - Parent linking enables arbitrary task tree depth

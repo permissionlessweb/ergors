@@ -68,10 +68,10 @@ async fn handle_store_code(state: ErgorsAppState, r: serde_json::Value) -> Json<
                 .store_code(&state.s.cs, msg.wasm_byte_code, msg.sender)
                 .await
             {
-                Ok(code_id) => {
+                Ok((code_id, checksum)) => {
                     let response = MsgStoreCodeResponse {
                         code_id,
-                        checksum: vec![], // TODO: Return actual checksum from WasmRuntime
+                        checksum: checksum.into(),  
                     };
                     Json(
                         serde_json::to_value(response).unwrap_or_else(
@@ -287,12 +287,9 @@ pub async fn handle_cosmwasm_query(
                             }
                         }
                     }
-                    cosmwasm_std::ContractResult::Err(err) => {
-                        Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
-                            "Contract query failed: {}",
-                            err
-                        ))))
-                    }
+                    cosmwasm_std::ContractResult::Err(err) => Json(error_json_detailed(
+                        &HoError::Anyhow(anyhow::format_err!("Contract query failed: {}", err)),
+                    )),
                 }
             }
             Err(e) => Json(error_json_detailed(&e)),
@@ -378,16 +375,22 @@ pub async fn handle_cosmwasm_execute(
         // Execute the contract
         match state
             .wasm
-            .execute_contract(&state.s.cs, req.contract.clone(), req.sender.clone(), msg_bytes, funds)
+            .execute_contract(
+                &state.s.cs,
+                req.contract.clone(),
+                req.sender.clone(),
+                msg_bytes,
+                funds,
+            )
             .await
         {
             Ok(response) => {
                 // Extract data and events from response
                 match response.into_result() {
                     Ok(sub_response) => {
-                        let data = sub_response
-                            .data
-                            .map(|b| base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &b));
+                        let data = sub_response.data.map(|b| {
+                            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &b)
+                        });
 
                         let events: Vec<serde_json::Value> = sub_response
                             .events
@@ -412,12 +415,10 @@ pub async fn handle_cosmwasm_execute(
                             "events": events
                         }))
                     }
-                    Err(err) => {
-                        Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
-                            "Contract execution failed: {}",
-                            err
-                        ))))
-                    }
+                    Err(err) => Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
+                        "Contract execution failed: {}",
+                        err
+                    )))),
                 }
             }
             Err(e) => Json(error_json_detailed(&e)),
@@ -484,12 +485,10 @@ pub async fn handle_cosmwasm_store(
             .store_code(&state.s.cs, wasm_bytes, req.sender.clone())
             .await
         {
-            Ok(code_id) => {
-                Json(serde_json::json!({
-                    "code_id": code_id,
-                    "sender": req.sender
-                }))
-            }
+            Ok(code_id) => Json(serde_json::json!({
+                "code_id": code_id,
+                "sender": req.sender
+            })),
             Err(e) => Json(error_json_detailed(&e)),
         }
     }
@@ -586,47 +585,43 @@ pub async fn handle_cosmwasm_instantiate(
             )
             .await
         {
-            Ok((contract_address, response)) => {
-                match response.into_result() {
-                    Ok(sub_response) => {
-                        let data = sub_response
-                            .data
-                            .map(|b| base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &b));
+            Ok((contract_address, response)) => match response.into_result() {
+                Ok(sub_response) => {
+                    let data = sub_response.data.map(|b| {
+                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &b)
+                    });
 
-                        let events: Vec<serde_json::Value> = sub_response
-                            .events
-                            .into_iter()
-                            .map(|e| {
-                                serde_json::json!({
-                                    "type": e.ty,
-                                    "attributes": e.attributes.into_iter().map(|a| {
-                                        serde_json::json!({
-                                            "key": a.key,
-                                            "value": a.value
-                                        })
-                                    }).collect::<Vec<_>>()
-                                })
+                    let events: Vec<serde_json::Value> = sub_response
+                        .events
+                        .into_iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "type": e.ty,
+                                "attributes": e.attributes.into_iter().map(|a| {
+                                    serde_json::json!({
+                                        "key": a.key,
+                                        "value": a.value
+                                    })
+                                }).collect::<Vec<_>>()
                             })
-                            .collect();
+                        })
+                        .collect();
 
-                        Json(serde_json::json!({
-                            "contract_address": contract_address,
-                            "code_id": req.code_id,
-                            "sender": req.sender,
-                            "admin": req.admin,
-                            "label": req.label,
-                            "data": data,
-                            "events": events
-                        }))
-                    }
-                    Err(err) => {
-                        Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
-                            "Contract instantiation failed: {}",
-                            err
-                        ))))
-                    }
+                    Json(serde_json::json!({
+                        "contract_address": contract_address,
+                        "code_id": req.code_id,
+                        "sender": req.sender,
+                        "admin": req.admin,
+                        "label": req.label,
+                        "data": data,
+                        "events": events
+                    }))
                 }
-            }
+                Err(err) => Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
+                    "Contract instantiation failed: {}",
+                    err
+                )))),
+            },
             Err(e) => Json(error_json_detailed(&e)),
         }
     }
@@ -689,21 +684,19 @@ pub async fn handle_cosmwasm_instantiate2(
     #[cfg(feature = "cw")]
     {
         use ho_std::traits::{HoConfigTrait, NodeIdentityTrait};
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         // Decode salt from base64
-        let salt_bytes = match base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            &req.salt,
-        ) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                return Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
-                    "Failed to decode salt from base64: {}",
-                    e
-                ))));
-            }
-        };
+        let salt_bytes =
+            match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &req.salt) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    return Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
+                        "Failed to decode salt from base64: {}",
+                        e
+                    ))));
+                }
+            };
 
         // Serialize instantiate message to bytes
         let msg_bytes = match serde_json::to_vec(&req.msg) {
@@ -754,48 +747,44 @@ pub async fn handle_cosmwasm_instantiate2(
             )
             .await
         {
-            Ok((contract_address, response)) => {
-                match response.into_result() {
-                    Ok(sub_response) => {
-                        let data = sub_response
-                            .data
-                            .map(|b| base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &b));
+            Ok((contract_address, response)) => match response.into_result() {
+                Ok(sub_response) => {
+                    let data = sub_response.data.map(|b| {
+                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &b)
+                    });
 
-                        let events: Vec<serde_json::Value> = sub_response
-                            .events
-                            .into_iter()
-                            .map(|e| {
-                                serde_json::json!({
-                                    "type": e.ty,
-                                    "attributes": e.attributes.into_iter().map(|a| {
-                                        serde_json::json!({
-                                            "key": a.key,
-                                            "value": a.value
-                                        })
-                                    }).collect::<Vec<_>>()
-                                })
+                    let events: Vec<serde_json::Value> = sub_response
+                        .events
+                        .into_iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "type": e.ty,
+                                "attributes": e.attributes.into_iter().map(|a| {
+                                    serde_json::json!({
+                                        "key": a.key,
+                                        "value": a.value
+                                    })
+                                }).collect::<Vec<_>>()
                             })
-                            .collect();
+                        })
+                        .collect();
 
-                        Json(serde_json::json!({
-                            "contract_address": contract_address,
-                            "code_id": req.code_id,
-                            "sender": req.sender,
-                            "admin": req.admin,
-                            "label": req.label,
-                            "salt": req.salt,
-                            "data": data,
-                            "events": events
-                        }))
-                    }
-                    Err(err) => {
-                        Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
-                            "Contract instantiation failed: {}",
-                            err
-                        ))))
-                    }
+                    Json(serde_json::json!({
+                        "contract_address": contract_address,
+                        "code_id": req.code_id,
+                        "sender": req.sender,
+                        "admin": req.admin,
+                        "label": req.label,
+                        "salt": req.salt,
+                        "data": data,
+                        "events": events
+                    }))
                 }
-            }
+                Err(err) => Json(error_json_detailed(&HoError::Anyhow(anyhow::format_err!(
+                    "Contract instantiation failed: {}",
+                    err
+                )))),
+            },
             Err(e) => Json(error_json_detailed(&e)),
         }
     }

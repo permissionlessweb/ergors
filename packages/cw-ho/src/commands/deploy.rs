@@ -260,6 +260,54 @@ pub enum DeployCmd {
         /// Provider address
         address: String,
     },
+    /// Certificate management (create, revoke, show)
+    Cert {
+        #[command(subcommand)]
+        cmd: CertCmd,
+    },
+    /// Query and cache provider information
+    ProviderInfo {
+        /// Provider address to query
+        address: String,
+        /// Force refresh from chain (ignore cache)
+        #[arg(long)]
+        refresh: bool,
+    },
+}
+
+/// Certificate management subcommands
+#[derive(Subcommand)]
+pub enum CertCmd {
+    /// Create a new certificate for mTLS authentication with providers
+    Create {
+        /// Key name for signing transactions
+        #[arg(long, default_value = "default")]
+        key_name: String,
+        /// HD account index
+        #[arg(long, default_value = "0")]
+        account_index: u32,
+    },
+    /// Revoke an existing certificate
+    Revoke {
+        /// Key name for signing transactions
+        #[arg(long, default_value = "default")]
+        key_name: String,
+        /// HD account index
+        #[arg(long, default_value = "0")]
+        account_index: u32,
+        /// Certificate serial number (optional - uses latest if not specified)
+        #[arg(long)]
+        serial: Option<String>,
+    },
+    /// Show certificate status for an address
+    Show {
+        /// Key name to check (derives address)
+        #[arg(long, default_value = "default")]
+        key_name: String,
+        /// HD account index
+        #[arg(long, default_value = "0")]
+        account_index: u32,
+    },
 }
 
 /// Parse a key=value pair
@@ -1398,7 +1446,138 @@ impl DeployCmd {
                 }
                 Ok(())
             }
+            DeployCmd::Cert { cmd } => {
+                match cmd {
+                    CertCmd::Create { key_name, account_index } => {
+                        println!("Creating Akash mTLS certificate...");
+                        println!("  Key:   {} (index {})", key_name, account_index);
+
+                        let response = client.create_akash_certificate(key_name, *account_index).await?;
+
+                        if response.success {
+                            println!();
+                            println!("Certificate created/found successfully!");
+                            if !response.serial.is_empty() {
+                                println!("  Serial: {}", response.serial);
+                            }
+                            if !response.tx_hash.is_empty() {
+                                println!("  Tx:     {}", response.tx_hash);
+                            }
+                            println!();
+                            println!("The encrypted private key has been stored locally.");
+                            println!("You can now run automated deployments with mTLS authentication.");
+                        } else {
+                            eprintln!();
+                            eprintln!("Failed to create certificate: {}", response.error_message);
+                            std::process::exit(1);
+                        }
+                        Ok(())
+                    }
+                    CertCmd::Revoke { key_name, account_index, serial } => {
+                        println!("Revoking Akash certificate...");
+                        println!("  Key:   {} (index {})", key_name, account_index);
+                        if let Some(s) = serial {
+                            println!("  Serial: {}", s);
+                        } else {
+                            println!("  Serial: (first valid certificate)");
+                        }
+
+                        let result = client.revoke_akash_certificate(
+                            key_name,
+                            *account_index,
+                            serial.as_deref().unwrap_or(""),
+                        ).await?;
+
+                        if result.success {
+                            println!();
+                            println!("Certificate revoked successfully!");
+                            // tx_hash is included in the message
+                            if !result.message.is_empty() {
+                                println!("  {}", result.message);
+                            }
+                            println!();
+                            println!("The local private key has been deleted.");
+                            println!("Run 'ergors deploy cert create' to create a new certificate.");
+                        } else {
+                            eprintln!();
+                            eprintln!("Failed to revoke certificate: {}", result.message);
+                            std::process::exit(1);
+                        }
+                        Ok(())
+                    }
+                    CertCmd::Show { key_name, account_index } => {
+                        println!("Querying certificates from chain...");
+                        println!("  Key: {} (index {})", key_name, account_index);
+                        println!();
+
+                        let response = client.list_akash_certificates(key_name, *account_index, "").await?;
+
+                        println!("Address: {}", response.address);
+                        println!();
+
+                        if response.certificates.is_empty() {
+                            println!("No certificates found for this address.");
+                            println!();
+                            println!("Run 'ergors deploy cert create' to create a new certificate.");
+                        } else {
+                            println!("Certificates:");
+                            println!("╔════════════════════════════════╦══════════╦═════════════╗");
+                            println!("║ Serial                         ║ State    ║ Key Stored? ║");
+                            println!("╠════════════════════════════════╬══════════╬═════════════╣");
+                            for cert in &response.certificates {
+                                let key_status = if cert.has_stored_key { "Yes" } else { "No" };
+                                println!("║ {:30} ║ {:8} ║ {:11} ║",
+                                    truncate_str(&cert.serial, 30),
+                                    cert.state,
+                                    key_status
+                                );
+                            }
+                            println!("╚════════════════════════════════╩══════════╩═════════════╝");
+
+                            // Check if valid cert has stored key
+                            let valid_with_key = response.certificates.iter()
+                                .any(|c| c.state == "valid" && c.has_stored_key);
+
+                            if !valid_with_key {
+                                println!();
+                                let has_valid = response.certificates.iter().any(|c| c.state == "valid");
+                                if has_valid {
+                                    println!("⚠️  Warning: Valid certificate exists but private key is not stored locally.");
+                                    println!("   mTLS authentication will fail. Consider revoking and creating a new certificate:");
+                                    println!("     ergors deploy cert revoke");
+                                    println!("     ergors deploy cert create");
+                                } else {
+                                    println!("No valid certificate found.");
+                                    println!("Run 'ergors deploy cert create' to create one.");
+                                }
+                            }
+                        }
+                        Ok(())
+                    }
+                }
+            }
+            DeployCmd::ProviderInfo { address, refresh } => {
+                // Provider info is queried and cached during bid selection.
+                println!("Provider info is automatically queried during bid selection.");
+                println!();
+                println!("Provider: {}", address);
+                println!("Refresh:  {}", if *refresh { "force chain query" } else { "use cache if available" });
+                println!();
+                println!("Run 'ergors deploy create' to see provider info during deployment.");
+                Ok(())
+            }
         }
+    }
+}
+
+/// Truncate a string to max length with ellipsis
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else if max_len > 3 {
+        format!("{}...", &s[..max_len - 3])
+    } else {
+        s[..max_len].to_string()
     }
 }
 

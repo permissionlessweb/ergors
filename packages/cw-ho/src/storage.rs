@@ -66,6 +66,8 @@ const AKASH_ENDPOINTS_PREFIX: &str = "akash_endpoints";
 const AKASH_LABEL_INDEX_PREFIX: &str = "akash_labels";
 const AKASH_ACTIVE_LABELS_PREFIX: &str = "akash_active_labels";
 const TRUSTED_PROVIDERS_KEY: &str = "config/trusted_providers";
+const AKASH_CERT_KEYS_PREFIX: &str = "akash_cert_keys";
+const AKASH_PROVIDER_INFO_PREFIX: &str = "akash_provider_info";
 // const HEADSTASH: &str = "headstash";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions";
 const PROXY_CLIENT_INDEX_PREFIX: &str = "proxy_sessions_by_client";
@@ -105,6 +107,17 @@ const RAG_CONFIG_PREFIX: &str = "rag_config/";
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
     pub cs: CnidariumStorage,
+}
+
+/// Cached provider info for human-readable display.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CachedProviderInfo {
+    pub address: String,
+    pub host_uri: String,
+    pub email: String,
+    pub website: String,
+    pub attributes: Vec<(String, String)>,
+    pub cached_at: i64,
 }
 
 impl ErgorsStorage {
@@ -1156,6 +1169,114 @@ impl ErgorsStorage {
     pub async fn is_trusted_provider(&self, address: &str) -> HoResult<bool> {
         let list = self.get_trusted_providers().await?;
         Ok(list.providers.iter().any(|p| p.address == address))
+    }
+
+    // ========================================
+    // Akash Certificate Private Key Storage
+    // ========================================
+
+    /// Store encrypted certificate private key for an owner address.
+    /// Keys are stored separately from workflows so they persist across multiple deployments.
+    pub async fn put_akash_cert_key(
+        &self,
+        owner_address: &str,
+        encrypted_key: &[u8],
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(AKASH_CERT_KEYS_PREFIX, owner_address);
+        delta.put_raw(key.clone(), encrypted_key.to_vec());
+        self.cs.commit(delta).await?;
+        info!(
+            "🔐 Stored encrypted cert key for {} ({} bytes)",
+            owner_address,
+            encrypted_key.len()
+        );
+        Ok(())
+    }
+
+    /// Get encrypted certificate private key for an owner address.
+    pub async fn get_akash_cert_key(&self, owner_address: &str) -> HoResult<Option<Vec<u8>>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(AKASH_CERT_KEYS_PREFIX, owner_address);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => Ok(Some(data)),
+            Ok(None) => Ok(None),
+            Err(e) => Err(HoError::Storage(format!(
+                "Failed to retrieve cert key for {}: {}",
+                owner_address, e
+            ))),
+        }
+    }
+
+    /// Delete encrypted certificate private key for an owner address.
+    pub async fn delete_akash_cert_key(&self, owner_address: &str) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(AKASH_CERT_KEYS_PREFIX, owner_address);
+        delta.delete(key);
+        self.cs.commit(delta).await?;
+        info!("🗑️  Deleted cert key for {}", owner_address);
+        Ok(())
+    }
+
+    // ========================================
+    // Akash Provider Info Cache
+    // ========================================
+
+    /// Store provider info in cache.
+    pub async fn put_akash_provider_info(&self, info: &CachedProviderInfo) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(AKASH_PROVIDER_INFO_PREFIX, &info.address);
+        let data = serde_json::to_vec(info)?;
+        delta.put_raw(key.clone(), data);
+        self.cs.commit(delta).await?;
+        debug!("📋 Cached provider info for {}", info.address);
+        Ok(())
+    }
+
+    /// Get provider info from cache.
+    pub async fn get_akash_provider_info(
+        &self,
+        provider_address: &str,
+    ) -> HoResult<Option<CachedProviderInfo>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(AKASH_PROVIDER_INFO_PREFIX, provider_address);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let info: CachedProviderInfo = serde_json::from_slice(&data)?;
+                Ok(Some(info))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(HoError::Storage(format!(
+                "Failed to retrieve provider info for {}: {}",
+                provider_address, e
+            ))),
+        }
+    }
+
+    /// List all cached provider info.
+    pub async fn list_akash_provider_info(&self) -> HoResult<Vec<CachedProviderInfo>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut providers = Vec::new();
+        let mut stream = snapshot.prefix_raw(AKASH_PROVIDER_INFO_PREFIX);
+
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_, data)) => {
+                    match serde_json::from_slice::<CachedProviderInfo>(&data) {
+                        Ok(info) => providers.push(info),
+                        Err(e) => warn!("Failed to deserialize provider info: {}", e),
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading provider info stream: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        Ok(providers)
     }
 
     // ========================================

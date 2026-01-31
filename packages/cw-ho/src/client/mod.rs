@@ -92,6 +92,12 @@ use ho_std::types::ergors::orch::v1::{
     // Automated workflow types
     RunAkashDeploymentRequest,
     RunAkashDeploymentResponse,
+    // Certificate management types
+    CreateAkashCertificateRequest,
+    CreateAkashCertificateResponse,
+    RevokeAkashCertificateRequest,
+    ListAkashCertificatesRequest,
+    ListAkashCertificatesResponse,
     // RAG types
     RagIngestRequest,
     RagIngestResponse,
@@ -980,6 +986,66 @@ impl ManagementClient {
             .list_trusted_providers(ListTrustedProvidersRequest {})
             .await
             .context("Failed to list trusted providers")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ Akash Certificate Management Methods ============
+
+    /// Create a new Akash mTLS certificate
+    pub async fn create_akash_certificate(
+        &mut self,
+        key_name: &str,
+        account_index: u32,
+    ) -> Result<CreateAkashCertificateResponse> {
+        let response = self
+            .inner
+            .create_akash_certificate(CreateAkashCertificateRequest {
+                key_name: key_name.to_string(),
+                account_index,
+            })
+            .await
+            .context("Failed to create certificate")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Revoke an Akash certificate
+    pub async fn revoke_akash_certificate(
+        &mut self,
+        key_name: &str,
+        account_index: u32,
+        serial: &str,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .revoke_akash_certificate(RevokeAkashCertificateRequest {
+                key_name: key_name.to_string(),
+                account_index,
+                serial: serial.to_string(),
+            })
+            .await
+            .context("Failed to revoke certificate")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// List certificates for an address
+    pub async fn list_akash_certificates(
+        &mut self,
+        key_name: &str,
+        account_index: u32,
+        address: &str,
+    ) -> Result<ListAkashCertificatesResponse> {
+        let response = self
+            .inner
+            .list_akash_certificates(ListAkashCertificatesRequest {
+                key_name: key_name.to_string(),
+                account_index,
+                address: address.to_string(),
+            })
+            .await
+            .context("Failed to list certificates")?;
 
         Ok(response.into_inner())
     }

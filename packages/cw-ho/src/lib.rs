@@ -94,6 +94,8 @@ pub struct AkashDeploymentContext {
     pub key_store: Arc<RwLock<CosmosKeyStore>>,
     /// Akash deployment config
     pub akash_config: AkashDeployConfig,
+    /// Custody password for certificate private key encryption
+    pub custody_password: String,
 }
 
 impl AkashDeploymentContext {
@@ -106,6 +108,7 @@ impl AkashDeploymentContext {
             self.key_manager.clone(),
             self.key_store.clone(),
             self.akash_config.clone(),
+            self.custody_password.clone(),
         )
     }
 }

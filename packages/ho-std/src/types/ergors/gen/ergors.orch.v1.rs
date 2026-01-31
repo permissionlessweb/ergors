@@ -3046,9 +3046,15 @@ pub struct AkashDeploymentWorkflow {
     /// Bids received during BidWait step
     #[prost(message, repeated, tag = "30")]
     pub available_bids: ::prost::alloc::vec::Vec<AkashBidInfo>,
-    /// Certificate info (cached from chain or newly created)
+    /// Certificate from chain (official akash.cert.v1.Certificate type)
     #[prost(message, optional, tag = "31")]
-    pub certificate_info: ::core::option::Option<AkashCertificateInfo>,
+    pub certificate: ::core::option::Option<
+        super::super::super::akash::cert::v1::Certificate,
+    >,
+    /// Encrypted private key for mTLS (ChaCha20Poly1305 encrypted)
+    /// Decrypted only when needed for provider communication
+    #[prost(bytes = "vec", tag = "36")]
+    pub encrypted_cert_private_key: ::prost::alloc::vec::Vec<u8>,
     /// Lease ID after lease creation
     #[prost(message, optional, tag = "32")]
     pub lease_id_info: ::core::option::Option<AkashLeaseIdInfo>,
@@ -3166,31 +3172,6 @@ impl ::prost::Name for AkashBidInfo {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.AkashBidInfo".into()
-    }
-}
-/// Certificate info stored during workflow (mirrors cosmos_client::CertificateInfo)
-#[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AkashCertificateInfo {
-    #[prost(string, tag = "1")]
-    pub owner: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub serial: ::prost::alloc::string::String,
-    #[prost(enumeration = "AkashCertState", tag = "3")]
-    pub state: i32,
-    #[prost(bytes = "vec", tag = "4")]
-    pub cert_pem: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "5")]
-    pub pubkey: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for AkashCertificateInfo {
-    const NAME: &'static str = "AkashCertificateInfo";
-    const PACKAGE: &'static str = "ergors.orch.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "ergors.orch.v1.AkashCertificateInfo".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/ergors.orch.v1.AkashCertificateInfo".into()
     }
 }
 /// Lease ID info stored after lease creation
@@ -3690,6 +3671,135 @@ impl ::prost::Name for OperationResult {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.OperationResult".into()
+    }
+}
+/// Request to create a new mTLS certificate
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateAkashCertificateRequest {
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub account_index: u32,
+}
+impl ::prost::Name for CreateAkashCertificateRequest {
+    const NAME: &'static str = "CreateAkashCertificateRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.CreateAkashCertificateRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.CreateAkashCertificateRequest".into()
+    }
+}
+/// Response from certificate creation
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateAkashCertificateResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub tx_hash: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub serial: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub error_message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for CreateAkashCertificateResponse {
+    const NAME: &'static str = "CreateAkashCertificateResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.CreateAkashCertificateResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.CreateAkashCertificateResponse".into()
+    }
+}
+/// Request to revoke a certificate
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RevokeAkashCertificateRequest {
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub account_index: u32,
+    /// If empty, revokes first valid cert
+    #[prost(string, tag = "3")]
+    pub serial: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RevokeAkashCertificateRequest {
+    const NAME: &'static str = "RevokeAkashCertificateRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RevokeAkashCertificateRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RevokeAkashCertificateRequest".into()
+    }
+}
+/// Request to list certificates from chain
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListAkashCertificatesRequest {
+    #[prost(string, tag = "1")]
+    pub key_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub account_index: u32,
+    /// Optional override
+    #[prost(string, tag = "3")]
+    pub address: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ListAkashCertificatesRequest {
+    const NAME: &'static str = "ListAkashCertificatesRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ListAkashCertificatesRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ListAkashCertificatesRequest".into()
+    }
+}
+/// Certificate info for display
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AkashCertificateInfo {
+    #[prost(string, tag = "1")]
+    pub serial: ::prost::alloc::string::String,
+    /// "valid", "revoked"
+    #[prost(string, tag = "2")]
+    pub state: ::prost::alloc::string::String,
+    /// Whether we have the private key stored
+    #[prost(bool, tag = "3")]
+    pub has_stored_key: bool,
+}
+impl ::prost::Name for AkashCertificateInfo {
+    const NAME: &'static str = "AkashCertificateInfo";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashCertificateInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashCertificateInfo".into()
+    }
+}
+/// Response with certificates
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListAkashCertificatesResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub certificates: ::prost::alloc::vec::Vec<AkashCertificateInfo>,
+    /// The queried address
+    #[prost(string, tag = "2")]
+    pub address: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ListAkashCertificatesResponse {
+    const NAME: &'static str = "ListAkashCertificatesResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ListAkashCertificatesResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ListAkashCertificatesResponse".into()
     }
 }
 /// Default parameters for grants a granter will issue
@@ -4814,37 +4924,6 @@ impl AkashBidState {
             "AKASH_BID_STATE_ACTIVE" => Some(Self::Active),
             "AKASH_BID_STATE_LOST" => Some(Self::Lost),
             "AKASH_BID_STATE_CLOSED" => Some(Self::Closed),
-            _ => None,
-        }
-    }
-}
-/// Certificate state enum
-#[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum AkashCertState {
-    Invalid = 0,
-    Valid = 1,
-    Revoked = 2,
-}
-impl AkashCertState {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Invalid => "AKASH_CERT_STATE_INVALID",
-            Self::Valid => "AKASH_CERT_STATE_VALID",
-            Self::Revoked => "AKASH_CERT_STATE_REVOKED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "AKASH_CERT_STATE_INVALID" => Some(Self::Invalid),
-            "AKASH_CERT_STATE_VALID" => Some(Self::Valid),
-            "AKASH_CERT_STATE_REVOKED" => Some(Self::Revoked),
             _ => None,
         }
     }

@@ -18,12 +18,12 @@ use {
         CnidariumQuerier, CnidariumStorage, ContractInfoResponse, QuerierStateReader, WasmVmBackend,
     },
     crate::wasm::state_ext::{WasmVmCnidariumStateRead, WasmVmCnidariumStateWrite},
-    cosmwasm_std::{Addr, BlockInfo, Coin, ContractInfo, Env, MessageInfo, Timestamp},
+    cosmwasm_std::{Addr, BlockInfo, Checksum, Coin, Env, MessageInfo, Timestamp},
     cosmwasm_vm::{
         call_execute, call_instantiate, call_query, capabilities_from_csv, Backend, Cache,
         CacheOptions, InstanceOptions, Size,
     },
-    sha2::{Digest, Sha256},
+    sha2::Digest,
     std::path::PathBuf,
     std::sync::Arc,
     tracing::{debug, info, warn},
@@ -208,7 +208,7 @@ impl WasmRuntime {
         state: &cnidarium::Storage,
         wasm_code: Vec<u8>,
         creator: String,
-    ) -> HoResult<u64> {
+    ) -> HoResult<(u64, Checksum)> {
         use cnidarium::StateRead;
         use cnidarium::StateWrite;
 
@@ -228,10 +228,10 @@ impl WasmRuntime {
         }
 
         // Compute code hash
-        let code_hash = Sha256::digest(&wasm_code).to_vec();
+        let code_hash = Checksum::generate(&wasm_code);
 
         // Check if code already exists (deduplication)
-        let hash_key = format!("wasm/code_hash/{}", hex::encode(&code_hash));
+        let hash_key = format!("wasm/code_hash/{}", &code_hash.to_hex());
         if let Some(existing_id_bytes) = delta.get_raw(&hash_key).await? {
             let existing_id = u64::from_le_bytes(
                 existing_id_bytes
@@ -240,7 +240,7 @@ impl WasmRuntime {
                     .map_err(|_| HoError::Storage("Invalid code_id bytes".to_string()))?,
             );
             info!("WASM code already exists with ID: {}", existing_id);
-            return Ok(existing_id);
+            return Ok((existing_id, code_hash));
         }
 
         // Validate and save WASM code to cache
@@ -248,8 +248,6 @@ impl WasmRuntime {
             .cache
             .store_code(&wasm_code, true, false)
             .map_err(|e| HoError::Wasm(format!("Invalid WASM code: {}", e)))?;
-
-        debug!("Validated WASM code with checksum: {:?}", checksum);
 
         // Get next code ID
         let next_id_key = "wasm/next_code_id";
@@ -269,7 +267,6 @@ impl WasmRuntime {
         let code_key = format!("wasm/code/{}", code_id);
         delta.put_raw(code_key, wasm_code);
 
-        let hash_key = format!("wasm/code_hash/{}", hex::encode(&code_hash));
         delta.put_raw(hash_key, code_id.to_le_bytes().to_vec());
 
         // Update next code ID
@@ -289,7 +286,7 @@ impl WasmRuntime {
             code_id, creator
         );
 
-        Ok(code_id)
+        Ok((code_id, checksum))
     }
 
     /// Query a contract with node-wide consistency guarantee
@@ -444,7 +441,7 @@ impl WasmRuntime {
         // If instantiate succeeded, store contract info and commit state
         if result.is_ok() {
             // Store contract info
-            let contract_info = crate::wasm::state_ext::ContractInfo {
+            let contract_info = crate::types::cosmwasm::wasm::v1::ContractInfo {
                 code_id,
                 creator: creator.clone(),
                 admin: admin.unwrap_or_default(),
@@ -452,6 +449,7 @@ impl WasmRuntime {
                 created: None,
                 ibc_port_id: String::new(),
                 extension: None,
+                ibc2_port_id: String::new(),
             };
             delta.put_wasm_contract_info(&contract_address, &contract_info);
 
@@ -584,7 +582,7 @@ impl WasmRuntime {
                 chain_id: "ergors-1".to_string(),
             },
             transaction: None, // TransactionInfo is non-exhaustive, use None for simplicity
-            contract: ContractInfo {
+            contract: cosmwasm_std::ContractInfo {
                 address: Addr::unchecked(contract_address),
             },
         }

@@ -103,7 +103,7 @@ impl ContractManager {
     /// The code_id assigned to this WASM code
     pub async fn upload_contract(&self, wasm_bytes: &[u8], name: &str) -> HoResult<u64> {
         // Store code via WasmRuntime
-        let code_id = self
+        let (code_id, _checksum) = self
             .wasm_runtime
             .store_code(&self.storage.cs, wasm_bytes.to_vec(), self.node_id.clone())
             .await
@@ -116,11 +116,9 @@ impl ContractManager {
         use cnidarium::StateWrite;
         delta.put_raw(key, code_id.to_le_bytes().to_vec());
 
-        self.storage
-            .cs
-            .commit(delta)
-            .await
-            .map_err(|e| ContractError::Storage(format!("Failed to store code_id reference: {}", e)))?;
+        self.storage.cs.commit(delta).await.map_err(|e| {
+            ContractError::Storage(format!("Failed to store code_id reference: {}", e))
+        })?;
 
         info!("Uploaded contract '{}' with code_id: {}", name, code_id);
         Ok(code_id)
@@ -152,10 +150,10 @@ impl ContractManager {
                 &self.storage.cs,
                 code_id,
                 self.node_id.clone(), // sender/creator
-                None,                  // no admin
-                name.to_string(),      // label
+                None,                 // no admin
+                name.to_string(),     // label
                 msg_bytes,
-                vec![],                // no funds
+                vec![], // no funds
                 &self.node_id,
             )
             .await
@@ -173,11 +171,9 @@ impl ContractManager {
         use cnidarium::StateWrite;
         delta.put_raw(key, address.as_bytes().to_vec());
 
-        self.storage
-            .cs
-            .commit(delta)
-            .await
-            .map_err(|e| ContractError::Storage(format!("Failed to store contract address: {}", e)))?;
+        self.storage.cs.commit(delta).await.map_err(|e| {
+            ContractError::Storage(format!("Failed to store contract address: {}", e))
+        })?;
 
         info!("Instantiated contract '{}' at: {}", name, address);
         Ok(address)
@@ -246,9 +242,7 @@ impl ContractManager {
             .map_err(|e| ContractError::QueryFailed(e.to_string()))?;
 
         // Extract the binary result
-        let binary = result
-            .into_result()
-            .map_err(ContractError::QueryFailed)?;
+        let binary = result.into_result().map_err(ContractError::QueryFailed)?;
 
         // Deserialize the response
         serde_json::from_slice(&binary)
@@ -332,9 +326,9 @@ impl ContractManager {
 
         // Check if current node type is in the list
         contract.deploy_on_node_types.iter().any(|t| {
-            t == node_type ||
-            (t == "coordinator" && node_type == "NODE_TYPE_COORDINATOR") ||
-            (t == "NODE_TYPE_COORDINATOR" && node_type == "coordinator")
+            t == node_type
+                || (t == "coordinator" && node_type == "NODE_TYPE_COORDINATOR")
+                || (t == "NODE_TYPE_COORDINATOR" && node_type == "coordinator")
         })
     }
 
@@ -345,9 +339,11 @@ impl ContractManager {
         contract: &ContractDeployment,
     ) -> HoResult<String> {
         // Check if contract already exists
-        let skip_if_exists = contract.config.as_ref()
+        let skip_if_exists = contract
+            .config
+            .as_ref()
             .map(|c| c.skip_if_exists)
-            .unwrap_or(true);  // Default to skipping if exists
+            .unwrap_or(true); // Default to skipping if exists
 
         if skip_if_exists {
             if let Some(address) = self.get_contract_address(&contract.name).await? {
@@ -367,7 +363,7 @@ impl ContractManager {
 
         // Parse the init message
         let init_msg_bytes = if contract.init_msg.is_empty() {
-            b"{}".to_vec()  // Empty JSON object as default
+            b"{}".to_vec() // Empty JSON object as default
         } else {
             contract.init_msg.as_bytes().to_vec()
         };
@@ -416,26 +412,27 @@ impl ContractManager {
         use cnidarium::StateWrite;
         delta.put_raw(key, address.as_bytes().to_vec());
 
-        self.storage
-            .cs
-            .commit(delta)
-            .await
-            .map_err(|e| ContractError::Storage(format!("Failed to store contract address: {}", e)))?;
+        self.storage.cs.commit(delta).await.map_err(|e| {
+            ContractError::Storage(format!("Failed to store contract address: {}", e))
+        })?;
 
         // Automatically register SDL template contracts
         if contract.name.contains("sdl") && contract.name.contains("template") {
-            info!("Automatically registering SDL template contract: {}", contract.name);
+            info!(
+                "Automatically registering SDL template contract: {}",
+                contract.name
+            );
             // Use the original label from config or name
             let sdl_label = if contract.label.is_empty() {
                 Some(contract.name.clone())
             } else {
                 Some(contract.label.clone())
             };
-            if let Err(e) = self.storage.register_sdl_template_contract(
-                &address,
-                sdl_label,
-                code_id,
-            ).await {
+            if let Err(e) = self
+                .storage
+                .register_sdl_template_contract(&address, sdl_label, code_id)
+                .await
+            {
                 warn!("Failed to register SDL template contract: {}", e);
             }
         }
@@ -464,11 +461,10 @@ impl ContractManager {
         }
 
         let wasm_path = config.resolve_wasm_path(&contract.wasm_path);
-        std::fs::read(wasm_path.as_std_path())
-            .map_err(|e| ContractError::UploadFailed(format!(
-                "Failed to read WASM file '{}': {}",
-                wasm_path, e
-            )).into())
+        std::fs::read(wasm_path.as_std_path()).map_err(|e| {
+            ContractError::UploadFailed(format!("Failed to read WASM file '{}': {}", wasm_path, e))
+                .into()
+        })
     }
 
     /// Deploy the identity registry contract with provided WASM binary
@@ -492,7 +488,9 @@ impl ContractManager {
         }
 
         // Upload the contract
-        let code_id = self.upload_contract(wasm_bytes, "identity_registry").await?;
+        let code_id = self
+            .upload_contract(wasm_bytes, "identity_registry")
+            .await?;
 
         // Prepare instantiation message
         let init_msg = IdentityRegistryInstantiateMsg {
@@ -614,7 +612,10 @@ impl ContractManager {
 
         // Check if already deployed
         if let Some(address) = self.get_contract_address(&contract_name).await? {
-            info!("Whitelist authenticator '{}' already deployed at: {}", contract_name, address);
+            info!(
+                "Whitelist authenticator '{}' already deployed at: {}",
+                contract_name, address
+            );
             return Ok(address);
         }
 
@@ -634,7 +635,10 @@ impl ContractManager {
             .instantiate_contract(code_id, &contract_name, &init_msg)
             .await?;
 
-        info!("Deployed whitelist_authenticator '{}' at: {}", contract_name, address);
+        info!(
+            "Deployed whitelist_authenticator '{}' at: {}",
+            contract_name, address
+        );
         Ok(address)
     }
 }

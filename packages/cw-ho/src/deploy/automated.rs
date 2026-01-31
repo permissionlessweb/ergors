@@ -30,7 +30,7 @@ use super::deployment_builder::{
     DEFAULT_DEPOSIT_UAKT,
 };
 use super::endpoint_manager::{EndpointManager, EndpointType};
-use super::manifest::{query_service_endpoints, ManifestSender};
+use super::manifest::{query_service_endpoints_mtls, ManifestSender};
 use crate::storage::ErgorsStorage;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::ergors::akash::deployment::v1beta4::{MsgCloseDeployment, MsgCreateDeployment};
@@ -63,6 +63,8 @@ pub struct AutomatedDeployer {
     key_store: Arc<RwLock<CosmosKeyStore>>,
     /// Akash deployment config (for creating chain config)
     akash_config: AkashDeployConfig,
+    /// Custody password for encrypting certificate private keys
+    custody_password: String,
 }
 
 impl AutomatedDeployer {
@@ -74,6 +76,7 @@ impl AutomatedDeployer {
         key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
         key_store: Arc<RwLock<CosmosKeyStore>>,
         akash_config: AkashDeployConfig,
+        custody_password: String,
     ) -> Self {
         Self {
             storage,
@@ -82,6 +85,7 @@ impl AutomatedDeployer {
             key_manager,
             key_store,
             akash_config,
+            custody_password,
         }
     }
 
@@ -106,6 +110,9 @@ impl AutomatedDeployer {
     /// Run automated deployment.
     ///
     /// This is the main entry point for fully automated deployments.
+    ///
+    /// If any step fails after MsgCreateDeployment succeeds, we automatically
+    /// broadcast MsgCloseDeployment to recover the escrow deposit.
     pub async fn deploy(
         &self,
         workflow: &mut AkashDeploymentWorkflow,
@@ -137,18 +144,73 @@ impl AutomatedDeployer {
             .await?;
         tracing::info!("Signing client created successfully");
 
+        // Pre-deployment steps (no cleanup needed if these fail)
         self.step_connectivity_check(workflow).await?;
         self.step_check_balance(workflow, opts).await?;
         if !opts.request_grant_from.is_empty() {
             self.step_grant_request_and_wait(workflow, opts).await?;
         }
         self.step_setup_certificate(workflow).await?;
+
+        // Create deployment - after this point, we need cleanup on failure
         let dseq = self
             .step_create_deployment(workflow, opts, &signing_client)
             .await?;
+
+        // Run post-deployment steps with automatic cleanup on failure
+        match self
+            .run_post_deployment_steps(workflow, opts, &signing_client, dseq)
+            .await
+        {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                // Deployment was created but a later step failed
+                // Close deployment to recover escrow deposit
+                tracing::error!("═══════════════════════════════════════════════════════════════");
+                tracing::error!("  DEPLOYMENT FAILED - CLEANING UP");
+                tracing::error!("═══════════════════════════════════════════════════════════════");
+                tracing::error!("Error: {}", e);
+                tracing::error!("DSEQ: {}", dseq);
+                tracing::info!("Closing deployment to recover escrow deposit...");
+
+                if let Err(close_err) = self
+                    .cleanup_failed_deployment(workflow, dseq, &signing_client)
+                    .await
+                {
+                    tracing::error!("Failed to close deployment during cleanup: {}", close_err);
+                    tracing::error!("Manual cleanup may be required: ergors-cli deploy close-deployment {}", workflow.session_id);
+                } else {
+                    tracing::info!("Deployment closed successfully, escrow deposit returned");
+                }
+
+                // Mark workflow as failed
+                workflow.status = AkashWorkflowStatus::Failed as i32;
+                workflow.last_error = format!("{}", e);
+                let _ = self.save_workflow(workflow).await;
+
+                // Deactivate label if set
+                if !workflow.label.is_empty() {
+                    let _ = self.storage.deactivate_deployment_label(&workflow.label).await;
+                }
+
+                Err(e)
+            }
+        }
+    }
+
+    /// Run steps after deployment creation.
+    ///
+    /// Separated so we can wrap with cleanup logic on failure.
+    async fn run_post_deployment_steps(
+        &self,
+        workflow: &mut AkashDeploymentWorkflow,
+        opts: &AkashWorkflowOptions,
+        signing_client: &SigningClient,
+        dseq: u64,
+    ) -> Result<DeploymentResult> {
         let bids = self.step_wait_for_bids(workflow, dseq, opts).await?;
         let selected_bid = self.step_select_provider(workflow, &bids, opts).await?;
-        self.step_create_lease(workflow, &selected_bid, &signing_client)
+        self.step_create_lease(workflow, &selected_bid, signing_client)
             .await?;
         self.step_send_manifest(workflow).await?;
         let endpoints = self.step_retrieve_endpoints(workflow).await?;
@@ -187,6 +249,30 @@ impl AutomatedDeployer {
             provider: selected_bid.provider.clone(),
             endpoints: workflow.service_endpoints.clone(),
         })
+    }
+
+    /// Cleanup a failed deployment by closing it.
+    ///
+    /// Broadcasts MsgCloseDeployment to recover escrow deposit.
+    async fn cleanup_failed_deployment(
+        &self,
+        workflow: &AkashDeploymentWorkflow,
+        dseq: u64,
+        signing_client: &SigningClient,
+    ) -> Result<()> {
+        let msg = build_close_deployment_msg(&workflow.account_address, dseq);
+
+        tracing::info!("  Broadcasting MsgCloseDeployment for cleanup...");
+        let tx_resp = broadcast_akash_msg(
+            signing_client,
+            &MsgCloseDeployment::type_url(),
+            &msg,
+            "ergors cleanup failed deployment",
+        )
+        .await?;
+
+        tracing::info!("  Cleanup tx_hash: {}", tx_resp.txhash);
+        Ok(())
     }
 
     /// Step 1: Verify connectivity to Akash network.
@@ -372,16 +458,32 @@ impl AutomatedDeployer {
         tracing::info!("  Address: {}", workflow.account_address);
 
         // The cert_manager logs detailed info about found vs created
-        let cert_info = self
+        // Returns certificate + encrypted private key for mTLS
+        let cert_with_key = self
             .cert_manager
             .get_or_create(
                 &workflow.selected_key_name,
                 workflow.hd_account_index,
                 &workflow.account_address,
+                &self.custody_password,
             )
             .await?;
 
-        workflow.certificate_info = Some(cert_info);
+        // Store the official akash.cert.v1.Certificate
+        workflow.certificate = Some(cert_with_key.certificate);
+
+        // Store encrypted private key (only if we created a new certificate)
+        // If certificate was found on chain, encrypted_private_key will be empty
+        // and we'll use the previously stored key from workflow
+        if !cert_with_key.encrypted_private_key.is_empty() {
+            workflow.encrypted_cert_private_key = cert_with_key.encrypted_private_key;
+            tracing::info!("  Stored encrypted certificate private key ({} bytes)",
+                workflow.encrypted_cert_private_key.len());
+        } else if workflow.encrypted_cert_private_key.is_empty() {
+            tracing::warn!("  WARNING: Certificate found on chain but no stored private key!");
+            tracing::warn!("  mTLS authentication may fail - consider revoking and recreating certificate");
+        }
+
         self.save_workflow(workflow).await?;
 
         tracing::info!("  OK: Certificate ready");
@@ -587,16 +689,29 @@ impl AutomatedDeployer {
                     if !found_bids.is_empty() {
                         tracing::info!("  Received {} bid(s):", found_bids.len());
 
-                        // Log all bids with details
+                        // Log all bids with details, including provider info
                         for (i, bid) in found_bids.iter().enumerate() {
-                            let price: u64 = bid.price_amount.parse().unwrap_or(0);
-                            let price_akt = price as f64 / 1_000_000.0;
-                            tracing::info!("    [{}] Provider: {}", i + 1, bid.provider);
+                            let price: f64 = bid.price_amount.parse().unwrap_or(0.0);
+                            let price_akt = price / 1_000_000.0;
+
+                            // Get cached provider info for display
+                            let provider_name = if let Some(info) =
+                                self.get_provider_info_cached(&bid.provider).await
+                            {
+                                Self::format_provider_name(&info)
+                            } else {
+                                bid.provider[..20.min(bid.provider.len())].to_string()
+                            };
+
                             tracing::info!(
-                                "        Price: {:.6} AKT/block ({} {})",
-                                price_akt,
-                                bid.price_amount,
-                                bid.price_denom
+                                "    [{}] {} ({})",
+                                i + 1,
+                                provider_name,
+                                &bid.provider[..15.min(bid.provider.len())]
+                            );
+                            tracing::info!(
+                                "        Price: {:.6} AKT/block",
+                                price_akt
                             );
                         }
 
@@ -663,12 +778,10 @@ impl AutomatedDeployer {
 
         // Check if interactive mode is requested
         let selection_mode = if opts.interactive_bid {
-            // Interactive mode requested - log available bids
+            // Interactive mode requested - log available bids with provider names
             tracing::info!("  Mode: INTERACTIVE (user selection)");
             tracing::info!("  Available bids:");
             for (i, bid) in bids.iter().enumerate() {
-                // Price is in decimal format (e.g., "6002.811140000000000000")
-                // Parse as f64, then convert to uakt integer
                 let price_decimal: f64 = bid.price_amount.parse().unwrap_or(0.0);
                 let price_akt = price_decimal / 1_000_000.0;
                 let trusted = if opts.trusted_providers.contains(&bid.provider) {
@@ -676,13 +789,24 @@ impl AutomatedDeployer {
                 } else {
                     ""
                 };
+
+                // Get provider name from cache
+                let provider_name = if let Some(info) =
+                    self.get_provider_info_cached(&bid.provider).await
+                {
+                    Self::format_provider_name(&info)
+                } else {
+                    bid.provider[..20.min(bid.provider.len())].to_string()
+                };
+
                 tracing::info!(
                     "    [{}] {} - {:.6} AKT/block{}",
                     i + 1,
-                    bid.provider,
+                    provider_name,
                     price_akt,
                     trusted
                 );
+                tracing::info!("        Address: {}", bid.provider);
             }
             tracing::warn!("  NOTE: Interactive selection not yet implemented");
             tracing::warn!("  Falling back to auto-selection...");
@@ -874,9 +998,29 @@ impl AutomatedDeployer {
 
         tracing::info!("  Provider URI: {}", provider_uri);
         tracing::info!("  Endpoint:     {}", manifest_endpoint);
-        tracing::info!("  Sending manifest...");
 
-        let sender = ManifestSender::new(&provider_uri);
+        // Get certificate for mTLS
+        let cert = workflow
+            .certificate
+            .as_ref()
+            .ok_or_else(|| anyhow!("No certificate in workflow"))?;
+
+        if workflow.encrypted_cert_private_key.is_empty() {
+            return Err(anyhow!("No encrypted certificate private key - cannot authenticate with provider"));
+        }
+
+        // Decrypt private key for mTLS
+        tracing::info!("  Decrypting certificate private key...");
+        let privkey_pem = super::certificate::decrypt_private_key(
+            &workflow.encrypted_cert_private_key,
+            &self.custody_password,
+        )?;
+
+        // Create mTLS manifest sender
+        tracing::info!("  Creating mTLS client...");
+        let sender = ManifestSender::with_mtls(&provider_uri, &cert.cert, &privkey_pem)?;
+
+        tracing::info!("  Sending manifest...");
         match sender
             .send_manifest_from_sdl(
                 &lease_info.owner,
@@ -938,6 +1082,18 @@ impl AutomatedDeployer {
         // Wait a bit for services to start
         tokio::time::sleep(Duration::from_secs(10)).await;
 
+        // Get certificate for mTLS
+        let cert = workflow
+            .certificate
+            .as_ref()
+            .ok_or_else(|| anyhow!("No certificate in workflow"))?;
+
+        // Decrypt private key for mTLS
+        let privkey_pem = super::certificate::decrypt_private_key(
+            &workflow.encrypted_cert_private_key,
+            &self.custody_password,
+        )?;
+
         // Poll for endpoints with retries
         let mut endpoints = HashMap::new();
         let mut attempts = 0;
@@ -952,12 +1108,14 @@ impl AutomatedDeployer {
                 MAX_ENDPOINT_ATTEMPTS
             );
 
-            match query_service_endpoints(
+            match query_service_endpoints_mtls(
                 &provider_uri,
                 &lease_info.owner,
                 lease_info.dseq,
                 lease_info.gseq,
                 lease_info.oseq,
+                &cert.cert,
+                &privkey_pem,
             )
             .await
             {
@@ -1073,6 +1231,75 @@ impl AutomatedDeployer {
             .put_akash_workflow(&workflow)
             .await
             .map_err(|e| anyhow!("Failed to save workflow: {}", e))
+    }
+
+    /// Get provider info, using cache first then chain query.
+    /// Caches result for future lookups.
+    async fn get_provider_info_cached(
+        &self,
+        provider_address: &str,
+    ) -> Option<crate::storage::CachedProviderInfo> {
+        use crate::storage::CachedProviderInfo;
+
+        // Check cache first
+        if let Ok(Some(cached)) = self.storage.get_akash_provider_info(provider_address).await {
+            return Some(cached);
+        }
+
+        // Query chain
+        match self.cosmos.query_provider(provider_address).await {
+            Ok(info) => {
+                let now = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+
+                let cached = CachedProviderInfo {
+                    address: provider_address.to_string(),
+                    host_uri: info.host_uri.clone(),
+                    email: info.email.clone(),
+                    website: info.website.clone(),
+                    attributes: vec![], // TODO: Parse from chain response if needed
+                    cached_at: now,
+                };
+
+                // Store in cache (ignore errors)
+                let _ = self.storage.put_akash_provider_info(&cached).await;
+
+                Some(cached)
+            }
+            Err(e) => {
+                tracing::debug!("Failed to query provider {}: {}", provider_address, e);
+                None
+            }
+        }
+    }
+
+    /// Format provider display name from cached info
+    fn format_provider_name(info: &crate::storage::CachedProviderInfo) -> String {
+        // Try to extract a human-readable name from attributes or use address
+        for (key, value) in &info.attributes {
+            if key == "organization" || key == "host" {
+                return value.clone();
+            }
+        }
+
+        // Check for host from URI
+        if let Some(host) = info.host_uri.strip_prefix("https://") {
+            if let Some(host) = host.split('/').next() {
+                if let Some(domain) = host.strip_suffix(":8443") {
+                    return domain.to_string();
+                }
+                return host.to_string();
+            }
+        }
+
+        // Fallback to truncated address
+        if info.address.len() > 20 {
+            format!("{}...", &info.address[..20])
+        } else {
+            info.address.clone()
+        }
     }
 
     /// Close a deployment.

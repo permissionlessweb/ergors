@@ -7,30 +7,12 @@
 //! - [WasmVmCnidariumStateWrite] - Write operations for WASM state
 
 use crate::error::{HoError, HoResult};
+use crate::types::cosmwasm::wasm::v1::{CodeInfo, ContractInfo};
 use async_trait::async_trait;
 use cnidarium::{StateRead, StateWrite};
 use futures::StreamExt;
 
 use super::state_keys::*;
-
-// TODO: Generate from proto - for now using placeholder types
-#[derive(Clone, Debug)]
-pub struct CodeInfo {
-    pub code_hash: Vec<u8>,
-    pub creator: String,
-    pub instantiate_config: Option<()>, // Placeholder
-}
-
-#[derive(Clone, Debug)]
-pub struct ContractInfo {
-    pub code_id: u64,
-    pub creator: String,
-    pub admin: String,
-    pub label: String,
-    pub created: Option<()>, // Placeholder
-    pub ibc_port_id: String,
-    pub extension: Option<()>, // Placeholder
-}
 
 #[derive(Clone, Debug)]
 pub struct Model {
@@ -148,6 +130,7 @@ pub trait WasmVmCnidariumStateRead: cnidarium::StateRead {
                     created: None,
                     ibc_port_id: "".to_string(),
                     extension: None,
+                    ibc2_port_id: "".to_string(),
                 }))
             }
             None => Ok(None),
@@ -318,7 +301,6 @@ impl<T: cnidarium::StateWrite + ?Sized> WasmVmCnidariumStateWrite for T {}
 
 #[cfg(test)]
 mod tests {
-    
 
     // Tests would require mocking StateRead/StateWrite implementations
     // For now, we rely on integration tests with actual Cnidarium storage

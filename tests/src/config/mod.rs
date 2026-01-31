@@ -254,7 +254,7 @@ mod akash_config {
         let config = ErgorsConfig::default_akash_config();
 
         // Check mainnet defaults
-        assert!(config.rpc_endpoints.contains("akash".into()));
+        assert!(config.rpc_endpoints.contains(&"akash".to_string()));
         assert_eq!(config.chain_id, "akashnet-2");
         assert_eq!(config.gas_prices, "0.025uakt");
         assert!((config.gas_adjustment - 1.3).abs() < 0.001);
@@ -475,6 +475,9 @@ mod config_mutation {
             keyring_backend: "test".to_string(),
             default_key_name: "mykey".to_string(),
             trusted_providers: vec!["akash1provider".to_string()],
+            max_retries_per_endpoint: Default::default(),
+            max_total_retries: Default::default(),
+            connection_timeout_seconds: Default::default(),
         };
 
         config.set_akash(new_akash);

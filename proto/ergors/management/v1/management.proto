@@ -142,6 +142,17 @@ service ManagementService {
   rpc ListTrustedProviders(ergors.orch.v1.ListTrustedProvidersRequest) returns (ergors.orch.v1.ListTrustedProvidersResponse);
 
   // ============================================
+  // Akash Certificate Management
+  // ============================================
+
+  // Create a new mTLS certificate and broadcast to chain
+  rpc CreateAkashCertificate(ergors.orch.v1.CreateAkashCertificateRequest) returns (ergors.orch.v1.CreateAkashCertificateResponse);
+  // Revoke an existing certificate
+  rpc RevokeAkashCertificate(ergors.orch.v1.RevokeAkashCertificateRequest) returns (OperationResult);
+  // List certificates for an address from chain
+  rpc ListAkashCertificates(ergors.orch.v1.ListAkashCertificatesRequest) returns (ergors.orch.v1.ListAkashCertificatesResponse);
+
+  // ============================================
   // RAG Vector Database
   // ============================================
 

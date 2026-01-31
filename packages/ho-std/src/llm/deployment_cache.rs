@@ -3,7 +3,7 @@
 //! This cache maintains a registry of deployments that can serve inference requests,
 //! enabling O(1) lookups by model name (deployment label).
 
-use crate::error::{HoError, HoResult};
+use crate::error::HoResult;
 use crate::types::ergors::orch::v1::{AkashDeploymentWorkflow, AkashWorkflowStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -50,8 +50,9 @@ impl DeploymentEndpoint {
 /// This cache is periodically refreshed from storage to stay in sync with
 /// deployment lifecycle events (creation, completion, failure).
 pub struct DeploymentProviderCache {
-    /// Model name (label) -> Deployment endpoint mapping
-    cache: Arc<RwLock<HashMap<String, DeploymentEndpoint>>>,
+    /// Model name (label) -> Deployment endpoint mapping.
+    /// Public for external refreshers that need direct cache access.
+    pub cache: Arc<RwLock<HashMap<String, DeploymentEndpoint>>>,
 }
 
 impl DeploymentProviderCache {
@@ -61,40 +62,22 @@ impl DeploymentProviderCache {
         }
     }
 
-    /// Refresh cache from storage by loading all active deployments.
+    /// Basic refresh - deprecated in favor of DeploymentCacheRefresher in cw-ho.
     ///
-    /// This should be called:
-    /// - On startup
-    /// - Periodically (e.g., every 30 seconds)
-    /// - After deployment completion events
-    pub async fn refresh<S>(&self, storage: &S) -> HoResult<usize>
+    /// For proper cache refresh with chain verification (lease status, escrow balance),
+    /// use `crate::deploy::cache_refresher::DeploymentCacheRefresher` in cw-ho.
+    ///
+    /// This method only provides basic cache operations - for production use,
+    /// the cw-ho refresher should be used which has access to CosmosClient.
+    #[deprecated(note = "Use DeploymentCacheRefresher in cw-ho for chain-verified refresh")]
+    pub async fn refresh<S>(&self, _storage: &S) -> HoResult<usize>
     where
         S: cnidarium::StateRead,
     {
-        use crate::llm::state_ext::StateReadExt;
-
-        // Get all workflows from storage
-        let workflows = storage.get_llm_providers().await?;
-
-        let mut new_cache = HashMap::new();
-        let mut loaded = 0;
-
-        // Filter for active Akash deployments with labels and endpoints
-        for workflow in workflows {
-            // This is actually loading LlmEntity, not workflows - we need to fix the query
-            // For now, skip this implementation and do it differently
-        }
-
-        tracing::warn!(
-            "DeploymentProviderCache::refresh needs proper workflow querying - TODO"
-        );
-
-        // Update cache atomically
-        let mut cache = self.cache.write().await;
-        *cache = new_cache;
-
-        tracing::debug!("Refreshed deployment cache: {} active deployments", loaded);
-        Ok(loaded)
+        // This method is now a no-op.
+        // Actual refresh is done by DeploymentCacheRefresher in cw-ho which has
+        // access to CosmosClient for lease verification and escrow balance checks.
+        Ok(self.cache.read().await.len())
     }
 
     /// Manually add a deployment to the cache.

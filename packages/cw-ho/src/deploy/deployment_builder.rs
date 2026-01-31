@@ -657,7 +657,7 @@ mod deccoin_tests {
             cosmwasm_std::DecCoin::new(Decimal::from_ratio(amount_base, 1u64), denom);
         println!("1. cosmwasm_std::DecCoin:");
         println!("   - amount field: {}", cosmwasm_deccoin.amount);
-        println!("   - JSON: {}", cosmwasm_deccoin.amount.to_string());
+        println!("   - JSON: {}", cosmwasm_deccoin.amount);
 
         // 2. Our proto DecCoin (ho_std)
         let proto_deccoin = DecCoin {

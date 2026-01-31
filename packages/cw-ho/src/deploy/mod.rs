@@ -1,6 +1,7 @@
 pub mod bootstrap;
 
 pub mod akash;
+pub mod cache_refresher;
 pub mod api_client;
 pub mod authz;
 pub mod automated;

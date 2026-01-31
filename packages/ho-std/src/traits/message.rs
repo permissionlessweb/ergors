@@ -2,7 +2,6 @@
 
 pub use prost::{Message, Name};
 
-use alloc::{string::String, vec::Vec};
 use core::str::FromStr;
 use prost::EncodeError;
 

@@ -1,11 +1,15 @@
+use crate::llm::response_id::{RequestClassification, RequestContext, ResponseId};
 use crate::llm::{DeploymentProviderCache, HoError, HoResult, StateReadExt};
 use crate::traits::LlmProviderTrait;
-use crate::types::ergors::orch::v1::*;
+use crate::types::ergors::orch::v1::{
+    content_block, response_output_item, ContentBlock, LlmEntity, LlmRouterConfig,
+    MessageItemContent, PromptRequest, PromptResponse, ResponseMetadata, ResponseOutputItem,
+};
 use cnidarium::StateRead;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{debug, info};
 
 /// Refactored LLM Router with dynamic provider management
@@ -92,6 +96,22 @@ impl LlmRouter {
         req: &PromptRequest,
         deployment: &crate::llm::DeploymentEndpoint,
     ) -> HoResult<PromptResponse> {
+        self.route_to_deployment_with_context(req, deployment, None)
+            .await
+    }
+
+    /// Route a request to an Akash deployment endpoint with request context.
+    ///
+    /// This allows tracking session IDs, conversation chaining, and latency.
+    pub async fn route_to_deployment_with_context(
+        &self,
+        req: &PromptRequest,
+        deployment: &crate::llm::DeploymentEndpoint,
+        context: Option<RequestContext>,
+    ) -> HoResult<PromptResponse> {
+        // Start timing for latency tracking
+        let start_time = Instant::now();
+
         // Get base URL from deployment endpoint
         let base_url = deployment.base_url().ok_or_else(|| {
             HoError::Llm(format!(
@@ -105,16 +125,30 @@ impl LlmRouter {
             base_url, deployment.dseq
         );
 
-        // Determine the endpoint path based on the request type
-        let endpoint_path = if req.messages.is_empty() {
-            "/v1/embeddings" // Embeddings request
+        // Determine classification and endpoint path from context or request type
+        let (classification, endpoint_path) = if let Some(ref ctx) = context {
+            (ctx.classification, ctx.endpoint_path.as_str())
         } else {
-            "/v1/chat/completions" // Chat request
+            // Infer from request content
+            let classification = if req.messages.is_empty() {
+                RequestClassification::Embedding
+            } else {
+                RequestClassification::Chat
+            };
+            let path = match classification {
+                RequestClassification::Embedding => "/v1/embeddings",
+                _ => "/v1/chat/completions",
+            };
+            (classification, path)
         };
 
         let full_url = format!("{}{}", base_url, endpoint_path);
 
-        debug!("Deployment request URL: {}", full_url);
+        debug!(
+            "Deployment request URL: {} (classification: {})",
+            full_url,
+            classification.as_str()
+        );
 
         // Extract temperature and max_tokens from llm_config
         let (temperature, max_tokens) = req
@@ -150,6 +184,9 @@ impl LlmRouter {
             )));
         }
 
+        // Calculate latency before parsing response
+        let latency_ms = start_time.elapsed().as_millis() as u64;
+
         // Parse OpenAI response format
         let openai_response: serde_json::Value = response
             .json()
@@ -167,7 +204,7 @@ impl LlmRouter {
             .to_string();
 
         // Extract token usage from OpenAI response
-        let tokens_used = openai_response.get("usage").and_then(|usage| {
+        let tokens_used = openai_response.get("usage").map(|usage| {
             let prompt = usage
                 .get("prompt_tokens")
                 .and_then(|t| t.as_u64())
@@ -181,20 +218,78 @@ impl LlmRouter {
                 .and_then(|t| t.as_u64())
                 .unwrap_or(0) as u32;
 
-            Some(crate::types::ergors::orch::v1::TokenUsage {
+            crate::types::ergors::orch::v1::TokenUsage {
                 prompt,
                 completion,
                 total,
-            })
+            }
         });
 
-        // Build PromptResponse using the expected format
+        // Extract provider-specific response ID if present
+        let provider_response_id = openai_response
+            .get("id")
+            .and_then(|id| id.as_str())
+            .map(|s| s.to_string());
+
+        // Generate response ID
+        let previous_response_id = context
+            .as_ref()
+            .and_then(|ctx| ctx.previous_response_id);
+        let sequence = context.as_ref().map(|ctx| ctx.sequence).unwrap_or(0);
+        let mut response_id = ResponseId::new(classification.as_str(), previous_response_id, sequence);
+        if let Some(provider_id) = provider_response_id {
+            response_id = response_id.with_provider_id(provider_id);
+        }
+
+        // Calculate cost estimate based on tokens (simple pricing model)
+        // TODO: Make this configurable per deployment
+        let cost = tokens_used
+            .as_ref()
+            .map(|t| {
+                // Estimate: $0.001 per 1K tokens for deployment (much cheaper than API)
+                (t.total as f64) * 0.000001
+            })
+            .unwrap_or(0.0);
+
+        // Build Open Responses output items using correct types
+        let message_content = MessageItemContent {
+            role: "assistant".to_string(),
+            content: vec![ContentBlock {
+                r#type: "text".to_string(),
+                block: Some(content_block::Block::Text(content.clone())),
+            }],
+        };
+
+        let output = vec![ResponseOutputItem {
+            id: response_id.to_open_responses_format(),
+            r#type: "message".to_string(),
+            status: "completed".to_string(),
+            content: Some(response_output_item::Content::Message(message_content)),
+        }];
+
+        // Build response metadata
+        let now_timestamp = pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            nanos: 0,
+        };
+        let response_metadata = Some(ResponseMetadata {
+            created: Some(now_timestamp),
+            completed: Some(now_timestamp),
+            previous_response_id: previous_response_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+        });
+
+        // Build PromptResponse with full tracking
         Ok(PromptResponse {
-            id: vec![], // TODO: Generate unique ID
+            id: response_id.to_bytes(),
             provider: format!("akash-deployment:{}", deployment.session_id),
             model: deployment.label.clone(),
             prompt: String::new(), // Original prompt not needed in response
-            response: vec![content], // Response text as Vec<String>
+            response: vec![content],
             timestamp: Some(pbjson_types::Timestamp {
                 seconds: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -203,11 +298,11 @@ impl LlmRouter {
                 nanos: 0,
             }),
             tokens_used,
-            cost: 0.0,         // TODO: Calculate deployment cost
-            latency_ms: 0,     // TODO: Track latency
+            cost,
+            latency_ms,
             status: Some("completed".to_string()),
-            output: vec![], // TODO: Populate for Open Responses compatibility
-            response_metadata: None, // TODO: Add metadata if needed
+            output,
+            response_metadata,
         })
     }
 

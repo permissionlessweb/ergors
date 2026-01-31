@@ -7,6 +7,7 @@ mod joints;
 mod macros;
 mod prompt;
 mod providers;
+pub mod response_id;
 mod router;
 pub mod state_ext;
 use anyhow::Result;
@@ -19,6 +20,7 @@ pub use encrypted_keys::*;
 pub use joints::*;
 pub use prompt::*;
 pub use providers::*;
+pub use response_id::{RequestClassification, RequestContext, ResponseId};
 pub use router::*;
 pub use state_ext::{StateReadExt, StateWriteExt};
 

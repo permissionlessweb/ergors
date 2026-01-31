@@ -163,6 +163,9 @@ pub async fn create_signing_client(
 }
 
 /// Create a layer-climb ChainConfig from Akash deployment config.
+///
+/// Layer-climb requires RPC endpoint for simulation and sequence queries,
+/// so we always include it when available. gRPC is optional (faster for some ops).
 pub fn chain_config_from_akash(akash_config: &AkashDeployConfig) -> Result<ChainConfig> {
     use layer_climb::prelude::ChainId;
 
@@ -172,14 +175,19 @@ pub fn chain_config_from_akash(akash_config: &AkashDeployConfig) -> Result<Chain
         .parse()
         .map_err(|e| anyhow!("Invalid chain ID '{}': {}", akash_config.chain_id, e))?;
 
-    // Determine which endpoint to use (use first from arrays)
-    let (grpc_endpoint, rpc_endpoint) = if !akash_config.grpc_endpoints.is_empty() {
-        (Some(akash_config.grpc_endpoints[0].clone()), None)
-    } else if !akash_config.rpc_endpoints.is_empty() {
-        (None, Some(akash_config.rpc_endpoints[0].clone()))
+    // RPC is required for layer-climb (simulation, sequence queries)
+    let rpc_endpoint = if !akash_config.rpc_endpoints.is_empty() {
+        Some(akash_config.rpc_endpoints[0].clone())
     } else {
         // Default to Akash mainnet RPC
-        (None, Some("https://rpc.akash.network:443".to_string()))
+        Some("https://rpc.akash.network:443".to_string())
+    };
+
+    // gRPC is optional but preferred for tx broadcast
+    let grpc_endpoint = if !akash_config.grpc_endpoints.is_empty() {
+        Some(akash_config.grpc_endpoints[0].clone())
+    } else {
+        None
     };
 
     Ok(ChainConfig {
@@ -213,6 +221,11 @@ mod tests {
         let chain_config = chain_config_from_akash(&akash_config).unwrap();
         assert_eq!(chain_config.gas_denom, "uakt");
         assert_eq!(chain_config.gas_price, 0.025);
+        // Both RPC and gRPC should be set when available
+        assert_eq!(
+            chain_config.rpc_endpoint,
+            Some("https://rpc.akash.network:443".to_string())
+        );
         assert_eq!(
             chain_config.grpc_endpoint,
             Some("grpc.akash.network:9090".to_string())

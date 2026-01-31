@@ -19,6 +19,7 @@ This document serves as the central index for all ERGORS specification documents
 |------|-------------|
 | [Agents](./specs/agents.md) | Agentic workflow structure and management — recursive design, distributed orchestration, deterministic state. |
 | [Workflows](./specs/workflows.md) | Multi-agent task orchestration with geometric-guided coordination across the node network. |
+| [Session Tracking](./specs/session-tracking.md) | Hierarchical session and response ID system for recursive task tracing and classification. |
 | [Scripting](./specs/scripting.md) | Meta-programming framework for generating and executing code within the orchestration layer. |
 
 ## API & Routing
@@ -56,6 +57,7 @@ This document serves as the central index for all ERGORS specification documents
 
 | Spec | Description |
 |------|-------------|
+| [Akash Deploy Library](./specs/akash-deploy-library.md) | Standalone Akash deployment workflow engine — trait-based, generic, reusable. |
 | [Akash Deployment](./specs/bootstrap/akash-deployment.md) | Deployment configuration and SDL templates for running ERGORS nodes on Akash Network. |
 | [Akash Testing](./specs/bootstrap/akash-deployment-testing.md) | Testing procedures for validating Akash deployment configurations. |
 | [Grant Request System](./specs/bootstrap/grant-request-system.md) | Grant request system for provisioning node resources. |
@@ -72,6 +74,7 @@ docs/
 ├── spec.md                 # This file (index)
 └── specs/
     ├── agents.md           # Agentic workflows
+    ├── session-tracking.md # Session/response ID system
     ├── api-server.md       # Open Responses API spec
     ├── bootstrap/
     │   ├── akash-deployment.md
@@ -91,5 +94,6 @@ docs/
     ├── scripting.md        # Scripting framework
     ├── storage.md          # Cnidarium storage
     ├── trustlessness.md    # Verifiable execution
-    └── workflows.md        # Task workflows
+    ├── workflows.md        # Task workflows
+    └── akash-deploy-library.md # Standalone deploy lib
 ```

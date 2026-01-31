@@ -6,6 +6,7 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
 import "network/v1/network.proto";
 import "storage/v1/storage.proto";
+import "akash/cert/v1/cert.proto";
 
 
 // Configuration Types
@@ -1270,8 +1271,12 @@ message AkashDeploymentWorkflow {
   // Bids received during BidWait step
   repeated AkashBidInfo available_bids = 30;
 
-  // Certificate info (cached from chain or newly created)
-  AkashCertificateInfo certificate_info = 31;
+  // Certificate from chain (official akash.cert.v1.Certificate type)
+  akash.cert.v1.Certificate certificate = 31;
+
+  // Encrypted private key for mTLS (ChaCha20Poly1305 encrypted)
+  // Decrypted only when needed for provider communication
+  bytes encrypted_cert_private_key = 36;
 
   // Lease ID after lease creation
   AkashLeaseIdInfo lease_id_info = 32;
@@ -1337,21 +1342,8 @@ enum AkashBidState {
   AKASH_BID_STATE_CLOSED = 4;
 }
 
-// Certificate info stored during workflow (mirrors cosmos_client::CertificateInfo)
-message AkashCertificateInfo {
-  string owner = 1;
-  string serial = 2;
-  AkashCertState state = 3;
-  bytes cert_pem = 4;
-  bytes pubkey = 5;
-}
-
-// Certificate state enum
-enum AkashCertState {
-  AKASH_CERT_STATE_INVALID = 0;
-  AKASH_CERT_STATE_VALID = 1;
-  AKASH_CERT_STATE_REVOKED = 2;
-}
+// NOTE: Using official akash.cert.v1.Certificate type instead of custom wrapper
+// Private key is stored encrypted in AkashDeploymentWorkflow.encrypted_cert_private_key
 
 // Lease ID info stored after lease creation
 message AkashLeaseIdInfo {
@@ -1546,6 +1538,51 @@ message OperationResult {
   bool success = 1;
   string message = 2;
   string tx_hash = 3;
+}
+
+// ========================================
+// Akash Certificate Management Types
+// ========================================
+
+// Request to create a new mTLS certificate
+message CreateAkashCertificateRequest {
+  string key_name = 1;
+  uint32 account_index = 2;
+}
+
+// Response from certificate creation
+message CreateAkashCertificateResponse {
+  bool success = 1;
+  string tx_hash = 2;
+  string serial = 3;
+  string error_message = 4;
+}
+
+// Request to revoke a certificate
+message RevokeAkashCertificateRequest {
+  string key_name = 1;
+  uint32 account_index = 2;
+  string serial = 3;  // If empty, revokes first valid cert
+}
+
+// Request to list certificates from chain
+message ListAkashCertificatesRequest {
+  string key_name = 1;
+  uint32 account_index = 2;
+  string address = 3;  // Optional override
+}
+
+// Certificate info for display
+message AkashCertificateInfo {
+  string serial = 1;
+  string state = 2;  // "valid", "revoked"
+  bool has_stored_key = 3;  // Whether we have the private key stored
+}
+
+// Response with certificates
+message ListAkashCertificatesResponse {
+  repeated AkashCertificateInfo certificates = 1;
+  string address = 2;  // The queried address
 }
 
 // ========================================

@@ -3102,12 +3102,14 @@ name = "ergors"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "argon2",
  "async-stream",
  "axum",
  "base64 0.22.1",
  "bip32",
  "bytes",
  "camino",
+ "chacha20poly1305 0.9.1",
  "chrono",
  "clap",
  "cnidarium",
@@ -4299,6 +4301,7 @@ dependencies = [
  "serde_with",
  "serde_yaml",
  "sha2 0.10.9",
+ "smmalloc",
  "ssh-key",
  "tempfile",
  "termion",
@@ -5870,6 +5873,15 @@ checksum = "6bd8c0d6c6ed0cd30b3652886bb8711dc4bb01d637a68105a3d5158039b418e6"
 dependencies = [
  "cc",
  "libc",
+]
+
+[[package]]
+name = "mach-sys"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48460c2e82a3a0de197152fdf8d2c2d5e43adc501501553e439bf2156e6f87c7"
+dependencies = [
+ "fastrand",
 ]
 
 [[package]]
@@ -8905,6 +8917,17 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "smmalloc"
+version = "7.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c1df4744706f5f7f2862648d8a931c6ea364628e6fb4e2967cce67e989e956d"
+dependencies = [
+ "mach-sys",
+ "rustix",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "socket2"

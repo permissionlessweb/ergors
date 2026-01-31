@@ -49,4 +49,6 @@ use crate::llm::HoError;
 
 pub type HoResult<T> = std::result::Result<T, HoError>;
 
-extern crate alloc;
+use smalloc::Smalloc;
+#[global_allocator]
+static ALLOC: Smalloc = Smalloc::new();

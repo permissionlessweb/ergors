@@ -49,19 +49,55 @@ impl Server {
         let cache_refresh_handle = {
             let storage = self.state.s.clone();
             let cache = self.state.r.deployment_cache();
+            let akash_ctx = self.state.akash.clone();
+
             tokio::spawn(async move {
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 
-                    match storage.cs.latest_snapshot() {
-                        snapshot => match cache.refresh(&snapshot).await {
-                            Ok(count) => {
+                    // Use chain-verified refresh if Akash context available
+                    if let Some(ref ctx) = akash_ctx {
+                        use crate::deploy::cache_refresher::DeploymentCacheRefresher;
+
+                        let refresher = DeploymentCacheRefresher::new(
+                            storage.clone(),
+                            ctx.cosmos.clone(),
+                            cache.clone(),
+                        );
+
+                        let result = refresher.refresh().await;
+
+                        if result.active_count > 0 || result.inactive_count > 0 {
+                            tracing::info!(
+                                "Deployment cache: {} active, {} inactive, {} low balance",
+                                result.active_count,
+                                result.inactive_count,
+                                result.low_balance_count
+                            );
+                        }
+
+                        for error in &result.errors {
+                            tracing::warn!("Cache refresh error: {}", error);
+                        }
+                    } else {
+                        // Fallback: simple storage-based refresh without chain verification
+                        match storage.list_akash_workflows().await {
+                            Ok(workflows) => {
+                                let mut count = 0;
+                                for workflow in workflows {
+                                    if cache.add_deployment(&workflow).await.is_ok() {
+                                        count += 1;
+                                    }
+                                }
                                 if count > 0 {
-                                    tracing::debug!("Refreshed deployment cache: {} active deployments", count);
+                                    tracing::debug!(
+                                        "Refreshed deployment cache (no chain verify): {} deployments",
+                                        count
+                                    );
                                 }
                             }
                             Err(e) => {
-                                tracing::warn!("Failed to refresh deployment cache: {}", e);
+                                tracing::warn!("Failed to list workflows for cache refresh: {}", e);
                             }
                         }
                     }
@@ -267,7 +303,7 @@ impl Server {
     async fn init_akash_context(
         c: &ErgorsConfig,
         storage: &Arc<ErgorsStorage>,
-        _custody_password: Option<&str>,
+        custody_password: Option<&str>,
     ) -> Option<AkashDeploymentContext> {
         use crate::deploy::cosmos_client::CosmosEndpoints;
         use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
@@ -334,12 +370,13 @@ impl Server {
         let key_manager_arc = Arc::new(RwLock::new(key_manager));
         let key_store_arc = Arc::new(RwLock::new(key_store));
 
-        // Create CertificateManager with layer-climb integration
+        // Create CertificateManager with layer-climb integration and storage for key persistence
         let cert_manager = Arc::new(CertificateManager::new(
             cosmos.clone(),
             key_manager_arc.clone(),
             key_store_arc.clone(),
             akash_config.clone(),
+            storage.clone(),
         ));
 
         tracing::info!("✅ Akash deployment context initialized (using layer-climb)");
@@ -350,6 +387,7 @@ impl Server {
             key_manager: key_manager_arc,
             key_store: key_store_arc,
             akash_config,
+            custody_password: custody_password.unwrap_or_default().to_string(),
         })
     }
 

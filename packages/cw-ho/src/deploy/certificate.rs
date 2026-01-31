@@ -3,15 +3,16 @@
 //! Handles:
 //! - Checking for existing valid certificates on chain
 //! - Certificate creation workflow (X.509 PEM format)
-//! - Converting between chain types and proto types
+//! - Private key encryption/decryption for secure storage
+//! - mTLS authentication with Akash providers
 //!
 //! Uses `rcgen` for proper X.509 certificate generation compatible with
 //! Akash provider mTLS requirements.
 
 use anyhow::{anyhow, Result};
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
-use ho_std::types::akash::cert::v1::{Certificate, MsgCreateCertificate, State};
-use ho_std::types::ergors::orch::v1::{AkashCertState, AkashCertificateInfo, AkashDeployConfig, CosmosKeyStore};
+use ho_std::types::akash::cert::v1::{Certificate, MsgCreateCertificate, MsgRevokeCertificate, State};
+use ho_std::types::ergors::orch::v1::{AkashDeployConfig, CosmosKeyStore};
 use prost::{Message, Name};
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
 use sha2::{Digest, Sha256};
@@ -21,15 +22,29 @@ use tokio::sync::RwLock;
 
 use super::climb_signer::{chain_config_from_akash, create_signing_client};
 use super::cosmos_client::CosmosClient;
+use crate::storage::ErgorsStorage;
 use layer_climb_proto::Any as ClimbAny;
+
+/// Certificate with encrypted private key for mTLS.
+/// The certificate is stored on-chain, but private key is encrypted locally.
+#[derive(Debug, Clone)]
+pub struct CertificateWithKey {
+    /// Official Akash certificate (from chain or newly created)
+    pub certificate: Certificate,
+    /// Encrypted private key (ChaCha20Poly1305)
+    /// Empty if certificate was fetched from chain without local key
+    pub encrypted_private_key: Vec<u8>,
+}
 
 /// Certificate manager for Akash deployments.
 /// Now uses layer-climb for robust transaction signing.
+/// Persists encrypted private keys to storage for reuse across workflows.
 pub struct CertificateManager {
     cosmos: Arc<CosmosClient>,
     key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
     key_store: Arc<RwLock<CosmosKeyStore>>,
     akash_config: AkashDeployConfig,
+    storage: Arc<ErgorsStorage>,
 }
 
 impl CertificateManager {
@@ -39,26 +54,32 @@ impl CertificateManager {
         key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
         key_store: Arc<RwLock<CosmosKeyStore>>,
         akash_config: AkashDeployConfig,
+        storage: Arc<ErgorsStorage>,
     ) -> Self {
         Self {
             cosmos,
             key_manager,
             key_store,
             akash_config,
+            storage,
         }
     }
 
     /// Get or create a valid certificate for the address.
     ///
     /// 1. Query chain for existing valid certificate
-    /// 2. If none exists (or query fails), generate and broadcast new certificate
-    /// 3. Handle duplicate certificate errors gracefully
+    /// 2. If found, try to load encrypted private key from storage
+    /// 3. If none exists (or query fails), generate and broadcast new certificate
+    /// 4. Save encrypted private key to storage for future use
+    ///
+    /// The `encryption_password` is used to encrypt the private key for secure storage.
     pub async fn get_or_create(
         &self,
         key_name: &str,
         account_index: u32,
         address: &str,
-    ) -> Result<AkashCertificateInfo> {
+        encryption_password: &str,
+    ) -> Result<CertificateWithKey> {
         tracing::info!("  Querying chain for existing certificate...");
 
         // Query chain for existing valid certificate
@@ -66,7 +87,33 @@ impl CertificateManager {
             Ok(Some(chain_cert)) => {
                 tracing::info!("  Certificate: FOUND EXISTING");
                 tracing::info!("    State:  {:?}", State::try_from(chain_cert.state).ok());
-                return Ok(certificate_to_workflow_info(address, &chain_cert, "existing"));
+
+                // Try to load encrypted private key from storage
+                match self.storage.get_akash_cert_key(address).await {
+                    Ok(Some(encrypted_key)) => {
+                        tracing::info!("  Private key: LOADED FROM STORAGE ({} bytes)", encrypted_key.len());
+                        return Ok(CertificateWithKey {
+                            certificate: chain_cert,
+                            encrypted_private_key: encrypted_key,
+                        });
+                    }
+                    Ok(None) => {
+                        tracing::warn!("  Private key: NOT IN STORAGE");
+                        tracing::warn!("  Certificate exists on chain but private key is missing!");
+                        tracing::warn!("  Run 'ergors deploy cert revoke' then 'ergors deploy cert create' to fix.");
+                        return Ok(CertificateWithKey {
+                            certificate: chain_cert,
+                            encrypted_private_key: vec![],
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!("  Failed to load private key from storage: {}", e);
+                        return Ok(CertificateWithKey {
+                            certificate: chain_cert,
+                            encrypted_private_key: vec![],
+                        });
+                    }
+                }
             }
             Ok(None) => {
                 tracing::info!("  Certificate: NOT FOUND - creating new one...");
@@ -84,10 +131,22 @@ impl CertificateManager {
 
         // Create new certificate
         match self
-            .create_certificate(key_name, account_index, address)
+            .create_certificate(key_name, account_index, address, encryption_password)
             .await
         {
-            Ok(cert) => Ok(cert),
+            Ok(cert_with_key) => {
+                // Store encrypted private key for future use
+                if !cert_with_key.encrypted_private_key.is_empty() {
+                    if let Err(e) = self
+                        .storage
+                        .put_akash_cert_key(address, &cert_with_key.encrypted_private_key)
+                        .await
+                    {
+                        tracing::warn!("  Failed to store encrypted private key: {}", e);
+                    }
+                }
+                Ok(cert_with_key)
+            }
             Err(e) => {
                 let error_str = e.to_string();
                 // Check for duplicate certificate error (certificate already exists)
@@ -96,14 +155,27 @@ impl CertificateManager {
                     || error_str.contains("duplicate")
                 {
                     tracing::info!("  Certificate already exists on chain (creation rejected)");
-                    // Return a placeholder cert info - the actual cert exists on chain
-                    // and will be used for mTLS by the provider
-                    Ok(AkashCertificateInfo {
-                        owner: address.to_string(),
-                        serial: "existing".to_string(),
-                        state: AkashCertState::Valid as i32,
-                        cert_pem: vec![],
-                        pubkey: vec![],
+
+                    // Try to load stored key
+                    let encrypted_key = self
+                        .storage
+                        .get_akash_cert_key(address)
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default();
+
+                    if encrypted_key.is_empty() {
+                        tracing::warn!("  No stored private key - mTLS will fail!");
+                    }
+
+                    Ok(CertificateWithKey {
+                        certificate: Certificate {
+                            state: State::Valid as i32,
+                            cert: vec![],
+                            pubkey: vec![],
+                        },
+                        encrypted_private_key: encrypted_key,
                     })
                 } else {
                     Err(e)
@@ -112,23 +184,87 @@ impl CertificateManager {
         }
     }
 
+    /// Revoke a certificate on chain and delete stored private key.
+    pub async fn revoke_certificate(
+        &self,
+        key_name: &str,
+        account_index: u32,
+        address: &str,
+        serial: &str,
+    ) -> Result<String> {
+        tracing::info!("Revoking certificate for {} (serial: {})", address, serial);
+
+        // Build MsgRevokeCertificate
+        let msg = MsgRevokeCertificate {
+            id: Some(ho_std::types::akash::cert::v1::Id {
+                owner: address.to_string(),
+                serial: serial.to_string(),
+            }),
+        };
+
+        // Create signing client
+        let chain_config = chain_config_from_akash(&self.akash_config)?;
+        let client = create_signing_client(
+            self.key_manager.clone(),
+            self.key_store.clone(),
+            key_name,
+            account_index,
+            chain_config,
+        )
+        .await?;
+
+        // Broadcast
+        let msg_any = ClimbAny {
+            type_url: MsgRevokeCertificate::type_url(),
+            value: msg.encode_to_vec(),
+        };
+
+        let mut tx_builder = client.tx_builder();
+        tx_builder.set_memo("ergors certificate revocation");
+        let tx_resp = tx_builder.broadcast(vec![msg_any]).await?;
+
+        if tx_resp.code != 0 {
+            return Err(anyhow!(
+                "Certificate revocation failed (code {}): {}",
+                tx_resp.code,
+                tx_resp.raw_log
+            ));
+        }
+
+        tracing::info!("  Certificate revoked: tx_hash={}", tx_resp.txhash);
+
+        // Delete stored private key
+        if let Err(e) = self.storage.delete_akash_cert_key(address).await {
+            tracing::warn!("  Failed to delete stored private key: {}", e);
+        }
+
+        Ok(tx_resp.txhash)
+    }
+
     /// Create a new certificate and broadcast to chain.
+    /// Returns certificate with encrypted private key.
     async fn create_certificate(
         &self,
         key_name: &str,
         account_index: u32,
         address: &str,
-    ) -> Result<AkashCertificateInfo> {
+        encryption_password: &str,
+    ) -> Result<CertificateWithKey> {
         // Generate certificate and key pair
         tracing::info!("  Generating certificate keypair...");
-        let (cert_bytes, pubkey_bytes, serial) = generate_akash_certificate(address)?;
-        tracing::info!("    Serial: {}", serial);
+        let generated = generate_akash_certificate(address)?;
+        tracing::info!("    Serial: {}", generated.serial);
+
+        // Encrypt the private key for secure storage
+        tracing::info!("  Encrypting private key...");
+        let encrypted_private_key = encrypt_private_key(&generated.privkey_pem, encryption_password)?;
+        tracing::info!("    Encrypted key size: {} bytes", encrypted_private_key.len());
 
         // Build MsgCreateCertificate
         let msg = MsgCreateCertificate {
             owner: address.to_string(),
-            cert: cert_bytes.clone(),
-            pubkey: pubkey_bytes.clone(),
+            cert: generated.cert_pem.clone(),
+            pubkey: generated.pubkey_pem.clone(),
         };
 
         // Create layer-climb signing client
@@ -167,23 +303,22 @@ impl CertificateManager {
         tracing::info!("  Certificate: CREATED NEW");
         tracing::info!("    Tx Hash: {}", tx_resp.txhash);
         tracing::info!("    Height:  {}", tx_resp.height);
-        tracing::info!("    Serial:  {}", serial);
+        tracing::info!("    Serial:  {}", generated.serial);
 
-        Ok(AkashCertificateInfo {
-            owner: address.to_string(),
-            serial,
-            state: AkashCertState::Valid as i32,
-            cert_pem: cert_bytes,
-            pubkey: pubkey_bytes,
+        Ok(CertificateWithKey {
+            certificate: Certificate {
+                state: State::Valid as i32,
+                cert: generated.cert_pem,
+                pubkey: generated.pubkey_pem,
+            },
+            encrypted_private_key,
         })
     }
 
     /// Query certificate from chain by address.
-    pub async fn query_certificate(&self, address: &str) -> Result<Option<AkashCertificateInfo>> {
-        match self.cosmos.query_valid_certificate(address).await? {
-            Some(cert) => Ok(Some(certificate_to_workflow_info(address, &cert, "unknown"))),
-            None => Ok(None),
-        }
+    /// Returns the official akash.cert.v1.Certificate if found.
+    pub async fn query_certificate(&self, address: &str) -> Result<Option<Certificate>> {
+        self.cosmos.query_valid_certificate(address).await
     }
 
     /// Check if an address has a valid certificate.
@@ -196,28 +331,14 @@ impl CertificateManager {
     }
 }
 
-/// Convert Akash Certificate (prost type) to workflow AkashCertificateInfo.
-///
-/// This keeps certificate details minimal - users only need to know the cert exists and its state.
-fn certificate_to_workflow_info(
-    owner: &str,
-    cert: &Certificate,
-    serial: &str,
-) -> AkashCertificateInfo {
-    // Map Akash chain state enum to our workflow state enum
-    let state = match State::try_from(cert.state) {
-        Ok(State::Valid) => AkashCertState::Valid,
-        Ok(State::Revoked) => AkashCertState::Revoked,
-        _ => AkashCertState::Invalid,
-    };
+// NOTE: Removed certificate_to_workflow_info - now using official akash.cert.v1.Certificate directly
 
-    AkashCertificateInfo {
-        owner: owner.to_string(),
-        serial: serial.to_string(),
-        state: state as i32,
-        cert_pem: cert.cert.clone(),
-        pubkey: cert.pubkey.clone(),
-    }
+/// Generated certificate with all components for mTLS.
+pub struct GeneratedCertificate {
+    pub cert_pem: Vec<u8>,
+    pub pubkey_pem: Vec<u8>,
+    pub privkey_pem: Vec<u8>,
+    pub serial: String,
 }
 
 /// Generate an Akash-compatible X.509 certificate in PEM format.
@@ -225,8 +346,8 @@ fn certificate_to_workflow_info(
 /// This creates a self-signed ECDSA P-256 certificate for mTLS authentication
 /// between tenants and providers on Akash Network.
 ///
-/// Returns (cert_pem_bytes, pubkey_pem_bytes, serial).
-fn generate_akash_certificate(address: &str) -> Result<(Vec<u8>, Vec<u8>, String)> {
+/// Returns GeneratedCertificate with cert, pubkey, privkey (all PEM), and serial.
+pub fn generate_akash_certificate(address: &str) -> Result<GeneratedCertificate> {
     // Generate ECDSA P-256 key pair (compatible with Akash)
     let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
         .map_err(|e| anyhow!("Failed to generate key pair: {}", e))?;
@@ -255,6 +376,10 @@ fn generate_akash_certificate(address: &str) -> Result<(Vec<u8>, Vec<u8>, String
     let pubkey_pem = key_pair.public_key_pem();
     let pubkey_bytes = pubkey_pem.as_bytes().to_vec();
 
+    // Get private key PEM (for mTLS)
+    let privkey_pem = key_pair.serialize_pem();
+    let privkey_bytes = privkey_pem.as_bytes().to_vec();
+
     // Generate the self-signed certificate
     let cert = params
         .self_signed(&key_pair)
@@ -266,8 +391,91 @@ fn generate_akash_certificate(address: &str) -> Result<(Vec<u8>, Vec<u8>, String
 
     tracing::debug!("Generated certificate PEM ({} bytes)", cert_bytes.len());
     tracing::debug!("Generated public key PEM ({} bytes)", pubkey_bytes.len());
+    tracing::debug!("Generated private key PEM ({} bytes)", privkey_bytes.len());
 
-    Ok((cert_bytes, pubkey_bytes, serial))
+    Ok(GeneratedCertificate {
+        cert_pem: cert_bytes,
+        pubkey_pem: pubkey_bytes,
+        privkey_pem: privkey_bytes,
+        serial,
+    })
+}
+
+// ============ Private Key Encryption ============
+
+use chacha20poly1305::{
+    aead::{Aead, NewAead},
+    ChaCha20Poly1305, Key, Nonce,
+};
+use argon2::Argon2;
+
+const ENCRYPTION_KEY_SIZE: usize = 32;
+const NONCE_SIZE: usize = 12;
+const SALT_SIZE: usize = 32;
+
+/// Encrypt private key using ChaCha20Poly1305 with Argon2id key derivation.
+/// Format: salt (32 bytes) || nonce (12 bytes) || ciphertext
+pub fn encrypt_private_key(privkey_pem: &[u8], password: &str) -> Result<Vec<u8>> {
+    // Generate random salt and nonce
+    let mut salt = [0u8; SALT_SIZE];
+    let mut nonce_bytes = [0u8; NONCE_SIZE];
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt);
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut nonce_bytes);
+
+    // Derive key from password using Argon2id
+    let mut key = [0u8; ENCRYPTION_KEY_SIZE];
+    let params = argon2::Params::new(1 << 16, 2, 2, Some(ENCRYPTION_KEY_SIZE))
+        .map_err(|e| anyhow!("Argon2 params error: {}", e))?;
+    let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+    argon2
+        .hash_password_into(password.as_bytes(), &salt, &mut key)
+        .map_err(|e| anyhow!("Key derivation failed: {}", e))?;
+
+    // Encrypt
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(nonce, privkey_pem)
+        .map_err(|e| anyhow!("Encryption failed: {}", e))?;
+
+    // Combine: salt || nonce || ciphertext
+    let mut result = Vec::with_capacity(SALT_SIZE + NONCE_SIZE + ciphertext.len());
+    result.extend_from_slice(&salt);
+    result.extend_from_slice(&nonce_bytes);
+    result.extend_from_slice(&ciphertext);
+
+    Ok(result)
+}
+
+/// Decrypt private key using ChaCha20Poly1305 with Argon2id key derivation.
+/// Input format: salt (32 bytes) || nonce (12 bytes) || ciphertext
+pub fn decrypt_private_key(encrypted: &[u8], password: &str) -> Result<Vec<u8>> {
+    if encrypted.len() < SALT_SIZE + NONCE_SIZE + 16 {
+        return Err(anyhow!("Encrypted data too short"));
+    }
+
+    // Extract components
+    let salt = &encrypted[..SALT_SIZE];
+    let nonce_bytes = &encrypted[SALT_SIZE..SALT_SIZE + NONCE_SIZE];
+    let ciphertext = &encrypted[SALT_SIZE + NONCE_SIZE..];
+
+    // Derive key from password using Argon2id
+    let mut key = [0u8; ENCRYPTION_KEY_SIZE];
+    let params = argon2::Params::new(1 << 16, 2, 2, Some(ENCRYPTION_KEY_SIZE))
+        .map_err(|e| anyhow!("Argon2 params error: {}", e))?;
+    let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+    argon2
+        .hash_password_into(password.as_bytes(), salt, &mut key)
+        .map_err(|e| anyhow!("Key derivation failed: {}", e))?;
+
+    // Decrypt
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+    let nonce = Nonce::from_slice(nonce_bytes);
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| anyhow!("Decryption failed - wrong password or corrupted data"))?;
+
+    Ok(plaintext)
 }
 
 #[cfg(test)]
@@ -275,30 +483,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_certificate_to_workflow_info() {
-        let cert = Certificate {
-            state: State::Valid as i32,
-            cert: b"cert_data".to_vec(),
-            pubkey: b"pubkey_data".to_vec(),
-        };
-
-        let workflow_info = certificate_to_workflow_info("akash1test", &cert, "abc123");
-
-        assert_eq!(workflow_info.owner, "akash1test");
-        assert_eq!(workflow_info.serial, "abc123");
-        assert_eq!(workflow_info.state, AkashCertState::Valid as i32);
-        assert_eq!(workflow_info.cert_pem, b"cert_data");
-        assert_eq!(workflow_info.pubkey, b"pubkey_data");
-    }
-
-    #[test]
     fn test_generate_akash_certificate() {
         let result = generate_akash_certificate("akash1testaddress");
         assert!(result.is_ok());
 
-        let (cert, pubkey, serial) = result.unwrap();
-        assert!(!cert.is_empty());
-        assert!(!pubkey.is_empty());
-        assert_eq!(serial.len(), 32); // 16 bytes hex encoded
+        let generated = result.unwrap();
+        assert!(!generated.cert_pem.is_empty());
+        assert!(!generated.pubkey_pem.is_empty());
+        assert!(!generated.privkey_pem.is_empty());
+        assert_eq!(generated.serial.len(), 32); // 16 bytes hex encoded
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_private_key() {
+        let privkey = b"-----BEGIN PRIVATE KEY-----\ntest data\n-----END PRIVATE KEY-----";
+        let password = "test_password_123";
+
+        // Encrypt
+        let encrypted = encrypt_private_key(privkey, password).unwrap();
+        assert!(encrypted.len() > privkey.len()); // Should be larger due to salt/nonce/tag
+
+        // Decrypt
+        let decrypted = decrypt_private_key(&encrypted, password).unwrap();
+        assert_eq!(decrypted, privkey);
+
+        // Wrong password should fail
+        let wrong_result = decrypt_private_key(&encrypted, "wrong_password");
+        assert!(wrong_result.is_err());
     }
 }
