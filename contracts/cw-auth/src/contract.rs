@@ -11,7 +11,7 @@ use crate::msg::{
 };
 use crate::state::{Config, CONFIG, WHITELIST};
 
-const CONTRACT_NAME: &str = "crates.io:whitelist-authenticator";
+const CONTRACT_NAME: &str = "crates.io:cw-auth";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const DEFAULT_LIMIT: u32 = 100;

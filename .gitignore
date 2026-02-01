@@ -19,6 +19,8 @@ ssh-config.json
 # art processsing
 captures/*
 .opencode/plans
+.claude/skills
+.claude/mcp/*.lock
 archive
 
 work/*

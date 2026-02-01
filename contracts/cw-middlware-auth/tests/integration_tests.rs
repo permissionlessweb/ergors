@@ -34,7 +34,7 @@ fn instantiate_contract(
         sender,
         &msg,
         &[],
-        "auth-registry-updater",
+        "cw-middleware-auth",
         None,
     )
     .unwrap()
@@ -143,7 +143,7 @@ mod tests {
                     sender,
                     &msg,
                     &[],
-                    "auth-registry-updater",
+                    "cw-middleware-auth",
                     None,
                 )
                 .unwrap_err();

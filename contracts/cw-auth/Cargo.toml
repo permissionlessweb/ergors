@@ -1,13 +1,13 @@
 [package]
-name = "auth-registry-updater"
+name = "cw-auth"
 version = "0.1.0"
 edition = "2021"
 authors = ["Ergors Team"]
-description = "CosmWasm contract for controlling who can update the authenticator registry"
+description = "CosmWasm contract for whitelist-based endpoint authentication"
 
 [package.metadata.optimizer]
 builds = [
-    { name = "auth_registry_updater", features = [] }
+    { name = "whitelist_authenticator", features = [] }
 ]
 
 [lib]

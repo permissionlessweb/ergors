@@ -11,7 +11,7 @@ use crate::msg::{
 };
 use crate::state::{Config, AUTHORIZED, CONFIG};
 
-const CONTRACT_NAME: &str = "crates.io:auth-registry-updater";
+const CONTRACT_NAME: &str = "crates.io:cw-middleware-auth";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const DEFAULT_LIMIT: u32 = 100;

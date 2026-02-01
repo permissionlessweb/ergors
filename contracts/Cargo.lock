@@ -148,7 +148,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "auth-registry-updater"
+name = "cw-middleware-auth"
 version = "0.1.0"
 dependencies = [
  "cosmwasm-schema",
@@ -1146,7 +1146,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
-name = "whitelist-authenticator"
+name = "cw-auth"
 version = "0.1.0"
 dependencies = [
  "cosmwasm-schema",

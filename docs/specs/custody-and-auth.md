@@ -273,9 +273,9 @@ Format: `ergors{node_id}_{caller_pubkey_hash}`
 
 ### Provided Contract Templates
 
-#### auth-registry-updater
+#### cw-middleware-auth
 
-> **Source:** [`contracts/auth-registry-updater/`](../../contracts/auth-registry-updater/)
+> **Source:** [`contracts/cw-middleware-auth/`](../../contracts/cw-middleware-auth/)
 
 Controls who can update the authenticator registry itself. Only the coordinator or explicitly authorized addresses can modify registry entries.
 
@@ -308,9 +308,9 @@ Controls who can update the authenticator registry itself. Only the coordinator 
 {"list_authorized": {}}
 ```
 
-#### whitelist-authenticator
+#### cw-auth
 
-> **Source:** [`contracts/whitelist-authenticator/`](../../contracts/whitelist-authenticator/)
+> **Source:** [`contracts/cw-auth/`](../../contracts/cw-auth/)
 
 Whitelist-based endpoint authentication supporting both allowlist mode (default deny) and blocklist mode (default allow).
 
@@ -568,8 +568,8 @@ All types defined in proto files with generated Rust code:
 | Auth module | [`auth/mod.rs`](../../packages/cw-ho/src/auth/mod.rs) |
 | Storage methods | [`storage.rs`](../../packages/cw-ho/src/storage.rs) |
 | Contract manager | [`contracts/manager.rs`](../../packages/cw-ho/src/contracts/manager.rs) |
-| Auth registry updater | [`contracts/auth-registry-updater/`](../../contracts/auth-registry-updater/) |
-| Whitelist authenticator | [`contracts/whitelist-authenticator/`](../../contracts/whitelist-authenticator/) |
+| Auth registry updater | [`contracts/cw-middleware-auth/`](../../contracts/cw-middleware-auth/) |
+| Whitelist authenticator | [`contracts/cw-auth/`](../../contracts/cw-auth/) |
 
 ### Authenticator Proto Types
 
