@@ -3802,6 +3802,57 @@ impl ::prost::Name for ListAkashCertificatesResponse {
         "/ergors.orch.v1.ListAkashCertificatesResponse".into()
     }
 }
+/// Stored certificate entry with encrypted private key
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct StoredAkashCertificate {
+    /// Human-readable label (e.g., "primary", "backup")
+    #[prost(string, tag = "1")]
+    pub label: ::prost::alloc::string::String,
+    /// Certificate serial from chain
+    #[prost(string, tag = "2")]
+    pub serial: ::prost::alloc::string::String,
+    /// Akash address that owns this cert
+    #[prost(string, tag = "3")]
+    pub owner_address: ::prost::alloc::string::String,
+    /// ChaCha20Poly1305 encrypted private key
+    #[prost(bytes = "vec", tag = "4")]
+    pub encrypted_private_key: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "5")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for StoredAkashCertificate {
+    const NAME: &'static str = "StoredAkashCertificate";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.StoredAkashCertificate".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.StoredAkashCertificate".into()
+    }
+}
+/// Certificate store with multiple certificates and default selection
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AkashCertificateStore {
+    #[prost(message, repeated, tag = "1")]
+    pub certificates: ::prost::alloc::vec::Vec<StoredAkashCertificate>,
+    /// Index of default certificate (0-based)
+    #[prost(uint32, tag = "2")]
+    pub default_index: u32,
+    #[prost(message, optional, tag = "3")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for AkashCertificateStore {
+    const NAME: &'static str = "AkashCertificateStore";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.AkashCertificateStore".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.AkashCertificateStore".into()
+    }
+}
 /// Default parameters for grants a granter will issue
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

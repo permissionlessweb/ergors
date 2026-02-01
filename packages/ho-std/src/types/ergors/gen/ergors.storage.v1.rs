@@ -419,3 +419,110 @@ impl ::prost::Name for OperationRecord {
         "/ergors.storage.v1.OperationRecord".into()
     }
 }
+/// Unified encrypted secret type for gateway tokens, API keys, etc.
+/// Uses node identity key encryption (no password required at runtime).
+/// Access is audited via SecretAccessLog.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EncryptedSecret {
+    /// Unique identifier (e.g., "discord_bot_token", "telegram_bot_token")
+    #[prost(string, tag = "1")]
+    pub secret_id: ::prost::alloc::string::String,
+    /// Category for grouping (e.g., "gateway_token", "api_key", "credential")
+    #[prost(string, tag = "2")]
+    pub secret_type: ::prost::alloc::string::String,
+    /// Human-readable label
+    #[prost(string, tag = "3")]
+    pub label: ::prost::alloc::string::String,
+    /// ChaCha20Poly1305 encrypted value (encrypted with node identity key)
+    #[prost(bytes = "vec", tag = "4")]
+    pub encrypted_value: ::prost::alloc::vec::Vec<u8>,
+    /// Encryption nonce (unique per encryption)
+    #[prost(bytes = "vec", tag = "5")]
+    pub nonce: ::prost::alloc::vec::Vec<u8>,
+    /// Encryption method identifier (e.g., "node_key_chacha20poly1305_v1")
+    #[prost(string, tag = "6")]
+    pub encryption_method: ::prost::alloc::string::String,
+    /// When the secret was stored
+    #[prost(message, optional, tag = "7")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// When the secret was last accessed (decrypted)
+    #[prost(message, optional, tag = "8")]
+    pub last_accessed_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Number of times the secret has been accessed
+    #[prost(uint64, tag = "9")]
+    pub access_count: u64,
+    /// Optional metadata (e.g., associated gateway_id, expiry info)
+    #[prost(map = "string, string", tag = "10")]
+    pub metadata: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+impl ::prost::Name for EncryptedSecret {
+    const NAME: &'static str = "EncryptedSecret";
+    const PACKAGE: &'static str = "ergors.storage.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.storage.v1.EncryptedSecret".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.storage.v1.EncryptedSecret".into()
+    }
+}
+/// Collection of encrypted secrets (stored in Cnidarium)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EncryptedSecretStore {
+    #[prost(uint32, tag = "1")]
+    pub version: u32,
+    #[prost(message, repeated, tag = "2")]
+    pub secrets: ::prost::alloc::vec::Vec<EncryptedSecret>,
+    #[prost(message, optional, tag = "3")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "4")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for EncryptedSecretStore {
+    const NAME: &'static str = "EncryptedSecretStore";
+    const PACKAGE: &'static str = "ergors.storage.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.storage.v1.EncryptedSecretStore".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.storage.v1.EncryptedSecretStore".into()
+    }
+}
+/// Audit log entry for secret access
+/// Stored in Cnidarium for immutable audit trail
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SecretAccessLog {
+    /// Which secret was accessed
+    #[prost(string, tag = "1")]
+    pub secret_id: ::prost::alloc::string::String,
+    /// When it was accessed
+    #[prost(message, optional, tag = "2")]
+    pub accessed_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Which component accessed it (e.g., "discord_gateway", "grpc_handler")
+    #[prost(string, tag = "3")]
+    pub accessor: ::prost::alloc::string::String,
+    /// Why it was accessed (e.g., "gateway_start", "config_reload", "health_check")
+    #[prost(string, tag = "4")]
+    pub purpose: ::prost::alloc::string::String,
+    /// Operation result
+    #[prost(bool, tag = "5")]
+    pub success: bool,
+    /// Error message if failed
+    #[prost(string, tag = "6")]
+    pub error: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SecretAccessLog {
+    const NAME: &'static str = "SecretAccessLog";
+    const PACKAGE: &'static str = "ergors.storage.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.storage.v1.SecretAccessLog".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.storage.v1.SecretAccessLog".into()
+    }
+}

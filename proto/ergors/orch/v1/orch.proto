@@ -1585,6 +1585,22 @@ message ListAkashCertificatesResponse {
   string address = 2;  // The queried address
 }
 
+// Stored certificate entry with encrypted private key
+message StoredAkashCertificate {
+  string label = 1;              // Human-readable label (e.g., "primary", "backup")
+  string serial = 2;             // Certificate serial from chain
+  string owner_address = 3;      // Akash address that owns this cert
+  bytes encrypted_private_key = 4;  // ChaCha20Poly1305 encrypted private key
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// Certificate store with multiple certificates and default selection
+message AkashCertificateStore {
+  repeated StoredAkashCertificate certificates = 1;
+  uint32 default_index = 2;      // Index of default certificate (0-based)
+  google.protobuf.Timestamp updated_at = 3;
+}
+
 // ========================================
 // Grant Request System Types
 // ========================================

@@ -22,6 +22,7 @@ ergors [OPTIONS] <COMMAND>
 | `config` | Manage configuration values | set, get, list, init |
 | `manage-auth` | User authentication management | register, revoke |
 | `keys` | Manage Cosmos funding keys | import-mnemonic, list, delete, set-default |
+| `gateway` | Communication gateway management | list, status, enable, disable, discord |
 
 ---
 
@@ -819,6 +820,173 @@ RAG (Retrieval-Augmented Generation) vector database management.
 | `--uri <URI>` | Source URI (default: file path) |
 | `--doc-type <TYPE>` | Document type (markdown, code, text) |
 | `--tags <TAGS>` | Comma-separated tags |
+
+---
+
+## Gateway Commands
+
+Communication gateway management for Discord, Nostr, and other interfaces.
+
+**Note:** Gateway features require the `discord` feature flag: `cargo build --features discord`
+
+### List Gateways
+
+List all registered gateways and their status:
+
+```bash
+ergors gateway list [--json]
+```
+
+**Example Output:**
+
+```
+Communication Gateways
+======================
+  discord (Discord Bot) - connected
+  nostr (Nostr Relay) - disabled
+```
+
+### Gateway Status
+
+Show detailed status for a gateway:
+
+```bash
+ergors gateway status <gateway-id>
+```
+
+**Example:**
+
+```bash
+ergors gateway status discord
+
+Gateway Status: discord
+====================
+Connected:   yes
+Messages:    142
+Last Active: 1706835200
+```
+
+### Enable/Disable Gateway
+
+```bash
+# Enable a gateway
+ergors gateway enable <gateway-id>
+
+# Disable a gateway
+ergors gateway disable <gateway-id>
+```
+
+### Discord Gateway
+
+Discord bot integration for AI chat via slash commands.
+
+#### Configure Bot Token
+
+Set the Discord bot token (encrypted via custody):
+
+```bash
+ergors gateway discord set-token [--token <TOKEN>]
+```
+
+**Notes:**
+- If `--token` is not provided, prompts interactively (hidden input, never in shell history)
+- Token is encrypted using the custody password
+
+#### Manage Allowed Guilds
+
+Control which Discord servers (guilds) can use the bot:
+
+```bash
+# Add guild to allowlist
+ergors gateway discord allow-guild <guild-id>
+
+# Remove guild from allowlist
+ergors gateway discord deny-guild <guild-id>
+```
+
+**Notes:**
+- If no guilds are in the allowlist, the bot responds to all guilds
+- Guild IDs are Discord snowflake IDs (e.g., `123456789012345678`)
+
+#### Show Configuration
+
+Display current Discord configuration (token redacted):
+
+```bash
+ergors gateway discord config [--json]
+```
+
+**Example Output:**
+
+```
+Discord Gateway Configuration
+=============================
+Token:            configured (encrypted)
+Command Prefix:   !
+Respond to @:     true
+Respond to DMs:   false
+
+Allowed Guilds:
+  - 123456789012345678
+  - 987654321098765432
+```
+
+#### Available Slash Commands
+
+Once the bot is configured and enabled, users can interact via Discord:
+
+| Command | Description |
+|---------|-------------|
+| `/prompt <message>` | Send a prompt to the AI |
+| `/thread [name]` | Create a new conversation thread |
+| `/clear` | Clear conversation history in current thread |
+
+### Discord Setup Workflow
+
+```bash
+# 1. Create Discord bot at https://discord.com/developers/applications
+# 2. Enable "Message Content Intent" in Bot settings
+# 3. Copy the bot token
+
+# 4. Configure the gateway
+ergors gateway discord set-token
+# (enter token when prompted)
+
+# 5. Allow specific guilds (optional)
+ergors gateway discord allow-guild 123456789012345678
+
+# 6. Enable the gateway
+ergors gateway enable discord
+
+# 7. Start the engine (gateways start automatically)
+ergors start
+
+# 8. Invite bot to your server using OAuth2 URL with scopes:
+#    - bot
+#    - applications.commands
+```
+
+### Session Management
+
+Each Discord thread maintains its own conversation session:
+
+- Sessions are created automatically when a user first interacts in a thread
+- Use `/thread` to create a new Discord thread with a fresh session
+- Use `/clear` to reset the session in the current thread
+- Sessions persist across bot restarts (stored in Cnidarium)
+
+### gRPC Management RPCs
+
+| RPC Method | Purpose |
+|------------|---------|
+| `ListGateways` | List all registered gateways with status |
+| `GetGatewayStatus` | Get detailed gateway status |
+| `EnableGateway` | Enable a gateway |
+| `DisableGateway` | Disable a gateway |
+| `ConfigureDiscordGateway` | Configure Discord bot token and settings |
+| `AddDiscordAllowedGuild` | Add guild to allowlist |
+| `RemoveDiscordAllowedGuild` | Remove guild from allowlist |
+| `GetDiscordConfig` | Get Discord configuration (token redacted) |
 
 ---
 

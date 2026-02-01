@@ -166,3 +166,58 @@ message OperationRecord {
   optional string session_id = 9;
 }
 
+// ========================================
+// Generic Encrypted Secret Storage
+// ========================================
+
+// Unified encrypted secret type for gateway tokens, API keys, etc.
+// Uses node identity key encryption (no password required at runtime).
+// Access is audited via SecretAccessLog.
+message EncryptedSecret {
+  // Unique identifier (e.g., "discord_bot_token", "telegram_bot_token")
+  string secret_id = 1;
+  // Category for grouping (e.g., "gateway_token", "api_key", "credential")
+  string secret_type = 2;
+  // Human-readable label
+  string label = 3;
+  // ChaCha20Poly1305 encrypted value (encrypted with node identity key)
+  bytes encrypted_value = 4;
+  // Encryption nonce (unique per encryption)
+  bytes nonce = 5;
+  // Encryption method identifier (e.g., "node_key_chacha20poly1305_v1")
+  string encryption_method = 6;
+  // When the secret was stored
+  google.protobuf.Timestamp created_at = 7;
+  // When the secret was last accessed (decrypted)
+  google.protobuf.Timestamp last_accessed_at = 8;
+  // Number of times the secret has been accessed
+  uint64 access_count = 9;
+  // Optional metadata (e.g., associated gateway_id, expiry info)
+  map<string, string> metadata = 10;
+}
+
+// Collection of encrypted secrets (stored in Cnidarium)
+message EncryptedSecretStore {
+  uint32 version = 1;
+  repeated EncryptedSecret secrets = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+// Audit log entry for secret access
+// Stored in Cnidarium for immutable audit trail
+message SecretAccessLog {
+  // Which secret was accessed
+  string secret_id = 1;
+  // When it was accessed
+  google.protobuf.Timestamp accessed_at = 2;
+  // Which component accessed it (e.g., "discord_gateway", "grpc_handler")
+  string accessor = 3;
+  // Why it was accessed (e.g., "gateway_start", "config_reload", "health_check")
+  string purpose = 4;
+  // Operation result
+  bool success = 5;
+  // Error message if failed
+  string error = 6;
+}
+

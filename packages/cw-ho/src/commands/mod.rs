@@ -5,6 +5,7 @@
 //! (e.g., config_cmd, keys, init).
 
 pub mod deploy;
+pub mod gateway;
 pub mod rag;
 pub mod workspace;
 
@@ -24,6 +25,7 @@ pub struct CliContext {
 }
 
 pub use deploy::DeployCmd;
+pub use gateway::GatewayCmd;
 pub use rag::RagCmd;
 pub use workspace::WorkspaceCmd;
 

@@ -30,6 +30,7 @@ This document serves as the central index for all ERGORS specification documents
 | [Open Responses](./OPEN_RESPONSES.md) | Request/response format guide for the `/v1/responses` endpoint and Open Responses compatibility. |
 | [API Authentication](./API.md) | Endpoint reference, authentication requirements, and request examples. |
 | [Proxy Integration](./specs/proxy-integration.md) | Configuring CLI tools to route through the ERGORS proxy for prompt/response capture and retention. |
+| [Gateways](./specs/gateways.md) | Communication gateways (Discord, Nostr, Element) for multi-platform AI access with session tracking and encrypted credentials. |
 
 ## Security & Privacy
 
@@ -84,6 +85,7 @@ docs/
     ├── config.md           # Configuration system
     ├── cosmwasm.md         # Smart contract VM
     ├── custody-and-auth.md # Security & identity
+    ├── gateways.md         # Communication gateways
     ├── git-workspaces.md   # Workspace management
     ├── key-management.md   # Key custody
     ├── logs.md             # Observability

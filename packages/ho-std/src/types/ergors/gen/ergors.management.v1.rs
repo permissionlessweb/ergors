@@ -3193,6 +3193,220 @@ impl ::prost::Name for RegisterSdlTemplateResponse {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListGatewaysRequest {}
+impl ::prost::Name for ListGatewaysRequest {
+    const NAME: &'static str = "ListGatewaysRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListGatewaysRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListGatewaysRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListGatewaysResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub gateways: ::prost::alloc::vec::Vec<GatewayInfo>,
+}
+impl ::prost::Name for ListGatewaysResponse {
+    const NAME: &'static str = "ListGatewaysResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListGatewaysResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListGatewaysResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GatewayInfo {
+    #[prost(string, tag = "1")]
+    pub gateway_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub enabled: bool,
+    #[prost(bool, tag = "4")]
+    pub connected: bool,
+}
+impl ::prost::Name for GatewayInfo {
+    const NAME: &'static str = "GatewayInfo";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GatewayInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GatewayInfo".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetGatewayStatusRequest {
+    #[prost(string, tag = "1")]
+    pub gateway_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GetGatewayStatusRequest {
+    const NAME: &'static str = "GetGatewayStatusRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetGatewayStatusRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetGatewayStatusRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GatewayStatusResponse {
+    #[prost(string, tag = "1")]
+    pub gateway_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub connected: bool,
+    #[prost(uint64, tag = "3")]
+    pub messages_processed: u64,
+    #[prost(int64, tag = "4")]
+    pub last_message_timestamp: i64,
+}
+impl ::prost::Name for GatewayStatusResponse {
+    const NAME: &'static str = "GatewayStatusResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GatewayStatusResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GatewayStatusResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct EnableGatewayRequest {
+    #[prost(string, tag = "1")]
+    pub gateway_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for EnableGatewayRequest {
+    const NAME: &'static str = "EnableGatewayRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.EnableGatewayRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.EnableGatewayRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DisableGatewayRequest {
+    #[prost(string, tag = "1")]
+    pub gateway_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DisableGatewayRequest {
+    const NAME: &'static str = "DisableGatewayRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.DisableGatewayRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.DisableGatewayRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ConfigureDiscordGatewayRequest {
+    /// Will be encrypted
+    #[prost(string, tag = "1")]
+    pub bot_token: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "2")]
+    pub command_prefix: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bool, optional, tag = "3")]
+    pub respond_to_mentions: ::core::option::Option<bool>,
+}
+impl ::prost::Name for ConfigureDiscordGatewayRequest {
+    const NAME: &'static str = "ConfigureDiscordGatewayRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ConfigureDiscordGatewayRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ConfigureDiscordGatewayRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AddDiscordAllowedGuildRequest {
+    #[prost(string, tag = "1")]
+    pub guild_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AddDiscordAllowedGuildRequest {
+    const NAME: &'static str = "AddDiscordAllowedGuildRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.AddDiscordAllowedGuildRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.AddDiscordAllowedGuildRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemoveDiscordAllowedGuildRequest {
+    #[prost(string, tag = "1")]
+    pub guild_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RemoveDiscordAllowedGuildRequest {
+    const NAME: &'static str = "RemoveDiscordAllowedGuildRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RemoveDiscordAllowedGuildRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RemoveDiscordAllowedGuildRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetDiscordConfigRequest {}
+impl ::prost::Name for GetDiscordConfigRequest {
+    const NAME: &'static str = "GetDiscordConfigRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetDiscordConfigRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetDiscordConfigRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetDiscordConfigResponse {
+    /// Token itself is never returned
+    #[prost(bool, tag = "1")]
+    pub token_configured: bool,
+    #[prost(string, repeated, tag = "2")]
+    pub allowed_guild_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "3")]
+    pub allowed_channel_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag = "4")]
+    pub command_prefix: ::prost::alloc::string::String,
+    #[prost(bool, tag = "5")]
+    pub respond_to_mentions: bool,
+    #[prost(bool, tag = "6")]
+    pub respond_to_dms: bool,
+}
+impl ::prost::Name for GetDiscordConfigResponse {
+    const NAME: &'static str = "GetDiscordConfigResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetDiscordConfigResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetDiscordConfigResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum EngineState {
@@ -6037,6 +6251,246 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// List all registered gateways with their status
+        pub async fn list_gateways(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListGatewaysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListGatewaysResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListGateways",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListGateways",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get gateway status and details
+        pub async fn get_gateway_status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetGatewayStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GatewayStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/GetGatewayStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "GetGatewayStatus",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Enable a gateway
+        pub async fn enable_gateway(
+            &mut self,
+            request: impl tonic::IntoRequest<super::EnableGatewayRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/EnableGateway",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "EnableGateway",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Disable a gateway
+        pub async fn disable_gateway(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DisableGatewayRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/DisableGateway",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "DisableGateway",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Configure Discord gateway
+        pub async fn configure_discord_gateway(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ConfigureDiscordGatewayRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ConfigureDiscordGateway",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ConfigureDiscordGateway",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Add Discord allowed guild
+        pub async fn add_discord_allowed_guild(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AddDiscordAllowedGuildRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/AddDiscordAllowedGuild",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "AddDiscordAllowedGuild",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Remove Discord allowed guild
+        pub async fn remove_discord_allowed_guild(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RemoveDiscordAllowedGuildRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RemoveDiscordAllowedGuild",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RemoveDiscordAllowedGuild",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get Discord configuration (token redacted)
+        pub async fn get_discord_config(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetDiscordConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetDiscordConfigResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/GetDiscordConfig",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "GetDiscordConfig",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Request authz grant from coordinator
         pub async fn request_grant(
             &mut self,
@@ -6967,6 +7421,55 @@ pub mod management_service_server {
             request: tonic::Request<super::super::super::orch::v1::RagConfigureRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::super::orch::v1::RagOperationResult>,
+            tonic::Status,
+        >;
+        /// List all registered gateways with their status
+        async fn list_gateways(
+            &self,
+            request: tonic::Request<super::ListGatewaysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListGatewaysResponse>,
+            tonic::Status,
+        >;
+        /// Get gateway status and details
+        async fn get_gateway_status(
+            &self,
+            request: tonic::Request<super::GetGatewayStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GatewayStatusResponse>,
+            tonic::Status,
+        >;
+        /// Enable a gateway
+        async fn enable_gateway(
+            &self,
+            request: tonic::Request<super::EnableGatewayRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Disable a gateway
+        async fn disable_gateway(
+            &self,
+            request: tonic::Request<super::DisableGatewayRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Configure Discord gateway
+        async fn configure_discord_gateway(
+            &self,
+            request: tonic::Request<super::ConfigureDiscordGatewayRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Add Discord allowed guild
+        async fn add_discord_allowed_guild(
+            &self,
+            request: tonic::Request<super::AddDiscordAllowedGuildRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Remove Discord allowed guild
+        async fn remove_discord_allowed_guild(
+            &self,
+            request: tonic::Request<super::RemoveDiscordAllowedGuildRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Get Discord configuration (token redacted)
+        async fn get_discord_config(
+            &self,
+            request: tonic::Request<super::GetDiscordConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetDiscordConfigResponse>,
             tonic::Status,
         >;
         /// Request authz grant from coordinator
@@ -10884,6 +11387,396 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RagConfigureSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListGateways" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListGatewaysSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ListGatewaysRequest>
+                    for ListGatewaysSvc<T> {
+                        type Response = super::ListGatewaysResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListGatewaysRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_gateways(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListGatewaysSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/GetGatewayStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetGatewayStatusSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::GetGatewayStatusRequest>
+                    for GetGatewayStatusSvc<T> {
+                        type Response = super::GatewayStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetGatewayStatusRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::get_gateway_status(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetGatewayStatusSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/EnableGateway" => {
+                    #[allow(non_camel_case_types)]
+                    struct EnableGatewaySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::EnableGatewayRequest>
+                    for EnableGatewaySvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::EnableGatewayRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::enable_gateway(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = EnableGatewaySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/DisableGateway" => {
+                    #[allow(non_camel_case_types)]
+                    struct DisableGatewaySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::DisableGatewayRequest>
+                    for DisableGatewaySvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DisableGatewayRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::disable_gateway(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DisableGatewaySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ConfigureDiscordGateway" => {
+                    #[allow(non_camel_case_types)]
+                    struct ConfigureDiscordGatewaySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ConfigureDiscordGatewayRequest>
+                    for ConfigureDiscordGatewaySvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::ConfigureDiscordGatewayRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::configure_discord_gateway(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ConfigureDiscordGatewaySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/AddDiscordAllowedGuild" => {
+                    #[allow(non_camel_case_types)]
+                    struct AddDiscordAllowedGuildSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::AddDiscordAllowedGuildRequest>
+                    for AddDiscordAllowedGuildSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AddDiscordAllowedGuildRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::add_discord_allowed_guild(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = AddDiscordAllowedGuildSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RemoveDiscordAllowedGuild" => {
+                    #[allow(non_camel_case_types)]
+                    struct RemoveDiscordAllowedGuildSvc<T: ManagementService>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::RemoveDiscordAllowedGuildRequest,
+                    > for RemoveDiscordAllowedGuildSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::RemoveDiscordAllowedGuildRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::remove_discord_allowed_guild(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RemoveDiscordAllowedGuildSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/GetDiscordConfig" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetDiscordConfigSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::GetDiscordConfigRequest>
+                    for GetDiscordConfigSvc<T> {
+                        type Response = super::GetDiscordConfigResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetDiscordConfigRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::get_discord_config(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetDiscordConfigSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

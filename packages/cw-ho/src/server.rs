@@ -48,6 +48,28 @@ impl Server {
         self,
         shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
     ) -> HoResult<()> {
+        // Start gateway manager event loop if configured
+        let gateway_manager_for_shutdown = self.state.gm.clone();
+        let gateway_handle = if let Some(ref gm) = self.state.gm {
+            let gm = Arc::clone(gm);
+
+            // Start all enabled gateways
+            if let Err(e) = gm.start_all().await {
+                error!("Failed to start gateways: {}", e);
+            } else {
+                info!("🌐 Gateway manager started");
+            }
+
+            // Spawn event loop
+            Some(tokio::spawn(async move {
+                if let Err(e) = gm.run().await {
+                    error!("Gateway manager error: {}", e);
+                }
+            }))
+        } else {
+            None
+        };
+
         // Spawn deployment cache refresh background task
         let cache_refresh_handle = {
             let storage = self.state.s.clone();
@@ -178,6 +200,17 @@ impl Server {
         // Stop cache refresh task
         cache_refresh_handle.abort();
 
+        // Stop gateway manager
+        if let Some(handle) = gateway_handle {
+            if let Some(gm) = gateway_manager_for_shutdown {
+                if let Err(e) = gm.stop_all().await {
+                    error!("Error stopping gateways: {}", e);
+                }
+            }
+            handle.abort();
+            info!("🌐 Gateway manager stopped");
+        }
+
         info!("HTTP server shut down gracefully");
         Ok(())
     }
@@ -275,10 +308,16 @@ impl Server {
         let akash_context =
             Self::init_akash_context(&c, &storage_arc, custody_password.as_deref()).await;
 
+        // Create LLM router
+        let llm_router = Arc::new(LlmRouter::new(&storage_arc.cs.latest_snapshot(), c.llm().deref()).await?);
+
+        // Initialize gateway manager (for Discord, Nostr, etc.)
+        let gateway_manager = Self::init_gateway_manager(&llm_router, &storage_arc, &c).await;
+
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
-                Arc::new(LlmRouter::new(&storage_arc.cs.latest_snapshot(), c.llm().deref()).await?),
+                llm_router,
                 // s == storage layer
                 storage_arc,
                 // nm == network manifold
@@ -293,11 +332,55 @@ impl Server {
                 ))),
                 // akash == Akash deployment context (optional)
                 akash_context,
+                // gm == gateway manager (optional)
+                gateway_manager,
                 // wasm == WASM runtime
                 #[cfg(feature = "cw")]
                 wasm_runtime,
             ),
         })
+    }
+
+    /// Initialize gateway manager for communication interfaces (Discord, Nostr, etc.)
+    ///
+    /// The gateway manager handles:
+    /// - Registering gateway modules (Discord bot, Nostr relays, etc.)
+    /// - Routing incoming messages to the LLM router
+    /// - Sending responses back through the appropriate gateway
+    async fn init_gateway_manager(
+        router: &Arc<LlmRouter>,
+        storage: &Arc<ErgorsStorage>,
+        config: &ErgorsConfig,
+    ) -> Option<Arc<crate::gateway::GatewayManager>> {
+        use crate::gateway::GatewayManager;
+        use ho_std::traits::HoConfigTrait;
+
+        let manager = Arc::new(GatewayManager::new(router.clone(), storage.clone()));
+
+        // Get node pubkey for decrypting gateway secrets
+        let node_pubkey = config.identity().public_key.clone();
+
+        // Register Discord gateway if feature is enabled
+        #[cfg(feature = "discord")]
+        {
+            use crate::gateway::discord::DiscordGateway;
+
+            match DiscordGateway::from_storage(storage, node_pubkey.as_deref()).await {
+                Ok(discord) => {
+                    manager.register(Arc::new(discord)).await;
+                    info!("📱 Discord gateway registered");
+                }
+                Err(e) => {
+                    warn!("⚠️  Failed to initialize Discord gateway: {}", e);
+                }
+            }
+        }
+
+        // Future: Register Nostr gateway
+        // #[cfg(feature = "nostr")]
+        // { ... }
+
+        Some(manager)
     }
 
     /// Initialize Akash deployment context if config and keys are available.

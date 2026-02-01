@@ -23,9 +23,10 @@
 
 mod domain;
 pub mod file_ops;
+pub mod gateway;
 pub mod message;
 
-pub use {domain::*, file_ops::*, message::*};
+pub use {domain::*, file_ops::*, gateway::*, message::*};
 
 use crate::{
     error::HoResult,

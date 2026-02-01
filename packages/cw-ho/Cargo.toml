@@ -7,9 +7,10 @@ description = "Minimal prompt capture service with Cnidarium storage"
 license = "MIT"
 
 [features]
-default = ["cw"]
+default = ["cw","discord"]
 cw = []
 testing = []
+discord = ["serenity", "poise"]
 
 
 [[bin]]
@@ -23,6 +24,7 @@ ergors-rag = { path = "../ergors-rag", features = ["openai"] }
 anyhow = { workspace = true }
 argon2 = { workspace = true }
 async-stream = { workspace = true }
+async-trait = { workspace = true }
 axum = { workspace = true }
 base64 = { workspace = true }
 bip32 = { workspace = true }
@@ -66,6 +68,10 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 serde_yaml = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
+
+# Discord gateway (optional)
+serenity = { version = "0.12", optional = true, default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }
+poise = { version = "0.6", optional = true }
 
 # Unix-specific dependencies
 [target.'cfg(unix)'.dependencies]

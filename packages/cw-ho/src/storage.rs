@@ -67,6 +67,7 @@ const AKASH_LABEL_INDEX_PREFIX: &str = "akash_labels";
 const AKASH_ACTIVE_LABELS_PREFIX: &str = "akash_active_labels";
 const TRUSTED_PROVIDERS_KEY: &str = "config/trusted_providers";
 const AKASH_CERT_KEYS_PREFIX: &str = "akash_cert_keys";
+const AKASH_CERT_STORE_KEY: &str = "akash_certificate_store";
 const AKASH_PROVIDER_INFO_PREFIX: &str = "akash_provider_info";
 // const HEADSTASH: &str = "headstash";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions";
@@ -103,6 +104,13 @@ const SDL_TEMPLATE_CONTRACT_PREFIX: &str = "sdl_template_contracts";
 
 // RAG vector database prefixes
 const RAG_CONFIG_PREFIX: &str = "rag_config/";
+
+// Gateway storage prefixes
+const GATEWAY_CONFIG_PREFIX: &str = "gateway/config";
+const GATEWAY_SESSIONS_PREFIX: &str = "gateway/sessions";
+const GATEWAY_TOKENS_PREFIX: &str = "custody/gateway_tokens";
+const ENCRYPTED_SECRETS_PREFIX: &str = "custody/secrets";
+const SECRET_ACCESS_LOG_PREFIX: &str = "audit/secret_access";
 
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
@@ -1203,7 +1211,7 @@ impl ErgorsStorage {
             list.providers.push(TrustedProvider {
                 address: address.to_string(),
                 label: "default".to_string(),
-                added_at: Some(now.clone()),
+                added_at: Some(now),
             });
             added_count += 1;
         }
@@ -1269,6 +1277,218 @@ impl ErgorsStorage {
         self.cs.commit(delta).await?;
         info!("🗑️  Deleted cert key for {}", owner_address);
         Ok(())
+    }
+
+    // ========================================
+    // Akash Certificate Store (Multi-cert with Default)
+    // ========================================
+
+    /// Get the certificate store.
+    pub async fn get_akash_cert_store(
+        &self,
+    ) -> HoResult<ho_std::types::ergors::orch::v1::AkashCertificateStore> {
+        use ho_std::types::ergors::orch::v1::AkashCertificateStore;
+
+        let snapshot = self.cs.latest_snapshot();
+        match snapshot.get_raw(AKASH_CERT_STORE_KEY).await {
+            Ok(Some(data)) => {
+                let store: AkashCertificateStore = serde_json::from_slice(&data)?;
+                Ok(store)
+            }
+            Ok(None) => Ok(AkashCertificateStore {
+                certificates: vec![],
+                default_index: 0,
+                updated_at: None,
+            }),
+            Err(e) => Err(HoError::Storage(format!(
+                "Failed to get certificate store: {}",
+                e
+            ))),
+        }
+    }
+
+    /// Store the certificate store.
+    pub async fn put_akash_cert_store(
+        &self,
+        store: &ho_std::types::ergors::orch::v1::AkashCertificateStore,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let data = serde_json::to_vec(store)?;
+        delta.put_raw(AKASH_CERT_STORE_KEY.to_string(), data);
+        self.cs.commit(delta).await?;
+        info!(
+            "💾 Stored certificate store ({} certs, default: {})",
+            store.certificates.len(),
+            store.default_index
+        );
+        Ok(())
+    }
+
+    /// Add a certificate to the store.
+    /// If this is the first certificate, it becomes the default.
+    pub async fn add_akash_cert(
+        &self,
+        label: &str,
+        serial: &str,
+        owner_address: &str,
+        encrypted_private_key: &[u8],
+    ) -> HoResult<u32> {
+        use ho_std::types::ergors::orch::v1::StoredAkashCertificate;
+
+        let mut store = self.get_akash_cert_store().await?;
+
+        // Check for duplicate serial
+        if store.certificates.iter().any(|c| c.serial == serial) {
+            return Err(HoError::Storage(format!(
+                "Certificate with serial {} already exists",
+                serial
+            )));
+        }
+
+        let now = pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+            nanos: 0,
+        };
+
+        let index = store.certificates.len() as u32;
+
+        store.certificates.push(StoredAkashCertificate {
+            label: label.to_string(),
+            serial: serial.to_string(),
+            owner_address: owner_address.to_string(),
+            encrypted_private_key: encrypted_private_key.to_vec(),
+            created_at: Some(now),
+        });
+        store.updated_at = Some(now);
+
+        self.put_akash_cert_store(&store).await?;
+        info!(
+            "📜 Added certificate '{}' (serial: {}) at index {}",
+            label, serial, index
+        );
+        Ok(index)
+    }
+
+    /// Remove a certificate by index.
+    /// If the removed cert was default, default moves to index 0 (or stays if store is empty).
+    pub async fn remove_akash_cert(&self, index: u32) -> HoResult<()> {
+        let mut store = self.get_akash_cert_store().await?;
+
+        if index as usize >= store.certificates.len() {
+            return Err(HoError::Storage(format!(
+                "Certificate index {} out of bounds (have {} certs)",
+                index,
+                store.certificates.len()
+            )));
+        }
+
+        let removed = store.certificates.remove(index as usize);
+
+        // Adjust default index
+        if store.default_index == index {
+            store.default_index = 0;
+        } else if store.default_index > index {
+            store.default_index -= 1;
+        }
+
+        let now = pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+            nanos: 0,
+        };
+        store.updated_at = Some(now);
+
+        self.put_akash_cert_store(&store).await?;
+        info!(
+            "🗑️  Removed certificate '{}' (serial: {}) from index {}",
+            removed.label, removed.serial, index
+        );
+        Ok(())
+    }
+
+    /// Set the default certificate by index.
+    pub async fn set_default_akash_cert(&self, index: u32) -> HoResult<()> {
+        let mut store = self.get_akash_cert_store().await?;
+
+        if index as usize >= store.certificates.len() {
+            return Err(HoError::Storage(format!(
+                "Certificate index {} out of bounds (have {} certs)",
+                index,
+                store.certificates.len()
+            )));
+        }
+
+        store.default_index = index;
+
+        let now = pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+            nanos: 0,
+        };
+        store.updated_at = Some(now);
+
+        self.put_akash_cert_store(&store).await?;
+
+        let cert = &store.certificates[index as usize];
+        info!(
+            "✅ Set default certificate to index {} ('{}', serial: {})",
+            index, cert.label, cert.serial
+        );
+        Ok(())
+    }
+
+    /// Get the default certificate.
+    pub async fn get_default_akash_cert(
+        &self,
+    ) -> HoResult<Option<ho_std::types::ergors::orch::v1::StoredAkashCertificate>> {
+        let store = self.get_akash_cert_store().await?;
+
+        if store.certificates.is_empty() {
+            return Ok(None);
+        }
+
+        let index = store.default_index as usize;
+        if index >= store.certificates.len() {
+            // Fall back to first cert if default is out of bounds
+            return Ok(Some(store.certificates[0].clone()));
+        }
+
+        Ok(Some(store.certificates[index].clone()))
+    }
+
+    /// Get a certificate by index.
+    pub async fn get_akash_cert_by_index(
+        &self,
+        index: u32,
+    ) -> HoResult<Option<ho_std::types::ergors::orch::v1::StoredAkashCertificate>> {
+        let store = self.get_akash_cert_store().await?;
+
+        if index as usize >= store.certificates.len() {
+            return Ok(None);
+        }
+
+        Ok(Some(store.certificates[index as usize].clone()))
+    }
+
+    /// List all certificates with their indices.
+    pub async fn list_akash_certs(
+        &self,
+    ) -> HoResult<Vec<(u32, ho_std::types::ergors::orch::v1::StoredAkashCertificate)>> {
+        let store = self.get_akash_cert_store().await?;
+
+        Ok(store
+            .certificates
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| (i as u32, c))
+            .collect())
     }
 
     // ========================================
@@ -2399,6 +2619,288 @@ impl ErgorsStorage {
         // For now, return empty list
         let _ = limit;
         Ok((vec![], 0))
+    }
+
+    // ============================================
+    // Gateway Storage Methods
+    // ============================================
+
+    /// Get gateway configuration by ID.
+    pub async fn get_gateway_config(
+        &self,
+        gateway_id: &str,
+    ) -> HoResult<Option<ho_std::types::ergors::gateway::v1::GatewayConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(GATEWAY_CONFIG_PREFIX, gateway_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let config: ho_std::types::ergors::gateway::v1::GatewayConfig =
+                    serde_json::from_slice(&data)?;
+                Ok(Some(config))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get gateway config {}: {}", gateway_id, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Store gateway configuration.
+    pub async fn put_gateway_config(
+        &self,
+        config: &ho_std::types::ergors::gateway::v1::GatewayConfig,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(GATEWAY_CONFIG_PREFIX, &config.gateway_id);
+        let data = serde_json::to_vec(config)?;
+        delta.put_raw(key, data);
+        self.cs.commit(delta).await?;
+        info!("🌐 Stored gateway config: {}", config.gateway_id);
+        Ok(())
+    }
+
+    /// List all gateway configurations.
+    pub async fn list_gateway_configs(
+        &self,
+    ) -> HoResult<Vec<ho_std::types::ergors::gateway::v1::GatewayConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut results = Vec::new();
+        let mut stream = snapshot.prefix_raw(GATEWAY_CONFIG_PREFIX);
+
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, value)) => {
+                    match serde_json::from_slice::<ho_std::types::ergors::gateway::v1::GatewayConfig>(
+                        &value,
+                    ) {
+                        Ok(config) => results.push(config),
+                        Err(e) => warn!("Failed to deserialize gateway config: {}", e),
+                    }
+                }
+                Err(e) => warn!("Error reading gateway config stream: {}", e),
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Get session ID for a gateway thread/channel.
+    pub async fn get_gateway_session(
+        &self,
+        gateway_id: &str,
+        thread_id: &str,
+    ) -> HoResult<Option<String>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key2(GATEWAY_SESSIONS_PREFIX, gateway_id, thread_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let session_id = String::from_utf8(data)
+                    .map_err(|e| HoError::Storage(format!("Invalid session ID: {}", e)))?;
+                Ok(Some(session_id))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get gateway session {}:{}: {}", gateway_id, thread_id, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Get or create a session for a gateway thread.
+    pub async fn get_or_create_gateway_session(
+        &self,
+        gateway_id: &str,
+        thread_id: &str,
+    ) -> HoResult<String> {
+        if let Some(session_id) = self.get_gateway_session(gateway_id, thread_id).await? {
+            return Ok(session_id);
+        }
+        self.create_gateway_session(gateway_id, thread_id).await
+    }
+
+    /// Create a new session for a gateway thread.
+    pub async fn create_gateway_session(
+        &self,
+        gateway_id: &str,
+        thread_id: &str,
+    ) -> HoResult<String> {
+        let session_id = format!("gw-{}-{}", gateway_id, Uuid::new_v4());
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key2(GATEWAY_SESSIONS_PREFIX, gateway_id, thread_id);
+        delta.put_raw(key, session_id.as_bytes().to_vec());
+        self.cs.commit(delta).await?;
+        info!("🌐 Created gateway session: {} for {}:{}", session_id, gateway_id, thread_id);
+        Ok(session_id)
+    }
+
+    /// Store an encrypted gateway token.
+    pub async fn store_encrypted_gateway_token(
+        &self,
+        gateway_id: &str,
+        encrypted_token: &[u8],
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(GATEWAY_TOKENS_PREFIX, gateway_id);
+        delta.put_raw(key, encrypted_token.to_vec());
+        self.cs.commit(delta).await?;
+        info!("🔐 Stored encrypted token for gateway: {}", gateway_id);
+        Ok(())
+    }
+
+    /// Get encrypted gateway token.
+    pub async fn get_encrypted_gateway_token(&self, gateway_id: &str) -> HoResult<Option<Vec<u8>>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(GATEWAY_TOKENS_PREFIX, gateway_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => Ok(Some(data)),
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get encrypted gateway token {}: {}", gateway_id, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    // ===== Encrypted Secret Storage (v2 - unified, audited) =====
+
+    /// Store an encrypted secret with audit logging.
+    /// Uses the new EncryptedSecret proto type for unified secret management.
+    pub async fn store_encrypted_secret(
+        &self,
+        secret: &EncryptedSecret,
+        accessor: &str,
+        purpose: &str,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(ENCRYPTED_SECRETS_PREFIX, &secret.secret_id);
+
+        let data = serde_json::to_vec(secret)?;
+        delta.put_raw(key, data);
+
+        // Log the storage operation
+        let log = SecretAccessLog {
+            secret_id: secret.secret_id.clone(),
+            accessed_at: Some(pbjson_types::Timestamp {
+                seconds: chrono::Utc::now().timestamp(),
+                nanos: 0,
+            }),
+            accessor: accessor.to_string(),
+            purpose: format!("store: {}", purpose),
+            success: true,
+            error: String::new(),
+        };
+        let log_key = format!(
+            "{}/{}:{}",
+            SECRET_ACCESS_LOG_PREFIX,
+            secret.secret_id,
+            chrono::Utc::now().timestamp_millis()
+        );
+        let log_data = serde_json::to_vec(&log)?;
+        delta.put_raw(log_key, log_data);
+
+        self.cs.commit(delta).await?;
+        info!("🔐 Stored encrypted secret: {} (by {})", secret.secret_id, accessor);
+        Ok(())
+    }
+
+    /// Get an encrypted secret by ID with audit logging.
+    pub async fn get_encrypted_secret(
+        &self,
+        secret_id: &str,
+        accessor: &str,
+        purpose: &str,
+    ) -> HoResult<Option<EncryptedSecret>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(ENCRYPTED_SECRETS_PREFIX, secret_id);
+
+        let result = match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let mut secret: EncryptedSecret = serde_json::from_slice(&data)?;
+                // Update access metadata
+                secret.last_accessed_at = Some(pbjson_types::Timestamp {
+                    seconds: chrono::Utc::now().timestamp(),
+                    nanos: 0,
+                });
+                secret.access_count += 1;
+                Ok(Some(secret))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(ho_std::error::HoError::Anyhow(e)),
+        };
+
+        // Log the access attempt (even if failed/not found)
+        let success = result.as_ref().map(|r| r.is_some()).unwrap_or(false);
+        let error = if result.is_err() {
+            format!("{:?}", result.as_ref().err())
+        } else if !success {
+            "not_found".to_string()
+        } else {
+            String::new()
+        };
+
+        let log = SecretAccessLog {
+            secret_id: secret_id.to_string(),
+            accessed_at: Some(pbjson_types::Timestamp {
+                seconds: chrono::Utc::now().timestamp(),
+                nanos: 0,
+            }),
+            accessor: accessor.to_string(),
+            purpose: format!("get: {}", purpose),
+            success,
+            error,
+        };
+
+        // Store log in separate delta (don't fail main operation if logging fails)
+        let log_key = format!(
+            "{}/{}:{}",
+            SECRET_ACCESS_LOG_PREFIX,
+            secret_id,
+            chrono::Utc::now().timestamp_millis()
+        );
+        if let Ok(log_data) = serde_json::to_vec(&log) {
+            let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+            delta.put_raw(log_key, log_data);
+            let _ = self.cs.commit(delta).await;
+        }
+
+        if success {
+            debug!("🔐 Retrieved encrypted secret: {} (by {})", secret_id, accessor);
+        }
+        result
+    }
+
+    /// List all secret access logs for audit purposes.
+    pub async fn list_secret_access_logs(
+        &self,
+        secret_id: Option<&str>,
+        limit: usize,
+    ) -> HoResult<Vec<SecretAccessLog>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = if let Some(id) = secret_id {
+            format!("{}/{}:", SECRET_ACCESS_LOG_PREFIX, id)
+        } else {
+            format!("{}/", SECRET_ACCESS_LOG_PREFIX)
+        };
+
+        let mut stream = snapshot.prefix_raw(&prefix);
+        let mut logs = Vec::new();
+
+        while let Some(result) = stream.next().await {
+            if logs.len() >= limit {
+                break;
+            }
+            if let Ok((_key, data)) = result {
+                if let Ok(log) = serde_json::from_slice::<SecretAccessLog>(&data) {
+                    logs.push(log);
+                }
+            }
+        }
+
+        Ok(logs)
     }
 }
 

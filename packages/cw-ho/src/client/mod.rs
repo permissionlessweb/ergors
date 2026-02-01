@@ -80,6 +80,18 @@ use ho_std::types::ergors::management::v1::{
     TokenLabel,
     TokenList,
     TokenResponse,
+    // Gateway types
+    ListGatewaysRequest,
+    ListGatewaysResponse,
+    GetGatewayStatusRequest,
+    GatewayStatusResponse,
+    EnableGatewayRequest,
+    DisableGatewayRequest,
+    ConfigureDiscordGatewayRequest,
+    AddDiscordAllowedGuildRequest,
+    RemoveDiscordAllowedGuildRequest,
+    GetDiscordConfigRequest,
+    GetDiscordConfigResponse,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
 use ho_std::types::ergors::orch::v1::{
@@ -1217,6 +1229,115 @@ impl ManagementClient {
             })
             .await
             .context("Failed to configure embedder")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ Gateway Management ============
+
+    /// List all registered gateways
+    pub async fn list_gateways(&mut self) -> Result<ListGatewaysResponse> {
+        let response = self
+            .inner
+            .list_gateways(ListGatewaysRequest {})
+            .await
+            .context("Failed to list gateways")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Get gateway status
+    pub async fn get_gateway_status(&mut self, gateway_id: &str) -> Result<GatewayStatusResponse> {
+        let response = self
+            .inner
+            .get_gateway_status(GetGatewayStatusRequest {
+                gateway_id: gateway_id.to_string(),
+            })
+            .await
+            .context("Failed to get gateway status")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Enable a gateway
+    pub async fn enable_gateway(&mut self, gateway_id: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .enable_gateway(EnableGatewayRequest {
+                gateway_id: gateway_id.to_string(),
+            })
+            .await
+            .context("Failed to enable gateway")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Disable a gateway
+    pub async fn disable_gateway(&mut self, gateway_id: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .disable_gateway(DisableGatewayRequest {
+                gateway_id: gateway_id.to_string(),
+            })
+            .await
+            .context("Failed to disable gateway")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Configure Discord gateway
+    pub async fn configure_discord_gateway(
+        &mut self,
+        bot_token: &str,
+        command_prefix: Option<&str>,
+        respond_to_mentions: Option<bool>,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .configure_discord_gateway(ConfigureDiscordGatewayRequest {
+                bot_token: bot_token.to_string(),
+                command_prefix: command_prefix.map(|s| s.to_string()),
+                respond_to_mentions,
+            })
+            .await
+            .context("Failed to configure Discord gateway")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Add Discord allowed guild
+    pub async fn add_discord_allowed_guild(&mut self, guild_id: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .add_discord_allowed_guild(AddDiscordAllowedGuildRequest {
+                guild_id: guild_id.to_string(),
+            })
+            .await
+            .context("Failed to add Discord allowed guild")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Remove Discord allowed guild
+    pub async fn remove_discord_allowed_guild(&mut self, guild_id: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .remove_discord_allowed_guild(RemoveDiscordAllowedGuildRequest {
+                guild_id: guild_id.to_string(),
+            })
+            .await
+            .context("Failed to remove Discord allowed guild")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Get Discord configuration (token redacted)
+    pub async fn get_discord_config(&mut self) -> Result<GetDiscordConfigResponse> {
+        let response = self
+            .inner
+            .get_discord_config(GetDiscordConfigRequest {})
+            .await
+            .context("Failed to get Discord config")?;
 
         Ok(response.into_inner())
     }

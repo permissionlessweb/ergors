@@ -178,6 +178,27 @@ service ManagementService {
   rpc RagConfigure(ergors.orch.v1.RagConfigureRequest) returns (ergors.orch.v1.RagOperationResult);
 
   // ============================================
+  // Communication Gateway Management
+  // ============================================
+
+  // List all registered gateways with their status
+  rpc ListGateways(ListGatewaysRequest) returns (ListGatewaysResponse);
+  // Get gateway status and details
+  rpc GetGatewayStatus(GetGatewayStatusRequest) returns (GatewayStatusResponse);
+  // Enable a gateway
+  rpc EnableGateway(EnableGatewayRequest) returns (OperationResult);
+  // Disable a gateway
+  rpc DisableGateway(DisableGatewayRequest) returns (OperationResult);
+  // Configure Discord gateway
+  rpc ConfigureDiscordGateway(ConfigureDiscordGatewayRequest) returns (OperationResult);
+  // Add Discord allowed guild
+  rpc AddDiscordAllowedGuild(AddDiscordAllowedGuildRequest) returns (OperationResult);
+  // Remove Discord allowed guild
+  rpc RemoveDiscordAllowedGuild(RemoveDiscordAllowedGuildRequest) returns (OperationResult);
+  // Get Discord configuration (token redacted)
+  rpc GetDiscordConfig(GetDiscordConfigRequest) returns (GetDiscordConfigResponse);
+
+  // ============================================
   // Authz/Feegrant Management
   // ============================================
 
@@ -1400,4 +1421,65 @@ message RegisterSdlTemplateRequest {
 message RegisterSdlTemplateResponse {
   bool success = 1;
   string message = 2;
+}
+
+// ============================================
+// Gateway Management Messages
+// ============================================
+
+message ListGatewaysRequest {}
+
+message ListGatewaysResponse {
+  repeated GatewayInfo gateways = 1;
+}
+
+message GatewayInfo {
+  string gateway_id = 1;
+  string name = 2;
+  bool enabled = 3;
+  bool connected = 4;
+}
+
+message GetGatewayStatusRequest {
+  string gateway_id = 1;
+}
+
+message GatewayStatusResponse {
+  string gateway_id = 1;
+  bool connected = 2;
+  uint64 messages_processed = 3;
+  int64 last_message_timestamp = 4;
+}
+
+message EnableGatewayRequest {
+  string gateway_id = 1;
+}
+
+message DisableGatewayRequest {
+  string gateway_id = 1;
+}
+
+message ConfigureDiscordGatewayRequest {
+  string bot_token = 1;  // Will be encrypted
+  optional string command_prefix = 2;
+  optional bool respond_to_mentions = 3;
+}
+
+message AddDiscordAllowedGuildRequest {
+  string guild_id = 1;
+}
+
+message RemoveDiscordAllowedGuildRequest {
+  string guild_id = 1;
+}
+
+message GetDiscordConfigRequest {}
+
+message GetDiscordConfigResponse {
+  bool token_configured = 1;  // Token itself is never returned
+  repeated string allowed_guild_ids = 2;
+  repeated string allowed_channel_ids = 3;
+  string command_prefix = 4;
+  bool respond_to_mentions = 5;
+  bool respond_to_dms = 6;
 }

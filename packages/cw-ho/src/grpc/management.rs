@@ -141,6 +141,19 @@ use ho_std::types::ergors::management::v1::{
     DeleteCosmosKeyRequest,
     SetDefaultCosmosKeyRequest,
     CosmosKeyInfo,
+    // Gateway management types
+    ListGatewaysRequest,
+    ListGatewaysResponse,
+    GatewayInfo,
+    GetGatewayStatusRequest,
+    GatewayStatusResponse,
+    EnableGatewayRequest,
+    DisableGatewayRequest,
+    ConfigureDiscordGatewayRequest,
+    AddDiscordAllowedGuildRequest,
+    RemoveDiscordAllowedGuildRequest,
+    GetDiscordConfigRequest,
+    GetDiscordConfigResponse,
 };
 use ho_std::types::ergors::orch::v1::{
     AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep, ConfiguredSdl,
@@ -159,9 +172,11 @@ use ho_std::types::ergors::orch::v1::{
     RagListSourcesRequest, RagListSourcesResponse, RagConfigureRequest, RagSearchResult, RagSourceInfo,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
+use ho_std::types::ergors::storage::v1::EncryptedSecret;
 use ho_std::keys::cosmos::cosmos_address_from_pubkey;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use crate::deploy::cosmos_client::{CosmosClient, CosmosEndpoints};
+use crate::gateway::crypto::{encrypt_gateway_secret, GATEWAY_SECRET_ENCRYPTION_METHOD};
 use pbjson_types;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -4220,6 +4235,344 @@ impl ManagementService for ManagementServiceImpl {
         #[cfg(not(feature = "cw"))]
         {
             Err(Status::unimplemented("CosmWasm support not enabled"))
+        }
+    }
+
+    // ============ Gateway Management ============
+
+    /// List all registered gateways
+    async fn list_gateways(
+        &self,
+        _request: Request<ListGatewaysRequest>,
+    ) -> Result<Response<ListGatewaysResponse>, Status> {
+        tracing::info!("Listing registered gateways");
+
+        let mut gateways = vec![];
+
+        // Query actual runtime state from GatewayManager
+        if let Some(ref gm) = self.state.gm {
+            let runtime_gateways = gm.list_gateways().await;
+            for gw in runtime_gateways {
+                // Merge with config state
+                let enabled = self.state.s
+                    .get_gateway_config(&gw.gateway_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|c| c.enabled)
+                    .unwrap_or(false);
+
+                gateways.push(GatewayInfo {
+                    gateway_id: gw.gateway_id,
+                    name: gw.name,
+                    enabled,
+                    connected: gw.connected, // Real runtime state
+                });
+            }
+        } else {
+            // Fallback: check config only (no runtime manager)
+            if let Ok(Some(config)) = self.state.s.get_gateway_config("discord").await {
+                gateways.push(GatewayInfo {
+                    gateway_id: "discord".to_string(),
+                    name: "Discord Bot".to_string(),
+                    enabled: config.enabled,
+                    connected: false, // No runtime manager available
+                });
+            }
+        }
+
+        Ok(Response::new(ListGatewaysResponse { gateways }))
+    }
+
+    /// Get gateway status
+    async fn get_gateway_status(
+        &self,
+        request: Request<GetGatewayStatusRequest>,
+    ) -> Result<Response<GatewayStatusResponse>, Status> {
+        let req = request.into_inner();
+        tracing::info!("Getting status for gateway: {}", req.gateway_id);
+
+        // Query actual runtime state from GatewayManager
+        let connected = if let Some(ref gm) = self.state.gm {
+            gm.list_gateways()
+                .await
+                .into_iter()
+                .find(|g| g.gateway_id == req.gateway_id)
+                .map(|g| g.connected)
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        // Get metrics from GatewayManager
+        let (messages_processed, last_message_timestamp) = if let Some(ref gm) = self.state.gm {
+            gm.get_gateway_metrics(&req.gateway_id)
+                .await
+                .unwrap_or((0, 0))
+        } else {
+            (0, 0)
+        };
+
+        Ok(Response::new(GatewayStatusResponse {
+            gateway_id: req.gateway_id,
+            connected,
+            messages_processed,
+            last_message_timestamp: last_message_timestamp as i64,
+        }))
+    }
+
+    /// Enable a gateway
+    async fn enable_gateway(
+        &self,
+        request: Request<EnableGatewayRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+        tracing::info!("Enabling gateway: {}", req.gateway_id);
+
+        // Get current config or create default
+        let mut config = self
+            .state
+            .s
+            .get_gateway_config(&req.gateway_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get gateway config: {}", e)))?
+            .unwrap_or_else(|| ho_std::types::ergors::gateway::v1::GatewayConfig {
+                gateway_id: req.gateway_id.clone(),
+                gateway_type: req.gateway_id.clone(),
+                enabled: false,
+                settings: std::collections::HashMap::new(),
+            });
+
+        config.enabled = true;
+
+        self.state
+            .s
+            .put_gateway_config(&config)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to save gateway config: {}", e)))?;
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!("Gateway {} enabled", req.gateway_id),
+        }))
+    }
+
+    /// Disable a gateway
+    async fn disable_gateway(
+        &self,
+        request: Request<DisableGatewayRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+        tracing::info!("Disabling gateway: {}", req.gateway_id);
+
+        if let Ok(Some(mut config)) = self.state.s.get_gateway_config(&req.gateway_id).await {
+            config.enabled = false;
+            self.state
+                .s
+                .put_gateway_config(&config)
+                .await
+                .map_err(|e| Status::internal(format!("Failed to save gateway config: {}", e)))?;
+        }
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!("Gateway {} disabled", req.gateway_id),
+        }))
+    }
+
+    /// Configure Discord gateway
+    async fn configure_discord_gateway(
+        &self,
+        request: Request<ConfigureDiscordGatewayRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        use ho_std::traits::HoConfigTrait;
+
+        let req = request.into_inner();
+        tracing::info!("Configuring Discord gateway");
+
+        // Get node pubkey for encryption
+        let node_pubkey = self.state.c.identity().public_key.clone()
+            .ok_or_else(|| Status::internal("Node public key not available for encryption"))?;
+
+        // Get or create config
+        let mut config = self
+            .state
+            .s
+            .get_gateway_config("discord")
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get gateway config: {}", e)))?
+            .unwrap_or_else(|| ho_std::types::ergors::gateway::v1::GatewayConfig {
+                gateway_id: "discord".to_string(),
+                gateway_type: "discord".to_string(),
+                enabled: false,
+                settings: std::collections::HashMap::new(),
+            });
+
+        // Encrypt and store bot token securely
+        if !req.bot_token.is_empty() {
+            let (encrypted_value, nonce) = encrypt_gateway_secret(&req.bot_token, &node_pubkey)
+                .map_err(Status::internal)?;
+
+            let secret = EncryptedSecret {
+                secret_id: "discord_bot_token".to_string(),
+                secret_type: "gateway_token".to_string(),
+                label: "Discord Bot Token".to_string(),
+                encrypted_value,
+                nonce,
+                encryption_method: GATEWAY_SECRET_ENCRYPTION_METHOD.to_string(),
+                created_at: Some(pbjson_types::Timestamp {
+                    seconds: chrono::Utc::now().timestamp(),
+                    nanos: 0,
+                }),
+                last_accessed_at: None,
+                access_count: 0,
+                metadata: [("gateway_id".to_string(), "discord".to_string())]
+                    .into_iter()
+                    .collect(),
+            };
+
+            self.state
+                .s
+                .store_encrypted_secret(&secret, "grpc_handler", "configure_discord_gateway")
+                .await
+                .map_err(|e| Status::internal(format!("Failed to store encrypted token: {}", e)))?;
+
+            // Store marker in config that token is encrypted (not the actual token)
+            config.settings.insert("bot_token_encrypted".to_string(), "true".to_string());
+            config.settings.remove("bot_token"); // Remove any plaintext token
+        }
+
+        if let Some(prefix) = req.command_prefix {
+            config.settings.insert("command_prefix".to_string(), prefix);
+        }
+
+        if let Some(respond_mentions) = req.respond_to_mentions {
+            config
+                .settings
+                .insert("respond_to_mentions".to_string(), respond_mentions.to_string());
+        }
+
+        self.state
+            .s
+            .put_gateway_config(&config)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to save gateway config: {}", e)))?;
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: "Discord gateway configured".to_string(),
+        }))
+    }
+
+    /// Add Discord allowed guild
+    async fn add_discord_allowed_guild(
+        &self,
+        request: Request<AddDiscordAllowedGuildRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+        tracing::info!("Adding Discord allowed guild: {}", req.guild_id);
+
+        if let Ok(Some(mut config)) = self.state.s.get_gateway_config("discord").await {
+            let mut guilds: Vec<String> = config
+                .settings
+                .get("allowed_guild_ids")
+                .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+                .unwrap_or_default();
+
+            if !guilds.contains(&req.guild_id) {
+                guilds.push(req.guild_id.clone());
+                config.settings.insert("allowed_guild_ids".to_string(), guilds.join(","));
+
+                self.state
+                    .s
+                    .put_gateway_config(&config)
+                    .await
+                    .map_err(|e| Status::internal(format!("Failed to save gateway config: {}", e)))?;
+            }
+
+            Ok(Response::new(OperationResult {
+                success: true,
+                message: format!("Guild {} added to allowlist", req.guild_id),
+            }))
+        } else {
+            Err(Status::not_found("Discord gateway not configured"))
+        }
+    }
+
+    /// Remove Discord allowed guild
+    async fn remove_discord_allowed_guild(
+        &self,
+        request: Request<RemoveDiscordAllowedGuildRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+        tracing::info!("Removing Discord allowed guild: {}", req.guild_id);
+
+        if let Ok(Some(mut config)) = self.state.s.get_gateway_config("discord").await {
+            let guilds: Vec<String> = config
+                .settings
+                .get("allowed_guild_ids")
+                .map(|s| {
+                    s.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty() && x != &req.guild_id)
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            config.settings.insert("allowed_guild_ids".to_string(), guilds.join(","));
+
+            self.state
+                .s
+                .put_gateway_config(&config)
+                .await
+                .map_err(|e| Status::internal(format!("Failed to save gateway config: {}", e)))?;
+
+            Ok(Response::new(OperationResult {
+                success: true,
+                message: format!("Guild {} removed from allowlist", req.guild_id),
+            }))
+        } else {
+            Err(Status::not_found("Discord gateway not configured"))
+        }
+    }
+
+    /// Get Discord configuration (token redacted)
+    async fn get_discord_config(
+        &self,
+        _request: Request<GetDiscordConfigRequest>,
+    ) -> Result<Response<GetDiscordConfigResponse>, Status> {
+        tracing::info!("Getting Discord configuration");
+
+        if let Ok(Some(config)) = self.state.s.get_gateway_config("discord").await {
+            let allowed_guild_ids: Vec<String> = config
+                .settings
+                .get("allowed_guild_ids")
+                .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+                .unwrap_or_default();
+
+            let allowed_channel_ids: Vec<String> = config
+                .settings
+                .get("allowed_channel_ids")
+                .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+                .unwrap_or_default();
+
+            Ok(Response::new(GetDiscordConfigResponse {
+                token_configured: config.settings.contains_key("bot_token"),
+                allowed_guild_ids,
+                allowed_channel_ids,
+                command_prefix: config.settings.get("command_prefix").cloned().unwrap_or_else(|| "!".to_string()),
+                respond_to_mentions: config.settings.get("respond_to_mentions").map(|s| s == "true").unwrap_or(true),
+                respond_to_dms: config.settings.get("respond_to_dms").map(|s| s == "true").unwrap_or(false),
+            }))
+        } else {
+            Ok(Response::new(GetDiscordConfigResponse {
+                token_configured: false,
+                allowed_guild_ids: vec![],
+                allowed_channel_ids: vec![],
+                command_prefix: "!".to_string(),
+                respond_to_mentions: true,
+                respond_to_dms: false,
+            }))
         }
     }
 }

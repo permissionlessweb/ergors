@@ -83,6 +83,7 @@ fn main() -> anyhow::Result<()> {
             &[
                 "./ergors/actions/v1/actions.proto",
                 "./ergors/asset/v1/asset.proto",
+                "./ergors/gateway/v1/gateway.proto",
                 "./ergors/custody/v1/custody.proto",
                 "./ergors/git/v1/git.proto",
                 "./ergors/decaf377_frost/v1/decaf377_frost.proto",

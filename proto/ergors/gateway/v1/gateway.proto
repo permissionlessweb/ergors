@@ -1,0 +1,74 @@
+syntax = "proto3";
+package ergors.gateway.v1;
+
+option go_package = "github.com/ho-rs/ho-proto-go/ergors/gateway/v1;gatewayv1";
+
+// Gateway configuration stored in Cnidarium
+message GatewayConfig {
+  string gateway_id = 1;
+  string gateway_type = 2;  // "discord", "nostr", "element", "bluetooth"
+  bool enabled = 3;
+  map<string, string> settings = 4;  // Type-specific settings
+}
+
+// Incoming message from any gateway
+message GatewayMessage {
+  string gateway_id = 1;
+  string channel_id = 2;      // Discord channel, Nostr relay, etc.
+  string sender_id = 3;       // User identifier
+  string sender_name = 4;     // Display name
+  string content = 5;         // Message text
+  int64 timestamp = 6;
+  map<string, string> metadata = 7;  // Platform-specific extras
+
+  // For threading/context
+  string reply_to_id = 8;     // If replying to previous message
+  string thread_id = 9;       // For threaded conversations
+}
+
+// Response to send back through gateway
+message GatewayResponse {
+  string gateway_id = 1;
+  string channel_id = 2;
+  string recipient_id = 3;
+  string content = 4;
+  string reply_to_id = 5;     // Original message ID to reply to
+
+  // Optional rich content
+  repeated EmbedField embeds = 6;
+  repeated string attachments = 7;
+}
+
+message EmbedField {
+  string title = 1;
+  string value = 2;
+  bool inline = 3;
+}
+
+// Discord-specific configuration
+message DiscordGatewayConfig {
+  string bot_token = 1;       // Encrypted in storage
+  repeated string allowed_guild_ids = 2;  // Empty = all guilds
+  repeated string allowed_channel_ids = 3;
+  string command_prefix = 4;  // Default: "!"
+  bool respond_to_mentions = 5;
+  bool respond_to_dms = 6;
+}
+
+// Nostr-specific configuration (future)
+message NostrGatewayConfig {
+  string private_key = 1;     // Encrypted nsec
+  repeated string relay_urls = 2;
+  repeated string allowed_pubkeys = 3;
+}
+
+// Gateway session tracking (for per-thread conversations)
+message GatewaySession {
+  string session_id = 1;
+  string gateway_id = 2;
+  string thread_id = 3;       // Discord thread/channel ID
+  string user_id = 4;         // Primary user for this session
+  int64 created_at = 5;
+  int64 last_message_at = 6;
+  int32 message_count = 7;
+}

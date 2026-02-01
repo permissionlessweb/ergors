@@ -11,6 +11,7 @@ pub mod contracts;
 pub mod daemon;
 pub mod deploy;
 pub mod distribution;
+pub mod gateway;
 pub mod git;
 pub mod grpc;
 pub mod headstash;
@@ -119,7 +120,8 @@ impl AkashDeploymentContext {
 /// `t` = time\
 /// `c` = variable config\
 /// `akash` = Akash deployment context (optional)\
-/// `wasm` = WASM runtime (optional)
+/// `wasm` = WASM runtime (optional)\
+/// `gm` = gateway manager (optional, for Discord/Nostr/etc.)
 #[derive(Clone)]
 pub struct ErgorsAppState {
     /// r = router
@@ -136,6 +138,8 @@ pub struct ErgorsAppState {
     pub pr: Arc<RwLock<ProxyRouter>>,
     /// akash = Akash deployment context (when Akash config + key store present)
     pub akash: Option<AkashDeploymentContext>,
+    /// gm = gateway manager (when discord or other gateway features enabled)
+    pub gm: Option<Arc<gateway::GatewayManager>>,
     /// wasm = WASM runtime (when cw feature is enabled)
     #[cfg(feature = "cw")]
     pub wasm: Arc<WasmRuntime>,
@@ -150,6 +154,7 @@ impl ErgorsAppState {
         c: ErgorsConfig,
         pr: Arc<RwLock<ProxyRouter>>,
         akash: Option<AkashDeploymentContext>,
+        gm: Option<Arc<gateway::GatewayManager>>,
         #[cfg(feature = "cw")] wasm: Arc<WasmRuntime>,
     ) -> Self {
         Self {
@@ -160,6 +165,7 @@ impl ErgorsAppState {
             c,
             pr,
             akash,
+            gm,
             #[cfg(feature = "cw")]
             wasm,
         }

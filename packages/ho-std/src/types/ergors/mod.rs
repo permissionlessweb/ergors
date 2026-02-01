@@ -286,6 +286,12 @@ pub mod git {
     }
 }
 
+pub mod gateway {
+    pub mod v1 {
+        include!("gen/ergors.gateway.v1.rs");
+    }
+}
+
 pub mod management {
     pub mod v1 {
         include!("gen/ergors.management.v1.rs");

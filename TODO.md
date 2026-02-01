@@ -10,6 +10,7 @@
 **Issues**: [#2 CosmWasm Integration](https://github.com/permissionlessweb/ergors/issues/2)
 
 - correctly implement instantiate2 functionality
+- email-style addressing (cw-auth@node-ip/dns)
 - add flags for permissions to access cosmwasm contracts (mimicing wasmd functionality)
 - implement various authenticator middleware contracts (see smart-account implementations)
 - implement cw-oline: cosmwasm contract to organize sdl and deployment sequence of [o-line](https://github.com/permissionlessweb/o-line/tree/master/playbook/oline-sdl)
@@ -26,6 +27,8 @@
 ## NODE ACTIONS
 
 - do not poll for workflow in cache if its closed (currently still polls for deployments closed on error during inital deplyoment workflow)
+- ensure all requests made to endpoing are saved in storage layer
+- display known response from api for helping/debugging when incorrect api defintion is called (generic fallback page)
 
 ## SECURITY
 
@@ -52,6 +55,15 @@
 
 **Issues**: [#3 Storage & State Architecture](https://github.com/permissionlessweb/ergors/issues/3)
 
+We can update how we keep track of the following values to a dedicated layer in the storage tree. This will allow us to have public and private commitments to node configurations & storage paramters.
+
+ `NetworkTopology`
+ `NodeConfig`
+ `AgentCapabilities`
+
+- define modular decoding scripts for fractal topography metadata ingestion
+- ensure storage compression maps associations between the recursive agentic task tree deterministically
+
 ### CONFIG
 
 **Issues**: [#5 Configuration System Hardening](https://github.com/permissionlessweb/ergors/issues/5)
@@ -65,9 +77,19 @@
   - <https://github.com/shobrook/suss>: diff code reviews
   - <https://github.com/shobrook/weightgain>: improve embeddings
 
+- define scripts with instructions to run for each step in agentic orchestration
+
+### BOOTSTRAPPING
+
+- implement connection with network node for bootstrapping
+- perform boostrapping functions and report/mitigate/handle results of bootstrapping
+
 ## Secret Values
 
 **Issues**: [#6 Key Management & Auth](https://github.com/permissionlessweb/ergors/issues/6)
+
+- FROST signing
+- built in Oauthn for each node
 
 ## TESTING
 
