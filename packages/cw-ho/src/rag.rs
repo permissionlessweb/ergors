@@ -59,6 +59,21 @@ pub fn new_remote(
     HybridRAG::with_remote(cnidarium_storage, endpoint, model, dimension)
 }
 
+/// Create a HybridRAG instance with a shared HTTP client.
+///
+/// Use this when making many requests to reuse HTTP connections.
+/// More efficient than `new_remote` for high-volume usage.
+pub fn new_remote_with_client(
+    storage: &ErgorsStorage,
+    client: reqwest::Client,
+    endpoint: &str,
+    model: &str,
+    dimension: usize,
+) -> Result<HybridRAG<ergors_rag::embedder::remote::RemoteEmbedder>> {
+    let cnidarium_storage = Arc::new(storage.cs.clone());
+    HybridRAG::with_remote_client(cnidarium_storage, client, endpoint, model, dimension)
+}
+
 /// Create a HybridRAG instance with a dummy embedder (testing only).
 pub fn new_dummy(storage: &ErgorsStorage, dimension: usize) -> Result<HybridRAG<ergors_rag::embedder::DummyEmbedder>> {
     let cnidarium_storage = Arc::new(storage.cs.clone());

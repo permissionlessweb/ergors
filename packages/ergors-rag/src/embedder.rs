@@ -341,8 +341,20 @@ pub mod remote {
         /// - `model`: Model name (must match what the server expects)
         /// - `dimension`: Expected embedding dimension
         pub fn new(base_url: &str, model: &str, dimension: usize) -> Result<Self> {
+            Self::with_client(Client::new(), base_url, model, dimension)
+        }
+
+        /// Create a remote embedder with a shared HTTP client.
+        ///
+        /// Use this to reuse an existing `reqwest::Client` for connection pooling
+        /// when making many embedding requests.
+        ///
+        /// - `client`: Shared HTTP client (for connection pooling)
+        /// - `base_url`: The base URL (e.g., "http://provider.akash.network:8080")
+        /// - `model`: Model name (must match what the server expects)
+        /// - `dimension`: Expected embedding dimension
+        pub fn with_client(client: Client, base_url: &str, model: &str, dimension: usize) -> Result<Self> {
             let base_url = base_url.trim_end_matches('/').to_string();
-            let client = Client::new();
 
             tracing::info!(
                 "Remote embedder initialized (base_url: {}, model: {}, dim: {})",

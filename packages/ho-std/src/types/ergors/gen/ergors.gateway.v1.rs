@@ -206,3 +206,113 @@ impl ::prost::Name for GatewaySession {
         "/ergors.gateway.v1.GatewaySession".into()
     }
 }
+/// Per-guild RAG configuration for Discord
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GuildRagConfig {
+    #[prost(string, tag = "1")]
+    pub guild_id: ::prost::alloc::string::String,
+    /// Role ID that can perform ingestion (empty = guild owner only)
+    #[prost(string, tag = "2")]
+    pub admin_role_id: ::prost::alloc::string::String,
+    /// Whether RAG context is automatically injected into prompts
+    #[prost(bool, tag = "3")]
+    pub auto_context_enabled: bool,
+    /// Maximum chunks to retrieve for context (default: 3)
+    #[prost(uint32, tag = "4")]
+    pub max_context_chunks: u32,
+    /// Minimum similarity threshold (0.0-1.0, default: 0.5)
+    #[prost(float, tag = "5")]
+    pub min_similarity: f32,
+    /// Optional: dedicated embedder endpoint (overrides global)
+    #[prost(string, tag = "6")]
+    pub embedder_endpoint: ::prost::alloc::string::String,
+    /// Stats (updated on ingestion)
+    #[prost(uint32, tag = "7")]
+    pub total_documents: u32,
+    #[prost(uint32, tag = "8")]
+    pub total_chunks: u32,
+    #[prost(int64, tag = "9")]
+    pub last_ingestion_at: i64,
+}
+impl ::prost::Name for GuildRagConfig {
+    const NAME: &'static str = "GuildRagConfig";
+    const PACKAGE: &'static str = "ergors.gateway.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.gateway.v1.GuildRagConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.gateway.v1.GuildRagConfig".into()
+    }
+}
+/// RAG context retrieved for a prompt
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RagContextResult {
+    #[prost(message, repeated, tag = "1")]
+    pub chunks: ::prost::alloc::vec::Vec<RagContextChunk>,
+    #[prost(string, tag = "2")]
+    pub guild_id: ::prost::alloc::string::String,
+    #[prost(float, tag = "3")]
+    pub query_time_ms: f32,
+}
+impl ::prost::Name for RagContextResult {
+    const NAME: &'static str = "RagContextResult";
+    const PACKAGE: &'static str = "ergors.gateway.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.gateway.v1.RagContextResult".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.gateway.v1.RagContextResult".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RagContextChunk {
+    #[prost(string, tag = "1")]
+    pub content: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_uri: ::prost::alloc::string::String,
+    #[prost(float, tag = "3")]
+    pub similarity: f32,
+}
+impl ::prost::Name for RagContextChunk {
+    const NAME: &'static str = "RagContextChunk";
+    const PACKAGE: &'static str = "ergors.gateway.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.gateway.v1.RagContextChunk".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.gateway.v1.RagContextChunk".into()
+    }
+}
+/// Audit log for guild RAG operations
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GuildRagAuditLog {
+    #[prost(string, tag = "1")]
+    pub guild_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub user_id: ::prost::alloc::string::String,
+    /// "ingest", "delete", "config_update"
+    #[prost(string, tag = "3")]
+    pub operation: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub source_uri: ::prost::alloc::string::String,
+    #[prost(int64, tag = "5")]
+    pub timestamp: i64,
+    #[prost(bool, tag = "6")]
+    pub success: bool,
+    #[prost(string, tag = "7")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GuildRagAuditLog {
+    const NAME: &'static str = "GuildRagAuditLog";
+    const PACKAGE: &'static str = "ergors.gateway.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.gateway.v1.GuildRagAuditLog".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.gateway.v1.GuildRagAuditLog".into()
+    }
+}

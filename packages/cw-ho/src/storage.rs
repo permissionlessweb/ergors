@@ -112,6 +112,10 @@ const GATEWAY_TOKENS_PREFIX: &str = "custody/gateway_tokens";
 const ENCRYPTED_SECRETS_PREFIX: &str = "custody/secrets";
 const SECRET_ACCESS_LOG_PREFIX: &str = "audit/secret_access";
 
+// Guild RAG storage prefixes
+const GUILD_RAG_CONFIG_PREFIX: &str = "gateway/rag_config";
+const GUILD_RAG_AUDIT_PREFIX: &str = "gateway/rag_audit";
+
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
     pub cs: CnidariumStorage,
@@ -2602,17 +2606,6 @@ impl ErgorsStorage {
         Ok((0, 0))
     }
 
-    /// Delete chunks by source URI
-    pub async fn delete_rag_source(&self, source_uri: &str) -> HoResult<u64> {
-        // TODO: Implement actual deletion from rag storage
-        // This would need to:
-        // 1. Find all chunks with this source_uri
-        // 2. Delete them from the vector index
-        // 3. Delete them from cnidarium storage
-        info!("Deleting RAG chunks for source: {}", source_uri);
-        Ok(0)
-    }
-
     /// List ingested sources
     pub async fn list_rag_sources(&self, limit: usize) -> HoResult<(Vec<RagSourceInfoStored>, usize)> {
         // TODO: Implement actual source listing from rag_source_index prefix
@@ -2763,6 +2756,182 @@ impl ErgorsStorage {
                 Err(ho_std::error::HoError::Anyhow(e))
             }
         }
+    }
+
+    // ============================================
+    // Guild RAG Configuration Storage
+    // ============================================
+
+    /// Get RAG configuration for a Discord guild.
+    pub async fn get_guild_rag_config(
+        &self,
+        guild_id: &str,
+    ) -> HoResult<Option<ho_std::types::ergors::gateway::v1::GuildRagConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(GUILD_RAG_CONFIG_PREFIX, guild_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let config: ho_std::types::ergors::gateway::v1::GuildRagConfig =
+                    serde_json::from_slice(&data)?;
+                Ok(Some(config))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get guild RAG config {}: {}", guild_id, e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Store RAG configuration for a Discord guild.
+    pub async fn put_guild_rag_config(
+        &self,
+        config: &ho_std::types::ergors::gateway::v1::GuildRagConfig,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(GUILD_RAG_CONFIG_PREFIX, &config.guild_id);
+        let data = serde_json::to_vec(config)?;
+        delta.put_raw(key, data);
+        self.cs.commit(delta).await?;
+        info!("🧠 Stored guild RAG config: {}", config.guild_id);
+        Ok(())
+    }
+
+    /// List all guild RAG configurations.
+    pub async fn list_guild_rag_configs(
+        &self,
+    ) -> HoResult<Vec<ho_std::types::ergors::gateway::v1::GuildRagConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut results = Vec::new();
+        let mut stream = snapshot.prefix_raw(GUILD_RAG_CONFIG_PREFIX);
+
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, value)) => {
+                    match serde_json::from_slice::<ho_std::types::ergors::gateway::v1::GuildRagConfig>(
+                        &value,
+                    ) {
+                        Ok(config) => results.push(config),
+                        Err(e) => warn!("Failed to deserialize guild RAG config: {}", e),
+                    }
+                }
+                Err(e) => warn!("Error reading guild RAG config stream: {}", e),
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Log a guild RAG audit event.
+    pub async fn log_guild_rag_audit(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        operation: &str,
+        source_uri: &str,
+        success: bool,
+        message: &str,
+    ) -> HoResult<()> {
+        use ho_std::types::ergors::gateway::v1::GuildRagAuditLog;
+
+        let log = GuildRagAuditLog {
+            guild_id: guild_id.to_string(),
+            user_id: user_id.to_string(),
+            operation: operation.to_string(),
+            source_uri: source_uri.to_string(),
+            timestamp: chrono::Utc::now().timestamp(),
+            success,
+            message: message.to_string(),
+        };
+
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = format!(
+            "{}/{}:{}",
+            GUILD_RAG_AUDIT_PREFIX,
+            guild_id,
+            chrono::Utc::now().timestamp_millis()
+        );
+        let data = serde_json::to_vec(&log)?;
+        delta.put_raw(key, data);
+        self.cs.commit(delta).await?;
+
+        if success {
+            debug!("🧠 Guild RAG audit: {} {} {}", guild_id, operation, source_uri);
+        } else {
+            warn!("🧠 Guild RAG audit (failed): {} {} {} - {}", guild_id, operation, source_uri, message);
+        }
+        Ok(())
+    }
+
+    /// List RAG sources by URI prefix (for guild-scoped listing).
+    pub async fn list_rag_sources_by_prefix(
+        &self,
+        uri_prefix: &str,
+        limit: usize,
+    ) -> HoResult<Vec<RagSourceInfoStored>> {
+        // Query rag_source_index with the prefix
+        let snapshot = self.cs.latest_snapshot();
+        let storage_prefix = format!("rag_source_index/{}", uri_prefix);
+        let mut stream = snapshot.prefix_raw(&storage_prefix);
+        let mut results = Vec::new();
+
+        while let Some(entry_result) = stream.next().await {
+            if results.len() >= limit {
+                break;
+            }
+            match entry_result {
+                Ok((key, value)) => {
+                    // Key format: rag_source_index/{source_uri}
+                    // Value: list of chunk IDs
+                    let key_str = String::from_utf8_lossy(key.as_bytes());
+                    let uri = key_str.strip_prefix("rag_source_index/").unwrap_or(&key_str);
+
+                    // Parse chunk IDs to get count
+                    let chunk_ids: Vec<String> = serde_json::from_slice(&value).unwrap_or_default();
+
+                    results.push(RagSourceInfoStored {
+                        uri: uri.to_string(),
+                        chunk_count: chunk_ids.len() as u32,
+                        doc_type: "unknown".to_string(), // Would need to look up chunk metadata
+                        ingested_at: "".to_string(),
+                    });
+                }
+                Err(e) => warn!("Error reading RAG source index: {}", e),
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Delete RAG source by URI (deletes all chunks for that source).
+    pub async fn delete_rag_source(&self, source_uri: &str) -> HoResult<u32> {
+        let snapshot = self.cs.latest_snapshot();
+        let index_key = format!("rag_source_index/{}", source_uri);
+
+        // Get chunk IDs for this source
+        let chunk_ids: Vec<String> = match snapshot.get_raw(&index_key).await {
+            Ok(Some(data)) => serde_json::from_slice(&data).unwrap_or_default(),
+            Ok(None) => return Ok(0),
+            Err(e) => {
+                warn!("Failed to get source index {}: {}", source_uri, e);
+                return Ok(0);
+            }
+        };
+
+        let count = chunk_ids.len() as u32;
+
+        // Delete chunks and index
+        let mut delta = cnidarium::StateDelta::new(snapshot);
+        for chunk_id in &chunk_ids {
+            let chunk_key = format!("rag_chunks/{}", chunk_id);
+            delta.delete(chunk_key);
+        }
+        delta.delete(index_key);
+        self.cs.commit(delta).await?;
+
+        info!("🧠 Deleted {} chunks for source: {}", count, source_uri);
+        Ok(count)
     }
 
     // ===== Encrypted Secret Storage (v2 - unified, audited) =====

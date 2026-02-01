@@ -10,7 +10,7 @@ license = "MIT"
 default = ["cw","discord"]
 cw = []
 testing = []
-discord = ["serenity", "poise"]
+discord = ["serenity", "poise", "html2text"]
 
 
 [[bin]]
@@ -70,8 +70,9 @@ serde_yaml = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
 
 # Discord gateway (optional)
-serenity = { version = "0.12", optional = true, default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }
+serenity = { version = "0.12", optional = true, default-features = false, features = ["client", "gateway", "rustls_backend", "model", "cache"] }
 poise = { version = "0.6", optional = true }
+html2text = { version = "0.6", optional = true }
 
 # Unix-specific dependencies
 [target.'cfg(unix)'.dependencies]

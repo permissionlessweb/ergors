@@ -232,6 +232,42 @@ impl HybridRAG<embedder::remote::RemoteEmbedder> {
             .context("Failed to initialize remote embedder")?;
         Self::with_embedder(storage, embedder)
     }
+
+    /// Create HybridRAG with remote embedder using a shared HTTP client.
+    ///
+    /// Use this to reuse an existing `reqwest::Client` for connection pooling.
+    /// This is more efficient when making many embedding requests.
+    ///
+    /// ## Example
+    /// ```rust,no_run
+    /// use ergors_rag::HybridRAG;
+    /// use cnidarium::Storage;
+    /// use std::sync::Arc;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let storage = Storage::load("./storage".into(), vec!["rag_chunks".into(), "rag_source_index".into()]).await?;
+    /// let client = reqwest::Client::new();
+    /// let rag = HybridRAG::with_remote_client(
+    ///     Arc::new(storage),
+    ///     client,
+    ///     "http://provider.akash.network:8080",
+    ///     "all-MiniLM-L6-v2",
+    ///     384
+    /// )?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_remote_client(
+        storage: Arc<Storage>,
+        client: reqwest::Client,
+        base_url: &str,
+        model: &str,
+        dimension: usize,
+    ) -> Result<Self> {
+        let embedder = embedder::remote::RemoteEmbedder::with_client(client, base_url, model, dimension)
+            .context("Failed to initialize remote embedder")?;
+        Self::with_embedder(storage, embedder)
+    }
 }
 
 #[cfg(feature = "openai")]
