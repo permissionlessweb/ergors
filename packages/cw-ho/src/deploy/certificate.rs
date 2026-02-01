@@ -453,9 +453,10 @@ pub fn generate_akash_certificate(address: &str) -> Result<GeneratedCertificate>
     // SEC1 format ("BEGIN EC PUBLIC KEY") - same DER bytes, different PEM label
     let pubkey_bytes = convert_to_ec_public_key_pem(&key_pair)?;
 
-    // Get private key PEM (for mTLS)
-    let privkey_pem = key_pair.serialize_pem();
-    let privkey_bytes = privkey_pem.as_bytes().to_vec();
+    // Get private key PEM in SEC1 format (for mTLS with reqwest/rustls)
+    // rcgen produces PKCS#8 format ("BEGIN PRIVATE KEY"), but rustls-tls
+    // works better with SEC1 format ("BEGIN EC PRIVATE KEY")
+    let privkey_bytes = convert_to_ec_private_key_pem(&key_pair)?;
 
     // Generate the self-signed certificate
     let cert = params
@@ -498,6 +499,126 @@ fn convert_to_ec_public_key_pem(key_pair: &KeyPair) -> Result<Vec<u8>> {
     pem.push_str("-----END EC PUBLIC KEY-----\n");
 
     Ok(pem.into_bytes())
+}
+
+/// Convert PKCS#8 private key to SEC1 "EC PRIVATE KEY" PEM format.
+///
+/// rcgen produces `-----BEGIN PRIVATE KEY-----` (PKCS#8 format)
+/// reqwest/rustls-tls needs `-----BEGIN EC PRIVATE KEY-----` (SEC1 format) for EC keys.
+///
+/// PKCS#8 structure for P-256:
+/// ```text
+/// SEQUENCE {
+///   INTEGER 0                           -- version
+///   SEQUENCE { OID, OID }               -- AlgorithmIdentifier
+///   OCTET STRING { SEC1 ECPrivateKey }  -- contains the SEC1 key
+/// }
+/// ```
+fn convert_to_ec_private_key_pem(key_pair: &KeyPair) -> Result<Vec<u8>> {
+    let pkcs8_der = key_pair.serialize_der();
+
+    // Parse PKCS#8 to extract SEC1 ECPrivateKey
+    // For P-256, the structure is:
+    // 30 81 87 02 01 00 30 13 [AlgId: 19 bytes] 04 7b [SEC1: 123 bytes]
+    //
+    // We need to find the final OCTET STRING and extract its contents
+
+    let sec1_der = extract_sec1_from_pkcs8(&pkcs8_der)?;
+
+    // Encode as PEM with "EC PRIVATE KEY" header
+    let b64 = BASE64.encode(&sec1_der);
+    let mut pem = String::with_capacity(b64.len() + 70);
+    pem.push_str("-----BEGIN EC PRIVATE KEY-----\n");
+
+    // Wrap at 64 characters per line (PEM standard)
+    for chunk in b64.as_bytes().chunks(64) {
+        pem.push_str(std::str::from_utf8(chunk).unwrap());
+        pem.push('\n');
+    }
+    pem.push_str("-----END EC PRIVATE KEY-----\n");
+
+    Ok(pem.into_bytes())
+}
+
+/// Extract SEC1 ECPrivateKey DER from PKCS#8 DER.
+///
+/// PKCS#8 wraps the SEC1 key in an OCTET STRING after AlgorithmIdentifier.
+fn extract_sec1_from_pkcs8(pkcs8: &[u8]) -> Result<Vec<u8>> {
+    // PKCS#8 for P-256 EC key is typically 138 bytes:
+    // - 3 bytes: SEQUENCE header (30 81 87)
+    // - 3 bytes: INTEGER 0 (02 01 00)
+    // - 21 bytes: AlgorithmIdentifier (30 13 ...)
+    // - 2 bytes: OCTET STRING header (04 7b)
+    // - 123 bytes: SEC1 ECPrivateKey
+    //
+    // Total header before SEC1: 29 bytes (offset to OCTET STRING content)
+
+    if pkcs8.len() < 30 {
+        return Err(anyhow!("PKCS#8 key too short"));
+    }
+
+    // Verify it starts with SEQUENCE
+    if pkcs8[0] != 0x30 {
+        return Err(anyhow!("Invalid PKCS#8: expected SEQUENCE"));
+    }
+
+    // Parse SEQUENCE length
+    let (_, seq_content_start) = parse_der_length(&pkcs8[1..])?;
+    let mut pos = 1 + seq_content_start;
+
+    // Skip INTEGER (version)
+    if pos >= pkcs8.len() || pkcs8[pos] != 0x02 {
+        return Err(anyhow!("Invalid PKCS#8: expected INTEGER (version)"));
+    }
+    let (int_len, int_header) = parse_der_length(&pkcs8[pos + 1..])?;
+    pos += 1 + int_header + int_len;
+
+    // Skip AlgorithmIdentifier SEQUENCE
+    if pos >= pkcs8.len() || pkcs8[pos] != 0x30 {
+        return Err(anyhow!("Invalid PKCS#8: expected SEQUENCE (AlgorithmIdentifier)"));
+    }
+    let (alg_len, alg_header) = parse_der_length(&pkcs8[pos + 1..])?;
+    pos += 1 + alg_header + alg_len;
+
+    // Now we should be at the OCTET STRING containing SEC1
+    if pos >= pkcs8.len() || pkcs8[pos] != 0x04 {
+        return Err(anyhow!("Invalid PKCS#8: expected OCTET STRING"));
+    }
+    let (oct_len, oct_header) = parse_der_length(&pkcs8[pos + 1..])?;
+    pos += 1 + oct_header;
+
+    // Extract the SEC1 content
+    if pos + oct_len > pkcs8.len() {
+        return Err(anyhow!("Invalid PKCS#8: OCTET STRING extends beyond buffer"));
+    }
+
+    Ok(pkcs8[pos..pos + oct_len].to_vec())
+}
+
+/// Parse DER length encoding, returns (length_value, header_bytes_consumed).
+fn parse_der_length(data: &[u8]) -> Result<(usize, usize)> {
+    if data.is_empty() {
+        return Err(anyhow!("Empty length field"));
+    }
+
+    if data[0] < 0x80 {
+        // Short form: length in single byte
+        Ok((data[0] as usize, 1))
+    } else if data[0] == 0x81 {
+        // Long form: 1 byte length
+        if data.len() < 2 {
+            return Err(anyhow!("Truncated length field"));
+        }
+        Ok((data[1] as usize, 2))
+    } else if data[0] == 0x82 {
+        // Long form: 2 byte length
+        if data.len() < 3 {
+            return Err(anyhow!("Truncated length field"));
+        }
+        Ok((((data[1] as usize) << 8) | (data[2] as usize), 3))
+    } else {
+        Err(anyhow!("Unsupported length encoding: 0x{:02x}", data[0]))
+    }
 }
 
 // ============ Private Key Encryption ============
@@ -609,5 +730,35 @@ mod tests {
         // Wrong password should fail
         let wrong_result = decrypt_private_key(&encrypted, "wrong_password");
         assert!(wrong_result.is_err());
+    }
+
+    #[test]
+    fn test_private_key_is_sec1_format() {
+        let generated = generate_akash_certificate("akash1testaddress").unwrap();
+        let privkey_str = String::from_utf8_lossy(&generated.privkey_pem);
+
+        // Should be SEC1 format, not PKCS#8
+        assert!(
+            privkey_str.contains("BEGIN EC PRIVATE KEY"),
+            "Private key should be in SEC1 format (BEGIN EC PRIVATE KEY), got: {}",
+            privkey_str.chars().take(50).collect::<String>()
+        );
+        assert!(
+            !privkey_str.contains("BEGIN PRIVATE KEY-----"),
+            "Private key should NOT be in PKCS#8 format"
+        );
+    }
+
+    #[test]
+    fn test_public_key_is_ec_format() {
+        let generated = generate_akash_certificate("akash1testaddress").unwrap();
+        let pubkey_str = String::from_utf8_lossy(&generated.pubkey_pem);
+
+        // Should be EC PUBLIC KEY format for Akash
+        assert!(
+            pubkey_str.contains("BEGIN EC PUBLIC KEY"),
+            "Public key should be EC PUBLIC KEY format, got: {}",
+            pubkey_str.chars().take(50).collect::<String>()
+        );
     }
 }

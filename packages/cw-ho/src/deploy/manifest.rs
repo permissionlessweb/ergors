@@ -459,7 +459,33 @@ impl ManifestSender {
     /// The `cert_pem` and `privkey_pem` are the PEM-encoded certificate and private key
     /// for mutual TLS authentication with Akash providers.
     pub fn with_mtls(provider_uri: &str, cert_pem: &[u8], privkey_pem: &[u8]) -> Result<Self> {
-        // Combine cert and key into PKCS12/Identity format
+        // Debug: log PEM info
+        let cert_str = String::from_utf8_lossy(cert_pem);
+        let key_str = String::from_utf8_lossy(privkey_pem);
+        tracing::debug!("Certificate PEM ({} bytes): starts with '{}'",
+            cert_pem.len(),
+            cert_str.chars().take(50).collect::<String>());
+        tracing::debug!("Private key PEM ({} bytes): starts with '{}'",
+            privkey_pem.len(),
+            key_str.chars().take(50).collect::<String>());
+
+        // Validate PEM content before combining
+        if cert_pem.is_empty() {
+            return Err(anyhow!("Certificate PEM is empty"));
+        }
+        if privkey_pem.is_empty() {
+            return Err(anyhow!("Private key PEM is empty"));
+        }
+        if !cert_str.contains("BEGIN CERTIFICATE") {
+            return Err(anyhow!("Certificate doesn't contain BEGIN CERTIFICATE header. Content: {}",
+                cert_str.chars().take(100).collect::<String>()));
+        }
+        if !key_str.contains("BEGIN") || !key_str.contains("PRIVATE KEY") {
+            return Err(anyhow!("Private key doesn't contain valid PEM header. Content: {}",
+                key_str.chars().take(100).collect::<String>()));
+        }
+
+        // Combine cert and key into PEM bundle
         // reqwest expects both in a single Identity
         let mut pem_bundle = Vec::new();
         pem_bundle.extend_from_slice(cert_pem);
@@ -576,6 +602,23 @@ pub async fn query_service_endpoints_mtls(
     cert_pem: &[u8],
     privkey_pem: &[u8],
 ) -> Result<HashMap<String, ServiceEndpoint>> {
+    // Validate PEM content
+    let cert_str = String::from_utf8_lossy(cert_pem);
+    let key_str = String::from_utf8_lossy(privkey_pem);
+
+    if cert_pem.is_empty() {
+        return Err(anyhow!("Certificate PEM is empty"));
+    }
+    if privkey_pem.is_empty() {
+        return Err(anyhow!("Private key PEM is empty"));
+    }
+    if !cert_str.contains("BEGIN CERTIFICATE") {
+        return Err(anyhow!("Certificate doesn't contain BEGIN CERTIFICATE header"));
+    }
+    if !key_str.contains("BEGIN") || !key_str.contains("PRIVATE KEY") {
+        return Err(anyhow!("Private key doesn't contain valid PEM header"));
+    }
+
     // Build mTLS client
     let mut pem_bundle = Vec::new();
     pem_bundle.extend_from_slice(cert_pem);

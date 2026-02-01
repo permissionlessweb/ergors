@@ -3,6 +3,7 @@
 **Issues**: [#7 Privacy Primitives](https://github.com/permissionlessweb/ergors/issues/7) | [#13 Embedding & RAG](https://github.com/permissionlessweb/ergors/issues/13) | [#3 Storage Architecture](https://github.com/permissionlessweb/ergors/issues/3) | [#14 Cosmos Query Macro](https://github.com/permissionlessweb/ergors/issues/14) | [#1 Akash Deployment](https://github.com/permissionlessweb/ergors/issues/1)
 
 - toad support: <https://github.com/batrachianai/toad>
+- claw-machine support:
 
 ## COSMWASM
 
@@ -23,6 +24,8 @@
 - ensure api endpionts access/use are standardize thorughout logic (cosmos grpc,api/rpc)
 
 ## NODE ACTIONS
+
+- do not poll for workflow in cache if its closed (currently still polls for deployments closed on error during inital deplyoment workflow)
 
 ## SECURITY
 

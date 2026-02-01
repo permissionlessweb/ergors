@@ -11,6 +11,7 @@
 //! - Retrieves and saves endpoints
 
 use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ho_std::types::ergors::orch::v1::{
     AkashBidInfo, AkashBidState, AkashDeploymentWorkflow, AkashLeaseIdInfo, AkashProviderSelection,
     AkashRuntime, AkashServiceEndpoint, AkashWorkflowOptions, AkashWorkflowStatus,
@@ -1009,6 +1010,9 @@ impl AutomatedDeployer {
             return Err(anyhow!("No encrypted certificate private key - cannot authenticate with provider"));
         }
 
+        // Decode certificate PEM (chain returns Base64-encoded bytes)
+        let cert_pem = decode_cert_pem(&cert.cert)?;
+
         // Decrypt private key for mTLS
         tracing::info!("  Decrypting certificate private key...");
         let privkey_pem = super::certificate::decrypt_private_key(
@@ -1018,7 +1022,7 @@ impl AutomatedDeployer {
 
         // Create mTLS manifest sender
         tracing::info!("  Creating mTLS client...");
-        let sender = ManifestSender::with_mtls(&provider_uri, &cert.cert, &privkey_pem)?;
+        let sender = ManifestSender::with_mtls(&provider_uri, &cert_pem, &privkey_pem)?;
 
         tracing::info!("  Sending manifest...");
         match sender
@@ -1088,6 +1092,9 @@ impl AutomatedDeployer {
             .as_ref()
             .ok_or_else(|| anyhow!("No certificate in workflow"))?;
 
+        // Decode certificate PEM (chain returns Base64-encoded bytes)
+        let cert_pem = decode_cert_pem(&cert.cert)?;
+
         // Decrypt private key for mTLS
         let privkey_pem = super::certificate::decrypt_private_key(
             &workflow.encrypted_cert_private_key,
@@ -1114,7 +1121,7 @@ impl AutomatedDeployer {
                 lease_info.dseq,
                 lease_info.gseq,
                 lease_info.oseq,
-                &cert.cert,
+                &cert_pem,
                 &privkey_pem,
             )
             .await
@@ -1453,6 +1460,37 @@ fn current_timestamp() -> Timestamp {
     }
 }
 
+/// Decode certificate PEM from chain response.
+///
+/// The Akash chain stores certificate PEM as bytes, but REST/gRPC responses
+/// may return it as Base64-encoded string. This function handles both cases:
+/// - If already valid PEM (starts with "-----BEGIN"), return as-is
+/// - If Base64-encoded, decode it first
+fn decode_cert_pem(cert_bytes: &[u8]) -> Result<Vec<u8>> {
+    let cert_str = String::from_utf8_lossy(cert_bytes);
+
+    // If it already looks like PEM, return as-is
+    if cert_str.trim().starts_with("-----BEGIN") {
+        return Ok(cert_bytes.to_vec());
+    }
+
+    // Try to decode as Base64
+    let decoded = BASE64
+        .decode(cert_bytes)
+        .map_err(|e| anyhow!("Certificate is not valid PEM and failed Base64 decode: {}", e))?;
+
+    // Verify decoded content is PEM
+    let decoded_str = String::from_utf8_lossy(&decoded);
+    if !decoded_str.trim().starts_with("-----BEGIN") {
+        return Err(anyhow!(
+            "Decoded certificate is not valid PEM. First 50 chars: {}",
+            decoded_str.chars().take(50).collect::<String>()
+        ));
+    }
+
+    Ok(decoded)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1461,5 +1499,20 @@ mod tests {
     fn test_current_timestamp() {
         let ts = current_timestamp();
         assert!(ts.seconds > 0);
+    }
+
+    #[test]
+    fn test_decode_cert_pem_already_pem() {
+        let pem = b"-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----";
+        let result = decode_cert_pem(pem).unwrap();
+        assert_eq!(result, pem);
+    }
+
+    #[test]
+    fn test_decode_cert_pem_base64() {
+        let pem = "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----";
+        let encoded = BASE64.encode(pem.as_bytes());
+        let result = decode_cert_pem(encoded.as_bytes()).unwrap();
+        assert_eq!(String::from_utf8_lossy(&result), pem);
     }
 }

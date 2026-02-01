@@ -1171,6 +1171,58 @@ impl ErgorsStorage {
         Ok(list.providers.iter().any(|p| p.address == address))
     }
 
+    /// Seed default trusted providers on first startup.
+    ///
+    /// This imports the hardcoded TRUSTED_PROVIDERS from reputation.rs
+    /// into storage, skipping any that are already registered.
+    /// Called once during engine initialization.
+    pub async fn seed_default_trusted_providers(&self) -> HoResult<()> {
+        use crate::deploy::reputation::TRUSTED_PROVIDERS;
+        use ho_std::types::ergors::orch::v1::TrustedProvider;
+
+        let mut list = self.get_trusted_providers().await?;
+
+        // Collect existing addresses as owned strings to avoid borrow conflicts
+        let existing_addresses: std::collections::HashSet<String> =
+            list.providers.iter().map(|p| p.address.clone()).collect();
+
+        let now = pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+            nanos: 0,
+        };
+
+        let mut added_count = 0;
+        for address in TRUSTED_PROVIDERS {
+            if existing_addresses.contains(*address) {
+                continue;
+            }
+
+            list.providers.push(TrustedProvider {
+                address: address.to_string(),
+                label: "default".to_string(),
+                added_at: Some(now.clone()),
+            });
+            added_count += 1;
+        }
+
+        if added_count > 0 {
+            list.updated_at = Some(now);
+            self.put_trusted_providers(&list).await?;
+            info!(
+                "🌱 Seeded {} default trusted providers (total: {})",
+                added_count,
+                list.providers.len()
+            );
+        } else {
+            debug!("All default trusted providers already registered");
+        }
+
+        Ok(())
+    }
+
     // ========================================
     // Akash Certificate Private Key Storage
     // ========================================

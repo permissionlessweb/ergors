@@ -569,6 +569,12 @@ impl ManagementService for ManagementServiceImpl {
             return Err(Status::internal(format!("Failed to save key store: {}", e)));
         }
 
+        // Update in-memory akash context key store if available
+        if let Some(ref akash_ctx) = self.state.akash {
+            let mut key_store = akash_ctx.key_store.write().await;
+            *key_store = store;
+        }
+
         Ok(Response::new(ImportCosmosKeyResponse {
             success: true,
             key: Some(CosmosKeyInfo {
@@ -605,6 +611,12 @@ impl ManagementService for ManagementServiceImpl {
             return Err(Status::internal(format!("Failed to save key store: {}", e)));
         }
 
+        // Update in-memory akash context key store if available
+        if let Some(ref akash_ctx) = self.state.akash {
+            let mut key_store = akash_ctx.key_store.write().await;
+            *key_store = store;
+        }
+
         Ok(Response::new(OperationResult {
             success: true,
             message: format!("Key '{}' deleted", req.key_name),
@@ -632,6 +644,12 @@ impl ManagementService for ManagementServiceImpl {
 
         if let Err(e) = self.state.s.put_cosmos_key_store(&store).await {
             return Err(Status::internal(format!("Failed to save key store: {}", e)));
+        }
+
+        // Update in-memory akash context key store if available
+        if let Some(ref akash_ctx) = self.state.akash {
+            let mut key_store = akash_ctx.key_store.write().await;
+            *key_store = store;
         }
 
         Ok(Response::new(OperationResult {

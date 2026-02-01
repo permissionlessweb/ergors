@@ -218,6 +218,9 @@ impl Server {
 
         let storage_arc = Arc::new(s);
 
+        // Seed default trusted Akash providers on first startup
+        storage_arc.seed_default_trusted_providers().await?;
+
         // Deploy required contracts on startup (only if CosmWasm enabled)
         #[cfg(feature = "cw")]
         {
