@@ -498,9 +498,27 @@ impl ManagementService for ManagementServiceImpl {
         if req.mnemonic.is_empty() {
             return Err(Status::invalid_argument("Mnemonic cannot be empty"));
         }
-        if req.password.is_empty() {
-            return Err(Status::invalid_argument("Password cannot be empty"));
-        }
+
+        // Use custody password from akash context if available (ensures consistency).
+        // Fall back to provided password for backward compatibility.
+        let encryption_password = if let Some(ref akash_ctx) = self.state.akash {
+            if akash_ctx.custody_password.is_empty() {
+                if req.password.is_empty() {
+                    return Err(Status::invalid_argument(
+                        "Password required (custody password not available)"
+                    ));
+                }
+                req.password.clone()
+            } else {
+                // Use custody password for consistency with cert operations
+                akash_ctx.custody_password.clone()
+            }
+        } else {
+            if req.password.is_empty() {
+                return Err(Status::invalid_argument("Password cannot be empty"));
+            }
+            req.password.clone()
+        };
 
         let key_name = if req.key_name.is_empty() {
             "default".to_string()
@@ -542,7 +560,7 @@ impl ManagementService for ManagementServiceImpl {
         };
 
         // Unlock with password
-        if let Err(e) = manager.unlock(&req.password) {
+        if let Err(e) = manager.unlock(&encryption_password) {
             return Ok(Response::new(ImportCosmosKeyResponse {
                 success: false,
                 key: None,
@@ -2486,13 +2504,13 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<QueryAkashBidsResponse>, Status> {
         let req = request.into_inner();
 
+        // Support both session-id and label lookups
         let workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // TODO: Query actual bids from Akash node using workflow.node_endpoint
         // For now, return empty bids list
@@ -2513,13 +2531,13 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<SelectAkashProviderResponse>, Status> {
         let req = request.into_inner();
 
+        // Support both session-id and label lookups
         let mut workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // Update provider selection
         workflow.provider = Some(ho_std::types::ergors::orch::v1::AkashProviderSelection {
@@ -2562,13 +2580,13 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<OperationResult>, Status> {
         let req = request.into_inner();
 
+        // Support both session-id and label lookups
         let mut workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         workflow.status = AkashWorkflowStatus::Cancelled as i32;
         workflow.updated_at = Some(pbjson_types::Timestamp {
@@ -2594,13 +2612,13 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<SetWorkflowEndpointsResponse>, Status> {
         let req = request.into_inner();
 
+        // Support both session-id and label lookups
         let mut workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // Store discovered endpoints in the workflow
         workflow.endpoints = req.endpoints;
@@ -2729,14 +2747,13 @@ impl ManagementService for ManagementServiceImpl {
                  Ensure Akash config is present and keys are imported."
             ))?;
 
-        // Get the workflow
+        // Get the workflow - support both session-id and label lookups
         let mut workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // Apply options if provided
         let options = req.options.unwrap_or_else(|| AkashWorkflowOptions {
@@ -2918,13 +2935,13 @@ impl ManagementService for ManagementServiceImpl {
                 "Akash deployment context not initialized"
             ))?;
 
+        // Support both session-id and label lookups
         let workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // Verify there's a lease to close
         if workflow.lease_id_info.is_none() && workflow.deployment.is_none() {
@@ -3000,13 +3017,13 @@ impl ManagementService for ManagementServiceImpl {
                 "Akash deployment context not initialized"
             ))?;
 
+        // Support both session-id and label lookups
         let workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // Verify there's a deployment to close
         if workflow.deployment.is_none() {
@@ -3082,13 +3099,13 @@ impl ManagementService for ManagementServiceImpl {
                 "Akash deployment context not initialized"
             ))?;
 
+        // Support both session-id and label lookups
         let workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // Verify there's a deployment to update
         if workflow.deployment.is_none() {
@@ -3143,13 +3160,13 @@ impl ManagementService for ManagementServiceImpl {
                 "Akash deployment context not initialized"
             ))?;
 
+        // Support both session-id and label lookups
         let workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // Verify there's a deployment to top up
         if workflow.deployment.is_none() {
@@ -3195,13 +3212,13 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<LeaseStatusResponse>, Status> {
         let req = request.into_inner();
 
+        // Support both session-id and label lookups
         let workflow = self
             .state
             .s
-            .get_akash_workflow(&req.session_id)
+            .get_akash_workflow_by_id_or_label(&req.session_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get workflow: {}", e)))?
-            .ok_or_else(|| Status::not_found(format!("Workflow not found: {}", req.session_id)))?;
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // Determine deployment status from workflow state
         let deployment_status = match AkashWorkflowStatus::try_from(workflow.status).unwrap_or(AkashWorkflowStatus::Unspecified) {
@@ -3541,7 +3558,10 @@ impl ManagementService for ManagementServiceImpl {
             let encrypted_key = {
                 let key_store = akash_ctx.key_store.read().await;
                 EncryptedCosmosKeyManager::get_key_by_name(&key_store, &key_name)
-                    .ok_or_else(|| Status::not_found(format!("Key '{}' not found", key_name)))?
+                    .ok_or_else(|| Status::not_found(format!(
+                        "Key '{}' not found. Run 'ergors keys import-mnemonic --label \"{}\"' to import a key first.",
+                        key_name, key_name
+                    )))?
                     .clone()
             };
 
@@ -3549,12 +3569,18 @@ impl ManagementService for ManagementServiceImpl {
             // Unlock if needed using custody password from context
             if !manager.is_unlocked() {
                 manager.unlock(&akash_ctx.custody_password).map_err(|e| {
-                    Status::internal(format!("Failed to unlock key manager: {}", e))
+                    Status::internal(format!(
+                        "Failed to unlock key manager: {}. If you ran 'unsafe-wipe', restart the engine with 'ergors start'.",
+                        e
+                    ))
                 })?;
             }
             let keypair = manager
                 .get_keypair(&encrypted_key, req.account_index)
-                .map_err(|e| Status::internal(format!("Failed to derive keypair: {}", e)))?;
+                .map_err(|e| Status::internal(format!(
+                    "Failed to derive keypair: {}. If you ran 'unsafe-wipe', restart the engine with 'ergors start'.",
+                    e
+                )))?;
 
             cosmos_address_from_pubkey(keypair.public_key(), "akash")
                 .map_err(|e| Status::internal(format!("Failed to generate address: {}", e)))?

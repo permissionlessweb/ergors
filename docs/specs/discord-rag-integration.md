@@ -636,7 +636,7 @@ rag_source_index/
 # packages/cw-ho/Cargo.toml
 
 [dependencies]
-reqwest = { version = "0.11", features = ["json"], optional = true }
+reqwest = { version = "0.13", features = ["json"], optional = true }
 html2text = { version = "0.6", optional = true }
 
 [features]

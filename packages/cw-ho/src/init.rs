@@ -217,12 +217,90 @@ impl InitCmd {
                 ErgorsConfig::load(&config_path)?
             }
             InitTopSubCmd::UnsafeWipe {} => {
-                println!("Deleting all data in {}...", home_dir.as_ref());
+                println!("WARNING: UNSAFE WIPE - This will PERMANENTLY DELETE all data!");
+                println!();
+
+                // Password-gated wipe: require custody password to proceed
+                let identity_path = home_dir.as_ref().join("node_identity.enc");
+                if !identity_path.exists() {
+                    return Err(anyhow::anyhow!(
+                        "No custody found. Nothing to wipe, or run 'ergors init new' first."
+                    ));
+                }
+
+                // Require custody password to verify ownership
+                let custody = PasswordEncryptedCustody::new(&identity_path);
+                let password =
+                    prompt_for_password("Enter custody password to confirm: ")?;
+
+                // Verify password works by attempting unlock
+                let rt = tokio::runtime::Runtime::new()?;
+                rt.block_on(custody.unlock(&password))
+                    .map_err(|_| anyhow::anyhow!("Invalid password. Wipe aborted."))?;
+
+                println!("[OK] Password verified");
+
+                println!();
+                println!("Deleting data in {}:", home_dir.as_ref());
+
+                // 2. Enumerate what will be deleted
+                let data_dir = home_dir.as_ref().join("data");
+                if data_dir.exists() {
+                    // Count items in known prefixes (best effort)
+                    let prefixes = [
+                        ("akash_cert_keys", "Akash certificate private keys"),
+                        ("akash_workflows", "Akash deployment workflows"),
+                        ("operations", "Operation records"),
+                        ("prompts", "Prompt/response history"),
+                        ("fractal_sessions", "Fractal sessions"),
+                        ("proxy_sessions", "Proxy sessions"),
+                        ("sessions", "Session indexes"),
+                        ("users", "User indexes"),
+                        ("timestamps", "Timestamp indexes"),
+                        ("custody", "Encrypted credentials"),
+                    ];
+
+                    for (prefix, description) in &prefixes {
+                        println!("  - {}: {}", prefix, description);
+                    }
+                }
+
+                // List top-level files
+                if home_dir.as_ref().exists() {
+                    let files = [
+                        ("node_identity.enc", "Encrypted node identity"),
+                        ("api-keys.enc", "Encrypted API keys"),
+                        ("config.toml", "Configuration"),
+                        ("providers.toml", "Provider sharing config"),
+                        (".env", "Environment file"),
+                    ];
+
+                    for (file, description) in &files {
+                        let file_path = home_dir.as_ref().join(file);
+                        if file_path.exists() {
+                            println!("  - {}: {}", file, description);
+                        }
+                    }
+
+                    // SSH keys
+                    let ssh_dir = home_dir.as_ref().join("ssh");
+                    if ssh_dir.exists() {
+                        println!("  - ssh/: SSH keys directory");
+                    }
+                }
+
+                println!();
+                println!("Wiping...");
+
+                // 3. Final wipe
                 if home_dir.as_ref().exists() {
                     std::fs::remove_dir_all(home_dir.as_ref())?;
                 }
-                // Recreate the directory for fresh config
                 std::fs::create_dir_all(home_dir.as_ref())?;
+
+                println!();
+                println!("[OK] All data wiped. Home directory reset to fresh state.");
+
                 self.fresh(home_dir.as_ref())
             }
             InitTopSubCmd::Migrate {} => {

@@ -128,8 +128,10 @@ impl KeysCmd {
                 // Prompt for mnemonic (hidden input - never stored in history)
                 let phrase = get_mnemonic()?;
 
-                // Get encryption password
-                let password = get_password(true)?;
+                // When daemon is running, it uses its custody password for key encryption.
+                // We pass empty string and the daemon handles it.
+                // This ensures consistency between key import and cert operations.
+                let password = String::new();
 
                 let resp = client
                     .import_cosmos_key(

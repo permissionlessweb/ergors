@@ -19,7 +19,7 @@ use crate::storage::ErgorsStorage;
 
 /// Pending sync request
 #[derive(Debug, Clone)]
-struct PendingSync {
+pub struct PendingSync {
     /// Workspace ID
     workspace_id: String,
     /// Action requested

@@ -496,6 +496,7 @@ impl ManifestSender {
             .map_err(|e| anyhow!("Failed to create identity from PEM: {}", e))?;
 
         let http = HttpClient::builder()
+            .tls_backend_rustls()
             .timeout(Duration::from_secs(60))
             .danger_accept_invalid_certs(true) // Providers use self-signed certs
             .identity(identity)
@@ -629,6 +630,7 @@ pub async fn query_service_endpoints_mtls(
         .map_err(|e| anyhow!("Failed to create identity from PEM: {}", e))?;
 
     let http = HttpClient::builder()
+        .tls_backend_rustls()
         .timeout(Duration::from_secs(30))
         .danger_accept_invalid_certs(true)
         .identity(identity)

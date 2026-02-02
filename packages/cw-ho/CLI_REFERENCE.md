@@ -48,7 +48,7 @@ ergors [OPTIONS] <COMMAND>
 | `init new` | Initialize new node with full setup | Auto-generates:<br>- Encrypted node identity (Ed25519)<br>- SSH keys from custody<br>- API key encryption<br>- Sample .env file | `ergors init new` |
 | `init llms` | Configure LLM provider API keys | Prompts for API keys:<br>- Anthropic (Claude)<br>- OpenAI (GPT)<br>- Ollama (local)<br>- Grok (xAI)<br>- Akash ML<br>Saves to `api-keys.toml` | `ergors init llms` |
 | `init providers` | Configure provider key sharing | Sets per-provider ownership:<br>- `shared` - Shamir secret sharing<br>- `local` - Node-only<br>Configures k-of-n threshold | `ergors init providers` |
-| `init unsafe-wipe` | Delete all data in home directory | **DESTRUCTIVE** - Removes all config and data | `ergors init unsafe-wipe` |
+| `init unsafe-wipe` | Delete all data in home directory | **DESTRUCTIVE** - Requires custody password (same as `init new`). Fails if no custody exists. Removes all config, encrypted keys, certificates, deployment workflows, prompt history, and session data. | `ergors init unsafe-wipe` |
 | `init migrate` | Migrate from major versions | (TODO: not implemented) | `ergors init migrate` |
 
 **Init New Details:**
@@ -296,8 +296,30 @@ ergors deploy create --sdl <path> [OPTIONS]
 | `--auto` | Run automated deployment | - |
 | `--skip-grants` | Skip authz/feegrant setup | - |
 | `--auto-select-bid` | Auto-select cheapest trusted provider | - |
+| `--interactive-bid` | Prompt for manual provider selection instead of auto-selecting | - |
 | `--min-balance <UAKT>` | Minimum balance required | `5000000` |
 | `--var <KEY=VALUE>` | SDL template variables | - |
+
+**Provider Selection Modes:**
+
+| Mode | Flag | Behavior |
+|------|------|----------|
+| **Auto (default)** | `--auto-select-bid` or none | Selects cheapest provider from trusted list (if configured) or all bids |
+| **Interactive** | `--interactive-bid` | Displays numbered list of providers, prompts for user selection via stdin |
+
+When `--interactive-bid` is used:
+- A formatted table shows all providers with prices and trusted status
+- User enters a number (1-N) to select a provider
+- User can enter 'q' to cancel the deployment
+- Falls back to auto-selection if stdin is not a terminal (e.g., piped input)
+
+**Trusted Providers:**
+
+The trusted providers list filters which providers are considered for deployment:
+- Managed via `ergors deploy trusted-providers`, `add-provider`, `remove-provider`
+- Default list seeded from hardcoded known-good providers
+- If trusted list exists and has matching bids, only those providers are eligible
+- If trusted list exists but no matches, all providers become eligible with a warning
 
 **Automated Deployment Flow (--auto):**
 
@@ -360,7 +382,7 @@ ergors deploy close-lease qwen-inference
 Run automated workflow on existing session:
 
 ```bash
-ergors deploy run <session-id> [OPTIONS]
+ergors deploy run <session-id-or-label> [OPTIONS]
 ```
 
 ### List Deployments
@@ -380,13 +402,13 @@ ergors deploy get <session-id-or-label>
 ### Query Bids
 
 ```bash
-ergors deploy bids <session-id>
+ergors deploy bids <session-id-or-label>
 ```
 
 ### Select Provider
 
 ```bash
-ergors deploy select <session-id> --provider <address> [--price <uakt>]
+ergors deploy select <session-id-or-label> --provider <address> [--price <uakt>]
 ```
 
 ### Deployment Info (Unified View)
@@ -394,7 +416,7 @@ ergors deploy select <session-id> --provider <address> [--price <uakt>]
 Get comprehensive deployment information in formatted display:
 
 ```bash
-ergors deploy info <session-id> [--json]
+ergors deploy info <session-id-or-label> [--json]
 ```
 
 **Shows:**
@@ -429,7 +451,7 @@ ergors deploy info <session-id> [--json]
 Get service endpoints for accessing deployed services:
 
 ```bash
-ergors deploy endpoints <session-id> [--json]
+ergors deploy endpoints <session-id-or-label> [--json]
 ```
 
 **Shows:**
@@ -461,7 +483,7 @@ Total: 1 endpoint(s)
 Close the active lease (deployment remains on-chain):
 
 ```bash
-ergors deploy close-lease <session-id>
+ergors deploy close-lease <session-id-or-label>
 ```
 
 **Notes:**
@@ -475,7 +497,7 @@ ergors deploy close-lease <session-id>
 Close deployment completely (also closes any leases):
 
 ```bash
-ergors deploy close-deployment <session-id>
+ergors deploy close-deployment <session-id-or-label>
 ```
 
 **Process:**
@@ -594,7 +616,7 @@ ergors deploy provider-info <address> [--refresh]
 Update deployment with new SDL specification:
 
 ```bash
-ergors deploy update-deployment <session-id> --sdl <path>
+ergors deploy update-deployment <session-id-or-label> --sdl <path>
 ```
 
 **Process:**
@@ -620,7 +642,7 @@ ergors deploy update-deployment my-session-123 --sdl ./new-config.yml
 Add funds to deployment escrow account:
 
 ```bash
-ergors deploy topup-escrow <session-id> <amount-in-uakt>
+ergors deploy topup-escrow <session-id-or-label> <amount-in-uakt>
 ```
 
 **Arguments:**
@@ -654,7 +676,7 @@ Escrow topped up for session: my-session-123
 ### Deployment Status
 
 ```bash
-ergors deploy status <session-id> [--follow]
+ergors deploy status <session-id-or-label> [--follow]
 ```
 
 ### Trusted Providers

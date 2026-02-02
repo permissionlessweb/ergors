@@ -42,6 +42,7 @@ cargo build --release -p ergors
 You need a BIP-39 mnemonic seed phrase for an Akash wallet funded with AKT tokens.
 
 **Getting AKT:**
+
 - Purchase AKT on exchanges (Osmosis, Kraken, etc.)
 - Transfer to your Akash address
 
@@ -63,6 +64,7 @@ ergors keys import-mnemonic \
 ```
 
 **Security notes:**
+
 - You'll be prompted to create an encryption password
 - The mnemonic is encrypted at rest using Argon2id + ChaCha20Poly1305
 - Never share your mnemonic or store it in plain text

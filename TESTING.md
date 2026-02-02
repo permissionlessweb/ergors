@@ -76,3 +76,15 @@ Start an ERGORS network for manual testing:
 - Ollama: `/api/tags`, `/api/generate`, `/api/chat`
 - OpenAI: `/v1/models`, `/v1/chat/completions`
 - TGI: `/info`, `/generate`
+
+## TODO
+
+### DEPLOYMENT
+
+### COSMWASM
+
+### BOOTSTRAPPING
+
+### AUTHENTICATION 
+
+### STORAGE 

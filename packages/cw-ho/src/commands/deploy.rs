@@ -62,7 +62,7 @@ pub enum DeployCmd {
     },
     /// Run automated deployment workflow on existing session
     Run {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
         /// Minimum balance required in uakt
         #[arg(long, default_value = "5000000")]
@@ -95,39 +95,39 @@ pub enum DeployCmd {
     },
     /// Get deployment workflow details
     Get {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
     },
     /// Get comprehensive deployment information (unified view)
     Info {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
     },
     /// Query bids for a deployment
     Bids {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
     },
     /// Select a provider for the deployment
     Select {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
         /// Bid selection: Either a numerical ID (1, 2, 3, ...) from the bids list, or a provider address (akash1...)
         bid: String,
     },
     /// Get service endpoints for a deployment
     Endpoints {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
     },
     /// Cancel a deployment workflow
     Cancel {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
     },
     /// Set discovered endpoints for a deployment workflow
     SetEndpoints {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
         /// Endpoints as key=value pairs (service_name=url)
         #[arg(long, value_parser = parse_key_val)]
@@ -214,17 +214,17 @@ pub enum DeployCmd {
     },
     /// Close an active lease
     CloseLease {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
     },
     /// Close a deployment (also closes any active leases)
     CloseDeployment {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
     },
     /// Update a deployment with new SDL
     UpdateDeployment {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
         /// Path to new SDL file
         #[arg(long)]
@@ -232,14 +232,14 @@ pub enum DeployCmd {
     },
     /// Top up escrow account for a deployment
     TopupEscrow {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
         /// Amount to deposit in uakt
         amount: u64,
     },
     /// Get lease status
     Status {
-        /// Session ID
+        /// Session ID or label
         session_id: String,
         /// Follow logs (poll continuously)
         #[arg(short, long)]

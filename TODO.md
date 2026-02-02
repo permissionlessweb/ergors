@@ -26,6 +26,7 @@
 
 ## NODE ACTIONS
 
+- use label||session id for all cli commands
 - do not poll for workflow in cache if its closed (currently still polls for deployments closed on error during inital deplyoment workflow)
 - ensure all requests made to endpoing are saved in storage layer
 - display known response from api for helping/debugging when incorrect api defintion is called (generic fallback page)
@@ -125,9 +126,9 @@ We can update how we keep track of the following values to a dedicated layer in 
 
 ## REVIEWS
 
-- review the server level integration. can we improve how:
-  - we expect de/serialization into more standard (proto/Any type format)
-  - the amount of hard-coding is implemented
+- SERVER. can we improve how:
+  - de/serialization processes (proto/Any type format)
+  - the amount of hard-coding is implemented/ can be mitigated (need to minimize as much as possible)
   - how we cache api request for jit/first-come-first serve authentication (to implement support for cw-implementations that require rate-limits/access grant limits to be in serial)
 - review cosmwasmvm level integration. can we improve how:
   - we can be more certain that there are no issues to runtime/ atomic/parallel access & state updates?

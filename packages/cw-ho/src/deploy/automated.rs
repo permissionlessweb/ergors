@@ -19,6 +19,7 @@ use ho_std::types::ergors::orch::v1::{
 };
 use pbjson_types::Timestamp;
 use std::collections::HashMap;
+use std::io::{BufRead, IsTerminal, Write};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -765,8 +766,12 @@ impl AutomatedDeployer {
 
     /// Step 7: Select provider.
     ///
-    /// Default behavior: auto-select cheapest from trusted providers (or all if none trusted).
-    /// If `opts.interactive_bid` is true: future implementation would pause for user input.
+    /// Behavior:
+    /// - If `opts.interactive_bid` is true and stdin is a terminal: prompt user for selection
+    /// - Otherwise: auto-select cheapest from trusted providers (or all if none trusted)
+    ///
+    /// When trusted providers are specified, only bids from those providers are considered.
+    /// If no trusted providers match but trusted list is provided, falls back to all bids.
     async fn step_select_provider(
         &self,
         workflow: &mut AkashDeploymentWorkflow,
@@ -777,112 +782,155 @@ impl AutomatedDeployer {
         workflow.current_step = AkashWorkflowStep::ProviderSelection as i32;
         self.save_workflow(workflow).await?;
 
-        // Check if interactive mode is requested
-        let selection_mode = if opts.interactive_bid {
-            // Interactive mode requested - log available bids with provider names
-            tracing::info!("  Mode: INTERACTIVE (user selection)");
-            tracing::info!("  Available bids:");
-            for (i, bid) in bids.iter().enumerate() {
-                let price_decimal: f64 = bid.price_amount.parse().unwrap_or(0.0);
-                let price_akt = price_decimal / 1_000_000.0;
-                let trusted = if opts.trusted_providers.contains(&bid.provider) {
-                    " [TRUSTED]"
-                } else {
-                    ""
-                };
+        // Determine if we can do interactive selection
+        let stdin_is_terminal = std::io::stdin().is_terminal();
+        let use_interactive = opts.interactive_bid && stdin_is_terminal;
 
-                // Get provider name from cache
-                let provider_name = if let Some(info) =
-                    self.get_provider_info_cached(&bid.provider).await
-                {
-                    Self::format_provider_name(&info)
-                } else {
-                    bid.provider[..20.min(bid.provider.len())].to_string()
-                };
-
-                tracing::info!(
-                    "    [{}] {} - {:.6} AKT/block{}",
-                    i + 1,
-                    provider_name,
-                    price_akt,
-                    trusted
-                );
-                tracing::info!("        Address: {}", bid.provider);
-            }
-            tracing::warn!("  NOTE: Interactive selection not yet implemented");
+        if opts.interactive_bid && !stdin_is_terminal {
+            tracing::warn!("  Interactive mode requested but stdin is not a terminal");
             tracing::warn!("  Falling back to auto-selection...");
-            "AUTO (fallback from interactive)"
-        } else {
-            "AUTO"
-        };
-
-        // Filter by trusted providers if specified
-        let filter_mode = if opts.trusted_providers.is_empty() {
-            "all providers (no trusted list)"
-        } else {
-            "trusted providers only"
-        };
-        tracing::info!("  Selection: {}", selection_mode);
-        tracing::info!("  Filter: {}", filter_mode);
-
-        let candidates: Vec<_> = if opts.trusted_providers.is_empty() {
-            bids.to_vec()
-        } else {
-            tracing::info!("  Trusted list: {:?}", opts.trusted_providers);
-            bids.iter()
-                .filter(|b| opts.trusted_providers.contains(&b.provider))
-                .cloned()
-                .collect()
-        };
-
-        tracing::info!(
-            "  Candidates: {} (from {} total bids)",
-            candidates.len(),
-            bids.len()
-        );
-
-        if candidates.is_empty() {
-            tracing::error!("  FAILED: No bids from trusted providers");
-            tracing::error!(
-                "  Available providers: {:?}",
-                bids.iter().map(|b| &b.provider).collect::<Vec<_>>()
-            );
-            return Err(anyhow!(
-                "No bids from trusted providers. Available providers: {:?}",
-                bids.iter().map(|b| &b.provider).collect::<Vec<_>>()
-            ));
         }
 
-        // Select cheapest bid (auto-selection)
-        // Note: Prices are in decimal format (e.g., "6002.811140000000000000" uakt)
-        let selected = candidates
-            .iter()
-            .min_by(|a, b| {
-                let price_a: f64 = a.price_amount.parse().unwrap_or(f64::MAX);
-                let price_b: f64 = b.price_amount.parse().unwrap_or(f64::MAX);
-                price_a.partial_cmp(&price_b).unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .cloned()
-            .ok_or_else(|| anyhow!("Failed to select bid"))?;
+        // Build display information for each bid
+        let mut bid_display_info: Vec<(usize, &BidInfo, String, f64, bool)> = Vec::new();
+        for (i, bid) in bids.iter().enumerate() {
+            let price_decimal: f64 = bid.price_amount.parse().unwrap_or(0.0);
+            let price_akt = price_decimal / 1_000_000.0;
+            let is_trusted = opts.trusted_providers.contains(&bid.provider);
 
-        let price_uakt: f64 = selected.price_amount.parse().unwrap_or(0.0);
+            // Get provider name from cache
+            let provider_name = if let Some(info) = self.get_provider_info_cached(&bid.provider).await {
+                Self::format_provider_name(&info)
+            } else {
+                bid.provider[..20.min(bid.provider.len())].to_string()
+            };
+
+            bid_display_info.push((i, bid, provider_name, price_akt, is_trusted));
+        }
+
+        // Sort by price (cheapest first) for display
+        bid_display_info.sort_by(|a, b| {
+            a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Display available bids
+        tracing::info!("  Available providers ({} bids):", bids.len());
+        println!();
+        println!("  ┌────┬────────────────────────────────────────┬──────────────────┬─────────┐");
+        println!("  │ #  │ Provider                               │ Price (AKT/blk)  │ Trusted │");
+        println!("  ├────┼────────────────────────────────────────┼──────────────────┼─────────┤");
+
+        for (display_idx, (_, bid, provider_name, price_akt, is_trusted)) in bid_display_info.iter().enumerate() {
+            let idx = display_idx + 1;
+            let trusted_mark = if *is_trusted { "[*]" } else { "   " };
+            let name_truncated = if provider_name.len() > 36 {
+                format!("{}...", &provider_name[..33])
+            } else {
+                provider_name.clone()
+            };
+
+            println!(
+                "  │ {:>2} │ {:<38} │ {:>14.6} │   {}   │",
+                idx,
+                name_truncated,
+                price_akt,
+                trusted_mark
+            );
+            tracing::debug!("    [{}] {} - {}", idx, bid.provider, provider_name);
+        }
+        println!("  └────┴────────────────────────────────────────┴──────────────────┴─────────┘");
+        println!("  [*] = Trusted provider");
+        println!();
+
+        // Determine candidates based on trusted list
+        let trusted_candidates: Vec<_> = bid_display_info
+            .iter()
+            .filter(|(_, _, _, _, is_trusted)| *is_trusted)
+            .collect();
+
+        let has_trusted_filter = !opts.trusted_providers.is_empty();
+        let has_trusted_matches = !trusted_candidates.is_empty();
+
+        // Log filter status
+        if has_trusted_filter {
+            tracing::info!("  Trusted provider filter: {} addresses configured", opts.trusted_providers.len());
+            if has_trusted_matches {
+                tracing::info!("  Matching trusted providers: {}", trusted_candidates.len());
+            } else {
+                tracing::warn!("  No matching trusted providers found in bids");
+                tracing::info!("  Allowing selection from all {} providers", bids.len());
+            }
+        } else {
+            tracing::info!("  No trusted provider filter (all providers eligible)");
+        }
+
+        // Select provider
+        let selected_bid: BidInfo = if use_interactive {
+            // Interactive selection
+            tracing::info!("  Mode: INTERACTIVE");
+
+            let valid_range = 1..=bid_display_info.len();
+
+            loop {
+                print!("  Enter provider number (1-{}): ", bid_display_info.len());
+                let _ = std::io::stdout().flush();
+
+                let mut input = String::new();
+                let stdin = std::io::stdin();
+                let mut handle = stdin.lock();
+
+                if handle.read_line(&mut input).is_err() {
+                    tracing::error!("  Failed to read input, falling back to auto-selection");
+                    break self.auto_select_provider(&bid_display_info, has_trusted_filter && has_trusted_matches)?;
+                }
+
+                let trimmed = input.trim();
+
+                // Allow 'q' to cancel
+                if trimmed.eq_ignore_ascii_case("q") || trimmed.eq_ignore_ascii_case("quit") {
+                    return Err(anyhow!("Provider selection cancelled by user"));
+                }
+
+                // Parse selection
+                match trimmed.parse::<usize>() {
+                    Ok(n) if valid_range.contains(&n) => {
+                        let (_, bid, _, _, _) = &bid_display_info[n - 1];
+                        break (*bid).clone();
+                    }
+                    Ok(n) => {
+                        println!("  Invalid selection: {} (must be 1-{})", n, bid_display_info.len());
+                    }
+                    Err(_) => {
+                        println!("  Invalid input. Enter a number (1-{}) or 'q' to quit.", bid_display_info.len());
+                    }
+                }
+            }
+        } else {
+            // Auto-selection: cheapest from trusted (if available) or all
+            tracing::info!("  Mode: AUTO (cheapest from {})",
+                if has_trusted_filter && has_trusted_matches { "trusted providers" } else { "all providers" });
+            self.auto_select_provider(&bid_display_info, has_trusted_filter && has_trusted_matches)?
+        };
+
+        // Log selection result
+        let price_uakt: f64 = selected_bid.price_amount.parse().unwrap_or(0.0);
         let price_akt = price_uakt / 1_000_000.0;
-        let is_trusted = opts.trusted_providers.contains(&selected.provider);
+        let is_trusted = opts.trusted_providers.contains(&selected_bid.provider);
 
         tracing::info!("  ─────────────────────────────────────────");
-        tracing::info!("  Selected: {} (cheapest)", selected.provider);
+        tracing::info!("  Selected: {}", selected_bid.provider);
         tracing::info!(
             "  Price:    {:.6} AKT/block ({} {})",
             price_akt,
-            selected.price_amount,
-            selected.price_denom
+            selected_bid.price_amount,
+            selected_bid.price_denom
         );
         tracing::info!("  Trusted:  {}", if is_trusted { "YES" } else { "NO" });
         tracing::info!("  ─────────────────────────────────────────");
 
         // Query provider info to get the actual host_uri
         tracing::info!("  Querying provider info...");
-        let provider_info = self.cosmos.query_provider(&selected.provider).await?;
+        let provider_info = self.cosmos.query_provider(&selected_bid.provider).await?;
         tracing::info!("  Host URI: {}", provider_info.host_uri);
         if !provider_info.email.is_empty() {
             tracing::info!("  Email:    {}", provider_info.email);
@@ -892,7 +940,7 @@ impl AutomatedDeployer {
         }
 
         workflow.provider = Some(AkashProviderSelection {
-            provider_address: selected.provider.clone(),
+            provider_address: selected_bid.provider.clone(),
             reputation_score: 100, // Would query reputation system in production
             bid_price_uakt: price_uakt as u64, // Convert decimal to integer uakt
             total_bids_received: bids.len() as u32,
@@ -907,7 +955,35 @@ impl AutomatedDeployer {
 
         self.save_workflow(workflow).await?;
         tracing::info!("  OK: Provider selected with host_uri");
-        Ok(selected)
+        Ok(selected_bid)
+    }
+
+    /// Auto-select the cheapest provider from candidates.
+    /// If `prefer_trusted` is true, only considers trusted providers.
+    fn auto_select_provider(
+        &self,
+        bid_display_info: &[(usize, &BidInfo, String, f64, bool)],
+        prefer_trusted: bool,
+    ) -> Result<BidInfo> {
+        // Filter to trusted if requested and available
+        let candidates: Vec<_> = if prefer_trusted {
+            bid_display_info
+                .iter()
+                .filter(|(_, _, _, _, is_trusted)| *is_trusted)
+                .collect()
+        } else {
+            bid_display_info.iter().collect()
+        };
+
+        if candidates.is_empty() {
+            return Err(anyhow!(
+                "No providers available for auto-selection"
+            ));
+        }
+
+        // Already sorted by price, take the first (cheapest)
+        let (_, bid, _, _, _) = candidates[0];
+        Ok((*bid).clone())
     }
 
     /// Step 6: Create lease.

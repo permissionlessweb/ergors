@@ -5,7 +5,7 @@
 > **For AI agents:** Quick context for ERGORS security. See implementation in source files below.
 
 | Concept | Type/Trait | Source |
-|---------|-----------|--------|
+|---------|-----------|-------- |
 | Node keypair | `NodePrivKey` / `NodePubkey` | [`keys/commonware.rs`](../../packages/ho-std/src/keys/commonware.rs) |
 | Custody trait | `NodeIdentityCustody` | [`traits/mod.rs`](../../packages/ho-std/src/traits/mod.rs) |
 | Password custody | `PasswordEncryptedCustody` | [`custody/node_identity.rs`](../../packages/ho-std/src/custody/node_identity.rs) |
@@ -36,6 +36,7 @@ ERGORS implements layered security:
 ### Why Custody Matters
 
 Every node has an Ed25519 keypair used for:
+
 - Network authentication
 - Message signing
 - SSH key derivation (git operations)
@@ -212,16 +213,19 @@ storage.delete_authenticator("api/prompts").await?;
 Authenticator contracts must implement this query interface:
 
 **Query:**
+
 ```json
 {"is_allowed": {"address": "ergors{node_id}_{pubkey_hash}"}}
 ```
 
 **Response:**
+
 ```json
 {"allowed": true}
 ```
 
 The caller address is deterministically generated from:
+
 - Node's public key (first 8 hex chars as node identifier)
 - Caller's public key hash (first 20 bytes of SHA256)
 
@@ -239,6 +243,7 @@ Format: `ergors{node_id}_{caller_pubkey_hash}`
 | `/auth/{endpoint_label}` | DELETE | Remove authenticator |
 
 **Register Request:**
+
 ```json
 {
   "endpoint_label": "api/prompts",
@@ -248,6 +253,7 @@ Format: `ergors{node_id}_{caller_pubkey_hash}`
 ```
 
 **Register Response:**
+
 ```json
 {
   "success": true,
@@ -263,11 +269,13 @@ Format: `ergors{node_id}_{caller_pubkey_hash}`
 ```
 
 **List Query Parameters:**
+
 - `endpoint_prefix` - Filter by endpoint prefix
 - `limit` - Pagination limit (default 100)
 - `offset` - Pagination offset
 
 **Check Query Parameters:**
+
 - `endpoint_label` - Endpoint to check
 - `address` - Address to verify
 
@@ -280,6 +288,7 @@ Format: `ergors{node_id}_{caller_pubkey_hash}`
 Controls who can update the authenticator registry itself. Only the coordinator or explicitly authorized addresses can modify registry entries.
 
 **InstantiateMsg:**
+
 ```json
 {
   "coordinator": "ergors1coordinator...",
@@ -288,6 +297,7 @@ Controls who can update the authenticator registry itself. Only the coordinator 
 ```
 
 **ExecuteMsg:**
+
 ```json
 // Add authorized updater
 {"authorize": {"address": "ergors1new..."}}
@@ -300,6 +310,7 @@ Controls who can update the authenticator registry itself. Only the coordinator 
 ```
 
 **QueryMsg:**
+
 ```json
 // Check if address can update registry
 {"is_authorized": {"address": "ergors1check..."}}
@@ -315,6 +326,7 @@ Controls who can update the authenticator registry itself. Only the coordinator 
 Whitelist-based endpoint authentication supporting both allowlist mode (default deny) and blocklist mode (default allow).
 
 **InstantiateMsg:**
+
 ```json
 {
   "admin": "ergors1admin...",
@@ -325,6 +337,7 @@ Whitelist-based endpoint authentication supporting both allowlist mode (default 
 ```
 
 **ExecuteMsg:**
+
 ```json
 // Add address to whitelist
 {"add_address": {"address": "ergors1new..."}}
@@ -340,6 +353,7 @@ Whitelist-based endpoint authentication supporting both allowlist mode (default 
 ```
 
 **QueryMsg:**
+
 ```json
 // Middleware query - check authorization
 {"is_allowed": {"address": "ergors1check..."}}
@@ -521,12 +535,14 @@ let decrypted = decrypt_with_node_key(&key_bytes, &encrypted)?;
 ## 8. Best Practices
 
 **Operators:**
+
 1. Use password-encrypted custody in production
 2. Back up `node_identity.enc` files
 3. Rotate passwords with `change_password()`
 4. Ensure NTP time sync
 
 **Developers:**
+
 1. Accept `impl NodeIdentityCustody` not concrete types
 2. Handle lock/unlock lifecycle
 3. Check `is_unlocked()` before operations
