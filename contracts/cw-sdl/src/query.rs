@@ -4,9 +4,10 @@ use std::collections::HashMap;
 use crate::error::ContractError;
 use crate::msg::{
     DefaultsResponse, InfoResponse, KeysResponse, RenderedSdlResponse, RenderedJsonResponse,
-    SingleDefaultResponse, TemplateResponse,
+    SingleDefaultResponse, TemplateResponse, DeploymentResultResponse, DeploymentResultsResponse,
+    ChildContractsResponse,
 };
-use crate::state::{CONFIG, SDL_TEMPLATE, VARIABLE_DEFAULTS};
+use crate::state::{CONFIG, SDL_TEMPLATE, VARIABLE_DEFAULTS, DEPLOYMENT_RESULTS, CHILD_CONTRACTS};
 
 pub fn query_template(deps: Deps) -> Result<TemplateResponse, ContractError> {
     let sdl_template = SDL_TEMPLATE.load(deps.storage)?;
@@ -124,4 +125,30 @@ pub fn query_rendered_json(
         sdl_json,
         used_variables,
     })
+}
+
+/// Query a single deployment result by key
+pub fn query_deployment_result(deps: Deps, key: String) -> Result<DeploymentResultResponse, ContractError> {
+    let value = DEPLOYMENT_RESULTS.may_load(deps.storage, &key)?;
+
+    Ok(DeploymentResultResponse { key, value })
+}
+
+/// Query all deployment results
+pub fn query_deployment_results(deps: Deps) -> Result<DeploymentResultsResponse, ContractError> {
+    let results: HashMap<String, String> = DEPLOYMENT_RESULTS
+        .range(deps.storage, None, None, Order::Ascending)
+        .collect::<StdResult<HashMap<String, String>>>()?;
+
+    Ok(DeploymentResultsResponse { results })
+}
+
+/// Query all child contracts created via factory
+pub fn query_child_contracts(deps: Deps) -> Result<ChildContractsResponse, ContractError> {
+    let contracts: HashMap<String, String> = CHILD_CONTRACTS
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|res| res.map(|(k, v)| (k, v.to_string())))
+        .collect::<StdResult<HashMap<String, String>>>()?;
+
+    Ok(ChildContractsResponse { contracts })
 }

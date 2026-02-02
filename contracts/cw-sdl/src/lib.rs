@@ -24,6 +24,15 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::GetRenderedJson { variables } => {
             to_json_binary(&query::query_rendered_json(deps, variables).map_err(|e| cosmwasm_std::StdError::generic_err(e.to_string()))?)
         }
+        QueryMsg::GetDeploymentResult { key } => {
+            to_json_binary(&query::query_deployment_result(deps, key).map_err(|e| cosmwasm_std::StdError::generic_err(e.to_string()))?)
+        }
+        QueryMsg::ListDeploymentResults {} => {
+            to_json_binary(&query::query_deployment_results(deps).map_err(|e| cosmwasm_std::StdError::generic_err(e.to_string()))?)
+        }
+        QueryMsg::ListChildContracts {} => {
+            to_json_binary(&query::query_child_contracts(deps).map_err(|e| cosmwasm_std::StdError::generic_err(e.to_string()))?)
+        }
     }
 }
 

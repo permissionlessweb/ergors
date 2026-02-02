@@ -1,5 +1,5 @@
 [workspace]
-members = ["cw-sdl", "cw-middleware-auth", "cw-auth"]
+members = ["cw-sdl", "cw-middlware-auth", "cw-auth"]
 resolver = "2"
 
 [workspace.metadata.optimizer]

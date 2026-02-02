@@ -1,6 +1,6 @@
 # CW-SDL: SDL Template Registrar Contract
 
-A CosmWasm smart contract for storing and managing Akash SDL (Stack Definition Language) templates with variable substitution and default value management.
+A CosmWasm smart contract for storing and managing Akash SDL (Stack Definition Language) templates with variable substitution, deployment result tracking, and workflow chaining.
 
 ## Features
 
@@ -10,7 +10,10 @@ A CosmWasm smart contract for storing and managing Akash SDL (Stack Definition L
 - **Variable Substitution**: Render SDL templates by replacing `${VAR}` placeholders with values
 - **Access Control**: Admin-based permissions for template modifications
 - **Factory Pattern**: Instantiate new contract instances from the same code ID
-- **Query Interface**: Rich query API for template inspection and rendering
+- **Deployment Result Tracking**: Store key-value results from Akash deployments (peer IDs, endpoints, etc.)
+- **Workflow Chaining**: Pass deployment results from parent to child contracts via factory instantiation
+- **Child Contract Registry**: Track all factory-spawned contracts by label
+- **Query Interface**: Rich query API for template inspection, rendering, and deployment data
 
 ## Contract State
 
@@ -141,7 +144,33 @@ This will fail with: `MissingVariableDefaults { variables: ["MEMORY", "STORAGE"]
       "label": "new-template",
       "admin": "akash1..."
     },
-    "label": "factory-instance"
+    "label": "factory-instance",
+    "parent_results": {
+      "NODE_A_PEER_ID": "abc123@1.2.3.4:26656",
+      "NODE_A_ENDPOINT": "https://node-a.example.com"
+    }
+  }
+}
+```
+
+Parent results are merged into the child's `variable_defaults`, allowing deployment chaining where results from one deployment feed variables into the next.
+
+#### Record Deployment Result (Admin)
+
+```json
+{"record_deployment_result": {"key": "NODE_A_PEER_ID", "value": "abc123@1.2.3.4:26656"}}
+```
+
+#### Record Multiple Results (Admin)
+
+```json
+{
+  "record_deployment_results": {
+    "results": {
+      "NODE_A_PEER_ID": "abc123@1.2.3.4:26656",
+      "NODE_A_ENDPOINT": "https://node-a.example.com",
+      "NODE_A_RPC": "26657"
+    }
   }
 }
 ```
@@ -200,6 +229,30 @@ Returns rendered SDL with variables substituted. Provided variables override def
 
 Returns contract label, admin, and code ID.
 
+#### Get Deployment Result
+
+```json
+{"get_deployment_result": {"key": "NODE_A_PEER_ID"}}
+```
+
+Returns a specific deployment result value.
+
+#### List Deployment Results
+
+```json
+{"list_deployment_results": {}}
+```
+
+Returns all stored deployment results as a HashMap.
+
+#### List Child Contracts
+
+```json
+{"list_child_contracts": {}}
+```
+
+Returns all factory-spawned child contracts as label → address mappings.
+
 ## Building
 
 ```bash
@@ -218,6 +271,60 @@ cargo test
 cargo schema
 ```
 
+## Deployment Workflow Chaining
+
+The contract supports sequential deployment workflows where each deployment feeds variables into the next. This is critical for multi-node deployments like the Terp Network O-Line setup:
+
+### Example: O-Line Deployment Flow
+
+```
+1. Instantiate cw-sdl-snapshot with NODE_A SDL template
+   └─> variable_defaults: {"CPU": "4", "MEMORY": "8Gi", ...}
+
+2. CLI deploys NODE_A to Akash, retrieves peer ID and endpoint
+
+3. CLI calls RecordDeploymentResults on cw-sdl-snapshot:
+   └─> {"NODE_A_PEER_ID": "abc123@1.2.3.4:26656", "NODE_A_ENDPOINT": "https://..."}
+
+4. CLI calls InstantiateNew on cw-sdl-snapshot to create cw-sdl-tackle:
+   └─> parent_results: cw-sdl-snapshot's deployment results
+   └─> Creates cw-sdl-tackle with NODE_A_PEER_ID already in variable_defaults
+
+5. CLI queries cw-sdl-tackle, gets rendered SDL with NODE_A peer ID injected
+
+6. CLI deploys NODE_B to Akash
+
+7. Repeat for subsequent nodes (tackle → forward, etc.)
+```
+
+This eliminates manual variable passing between deployments and enables fully automated sequential workflows.
+
+### Key Workflow Patterns
+
+**Parent-to-Child Variable Injection:**
+```rust
+// Parent contract stores deployment results
+RecordDeploymentResults {
+  results: {"PEER_ID": "abc@ip:port", "ENDPOINT": "https://..."}
+}
+
+// Create child with parent results automatically injected
+InstantiateNew {
+  instantiate_msg: {...},
+  parent_results: Some(parent_deployment_results), // Merged into child's defaults
+}
+```
+
+**Child Contract Registry:**
+All factory-created children are tracked by label, allowing programmatic queries and message routing to the entire contract family.
+
 ## Integration
 
-This contract is designed for integration with the Ergors orchestration system for managing Akash deployments. See the main contracts README for integration details.
+This contract is designed for integration with the Ergors orchestration system for managing Akash deployments. The `cw-ho` CLI tool handles:
+- Instantiating SDL contracts
+- Deploying rendered SDLs to Akash
+- Retrieving deployment results (peer IDs, endpoints)
+- Recording results back to contracts via `RecordDeploymentResults`
+- Chaining deployments via `InstantiateNew` with parent results
+
+See the main contracts README and `packages/cw-ho` for CLI integration details.

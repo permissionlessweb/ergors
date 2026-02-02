@@ -14,7 +14,7 @@
 - add flags for permissions to access cosmwasm contracts (mimicing wasmd functionality)
 - implement various authenticator middleware contracts (see smart-account implementations)
 - implement cw-oline: cosmwasm contract to organize sdl and deployment sequence of [o-line](https://github.com/permissionlessweb/o-line/tree/master/playbook/oline-sdl)
-- add custom proxy from vm to invoke engine actions (have a contract call the api endpoint of an engine to bootstrap,make infernece call, etc)
+- add custom proxy from vm to invoke engine actions (have a contract call the api endpoint of an engine to bootstrap,make infernece call, etc) (WE CAN DO THIS BY HAVING THE CONTRACT EMIT EVENT WITH PREDEFINED ATTRIBUTES!!)
 
 ## NETWORK
 

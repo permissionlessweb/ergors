@@ -45,9 +45,20 @@ pub enum ExecuteMsg {
         new_admin: String,
     },
     /// Factory method to instantiate a new contract from the same code ID
+    /// parent_results: deployment results from parent to merge into child's variable_defaults
     InstantiateNew {
         instantiate_msg: InstantiateMsg,
         label: String,
+        parent_results: Option<HashMap<String, String>>,
+    },
+    /// Record a single deployment result (peer ID, endpoint, etc.)
+    RecordDeploymentResult {
+        key: String,
+        value: String,
+    },
+    /// Record multiple deployment results in one call
+    RecordDeploymentResults {
+        results: HashMap<String, String>,
     },
 }
 
@@ -86,6 +97,18 @@ pub enum QueryMsg {
     GetRenderedJson {
         variables: Option<HashMap<String, String>>,
     },
+
+    /// Get a specific deployment result
+    #[returns(DeploymentResultResponse)]
+    GetDeploymentResult { key: String },
+
+    /// List all deployment results
+    #[returns(DeploymentResultsResponse)]
+    ListDeploymentResults {},
+
+    /// List all child contracts created via factory
+    #[returns(ChildContractsResponse)]
+    ListChildContracts {},
 }
 
 /// Response for GetTemplate query
@@ -142,4 +165,23 @@ pub struct RenderedJsonResponse {
     pub sdl_json: JsonValue,
     /// Variables that were used in rendering
     pub used_variables: HashMap<String, String>,
+}
+
+/// Response for GetDeploymentResult query
+#[cw_serde]
+pub struct DeploymentResultResponse {
+    pub key: String,
+    pub value: Option<String>,
+}
+
+/// Response for ListDeploymentResults query
+#[cw_serde]
+pub struct DeploymentResultsResponse {
+    pub results: HashMap<String, String>,
+}
+
+/// Response for ListChildContracts query
+#[cw_serde]
+pub struct ChildContractsResponse {
+    pub contracts: HashMap<String, String>,
 }

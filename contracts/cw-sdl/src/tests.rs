@@ -616,6 +616,7 @@ mod tests {
         let factory_msg = ExecuteMsg::InstantiateNew {
             instantiate_msg: new_instantiate_msg,
             label: "factory-child".to_string(),
+            parent_results: None,
         };
 
         // Execute factory instantiation
@@ -669,16 +670,20 @@ mod tests {
     fn reply_handles_instantiate_success() {
         let mut deps = mock_dependencies();
 
-        // Create a successful reply with contract address
-        let contract_addr = "contract123";
+        // Create a successful reply with contract address (must be valid bech32)
+        let contract_addr = "cosmwasm1h34lmpywh4upnjdg90cjf4j70aee6z8qqfspugamjp42e4q28kqsksmtyp";
         let reply_msg = Reply {
             id: 1, // INSTANTIATE_REPLY_ID
             payload: cosmwasm_std::Binary::default(),
             gas_used: 0,
             result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![Event::new("instantiate")
-                    .add_attribute("_contract_address", contract_addr)
-                    .add_attribute("code_id", "1")],
+                events: vec![
+                    Event::new("instantiate")
+                        .add_attribute("_contract_address", contract_addr)
+                        .add_attribute("code_id", "1"),
+                    Event::new("wasm")
+                        .add_attribute("child_label", "test-child")
+                ],
                 data: None,
                 msg_responses: vec![],
             }),
@@ -686,12 +691,14 @@ mod tests {
 
         let res = reply(deps.as_mut(), mock_env(), reply_msg).unwrap();
 
-        // Verify response attributes
-        assert_eq!(res.attributes.len(), 2);
+        // Verify response attributes (now includes child_label)
+        assert_eq!(res.attributes.len(), 3);
         assert_eq!(res.attributes[0].key, "method");
         assert_eq!(res.attributes[0].value, "reply_instantiate");
         assert_eq!(res.attributes[1].key, "new_contract_address");
         assert_eq!(res.attributes[1].value, contract_addr);
+        assert_eq!(res.attributes[2].key, "child_label");
+        assert_eq!(res.attributes[2].value, "test-child");
     }
 
     #[test]
@@ -799,6 +806,7 @@ mod tests {
         let factory_msg = ExecuteMsg::InstantiateNew {
             instantiate_msg: new_instantiate_msg,
             label: "factory-child".to_string(),
+            parent_results: None,
         };
 
         // Execute should fail because child instantiation will fail validation
@@ -859,6 +867,7 @@ mod tests {
                 admin: None,
             },
             label: "child1-contract".to_string(),
+            parent_results: None,
         };
 
         app.execute_contract(Addr::unchecked("creator"), parent_addr.clone(), &child1_msg, &[])
@@ -877,6 +886,7 @@ mod tests {
                 admin: None,
             },
             label: "child2-contract".to_string(),
+            parent_results: None,
         };
 
         let res = app
