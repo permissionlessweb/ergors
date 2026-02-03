@@ -2438,6 +2438,8 @@ impl ManagementService for ManagementServiceImpl {
             service_endpoints: vec![],
             // User-defined label for easy access (empty if not provided)
             label: req.label.clone(),
+            // Actual model name for inference routing (stamped onto endpoints)
+            model_name: req.model_name.clone(),
         };
 
         // Persist to storage
@@ -4420,15 +4422,22 @@ impl ManagementService for ManagementServiceImpl {
 pub async fn start_grpc_server(
     addr: std::net::SocketAddr,
     service: ManagementServiceImpl,
+    rlm_service: Option<crate::grpc::RlmDocService>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use ho_std::types::ergors::management::v1::management_service_server::ManagementServiceServer;
 
     tracing::info!("Starting gRPC management server on {}", addr);
 
-    tonic::transport::Server::builder()
-        .add_service(ManagementServiceServer::new(service))
-        .serve(addr)
-        .await?;
+    let mut server = tonic::transport::Server::builder()
+        .add_service(ManagementServiceServer::new(service));
+
+    // Add RLM document service if provided
+    if let Some(rlm_svc) = rlm_service {
+        tracing::info!("Registering RLM document service");
+        server = server.add_service(rlm_svc.into_server());
+    }
+
+    server.serve(addr).await?;
 
     Ok(())
 }

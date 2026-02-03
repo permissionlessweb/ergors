@@ -2376,6 +2376,9 @@ pub struct CreateAkashDeploymentRequest {
     /// User-friendly label for this deployment (must be unique across active deployments)
     #[prost(string, tag = "9")]
     pub label: ::prost::alloc::string::String,
+    /// Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8")
+    #[prost(string, tag = "10")]
+    pub model_name: ::prost::alloc::string::String,
 }
 impl ::prost::Name for CreateAkashDeploymentRequest {
     const NAME: &'static str = "CreateAkashDeploymentRequest";

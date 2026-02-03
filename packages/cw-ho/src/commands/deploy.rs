@@ -59,6 +59,11 @@ pub enum DeployCmd {
         /// Prompt for manual provider selection instead of auto-selecting cheapest
         #[arg(long)]
         interactive_bid: bool,
+
+        /// Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8").
+        /// The inference server receives this as the "model" field instead of the label.
+        #[arg(long)]
+        model_name: Option<String>,
     },
     /// Run automated deployment workflow on existing session
     Run {
@@ -335,6 +340,7 @@ impl DeployCmd {
                 grant_duration,
                 grant_spend_limit,
                 interactive_bid,
+                model_name,
             } => {
                 // Resolve SDL content
                 let content = match (sdl, sdl_content) {
@@ -361,6 +367,7 @@ impl DeployCmd {
                         chain_id.as_deref().unwrap_or("akashnet-2"),
                         true, // auto is always true now
                         label.as_deref().unwrap_or(""),
+                        model_name.as_deref().unwrap_or(""),
                     )
                     .await?;
 

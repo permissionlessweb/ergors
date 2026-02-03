@@ -59,12 +59,14 @@ Standalone RAG library with no circular dependencies.
 **Location:** `packages/ergors-rag/`
 
 **Dependencies:**
+
 - `cnidarium` - Verifiable storage
 - `hnsw_rs` - HNSW vector index
 - `reqwest` (optional) - Remote embedder HTTP client
 - `candle-*` (optional) - Local inference
 
 **Features:**
+
 - `openai` - Enables RemoteEmbedder and OpenAIEmbedder
 - `candle` - Enables CandleEmbedder for local inference
 
@@ -73,6 +75,7 @@ Standalone RAG library with no circular dependencies.
 Thin wrapper in `src/rag.rs` that bridges engine storage to ergors-rag.
 
 **Exports:**
+
 - `ergors::rag::new_remote()` - Create RAG with remote embedder
 - `ergors::rag::new_dummy()` - Create RAG with dummy embedder (testing)
 - Re-exports: `Document`, `QueryOptions`, `QueryResult`, `HybridRAG`
@@ -82,6 +85,7 @@ Thin wrapper in `src/rag.rs` that bridges engine storage to ergors-rag.
 Simple embedding function in `src/llm/embed.rs`.
 
 **Functions:**
+
 - `embed::generate(endpoint, texts, model, api_key)` - Batch embedding
 - `embed::generate_one(endpoint, text, model, api_key)` - Single embedding
 
@@ -304,6 +308,7 @@ let rag = rag::new_dummy(&storage, 128)?;
 ## Storage Schema
 
 Cnidarium prefixes:
+
 - `rag_chunks/{chunk_id}` → `VerifiableChunk` (bincode)
 - `rag_source_index/{source_uri}` → `Vec<Uuid>` (bincode)
 
@@ -354,12 +359,14 @@ ergors-rag = { path = "...", features = ["openai", "candle"] }  # Both
 ## When to Use Verification
 
 ### Enable verification (`verify: true`)
+
 - Legal/compliance RAG with audit requirements
 - Multi-tenant SaaS with attribution
 - Regulated industries (HIPAA, FDA)
 - Content integrity guarantees needed
 
 ### Skip verification (default)
+
 - Development and prototyping
 - Internal tools without threat model
 - Real-time systems with <50ms budget

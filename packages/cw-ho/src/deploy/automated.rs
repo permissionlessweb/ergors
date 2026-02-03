@@ -1155,7 +1155,7 @@ impl AutomatedDeployer {
             }
         }
 
-        // Convert to proto type
+        // Convert to proto type, stamping model_name from workflow
         let endpoint_infos: Vec<AkashServiceEndpoint> = endpoints
             .into_iter()
             .map(|(name, ep)| AkashServiceEndpoint {
@@ -1164,6 +1164,7 @@ impl AutomatedDeployer {
                 internal_port: ep.internal_port as u32,
                 external_port: ep.external_port as u32,
                 protocol: ep.protocol,
+                model_name: workflow.model_name.clone(),
             })
             .collect();
 

@@ -139,6 +139,8 @@ impl AkashWorkflowManager {
             service_endpoints: vec![],
             // User-defined label for easy access
             label: label.unwrap_or_default(),
+            // Actual model name (set later via CLI flag or API)
+            model_name: String::new(),
         };
 
         // Persist to storage

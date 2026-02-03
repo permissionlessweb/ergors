@@ -618,6 +618,7 @@ impl ManagementClient {
         chain_id: &str,
         auto_run: bool,
         label: &str,
+        model_name: &str,
     ) -> Result<CreateAkashDeploymentResponse> {
         let response = self
             .inner
@@ -631,6 +632,7 @@ impl ManagementClient {
                 chain_id: chain_id.to_string(),
                 auto_run,
                 label: label.to_string(),
+                model_name: model_name.to_string(),
             })
             .await
             .context("Failed to create Akash deployment")?;

@@ -1150,6 +1150,8 @@ message CreateAkashDeploymentRequest {
   bool auto_run = 8;
   // User-friendly label for this deployment (must be unique across active deployments)
   string label = 9;
+  // Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8")
+  string model_name = 10;
 }
 
 // Create deployment response

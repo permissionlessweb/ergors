@@ -114,8 +114,13 @@ message ContractMigration {
 
 // Query operations for the orchestration component.
 service QueryService {
- 
 
+
+}
+
+// RLM Document Service (for embedded Python REPL workers)
+service RlmDocumentService {
+  rpc GetDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
 }
 
 // Cosmic Orchestration Types
@@ -1290,6 +1295,12 @@ message AkashDeploymentWorkflow {
     // User-defined label for easy access (e.g., "embeddings-model", "inference-gpu")
   // Must be unique across active deployments for O(1) label lookups
   string label = 35;
+
+  // reserved 36 = encrypted_cert_private_key (defined above)
+
+  // Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8")
+  // Stamped onto service endpoints when they are discovered
+  string model_name = 37;
 }
 
 // Workflow step log entry for audit
@@ -1408,6 +1419,7 @@ message AkashServiceEndpoint {
   uint32 internal_port = 3;
   uint32 external_port = 4;
   string protocol = 5;  // "tcp", "udp", "http"
+  string model_name = 6; // Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8")
 }
 
 // Trusted provider entry stored in Cnidarium
@@ -1907,5 +1919,48 @@ message RagConfigureRequest {
 message RagOperationResult {
   bool success = 1;
   string message = 2;
+}
+
+// ========================================
+// RLM (Recursive Language Model) Types
+// ========================================
+
+// Request to get documents for RLM execution
+message GetDocumentsRequest {
+  string source_uri_prefix = 1;  // "discord:guild_{id}/"
+  uint32 limit = 2;
+}
+
+// Document for RLM context
+message Document {
+  string source_uri = 1;
+  string content = 2;
+  string doc_type = 3;
+  repeated string tags = 4;
+  int64 ingested_at = 5;
+}
+
+// Response with documents
+message GetDocumentsResponse {
+  repeated Document documents = 1;
+}
+
+// Request to execute RLM query
+message RlmQueryRequest {
+  string query = 1;
+  string guild_id = 2;
+  uint32 max_iterations = 3;
+  uint32 max_sub_calls = 4;
+  repeated string allowed_models = 5;
+}
+
+// Response from RLM execution
+message RlmQueryResponse {
+  string answer = 1;
+  repeated string source_uris = 2;
+  uint32 iterations = 3;
+  uint32 sub_llm_calls = 4;
+  double cost_usd = 5;
+  uint64 latency_ms = 6;
 }
 

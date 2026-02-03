@@ -159,7 +159,7 @@ impl LlmRouter {
 
         // Convert PromptRequest to OpenAI-compatible JSON
         let openai_request = serde_json::json!({
-            "model": deployment.label, // Use deployment label as model name
+            "model": deployment.model_name(), // Use actual model name (falls back to label)
             "messages": req.messages,
             "temperature": temperature,
             "max_tokens": max_tokens,

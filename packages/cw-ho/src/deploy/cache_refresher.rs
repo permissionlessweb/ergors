@@ -277,9 +277,21 @@ impl DeploymentCacheRefresher {
             .and_then(|d| d.deployment_sequence.parse::<u64>().ok())
             .unwrap_or(0);
 
+        // Resolve model_name: prefer workflow-level, then first endpoint's model_name
+        let model_name = if !workflow.model_name.is_empty() {
+            workflow.model_name.clone()
+        } else {
+            workflow
+                .service_endpoints
+                .first()
+                .map(|ep| ep.model_name.clone())
+                .unwrap_or_default()
+        };
+
         let endpoint = DeploymentEndpoint {
             session_id: workflow.session_id.clone(),
             label: workflow.label.clone(),
+            model_name,
             endpoints,
             owner: workflow.account_address.clone(),
             dseq,

@@ -20,7 +20,7 @@ use ergors::{
     config::ErgorsConfig,
     config_cmd::ConfigCmd,
     daemon::{Daemon, SignalHandler},
-    grpc::management::{start_grpc_server, ManagementServiceImpl},
+    grpc::{management::{start_grpc_server, ManagementServiceImpl}, RlmDocService},
     init::InitCmd,
     keys::KeysCmd,
     server::Server as CwHoServer,
@@ -314,7 +314,10 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
 
         // Create gRPC management service
         let grpc_service =
-            ManagementServiceImpl::new(app_state, tokio::sync::broadcast::channel(1).0);
+            ManagementServiceImpl::new(app_state.clone(), tokio::sync::broadcast::channel(1).0);
+
+        // Create RLM document service
+        let rlm_service = Some(RlmDocService::new(app_state.s.clone()));
 
         // Spawn gRPC management server
         let grpc_addr: SocketAddr = format!("0.0.0.0:{}", grpc_port)
@@ -322,7 +325,7 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
             .expect("Invalid gRPC address");
 
         let grpc_handle = tokio::spawn(async move {
-            if let Err(e) = start_grpc_server(grpc_addr, grpc_service).await {
+            if let Err(e) = start_grpc_server(grpc_addr, grpc_service, rlm_service).await {
                 error!("gRPC server error: {}", e);
             }
         });

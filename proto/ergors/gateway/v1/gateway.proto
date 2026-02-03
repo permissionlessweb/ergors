@@ -77,6 +77,14 @@ message GatewaySession {
 // Guild-scoped RAG Configuration
 // ============================================
 
+// RAG operation mode for guild
+enum RagMode {
+  RAG_MODE_UNSPECIFIED = 0;
+  RAG_MODE_STATIC = 1;   // Current HNSW embeddings
+  RAG_MODE_RLM = 2;      // Agentic RLM
+  RAG_MODE_HYBRID = 3;   // RLM with RAG fallback
+}
+
 // Per-guild RAG configuration for Discord
 message GuildRagConfig {
   string guild_id = 1;
@@ -102,6 +110,12 @@ message GuildRagConfig {
   uint32 total_documents = 7;
   uint32 total_chunks = 8;
   int64 last_ingestion_at = 9;
+
+  // RLM configuration
+  RagMode mode = 10;
+  uint32 rlm_max_iterations = 11;      // default: 10
+  uint32 rlm_max_sub_calls = 12;       // default: 50
+  repeated string rlm_allowed_models = 13;
 }
 
 // RAG context retrieved for a prompt

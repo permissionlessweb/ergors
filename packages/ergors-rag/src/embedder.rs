@@ -96,6 +96,7 @@ impl Embedder for DummyEmbedder {
 #[cfg(feature = "candle")]
 pub mod candle {
     use super::*;
+    use anyhow::Context;
     use candle_core::{DType, Device, Tensor};
     use candle_nn::VarBuilder;
     use candle_transformers::models::bert::{BertModel, Config, DTYPE};
@@ -152,7 +153,7 @@ pub mod candle {
             let repo = api.model(model_id.to_string());
 
             // Tokenizer
-            let tokenizer_path = repo
+            let tokenizer_path: std::path::PathBuf = repo
                 .get("tokenizer.json")
                 .await
                 .context("Failed to download tokenizer")?;
@@ -160,23 +161,24 @@ pub mod candle {
                 .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
 
             // Config
-            let config_path = repo
+            let config_path: std::path::PathBuf = repo
                 .get("config.json")
                 .await
                 .context("Failed to download config")?;
-            let config: Config = serde_json::from_reader(std::fs::File::open(config_path)?)
+            let config: Config = serde_json::from_reader(std::fs::File::open(&config_path)?)
                 .context("Failed to parse config")?;
             let dimension = config.hidden_size;
 
             // Weights (try safetensors first, fallback to pytorch_model.bin)
-            let weights_path = repo
-                .get("model.safetensors")
-                .await
-                .or_else(|_| async { repo.get("pytorch_model.bin").await })
-                .await
-                .context("Failed to download model weights (tried .safetensors and .bin)")?;
+            let weights_path: std::path::PathBuf = match repo.get("model.safetensors").await {
+                Ok(path) => path,
+                Err(_) => repo
+                    .get("pytorch_model.bin")
+                    .await
+                    .context("Failed to download model weights (tried .safetensors and .bin)")?,
+            };
 
-            let vb = if weights_path.extension().and_then(|s| s.to_str()) == Some("safetensors") {
+            let vb = if weights_path.extension().and_then(|s: &std::ffi::OsStr| s.to_str()) == Some("safetensors") {
                 unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], DTYPE, &device)? }
             } else {
                 VarBuilder::from_pth(&weights_path, DTYPE, &device)?
@@ -221,7 +223,8 @@ pub mod candle {
             }
 
             let shape = (texts.len(), max_len);
-            Tensor::from_vec(padded, shape, &self.device).context("Failed to create input tensor")
+            Tensor::from_vec(padded, shape, &self.device)
+                .map_err(|e| anyhow::anyhow!("Failed to create input tensor: {}", e))
         }
 
         /// Mean pooling over token embeddings (standard for sentence embeddings).
@@ -236,7 +239,7 @@ pub mod candle {
         /// Normalize embeddings to unit length (for cosine similarity).
         fn normalize(&self, embeddings: &Tensor) -> Result<Tensor> {
             let norm = embeddings.sqr()?.sum_keepdim(1)?.sqrt()?;
-            embeddings.broadcast_div(&norm)
+            Ok(embeddings.broadcast_div(&norm)?)
         }
 
         /// Internal batch embedding (shared by embed and embed_batch).
@@ -248,8 +251,11 @@ pub mod candle {
             // Tokenize
             let input_ids = self.tokenize(texts)?;
 
-            // Forward pass
-            let hidden_states = self.model.forward(&input_ids)?;
+            // Create token_type_ids (all zeros with same shape as input_ids)
+            let token_type_ids = Tensor::zeros(input_ids.shape(), DType::U32, &self.device)?;
+
+            // Forward pass (input_ids, token_type_ids, attention_mask=None)
+            let hidden_states = self.model.forward(&input_ids, &token_type_ids, None)?;
 
             // Mean pooling + normalize
             let pooled = self.mean_pool(&hidden_states)?;

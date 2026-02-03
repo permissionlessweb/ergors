@@ -158,6 +158,7 @@ impl MockWorkflowEngine {
             request_grant_from: Vec::new(),
             grant_duration_seconds: 86400,
             label: String::new(),
+            model_name: String::new(),
             grant_spend_limit_uakt: 5_000_000,
             grant_purpose: String::new(),
             available_bids: Vec::new(),

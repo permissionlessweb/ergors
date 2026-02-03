@@ -3068,6 +3068,10 @@ pub struct AkashDeploymentWorkflow {
     /// Must be unique across active deployments for O(1) label lookups
     #[prost(string, tag = "35")]
     pub label: ::prost::alloc::string::String,
+    /// Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8")
+    /// Stamped onto service endpoints when they are discovered
+    #[prost(string, tag = "37")]
+    pub model_name: ::prost::alloc::string::String,
 }
 impl ::prost::Name for AkashDeploymentWorkflow {
     const NAME: &'static str = "AkashDeploymentWorkflow";
@@ -3296,6 +3300,9 @@ pub struct AkashServiceEndpoint {
     /// "tcp", "udp", "http"
     #[prost(string, tag = "5")]
     pub protocol: ::prost::alloc::string::String,
+    /// Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8")
+    #[prost(string, tag = "6")]
+    pub model_name: ::prost::alloc::string::String,
 }
 impl ::prost::Name for AkashServiceEndpoint {
     const NAME: &'static str = "AkashServiceEndpoint";
@@ -4533,6 +4540,120 @@ impl ::prost::Name for RagOperationResult {
         "/ergors.orch.v1.RagOperationResult".into()
     }
 }
+/// Request to get documents for RLM execution
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetDocumentsRequest {
+    /// "discord:guild\_{id}/"
+    #[prost(string, tag = "1")]
+    pub source_uri_prefix: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub limit: u32,
+}
+impl ::prost::Name for GetDocumentsRequest {
+    const NAME: &'static str = "GetDocumentsRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GetDocumentsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GetDocumentsRequest".into()
+    }
+}
+/// Document for RLM context
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Document {
+    #[prost(string, tag = "1")]
+    pub source_uri: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub content: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub doc_type: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "4")]
+    pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(int64, tag = "5")]
+    pub ingested_at: i64,
+}
+impl ::prost::Name for Document {
+    const NAME: &'static str = "Document";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.Document".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.Document".into()
+    }
+}
+/// Response with documents
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetDocumentsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub documents: ::prost::alloc::vec::Vec<Document>,
+}
+impl ::prost::Name for GetDocumentsResponse {
+    const NAME: &'static str = "GetDocumentsResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.GetDocumentsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.GetDocumentsResponse".into()
+    }
+}
+/// Request to execute RLM query
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RlmQueryRequest {
+    #[prost(string, tag = "1")]
+    pub query: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub guild_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub max_iterations: u32,
+    #[prost(uint32, tag = "4")]
+    pub max_sub_calls: u32,
+    #[prost(string, repeated, tag = "5")]
+    pub allowed_models: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for RlmQueryRequest {
+    const NAME: &'static str = "RlmQueryRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RlmQueryRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RlmQueryRequest".into()
+    }
+}
+/// Response from RLM execution
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RlmQueryResponse {
+    #[prost(string, tag = "1")]
+    pub answer: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub source_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(uint32, tag = "3")]
+    pub iterations: u32,
+    #[prost(uint32, tag = "4")]
+    pub sub_llm_calls: u32,
+    #[prost(double, tag = "5")]
+    pub cost_usd: f64,
+    #[prost(uint64, tag = "6")]
+    pub latency_ms: u64,
+}
+impl ::prost::Name for RlmQueryResponse {
+    const NAME: &'static str = "RlmQueryResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RlmQueryResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RlmQueryResponse".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -5401,6 +5522,312 @@ pub mod query_service_server {
     /// Generated gRPC service name
     pub const SERVICE_NAME: &str = "ergors.orch.v1.QueryService";
     impl<T> tonic::server::NamedService for QueryServiceServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+/// Generated client implementations.
+#[cfg(feature = "rpc")]
+pub mod rlm_document_service_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    /// RLM Document Service (for embedded Python REPL workers)
+    #[derive(Debug, Clone)]
+    pub struct RlmDocumentServiceClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl RlmDocumentServiceClient<tonic::transport::Channel> {
+        /// Attempt to create a new client by connecting to a given endpoint.
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> RlmDocumentServiceClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> RlmDocumentServiceClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            RlmDocumentServiceClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        pub async fn get_documents(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetDocumentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetDocumentsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.orch.v1.RlmDocumentService/GetDocuments",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("ergors.orch.v1.RlmDocumentService", "GetDocuments"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+#[cfg(feature = "rpc")]
+pub mod rlm_document_service_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with RlmDocumentServiceServer.
+    #[async_trait]
+    pub trait RlmDocumentService: std::marker::Send + std::marker::Sync + 'static {
+        async fn get_documents(
+            &self,
+            request: tonic::Request<super::GetDocumentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetDocumentsResponse>,
+            tonic::Status,
+        >;
+    }
+    /// RLM Document Service (for embedded Python REPL workers)
+    #[derive(Debug)]
+    pub struct RlmDocumentServiceServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> RlmDocumentServiceServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for RlmDocumentServiceServer<T>
+    where
+        T: RlmDocumentService,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/ergors.orch.v1.RlmDocumentService/GetDocuments" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetDocumentsSvc<T: RlmDocumentService>(pub Arc<T>);
+                    impl<
+                        T: RlmDocumentService,
+                    > tonic::server::UnaryService<super::GetDocumentsRequest>
+                    for GetDocumentsSvc<T> {
+                        type Response = super::GetDocumentsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetDocumentsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as RlmDocumentService>::get_documents(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetDocumentsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for RlmDocumentServiceServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "ergors.orch.v1.RlmDocumentService";
+    impl<T> tonic::server::NamedService for RlmDocumentServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }

@@ -7,10 +7,11 @@ description = "Minimal prompt capture service with Cnidarium storage"
 license = "MIT"
 
 [features]
-default = ["cw","discord"]
+default = ["cw","discord","rlm"]
 cw = []
 testing = []
 discord = ["serenity", "poise", "html2text"]
+rlm = ["ergors-rlm"]
 
 
 [[bin]]
@@ -21,6 +22,7 @@ path = "src/main.rs"
 zk-headstash  = { workspace = true }
 ho-std  = { workspace = true, features = ["rpc"] }
 ergors-rag = { path = "../ergors-rag", features = ["openai"] }
+ergors-rlm = { path = "../ergors-rlm", optional = true }
 anyhow = { workspace = true }
 argon2 = { workspace = true }
 async-stream = { workspace = true }

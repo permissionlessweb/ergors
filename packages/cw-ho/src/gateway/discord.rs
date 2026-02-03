@@ -95,6 +95,9 @@ pub struct DiscordData {
     pub http_client: reqwest::Client,
     /// Shared HTTP client for RAG embedding API calls (redirects allowed for trusted endpoints)
     pub rag_client: reqwest::Client,
+    /// RLM service for agentic document exploration (optional)
+    #[cfg(feature = "rlm")]
+    pub rlm_service: Option<Arc<ergors_rlm::RlmService>>,
 }
 
 type Context<'a> = poise::Context<'a, DiscordData, anyhow::Error>;
@@ -240,6 +243,21 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
             .build()
             .map_err(|e| ho_std::error::HoError::Other(format!("Failed to create RAG client: {}", e)))?;
 
+        // Initialize RLM service if feature is enabled
+        #[cfg(feature = "rlm")]
+        let rlm_service = {
+            match ergors_rlm::RlmService::new(2, router.clone()).await {
+                Ok(service) => {
+                    info!("RLM service initialized successfully");
+                    Some(Arc::new(service))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize RLM service: {}. RLM mode will be unavailable.", e);
+                    None
+                }
+            }
+        };
+
         let data = DiscordData {
             storage,
             router,
@@ -247,6 +265,8 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
             event_tx,
             http_client,
             rag_client,
+            #[cfg(feature = "rlm")]
+            rlm_service,
         };
 
         let framework = Framework::builder()
@@ -260,6 +280,8 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
                     ragconfig(),
                     ragsources(),
                     ragdelete(),
+                    // RLM commands
+                    rlmconfig(),
                 ],
                 ..Default::default()
             })
@@ -383,40 +405,52 @@ async fn prompt(
         .get_or_create_gateway_session("discord", &thread_id)
         .await?;
 
-    // === RAG CONTEXT INJECTION ===
-    let rag_context = retrieve_guild_rag_context(ctx.data(), &guild_id, &message).await;
+    // === UNIFIED CONTEXT INJECTION (RAG or RLM) ===
+    let context_result = retrieve_guild_context(ctx.data(), &guild_id, &message).await;
 
-    // Build augmented prompt with context
-    let augmented_content = build_augmented_prompt(&message, rag_context.as_ref());
+    let response_content = match context_result {
+        Some(ContextResult::FinalAnswer(answer)) => {
+            // RLM returned final answer - skip LLM call, return directly
+            answer
+        }
+        other => {
+            // Get content for LLM (augmented prompt or raw message)
+            let content = match other {
+                Some(ContextResult::AugmentedPrompt(p)) => p,
+                None => message.clone(),
+                _ => unreachable!(),
+            };
 
-    // Build prompt request with session context
-    let prompt_req = PromptRequest {
-        messages: vec![PromptMessage {
-            role: "user".to_string(),
-            content: augmented_content,
-            ..Default::default()
-        }],
-        model: "default".to_string(),
-        context: Some(PromptContext {
-            session_id: session_id.clone(),
-            user_id: user_id.clone(),
-            thread_id: thread_id.clone(),
-        }),
-        ..Default::default()
-    };
+            // Build prompt request for LLM
+            let prompt_req = PromptRequest {
+                messages: vec![PromptMessage {
+                    role: "user".to_string(),
+                    content,
+                    ..Default::default()
+                }],
+                model: "default".to_string(),
+                context: Some(PromptContext {
+                    session_id: session_id.clone(),
+                    user_id: user_id.clone(),
+                    thread_id: thread_id.clone(),
+                }),
+                ..Default::default()
+            };
 
-    // Call LLM router directly - no async event dance
-    let response = match ctx.data().router.handle_request(&prompt_req, "default").await {
-        Ok(resp) => resp,
-        Err(e) => {
-            error!("LLM router error: {}", e);
-            ctx.say(format!("Error: {}", e)).await?;
-            return Ok(());
+            // Call LLM router
+            let response = match ctx.data().router.handle_request(&prompt_req, "default").await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    error!("LLM router error: {}", e);
+                    ctx.say(format!("Error: {}", e)).await?;
+                    return Ok(());
+                }
+            };
+
+            // Join response parts
+            response.response.join("")
         }
     };
-
-    // Join response parts and add source attribution
-    let response_content = format_response_with_sources(&response.response, rag_context.as_ref());
 
     // Discord message limit - chunk if needed
     if response_content.len() <= DISCORD_MSG_LIMIT {
@@ -724,6 +758,90 @@ async fn ragconfig(
         config.min_similarity * 100.0,
         config.total_documents,
         config.total_chunks
+    ))
+    .await?;
+
+    Ok(())
+}
+
+/// Configure RLM settings for this guild
+#[poise::command(slash_command, guild_only)]
+async fn rlmconfig(
+    ctx: Context<'_>,
+    #[description = "Mode (static, rlm, hybrid)"] mode: Option<String>,
+    #[description = "Max RLM iterations (default: 10)"] max_iterations: Option<u32>,
+    #[description = "Max sub-LLM calls (default: 50)"] max_sub_calls: Option<u32>,
+) -> Result<(), anyhow::Error> {
+    use ho_std::types::ergors::gateway::v1::RagMode;
+
+    check_guild_authorization(ctx.data(), ctx.guild_id())?;
+
+    // Only guild owner or admin can change config
+    check_guild_owner_or_admin(&ctx).await?;
+
+    let guild_id = ctx.guild_id().unwrap().to_string();
+
+    // Get or create config
+    let mut config = ctx
+        .data()
+        .storage
+        .get_guild_rag_config(&guild_id)
+        .await?
+        .unwrap_or_else(|| GuildRagConfig {
+            guild_id: guild_id.clone(),
+            auto_context_enabled: true,
+            max_context_chunks: 3,
+            min_similarity: 0.5,
+            mode: RagMode::Static as i32,
+            rlm_max_iterations: 10,
+            rlm_max_sub_calls: 50,
+            ..Default::default()
+        });
+
+    // Apply updates
+    let mut changed = false;
+    if let Some(mode_str) = mode {
+        let new_mode = match mode_str.to_lowercase().as_str() {
+            "static" => RagMode::Static,
+            "rlm" => RagMode::Rlm,
+            "hybrid" => RagMode::Hybrid,
+            _ => {
+                ctx.say("Invalid mode. Use: static, rlm, or hybrid").await?;
+                return Ok(());
+            }
+        };
+        config.mode = new_mode as i32;
+        changed = true;
+    }
+
+    if let Some(iters) = max_iterations {
+        config.rlm_max_iterations = iters.clamp(1, 50);
+        changed = true;
+    }
+
+    if let Some(calls) = max_sub_calls {
+        config.rlm_max_sub_calls = calls.clamp(1, 200);
+        changed = true;
+    }
+
+    if changed {
+        ctx.data().storage.put_guild_rag_config(&config).await?;
+    }
+
+    // Display current config
+    let mode_name = match RagMode::try_from(config.mode).unwrap_or(RagMode::Static) {
+        RagMode::Static => "Static RAG",
+        RagMode::Rlm => "RLM (Agentic)",
+        RagMode::Hybrid => "Hybrid (RLM + RAG fallback)",
+        _ => "Unknown",
+    };
+
+    ctx.say(format!(
+        "**RLM Configuration**\n\
+         Mode: {}\n\
+         Max iterations: {}\n\
+         Max sub-LLM calls: {}",
+        mode_name, config.rlm_max_iterations, config.rlm_max_sub_calls
     ))
     .await?;
 
@@ -1203,6 +1321,149 @@ async fn send_chunked_response(ctx: &Context<'_>, content: &str) -> Result<(), a
     }
 
     Ok(())
+}
+
+/// Context retrieval result distinguishing final answers from augmented prompts
+enum ContextResult {
+    /// Final answer ready for user (from RLM) - skip LLM call
+    FinalAnswer(String),
+    /// Augmented prompt for LLM (from RAG)
+    AugmentedPrompt(String),
+}
+
+/// Retrieve context for guild (RLM or RAG based on config)
+async fn retrieve_guild_context(
+    data: &DiscordData,
+    guild_id: &str,
+    query: &str,
+) -> Option<ContextResult> {
+    use ho_std::types::ergors::gateway::v1::RagMode;
+
+    let config = match data.storage.get_guild_rag_config(guild_id).await {
+        Ok(Some(c)) => c,
+        _ => return None,
+    };
+
+    match RagMode::try_from(config.mode).unwrap_or(RagMode::Static) {
+        RagMode::Rlm => {
+            // RLM mode - call embedded RLM service (returns final answer)
+            #[cfg(feature = "rlm")]
+            {
+                if let Some(answer) = query_rlm_service(data, guild_id, query, &config).await {
+                    return Some(ContextResult::FinalAnswer(answer));
+                }
+            }
+            #[cfg(not(feature = "rlm"))]
+            {
+                warn!("RLM mode requested but feature is not enabled. Falling back to RAG.");
+            }
+
+            // Fallback to RAG if RLM fails or not available
+            let rag_ctx = retrieve_guild_rag_context(data, guild_id, query).await?;
+            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(query, Some(&rag_ctx))))
+        }
+        RagMode::Static => {
+            // Existing RAG logic (returns augmented prompt)
+            let rag_ctx = retrieve_guild_rag_context(data, guild_id, query).await?;
+            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(query, Some(&rag_ctx))))
+        }
+        RagMode::Hybrid => {
+            // Try RLM first (final answer), fallback to RAG (augmented prompt)
+            #[cfg(feature = "rlm")]
+            {
+                if let Some(answer) = query_rlm_service(data, guild_id, query, &config).await {
+                    return Some(ContextResult::FinalAnswer(answer));
+                }
+            }
+
+            // Fallback to RAG
+            let rag_ctx = retrieve_guild_rag_context(data, guild_id, query).await?;
+            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(query, Some(&rag_ctx))))
+        }
+        _ => {
+            // Default to static RAG
+            let rag_ctx = retrieve_guild_rag_context(data, guild_id, query).await?;
+            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(query, Some(&rag_ctx))))
+        }
+    }
+}
+
+/// Query RLM service for document-based answer
+#[cfg(feature = "rlm")]
+async fn query_rlm_service(
+    data: &DiscordData,
+    guild_id: &str,
+    query: &str,
+    config: &ho_std::types::ergors::gateway::v1::GuildRagConfig,
+) -> Option<String> {
+    use ergors_rlm::RlmQuery;
+
+    let rlm_service = data.rlm_service.as_ref()?;
+
+    debug!("Querying RLM service for guild {}", guild_id);
+
+    // Load documents from storage
+    let prefix = format!("discord:guild_{}/", guild_id);
+
+    // Load documents using shared utility (with HTTP client reuse)
+    let proto_documents = match crate::grpc::load_documents_by_prefix(&data.storage, &prefix, 100, Some(data.rag_client.clone())).await {
+        Ok(docs) => docs,
+        Err(e) => {
+            warn!("Failed to load documents for RLM: {}", e);
+            return None;
+        }
+    };
+
+    if proto_documents.is_empty() {
+        debug!("No documents found for RLM query");
+        return None;
+    }
+
+    debug!("RLM querying {} documents", proto_documents.len());
+
+    // Convert proto documents to RLM documents
+    let documents: Vec<ergors_rlm::Document> = proto_documents
+        .into_iter()
+        .map(|d| ergors_rlm::Document {
+            source_uri: d.source_uri,
+            content: d.content,
+            doc_type: d.doc_type,
+            tags: d.tags,
+            ingested_at: d.ingested_at,
+        })
+        .collect();
+
+    // Execute RLM query
+    let rlm_query = RlmQuery {
+        query: query.to_string(),
+        guild_id: guild_id.to_string(),
+        max_iterations: config.rlm_max_iterations,
+        max_sub_calls: config.rlm_max_sub_calls,
+    };
+
+    match rlm_service.query(rlm_query, documents).await {
+        Ok(response) => {
+            debug!(
+                "RLM response: {} iterations, {} sub-LLM calls",
+                response.iterations, response.sub_llm_calls
+            );
+
+            // Format with source attribution
+            let mut content = response.answer;
+            if !response.source_uris.is_empty() {
+                content.push_str("\n\n---\n*Sources:*");
+                for uri in response.source_uris {
+                    content.push_str(&format!("\n- {}", source_display_name(&uri)));
+                }
+            }
+
+            Some(content)
+        }
+        Err(e) => {
+            warn!("RLM query failed: {}", e);
+            None
+        }
+    }
 }
 
 /// Retrieve RAG context for a guild's prompt.

@@ -18,3 +18,4 @@ PROJECT_*
 captures/*
 work/*
 .vscode/
+__pycache__

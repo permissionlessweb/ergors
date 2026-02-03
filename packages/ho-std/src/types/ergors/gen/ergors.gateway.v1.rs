@@ -228,12 +228,25 @@ pub struct GuildRagConfig {
     #[prost(string, tag = "6")]
     pub embedder_endpoint: ::prost::alloc::string::String,
     /// Stats (updated on ingestion)
+    /// NOTE: These are approximate counters - concurrent ingestions may race.
+    /// For precise counts, query the actual RAG storage directly.
     #[prost(uint32, tag = "7")]
     pub total_documents: u32,
     #[prost(uint32, tag = "8")]
     pub total_chunks: u32,
     #[prost(int64, tag = "9")]
     pub last_ingestion_at: i64,
+    /// RLM configuration
+    #[prost(enumeration = "RagMode", tag = "10")]
+    pub mode: i32,
+    /// default: 10
+    #[prost(uint32, tag = "11")]
+    pub rlm_max_iterations: u32,
+    /// default: 50
+    #[prost(uint32, tag = "12")]
+    pub rlm_max_sub_calls: u32,
+    #[prost(string, repeated, tag = "13")]
+    pub rlm_allowed_models: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 impl ::prost::Name for GuildRagConfig {
     const NAME: &'static str = "GuildRagConfig";
@@ -314,5 +327,42 @@ impl ::prost::Name for GuildRagAuditLog {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.gateway.v1.GuildRagAuditLog".into()
+    }
+}
+/// RAG operation mode for guild
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RagMode {
+    Unspecified = 0,
+    /// Current HNSW embeddings
+    Static = 1,
+    /// Agentic RLM
+    Rlm = 2,
+    /// RLM with RAG fallback
+    Hybrid = 3,
+}
+impl RagMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "RAG_MODE_UNSPECIFIED",
+            Self::Static => "RAG_MODE_STATIC",
+            Self::Rlm => "RAG_MODE_RLM",
+            Self::Hybrid => "RAG_MODE_HYBRID",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "RAG_MODE_UNSPECIFIED" => Some(Self::Unspecified),
+            "RAG_MODE_STATIC" => Some(Self::Static),
+            "RAG_MODE_RLM" => Some(Self::Rlm),
+            "RAG_MODE_HYBRID" => Some(Self::Hybrid),
+            _ => None,
+        }
     }
 }

@@ -14,8 +14,10 @@ use tokio::sync::RwLock;
 pub struct DeploymentEndpoint {
     /// Deployment session ID
     pub session_id: String,
-    /// User-defined label (used as model name)
+    /// User-defined label (used as routing key)
     pub label: String,
+    /// Actual model name for the inference server (e.g., "Qwen/Qwen3-235B-A22B-FP8")
+    pub model_name: String,
     /// Service endpoints with external URIs
     pub endpoints: Vec<ServiceEndpoint>,
     /// Account address that owns this deployment
@@ -42,6 +44,16 @@ impl DeploymentEndpoint {
     /// Appends OpenAI-compatible paths to this base.
     pub fn base_url(&self) -> Option<String> {
         self.primary_endpoint().map(|ep| ep.external_uri.clone())
+    }
+
+    /// Get the model name to send to the inference server.
+    /// Returns model_name if set, otherwise falls back to label.
+    pub fn model_name(&self) -> &str {
+        if self.model_name.is_empty() {
+            &self.label
+        } else {
+            &self.model_name
+        }
     }
 }
 
@@ -117,9 +129,21 @@ impl DeploymentProviderCache {
             .and_then(|d| d.deployment_sequence.parse::<u64>().ok())
             .unwrap_or(0);
 
+        // Resolve model_name: prefer workflow-level, then first endpoint's model_name
+        let model_name = if !workflow.model_name.is_empty() {
+            workflow.model_name.clone()
+        } else {
+            workflow
+                .service_endpoints
+                .first()
+                .map(|ep| ep.model_name.clone())
+                .unwrap_or_default()
+        };
+
         let endpoint = DeploymentEndpoint {
             session_id: workflow.session_id.clone(),
             label: workflow.label.clone(),
+            model_name,
             endpoints,
             owner: workflow.account_address.clone(),
             dseq,
@@ -204,7 +228,8 @@ mod tests {
                 internal_port: 8000,
                 external_port: 30123,
                 protocol: "TCP".to_string(),
-                            },
+                model_name: String::new(),
+            },
         );
 
         // Add to cache
@@ -249,7 +274,8 @@ mod tests {
                 internal_port: 8000,
                 external_port: 8443,
                 protocol: "HTTPS".to_string(),
-                            },
+                model_name: String::new(),
+            },
         );
 
         // 1. Add deployment to cache (simulates completion handler)
@@ -301,7 +327,8 @@ mod tests {
                 internal_port: 8000,
                 external_port: 8443,
                 protocol: "HTTPS".to_string(),
-                            },
+                model_name: String::new(),
+            },
         );
 
         // Add first deployment
@@ -320,7 +347,8 @@ mod tests {
                 internal_port: 8000,
                 external_port: 8443,
                 protocol: "HTTPS".to_string(),
-                            },
+                model_name: String::new(),
+            },
         );
 
         // Add second deployment (replaces first in cache)
@@ -333,5 +361,63 @@ mod tests {
 
         // Note: Actual collision prevention happens at gRPC handler level
         // via check_label_collision() before creation
+    }
+
+    #[tokio::test]
+    async fn test_model_name_propagation() {
+        let cache = DeploymentProviderCache::new();
+
+        // Deployment with model_name set on workflow
+        let mut workflow = AkashDeploymentWorkflow::default();
+        workflow.session_id = "model-name-test".to_string();
+        workflow.label = "qwen-node-1".to_string();
+        workflow.model_name = "Qwen/Qwen3-235B-A22B-FP8".to_string();
+        workflow.status = AkashWorkflowStatus::Completed as i32;
+        workflow.account_address = "akash1test".to_string();
+        workflow.service_endpoints.push(
+            crate::types::ergors::orch::v1::AkashServiceEndpoint {
+                service_name: "sglang".to_string(),
+                external_uri: "https://provider.akash.pub:30123".to_string(),
+                internal_port: 8000,
+                external_port: 30123,
+                protocol: "TCP".to_string(),
+                model_name: "Qwen/Qwen3-235B-A22B-FP8".to_string(),
+            },
+        );
+
+        cache.add_deployment(&workflow).await.unwrap();
+
+        let endpoint = cache.get("qwen-node-1").await.unwrap();
+        // model_name() should return the actual model name, not the label
+        assert_eq!(endpoint.model_name(), "Qwen/Qwen3-235B-A22B-FP8");
+        assert_eq!(endpoint.label, "qwen-node-1");
+    }
+
+    #[tokio::test]
+    async fn test_model_name_fallback_to_label() {
+        let cache = DeploymentProviderCache::new();
+
+        // Deployment without model_name (backwards compat)
+        let mut workflow = AkashDeploymentWorkflow::default();
+        workflow.session_id = "fallback-test".to_string();
+        workflow.label = "my-legacy-deploy".to_string();
+        workflow.status = AkashWorkflowStatus::Completed as i32;
+        workflow.account_address = "akash1test".to_string();
+        workflow.service_endpoints.push(
+            crate::types::ergors::orch::v1::AkashServiceEndpoint {
+                service_name: "inference".to_string(),
+                external_uri: "https://provider.akash.pub:30456".to_string(),
+                internal_port: 8000,
+                external_port: 30456,
+                protocol: "TCP".to_string(),
+                model_name: String::new(), // empty = not set
+            },
+        );
+
+        cache.add_deployment(&workflow).await.unwrap();
+
+        let endpoint = cache.get("my-legacy-deploy").await.unwrap();
+        // model_name() should fall back to label when model_name is empty
+        assert_eq!(endpoint.model_name(), "my-legacy-deploy");
     }
 }

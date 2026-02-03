@@ -473,11 +473,7 @@ impl ManifestBuilder {
                         .collect::<Vec<_>>()
                 });
             // Go serializes missing hosts as null, present-but-empty as []
-            let hosts = if let Some(h) = hosts {
-                if h.is_empty() { None } else { Some(h) }
-            } else {
-                None
-            };
+            let hosts = hosts.filter(|h| !h.is_empty());
 
             exposes.push(ManifestServiceExpose {
                 port,
@@ -1082,6 +1078,91 @@ pub struct ServiceEndpoint {
     pub protocol: String,
 }
 
+/// Parse service endpoints from a lease status JSON response.
+///
+/// Handles two endpoint types returned by Akash providers:
+/// - `services.{name}.uris` — reverse-proxied HTTP services (port 80/443)
+/// - `forwarded_ports.{name}` — direct port forwards (e.g. GPU inference on port 8000)
+///
+/// URIs take precedence: if a service has both `uris` and `forwarded_ports`, the URI is used.
+fn parse_lease_status_endpoints(json: &serde_json::Value) -> HashMap<String, ServiceEndpoint> {
+    let mut endpoints = HashMap::new();
+
+    // Parse services.{name}.uris (reverse-proxied HTTP endpoints)
+    if let Some(services) = json.get("services").and_then(|s| s.as_object()) {
+        for (name, service) in services {
+            if let Some(uris) = service.get("uris").and_then(|u| u.as_array()) {
+                if let Some(uri) = uris.first().and_then(|u| u.as_str()) {
+                    let ports_arr = service
+                        .get("ports")
+                        .and_then(|p| p.as_array());
+
+                    let internal_port = ports_arr
+                        .and_then(|arr| arr.first())
+                        .and_then(|p| p.get("port"))
+                        .and_then(|p| p.as_u64())
+                        .unwrap_or(80) as u16;
+
+                    let external_port = ports_arr
+                        .and_then(|arr| arr.first())
+                        .and_then(|p| p.get("externalPort"))
+                        .and_then(|p| p.as_u64())
+                        .map(|p| p as u16)
+                        .unwrap_or(internal_port);
+
+                    endpoints.insert(
+                        name.clone(),
+                        ServiceEndpoint {
+                            service_name: name.clone(),
+                            external_uri: uri.to_string(),
+                            internal_port,
+                            external_port,
+                            protocol: "tcp".to_string(),
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    // Parse forwarded_ports (for non-HTTP services like GPU inference on port 8000)
+    if let Some(forwarded) = json.get("forwarded_ports").and_then(|f| f.as_object()) {
+        for (name, ports) in forwarded {
+            if endpoints.contains_key(name) {
+                continue; // uris take precedence
+            }
+            if let Some(entry) = ports.as_array().and_then(|a| a.first()) {
+                let host = entry.get("host").and_then(|h| h.as_str()).unwrap_or("");
+                let internal_port =
+                    entry.get("port").and_then(|p| p.as_u64()).unwrap_or(0) as u16;
+                let external_port = entry
+                    .get("externalPort")
+                    .and_then(|p| p.as_u64())
+                    .unwrap_or(0) as u16;
+                let proto = entry
+                    .get("proto")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("tcp");
+
+                if !host.is_empty() && external_port > 0 {
+                    endpoints.insert(
+                        name.clone(),
+                        ServiceEndpoint {
+                            service_name: name.clone(),
+                            external_uri: format!("http://{}:{}", host, external_port),
+                            internal_port,
+                            external_port,
+                            protocol: proto.to_lowercase(),
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    endpoints
+}
+
 /// Query service endpoints from provider with JWT authentication.
 pub async fn query_service_endpoints(
     provider_uri: &str,
@@ -1110,37 +1191,13 @@ pub async fn query_service_endpoints(
     }
 
     let json: serde_json::Value = response.json().await?;
-    let mut endpoints = HashMap::new();
 
-    // Parse services from response
-    if let Some(services) = json.get("services").and_then(|s| s.as_object()) {
-        for (name, service) in services {
-            if let Some(uris) = service.get("uris").and_then(|u| u.as_array()) {
-                if let Some(uri) = uris.first().and_then(|u| u.as_str()) {
-                    let port = service
-                        .get("ports")
-                        .and_then(|p| p.as_array())
-                        .and_then(|arr| arr.first())
-                        .and_then(|p| p.get("port"))
-                        .and_then(|p| p.as_u64())
-                        .unwrap_or(80) as u16;
+    tracing::debug!(
+        "Lease status response: {}",
+        serde_json::to_string_pretty(&json).unwrap_or_default()
+    );
 
-                    endpoints.insert(
-                        name.clone(),
-                        ServiceEndpoint {
-                            service_name: name.clone(),
-                            external_uri: uri.to_string(),
-                            internal_port: port,
-                            external_port: port,
-                            protocol: "tcp".to_string(),
-                        },
-                    );
-                }
-            }
-        }
-    }
-
-    Ok(endpoints)
+    Ok(parse_lease_status_endpoints(&json))
 }
 
 #[cfg(test)]
@@ -1458,6 +1515,145 @@ deployment:
             .decode(parts[2])
             .unwrap();
         assert_eq!(signature.len(), 64, "Signature should be 64 bytes");
+    }
+
+    #[test]
+    fn test_parse_forwarded_ports() {
+        let json: serde_json::Value = serde_json::json!({
+            "services": {
+                "sglang": { "uris": [], "ports": [] }
+            },
+            "forwarded_ports": {
+                "sglang": [{
+                    "host": "provider.example.com",
+                    "port": 8000,
+                    "externalPort": 32145,
+                    "proto": "TCP"
+                }]
+            }
+        });
+
+        let endpoints = parse_lease_status_endpoints(&json);
+        assert_eq!(endpoints.len(), 1);
+
+        let ep = endpoints.get("sglang").unwrap();
+        assert_eq!(ep.service_name, "sglang");
+        assert_eq!(ep.external_uri, "http://provider.example.com:32145");
+        assert_eq!(ep.internal_port, 8000);
+        assert_eq!(ep.external_port, 32145);
+        assert_eq!(ep.protocol, "tcp");
+    }
+
+    #[test]
+    fn test_uris_take_precedence() {
+        let json: serde_json::Value = serde_json::json!({
+            "services": {
+                "web": {
+                    "uris": ["https://abc123.provider.com"],
+                    "ports": [{ "port": 80, "externalPort": 80 }]
+                }
+            },
+            "forwarded_ports": {
+                "web": [{
+                    "host": "provider.example.com",
+                    "port": 80,
+                    "externalPort": 31000,
+                    "proto": "TCP"
+                }]
+            }
+        });
+
+        let endpoints = parse_lease_status_endpoints(&json);
+        assert_eq!(endpoints.len(), 1);
+
+        let ep = endpoints.get("web").unwrap();
+        assert_eq!(ep.external_uri, "https://abc123.provider.com");
+        assert_eq!(ep.internal_port, 80);
+        assert_eq!(ep.external_port, 80);
+    }
+
+    #[test]
+    fn test_mixed_uris_and_forwarded_ports() {
+        let json: serde_json::Value = serde_json::json!({
+            "services": {
+                "web": {
+                    "uris": ["https://abc123.provider.com"],
+                    "ports": [{ "port": 80, "externalPort": 443 }]
+                },
+                "sglang": {
+                    "uris": [],
+                    "ports": []
+                }
+            },
+            "forwarded_ports": {
+                "sglang": [{
+                    "host": "provider.example.com",
+                    "port": 8000,
+                    "externalPort": 32145,
+                    "proto": "TCP"
+                }]
+            }
+        });
+
+        let endpoints = parse_lease_status_endpoints(&json);
+        assert_eq!(endpoints.len(), 2);
+
+        let web = endpoints.get("web").unwrap();
+        assert_eq!(web.external_uri, "https://abc123.provider.com");
+        assert_eq!(web.internal_port, 80);
+        assert_eq!(web.external_port, 443);
+
+        let sglang = endpoints.get("sglang").unwrap();
+        assert_eq!(sglang.external_uri, "http://provider.example.com:32145");
+        assert_eq!(sglang.internal_port, 8000);
+        assert_eq!(sglang.external_port, 32145);
+    }
+
+    #[test]
+    fn test_empty_forwarded_ports() {
+        // Empty forwarded_ports object
+        let json: serde_json::Value = serde_json::json!({
+            "services": {},
+            "forwarded_ports": {}
+        });
+        let endpoints = parse_lease_status_endpoints(&json);
+        assert!(endpoints.is_empty());
+
+        // Missing host
+        let json: serde_json::Value = serde_json::json!({
+            "forwarded_ports": {
+                "svc": [{ "host": "", "port": 8000, "externalPort": 32000, "proto": "TCP" }]
+            }
+        });
+        let endpoints = parse_lease_status_endpoints(&json);
+        assert!(endpoints.is_empty());
+
+        // Missing externalPort (zero)
+        let json: serde_json::Value = serde_json::json!({
+            "forwarded_ports": {
+                "svc": [{ "host": "provider.example.com", "port": 8000, "externalPort": 0, "proto": "TCP" }]
+            }
+        });
+        let endpoints = parse_lease_status_endpoints(&json);
+        assert!(endpoints.is_empty());
+
+        // Empty array for service
+        let json: serde_json::Value = serde_json::json!({
+            "forwarded_ports": {
+                "svc": []
+            }
+        });
+        let endpoints = parse_lease_status_endpoints(&json);
+        assert!(endpoints.is_empty());
+
+        // No forwarded_ports key at all
+        let json: serde_json::Value = serde_json::json!({
+            "services": {
+                "web": { "uris": [], "ports": [] }
+            }
+        });
+        let endpoints = parse_lease_status_endpoints(&json);
+        assert!(endpoints.is_empty());
     }
 
     #[test]
