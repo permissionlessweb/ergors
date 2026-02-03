@@ -74,7 +74,7 @@ impl TxLifecycle {
             signer,
             rest_endpoint,
             http,
-            poll_interval: Duration::from_secs(2),
+            poll_interval: Duration::from_secs(BLOCK_TIME_SECS),
             max_wait: Duration::from_secs(MAX_FINALITY_WAIT_SECS),
         }
     }

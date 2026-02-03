@@ -1,0 +1,99 @@
+# Provider Validation Tool - justfile
+#
+# Verifies Rust client JWT + manifest output against
+# actual Go provider code (AuthProcess, Manifest.Version).
+
+# Default SDL for fixture generation
+sdl_file := env_var_or_default("SDL_FILE", "testdata/simple.yaml")
+
+# Show available commands
+default:
+    @just --list
+
+# ═══════════════════════════════════════════════════════════════
+# Full integration test - one command to verify everything
+# ═══════════════════════════════════════════════════════════════
+
+# Run full provider compatibility test: Rust generates → Go verifies
+test: build-rust build-go generate-fixtures verify-jwt verify-manifest
+    @echo ""
+    @echo "✅ ALL INTEGRATION TESTS PASSED"
+    @echo "   Rust JWT       → accepted by provider AuthProcess()"
+    @echo "   Rust manifest  → hash matches provider Manifest.Version()"
+
+# ═══════════════════════════════════════════════════════════════
+# Build steps
+# ═══════════════════════════════════════════════════════════════
+
+# Build the Rust test binary (JWT + manifest generator)
+build-rust:
+    @echo "🦀 Building Rust client..."
+    cd examples/rust-jwt-gen && cargo build --quiet 2>/dev/null
+
+# Build the Go provider validator
+build-go:
+    @echo "📦 Building Go provider validator..."
+    go build -o provider-validate .
+
+# ═══════════════════════════════════════════════════════════════
+# Generate fixtures using ACTUAL Rust engine code
+# ═══════════════════════════════════════════════════════════════
+
+# Generate JWT + manifest fixtures from SDL using Rust engine
+generate-fixtures:
+    #!/usr/bin/env bash
+    set -e
+    SDL_PATH="$(cd "$(dirname "{{sdl_file}}")" && pwd)/$(basename "{{sdl_file}}")"
+    FIXTURES_DIR="$(pwd)/fixtures"
+    echo "🔧 Generating fixtures from SDL: $SDL_PATH"
+    cd examples/rust-jwt-gen
+    cargo run --quiet -- "$SDL_PATH" "$FIXTURES_DIR" 2>/dev/null
+    echo "   Fixtures written to $FIXTURES_DIR"
+
+# ═══════════════════════════════════════════════════════════════
+# Verification steps using Go provider code
+# ═══════════════════════════════════════════════════════════════
+
+# Verify Rust JWT with provider AuthProcess()
+verify-jwt:
+    #!/usr/bin/env bash
+    set -e
+    echo "🔍 Verifying JWT with provider AuthProcess()..."
+    JWT=$(cat fixtures/jwt.txt)
+    PUBKEY=$(cat fixtures/pubkey.txt)
+    ./provider-validate jwt "$JWT" "$PUBKEY"
+
+# Verify Rust manifest hash with provider Manifest.Version()
+verify-manifest:
+    #!/usr/bin/env bash
+    set -e
+    echo "🔍 Verifying manifest hash with provider Manifest.Version()..."
+    HASH=$(cat fixtures/manifest-hash.txt | tr -d '[:space:]')
+    ./provider-validate manifest fixtures/manifest.json "$HASH"
+
+# ═══════════════════════════════════════════════════════════════
+# Standalone commands
+# ═══════════════════════════════════════════════════════════════
+
+# Verify a JWT token directly
+check-jwt JWT PUBKEY: build-go
+    ./provider-validate jwt "{{JWT}}" "{{PUBKEY}}"
+
+# Verify a manifest hash directly
+check-manifest FILE HASH: build-go
+    ./provider-validate manifest "{{FILE}}" "{{HASH}}"
+
+# Verify both JWT and manifest directly
+check-all JWT PUBKEY FILE HASH: build-go
+    ./provider-validate all "{{JWT}}" "{{PUBKEY}}" "{{FILE}}" "{{HASH}}"
+
+# Clean build artifacts and fixtures
+clean:
+    rm -f provider-validate jwt-verify
+    rm -rf fixtures/
+    cd examples/rust-jwt-gen && cargo clean
+
+# Quick check of Go code
+check:
+    go vet ./...
+    go fmt ./...

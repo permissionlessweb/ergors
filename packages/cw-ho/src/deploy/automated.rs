@@ -11,7 +11,6 @@
 //! - Retrieves and saves endpoints
 
 use anyhow::{anyhow, Result};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ho_std::types::ergors::orch::v1::{
     AkashBidInfo, AkashBidState, AkashDeploymentWorkflow, AkashLeaseIdInfo, AkashProviderSelection,
     AkashRuntime, AkashServiceEndpoint, AkashWorkflowOptions, AkashWorkflowStatus,
@@ -24,7 +23,6 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use super::akash::broadcast_akash_msg;
-use super::certificate::CertificateManager;
 use super::climb_signer::create_signing_client_with_failover;
 use super::cosmos_client::{BidInfo, CosmosClient};
 use super::deployment_builder::{
@@ -32,7 +30,7 @@ use super::deployment_builder::{
     DEFAULT_DEPOSIT_UAKT,
 };
 use super::endpoint_manager::{EndpointManager, EndpointType};
-use super::manifest::{query_service_endpoints_mtls, ManifestSender};
+use super::manifest::{query_service_endpoints, ManifestSender};
 use crate::storage::ErgorsStorage;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::ergors::akash::deployment::v1beta4::{MsgCloseDeployment, MsgCreateDeployment};
@@ -54,27 +52,28 @@ const MAX_BID_POLL_ATTEMPTS: u32 = 10;
 /// Automated deployment runner.
 ///
 /// Executes the complete deployment flow without manual intervention.
-/// Now uses layer-climb for robust Cosmos SDK transaction signing.
+/// Uses layer-climb for robust Cosmos SDK transaction signing.
+/// Uses JWT authentication for provider communication (no mTLS certificates required).
 pub struct AutomatedDeployer {
     storage: Arc<ErgorsStorage>,
     cosmos: Arc<CosmosClient>,
-    cert_manager: Arc<CertificateManager>,
     /// Key manager (for decrypting mnemonics)
     key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
     /// Key store (for retrieving encrypted keys)
     key_store: Arc<RwLock<CosmosKeyStore>>,
     /// Akash deployment config (for creating chain config)
     akash_config: AkashDeployConfig,
-    /// Custody password for encrypting certificate private keys
+    /// Custody password for key encryption
     custody_password: String,
 }
 
 impl AutomatedDeployer {
     /// Create a new automated deployer with layer-climb integration.
+    ///
+    /// Uses JWT authentication for provider communication (no certificates needed).
     pub fn new(
         storage: Arc<ErgorsStorage>,
         cosmos: Arc<CosmosClient>,
-        cert_manager: Arc<CertificateManager>,
         key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
         key_store: Arc<RwLock<CosmosKeyStore>>,
         akash_config: AkashDeployConfig,
@@ -83,7 +82,6 @@ impl AutomatedDeployer {
         Self {
             storage,
             cosmos,
-            cert_manager,
             key_manager,
             key_store,
             akash_config,
@@ -152,7 +150,7 @@ impl AutomatedDeployer {
         if !opts.request_grant_from.is_empty() {
             self.step_grant_request_and_wait(workflow, opts).await?;
         }
-        self.step_setup_certificate(workflow).await?;
+        // NOTE: Certificate setup removed - JWT authentication used instead
 
         // Create deployment - after this point, we need cleanup on failure
         let dseq = self
@@ -451,48 +449,7 @@ impl AutomatedDeployer {
         Ok(())
     }
 
-    /// Step 4: Setup certificate.
-    async fn step_setup_certificate(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<()> {
-        tracing::info!("[Step 4/11] Certificate Setup");
-        workflow.current_step = AkashWorkflowStep::CertificateSetup as i32;
-        self.save_workflow(workflow).await?;
-
-        tracing::info!("  Address: {}", workflow.account_address);
-
-        // The cert_manager logs detailed info about found vs created
-        // Returns certificate + encrypted private key for mTLS
-        let cert_with_key = self
-            .cert_manager
-            .get_or_create(
-                &workflow.selected_key_name,
-                workflow.hd_account_index,
-                &workflow.account_address,
-                &self.custody_password,
-            )
-            .await?;
-
-        // Store the official akash.cert.v1.Certificate
-        workflow.certificate = Some(cert_with_key.certificate);
-
-        // Store encrypted private key (only if we created a new certificate)
-        // If certificate was found on chain, encrypted_private_key will be empty
-        // and we'll use the previously stored key from workflow
-        if !cert_with_key.encrypted_private_key.is_empty() {
-            workflow.encrypted_cert_private_key = cert_with_key.encrypted_private_key;
-            tracing::info!("  Stored encrypted certificate private key ({} bytes)",
-                workflow.encrypted_cert_private_key.len());
-        } else if workflow.encrypted_cert_private_key.is_empty() {
-            tracing::warn!("  WARNING: Certificate found on chain but no stored private key!");
-            tracing::warn!("  mTLS authentication may fail - consider revoking and recreating certificate");
-        }
-
-        self.save_workflow(workflow).await?;
-
-        tracing::info!("  OK: Certificate ready");
-        Ok(())
-    }
-
-    /// Step 3: Create deployment transaction.
+    /// Step 4: Create deployment transaction.
     async fn step_create_deployment(
         &self,
         workflow: &mut AkashDeploymentWorkflow,
@@ -1044,7 +1001,7 @@ impl AutomatedDeployer {
         Ok(())
     }
 
-    /// Step 7: Send manifest.
+    /// Step 7: Send manifest with JWT authentication.
     async fn step_send_manifest(&self, workflow: &mut AkashDeploymentWorkflow) -> Result<()> {
         tracing::info!("[Step 9/11] Send Manifest");
         workflow.current_step = AkashWorkflowStep::ManifestSend as i32;
@@ -1071,61 +1028,46 @@ impl AutomatedDeployer {
             return Err(anyhow!("Provider host_uri is empty - provider info query may have failed"));
         }
 
-        let manifest_endpoint = format!("{}/deployment/{}/manifest", provider_uri, lease_info.dseq);
-
         tracing::info!("  Provider URI: {}", provider_uri);
-        tracing::info!("  Endpoint:     {}", manifest_endpoint);
 
-        // Get certificate for mTLS
-        let cert = workflow
-            .certificate
-            .as_ref()
-            .ok_or_else(|| anyhow!("No certificate in workflow"))?;
+        // Get keypair for JWT authentication
+        let keypair = self.get_workflow_keypair(workflow).await?;
 
-        if workflow.encrypted_cert_private_key.is_empty() {
-            return Err(anyhow!("No encrypted certificate private key - cannot authenticate with provider"));
-        }
+        // Create manifest sender with JWT auth
+        let mut sender = ManifestSender::new(&provider_uri);
 
-        // Decode certificate PEM (chain returns Base64-encoded bytes)
-        let cert_pem = decode_cert_pem(&cert.cert)?;
-
-        // Decrypt private key for mTLS
-        tracing::info!("  Decrypting certificate private key...");
-        let privkey_pem = super::certificate::decrypt_private_key(
-            &workflow.encrypted_cert_private_key,
-            &self.custody_password,
-        )?;
-
-        // Create mTLS manifest sender
-        tracing::info!("  Creating mTLS client...");
-        let sender = ManifestSender::with_mtls(&provider_uri, &cert_pem, &privkey_pem)?;
-
-        tracing::info!("  Sending manifest...");
-        match sender
+        tracing::info!("  Sending manifest with JWT authentication...");
+        sender
             .send_manifest_from_sdl(
                 &lease_info.owner,
                 lease_info.dseq,
                 lease_info.gseq,
                 lease_info.oseq,
                 &sdl.resolved_content,
+                &workflow.account_address,
+                &keypair,
             )
-            .await
-        {
-            Ok(_) => {
-                tracing::info!("  OK: Manifest accepted by provider");
-            }
-            Err(e) => {
-                tracing::error!("  FAILED: Manifest send failed");
-                tracing::error!("  Error: {}", e);
-                return Err(e);
-            }
-        }
+            .await?;
 
+        tracing::info!("  OK: Manifest accepted by provider");
         self.save_workflow(workflow).await?;
         Ok(())
     }
 
-    /// Step 8: Retrieve endpoints.
+    /// Get the cosmos keypair for this workflow's key.
+    async fn get_workflow_keypair(&self, workflow: &AkashDeploymentWorkflow) -> Result<ho_std::keys::cosmos::CosmosKeyPair> {
+        let key_store = self.key_store.read().await;
+        let encrypted_key = ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager::get_key_by_name(
+            &key_store,
+            &workflow.selected_key_name,
+        )
+        .ok_or_else(|| anyhow!("Key '{}' not found in store", workflow.selected_key_name))?;
+
+        let mut manager = self.key_manager.write().await;
+        manager.get_keypair(encrypted_key, workflow.hd_account_index)
+    }
+
+    /// Step 8: Retrieve endpoints with JWT authentication.
     async fn step_retrieve_endpoints(
         &self,
         workflow: &mut AkashDeploymentWorkflow,
@@ -1150,32 +1092,14 @@ impl AutomatedDeployer {
             return Err(anyhow!("Provider host_uri is empty - provider info query may have failed"));
         }
 
-        let status_endpoint = format!(
-            "{}/lease/{}/{}/{}/{}/status",
-            provider_uri, lease_info.dseq, lease_info.gseq, lease_info.oseq, lease_info.provider
-        );
-
         tracing::info!("  Provider URI: {}", provider_uri);
-        tracing::info!("  Status URL:   {}", status_endpoint);
         tracing::info!("  Waiting 10s for container startup...");
 
         // Wait a bit for services to start
         tokio::time::sleep(Duration::from_secs(10)).await;
 
-        // Get certificate for mTLS
-        let cert = workflow
-            .certificate
-            .as_ref()
-            .ok_or_else(|| anyhow!("No certificate in workflow"))?;
-
-        // Decode certificate PEM (chain returns Base64-encoded bytes)
-        let cert_pem = decode_cert_pem(&cert.cert)?;
-
-        // Decrypt private key for mTLS
-        let privkey_pem = super::certificate::decrypt_private_key(
-            &workflow.encrypted_cert_private_key,
-            &self.custody_password,
-        )?;
+        // Get keypair for JWT authentication
+        let keypair = self.get_workflow_keypair(workflow).await?;
 
         // Poll for endpoints with retries
         let mut endpoints = HashMap::new();
@@ -1191,14 +1115,14 @@ impl AutomatedDeployer {
                 MAX_ENDPOINT_ATTEMPTS
             );
 
-            match query_service_endpoints_mtls(
+            match query_service_endpoints(
                 &provider_uri,
                 &lease_info.owner,
                 lease_info.dseq,
                 lease_info.gseq,
                 lease_info.oseq,
-                &cert_pem,
-                &privkey_pem,
+                &workflow.account_address,
+                &keypair,
             )
             .await
             {
@@ -1536,37 +1460,6 @@ fn current_timestamp() -> Timestamp {
     }
 }
 
-/// Decode certificate PEM from chain response.
-///
-/// The Akash chain stores certificate PEM as bytes, but REST/gRPC responses
-/// may return it as Base64-encoded string. This function handles both cases:
-/// - If already valid PEM (starts with "-----BEGIN"), return as-is
-/// - If Base64-encoded, decode it first
-fn decode_cert_pem(cert_bytes: &[u8]) -> Result<Vec<u8>> {
-    let cert_str = String::from_utf8_lossy(cert_bytes);
-
-    // If it already looks like PEM, return as-is
-    if cert_str.trim().starts_with("-----BEGIN") {
-        return Ok(cert_bytes.to_vec());
-    }
-
-    // Try to decode as Base64
-    let decoded = BASE64
-        .decode(cert_bytes)
-        .map_err(|e| anyhow!("Certificate is not valid PEM and failed Base64 decode: {}", e))?;
-
-    // Verify decoded content is PEM
-    let decoded_str = String::from_utf8_lossy(&decoded);
-    if !decoded_str.trim().starts_with("-----BEGIN") {
-        return Err(anyhow!(
-            "Decoded certificate is not valid PEM. First 50 chars: {}",
-            decoded_str.chars().take(50).collect::<String>()
-        ));
-    }
-
-    Ok(decoded)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1575,20 +1468,5 @@ mod tests {
     fn test_current_timestamp() {
         let ts = current_timestamp();
         assert!(ts.seconds > 0);
-    }
-
-    #[test]
-    fn test_decode_cert_pem_already_pem() {
-        let pem = b"-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----";
-        let result = decode_cert_pem(pem).unwrap();
-        assert_eq!(result, pem);
-    }
-
-    #[test]
-    fn test_decode_cert_pem_base64() {
-        let pem = "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----";
-        let encoded = BASE64.encode(pem.as_bytes());
-        let result = decode_cert_pem(encoded.as_bytes()).unwrap();
-        assert_eq!(String::from_utf8_lossy(&result), pem);
     }
 }

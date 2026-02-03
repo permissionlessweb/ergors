@@ -55,6 +55,7 @@ git2 = { workspace = true }
 hex = { workspace = true }
 hmac = "0.12.0"
 http-body-util = { workspace = true }
+k256 = { version = "0.13", features = ["ecdsa"] }
 ibc-proto = { workspace = true, default-features = false, features = ["server"] }
 jmt = { workspace = true }
 pbjson-types = { workspace = true }

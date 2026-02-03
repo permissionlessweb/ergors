@@ -360,6 +360,11 @@ impl KeysCmd {
             Err(e) => return Err(anyhow!("Failed to load key store: {}", e)),
         };
 
+        // Require password to delete keys (security measure)
+        let password = get_password(false)?;
+        let mut manager = EncryptedCosmosKeyManager::from_store(&store);
+        manager.unlock(&password).map_err(|_| anyhow!("Invalid password. Delete aborted."))?;
+
         EncryptedCosmosKeyManager::delete_key(&mut store, key_name)?;
 
         storage
@@ -395,7 +400,7 @@ impl KeysCmd {
 /// SECURITY: The mnemonic is never stored in shell history or visible in `ps`.
 /// For automation, use ERGORS_MNEMONIC environment variable (also not in history
 /// if set via `read -s` or similar).
-fn get_mnemonic() -> Result<String> {
+pub fn get_mnemonic() -> Result<String> {
     // Check environment variable first (for scripting)
     if let Ok(env_mnemonic) = std::env::var("ERGORS_MNEMONIC") {
         if env_mnemonic.is_empty() {

@@ -6,7 +6,7 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, InstantiateNewResponse};
-use crate::state::{Config, CONFIG, SDL_TEMPLATE, VARIABLE_DEFAULTS};
+use crate::state::{Config, CONFIG, SDL_TEMPLATE, VARIABLE_DEFAULTS, DEPLOYMENT_RESULTS, CHILD_CONTRACTS};
 use crate::validation::validate_template_variables;
 
 const CONTRACT_NAME: &str = "crates.io:cw-sdl";
@@ -84,7 +84,14 @@ pub fn execute(
         ExecuteMsg::InstantiateNew {
             instantiate_msg,
             label,
-        } => execute_instantiate_new(deps, env, info, instantiate_msg, label),
+            parent_results,
+        } => execute_instantiate_new(deps, env, info, instantiate_msg, label, parent_results),
+        ExecuteMsg::RecordDeploymentResult { key, value } => {
+            execute_record_deployment_result(deps, info, key, value)
+        }
+        ExecuteMsg::RecordDeploymentResults { results } => {
+            execute_record_deployment_results(deps, info, results)
+        }
     }
 }
 
@@ -225,9 +232,16 @@ fn execute_instantiate_new(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    instantiate_msg: InstantiateMsg,
+    mut instantiate_msg: InstantiateMsg,
     label: String,
+    parent_results: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Response, ContractError> {
+    // Merge parent deployment results into child's variable defaults
+    // This allows chaining: NODE_A results feed into NODE_B's SDL variables
+    if let Some(results) = parent_results {
+        instantiate_msg.variable_defaults.extend(results);
+    }
+
     // Get the current contract's code ID from contract info
     let contract_info = deps.querier.query_wasm_contract_info(&env.contract.address)?;
     let code_id = contract_info.code_id;
@@ -238,7 +252,7 @@ fn execute_instantiate_new(
         code_id,
         msg: to_json_binary(&instantiate_msg)?,
         funds: info.funds.clone(),
-        label,
+        label: label.clone(),
     };
 
     // Create submessage with reply
@@ -248,17 +262,52 @@ fn execute_instantiate_new(
         .add_submessage(sub_msg)
         .add_attribute("method", "instantiate_new")
         .add_attribute("code_id", code_id.to_string())
+        .add_attribute("child_label", label)
         .add_attribute("sender", info.sender))
 }
 
+/// Record a single deployment result (peer ID, endpoint, etc.)
+fn execute_record_deployment_result(
+    deps: DepsMut,
+    info: MessageInfo,
+    key: String,
+    value: String,
+) -> Result<Response, ContractError> {
+    check_admin(&deps, &info.sender)?;
+
+    DEPLOYMENT_RESULTS.save(deps.storage, &key, &value)?;
+
+    Ok(Response::new()
+        .add_attribute("method", "record_deployment_result")
+        .add_attribute("key", &key)
+        .add_attribute("value", &value))
+}
+
+/// Record multiple deployment results in one transaction
+fn execute_record_deployment_results(
+    deps: DepsMut,
+    info: MessageInfo,
+    results: std::collections::HashMap<String, String>,
+) -> Result<Response, ContractError> {
+    check_admin(&deps, &info.sender)?;
+
+    for (key, value) in results.iter() {
+        DEPLOYMENT_RESULTS.save(deps.storage, key, value)?;
+    }
+
+    Ok(Response::new()
+        .add_attribute("method", "record_deployment_results")
+        .add_attribute("count", results.len().to_string()))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn reply(_deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
+pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
     match msg.id {
         INSTANTIATE_REPLY_ID => {
             // Parse the contract address from the instantiate reply
             let res = msg.result.into_result().map_err(StdError::generic_err)?;
 
-            // Find the contract address from the events
+            // Find the contract address and label from events
             let contract_address = res
                 .events
                 .iter()
@@ -267,9 +316,23 @@ pub fn reply(_deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, Contract
                 .map(|a| a.value.clone())
                 .ok_or_else(|| StdError::generic_err("contract address not found"))?;
 
+            // Extract label from wasm events
+            let label = res
+                .events
+                .iter()
+                .find(|e| e.ty == "wasm")
+                .and_then(|e| e.attributes.iter().find(|a| a.key == "child_label"))
+                .map(|a| a.value.clone())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            // Track the child contract by label
+            let addr = deps.api.addr_validate(&contract_address)?;
+            CHILD_CONTRACTS.save(deps.storage, &label, &addr)?;
+
             Ok(Response::new()
                 .add_attribute("method", "reply_instantiate")
-                .add_attribute("new_contract_address", contract_address))
+                .add_attribute("new_contract_address", contract_address)
+                .add_attribute("child_label", label))
         }
         _ => Err(ContractError::Std(StdError::generic_err(
             "unknown reply id",

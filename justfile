@@ -129,6 +129,10 @@ test-pkg pkg:
 test-verbose:
     cargo test --workspace -- --nocapture
 
+# Run provider compatibility test (Rust JWT + manifest → Go provider verification)
+test-jwt:
+    @cd tests/scripts/jwt-verify && just test
+
 # Quick check (faster than full build)
 check:
     cargo chec

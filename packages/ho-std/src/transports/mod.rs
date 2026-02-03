@@ -6,8 +6,8 @@
 
 // pub mod bluetooth_mesh;
 // pub mod ethernet;
-pub mod ssh;
-pub mod websocket;
+// pub mod ssh;
+// pub mod websocket;
 
 // Re-export main transport types
 // pub use ethernet::{EthernetAddress, EthernetConfig, EthernetTransport};

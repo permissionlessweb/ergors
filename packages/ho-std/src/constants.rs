@@ -72,10 +72,8 @@ pub const TOOLS_SSH_TRANSPORT: &str = "tools/ssh/transport.py";
 pub const TOOLS_METAPROMPT_GENERATOR: &str = "/tools/python/prompt_generator.py";
 
 // SSH RELATED
-pub const SSH_JSON_PATH: &str = "priv/ssh-config.json";
 pub const SSH_TEMPLATE_PATH: &str = "templates/ssh-config.json";
 pub const SSH_TEMPLATE_FLAG: &str = "--config templates/ssh-config.json";
-pub const DEFAULT_CONFIG_FILE_PATH: &str = "priv/config.toml";
 
 // COMMANDS
 pub const CMD_BASH: &str = "bash";

@@ -157,6 +157,57 @@ impl CosmosKeyPair {
     pub fn cosmos_address(&self) -> Result<String> {
         self.address(COSMOS_PREFIX)
     }
+
+    /// Sign arbitrary message bytes with secp256k1.
+    ///
+    /// Returns the 64-byte compact signature (r || s).
+    /// Used for JWT authentication with Akash providers.
+    pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
+        use k256::ecdsa::{signature::Signer, Signature, SigningKey};
+
+        let signing_key = SigningKey::from_bytes((&self.private_key[..]).into())
+            .map_err(|e| anyhow!("Invalid private key: {}", e))?;
+
+        let signature: Signature = signing_key.sign(message);
+        Ok(signature.to_bytes().to_vec())
+    }
+
+    /// Sign for ES256K JWT (single SHA256, then ECDSA).
+    ///
+    /// ES256K as defined in RFC 8812 uses standard ECDSA with secp256k1 curve
+    /// and SINGLE SHA-256 hashing (NOT Bitcoin's double-SHA256).
+    ///
+    /// This is the correct implementation for Akash provider JWT authentication.
+    ///
+    /// Returns the 64-byte compact signature (r || s).
+    pub fn sign_jwt_es256k(&self, message: &[u8]) -> Result<Vec<u8>> {
+        use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
+        use sha2::{Digest, Sha256};
+
+        let signing_key = SigningKey::from_bytes((&self.private_key[..]).into())
+            .map_err(|e| anyhow!("Invalid private key: {}", e))?;
+
+        // Single SHA256 (RFC 8812 ES256K standard for JWT)
+        // NOT Bitcoin's double-SHA256!
+        let hash = Sha256::digest(message);
+
+        // Sign the hashed message
+        let signature: Signature = signing_key
+            .sign_prehash(&hash)
+            .map_err(|e| anyhow!("Signing failed: {}", e))?;
+
+        // Return compact 64-byte signature (r || s)
+        Ok(signature.to_bytes().to_vec())
+    }
+
+    /// Sign a message and return base64-encoded signature.
+    ///
+    /// This is the format expected by Akash provider JWT auth.
+    pub fn sign_base64(&self, message: &[u8]) -> Result<String> {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let sig = self.sign(message)?;
+        Ok(STANDARD.encode(sig))
+    }
 }
 
 /// Generate a cosmos bech32 address from a compressed public key

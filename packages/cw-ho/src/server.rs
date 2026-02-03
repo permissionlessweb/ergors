@@ -1,5 +1,5 @@
 use crate::{
-    deploy::{certificate::CertificateManager, cosmos_client::CosmosClient},
+    deploy::cosmos_client::CosmosClient,
     storage::ErgorsStorage,
     AkashDeploymentContext, ErgorsAppState, ErgorsConfig, ErgorsNetworkManifold, LlmRouter,
 };
@@ -459,20 +459,10 @@ impl Server {
         let key_manager_arc = Arc::new(RwLock::new(key_manager));
         let key_store_arc = Arc::new(RwLock::new(key_store));
 
-        // Create CertificateManager with layer-climb integration and storage for key persistence
-        let cert_manager = Arc::new(CertificateManager::new(
-            cosmos.clone(),
-            key_manager_arc.clone(),
-            key_store_arc.clone(),
-            akash_config.clone(),
-            storage.clone(),
-        ));
-
-        tracing::info!("✅ Akash deployment context initialized (using layer-climb)");
+        tracing::info!("✅ Akash deployment context initialized (JWT auth, layer-climb)");
 
         Some(AkashDeploymentContext {
             cosmos,
-            cert_manager,
             key_manager: key_manager_arc,
             key_store: key_store_arc,
             akash_config,

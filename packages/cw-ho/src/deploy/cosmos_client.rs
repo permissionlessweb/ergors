@@ -3,6 +3,7 @@
 //! REST-based queries to Cosmos SDK chains. No magic, just functions.
 
 use anyhow::{anyhow, Result};
+use base64::prelude::{Engine, BASE64_STANDARD};
 use ho_std::types::akash::cert::v1::{Certificate, CertificateResponse, State};
 use ho_std::types::ergors::cosmos::base::v1beta1::Coin;
 use ho_std::types::ergors::orch::v1::AkashDeployConfig;
@@ -321,17 +322,18 @@ impl CosmosClient {
                     _ => State::Invalid as i32,
                 };
 
-                // Get cert and pubkey bytes (base64 decoded from JSON)
+                // Get cert and pubkey bytes (Base64-decode from JSON)
+                // The chain returns bytes fields as Base64-encoded strings in JSON
                 let cert_bytes = cert_data
                     .get("cert")
                     .and_then(|c| c.as_str())
-                    .map(|s| s.as_bytes().to_vec())
+                    .and_then(|s| BASE64_STANDARD.decode(s).ok())
                     .unwrap_or_default();
 
                 let pubkey_bytes = cert_data
                     .get("pubkey")
                     .and_then(|p| p.as_str())
-                    .map(|s| s.as_bytes().to_vec())
+                    .and_then(|s| BASE64_STANDARD.decode(s).ok())
                     .unwrap_or_default();
 
                 result.push(CertificateResponse {

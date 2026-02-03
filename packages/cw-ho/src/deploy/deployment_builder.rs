@@ -16,12 +16,45 @@ use ho_std::types::ergors::akash::deployment::v1beta4::{
 use ho_std::types::ergors::akash::market::{v1::BidId, v1beta5::MsgCreateLease};
 use ho_std::types::ergors::cosmos::base::v1beta1::{Coin, DecCoin};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 
 /// Minimum deposit for deployment in uakt (0.5 AKT)
 pub const MIN_DEPOSIT_UAKT: u64 = 500_000;
 
 /// Default deposit for deployment in uakt (5 AKT)
 pub const DEFAULT_DEPOSIT_UAKT: u64 = 5_000_000;
+
+/// Serialize a value to canonical JSON with sorted keys.
+///
+/// Sorts all object keys alphabetically to produce deterministic JSON.
+/// Required for computing manifest version hash that matches provider validation.
+pub fn to_canonical_json<T: serde::Serialize + ?Sized>(value: &T) -> Result<String> {
+    let json_value = serde_json::to_value(value)
+        .map_err(|e| anyhow!("Failed to serialize to JSON value: {}", e))?;
+    let sorted = sort_json_value(json_value);
+    let json_str = serde_json::to_string(&sorted)
+        .map_err(|e| anyhow!("Failed to serialize sorted JSON: {}", e))?;
+
+    Ok(json_str)
+}
+
+/// Recursively sort all object keys in a JSON value.
+pub fn sort_json_value(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            // Convert to BTreeMap for sorted keys
+            let sorted: BTreeMap<String, serde_json::Value> = map
+                .into_iter()
+                .map(|(k, v)| (k, sort_json_value(v)))
+                .collect();
+            serde_json::Value::Object(sorted.into_iter().collect())
+        }
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(sort_json_value).collect())
+        }
+        other => other,
+    }
+}
 
 /// Builder for MsgCreateDeployment from SDL.
 pub struct DeploymentBuilder {
@@ -56,16 +89,44 @@ impl DeploymentBuilder {
 
     /// Build MsgCreateDeployment from SDL YAML content.
     pub fn build_from_sdl(&self, sdl_yaml: &str) -> Result<MsgCreateDeployment> {
+        self.build_from_sdl_with_manifest(sdl_yaml, None)
+    }
+
+    /// Build MsgCreateDeployment from SDL YAML with pre-built manifest for hash.
+    ///
+    /// The manifest version must match what the provider computes when validating.
+    /// If manifest_json is None, we'll build it from the SDL.
+    pub fn build_from_sdl_with_manifest(
+        &self,
+        sdl_yaml: &str,
+        manifest_json: Option<&str>,
+    ) -> Result<MsgCreateDeployment> {
         let yaml: serde_yaml::Value = serde_yaml::from_str(sdl_yaml)
             .map_err(|e| anyhow!("Failed to parse SDL YAML: {}", e))?;
 
         // Extract groups from SDL
         let groups = self.parse_groups(&yaml)?;
 
-        // Compute hash (SHA256 of SDL content)
-        let mut hasher = Sha256::new();
-        hasher.update(sdl_yaml.as_bytes());
-        let hash = hasher.finalize().to_vec();
+        // Compute hash - must match what provider computes from manifest
+        // Uses canonical JSON (sorted keys) to match Go's encoding/json behavior
+        // Note: v2beta3.Manifest = []Group in Go (type alias), so we hash the array directly
+        let hash = if let Some(manifest_str) = manifest_json {
+            // Hash the provided manifest JSON (assumed to be canonical)
+            let mut hasher = Sha256::new();
+            hasher.update(manifest_str.as_bytes());
+            hasher.finalize().to_vec()
+        } else {
+            // Build manifest and hash its canonical JSON
+            let manifest_builder = crate::deploy::manifest::ManifestBuilder::new(&self.owner, self.dseq);
+            let manifest_groups = manifest_builder.build_from_sdl(sdl_yaml)?;
+            let manifest_json_str = to_canonical_json(&manifest_groups)?;
+
+            tracing::debug!("Manifest canonical JSON for hash: {}", manifest_json_str);
+
+            let mut hasher = Sha256::new();
+            hasher.update(manifest_json_str.as_bytes());
+            hasher.finalize().to_vec()
+        };
 
         Ok(MsgCreateDeployment {
             id: Some(DeploymentId {

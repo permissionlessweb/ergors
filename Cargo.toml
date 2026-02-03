@@ -2,7 +2,12 @@
 resolver = "2"
 
 exclude = []
-members = ["packages/*", "proto", "tests"]
+members = [
+    "packages/*",
+    "proto",
+    "tests",
+    "tests/scripts/jwt-verify/examples/rust-jwt-gen",
+]
 
 [workspace.metadata]
 is_workspace_root = true

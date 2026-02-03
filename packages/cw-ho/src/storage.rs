@@ -66,8 +66,6 @@ const AKASH_ENDPOINTS_PREFIX: &str = "akash_endpoints";
 const AKASH_LABEL_INDEX_PREFIX: &str = "akash_labels";
 const AKASH_ACTIVE_LABELS_PREFIX: &str = "akash_active_labels";
 const TRUSTED_PROVIDERS_KEY: &str = "config/trusted_providers";
-const AKASH_CERT_KEYS_PREFIX: &str = "akash_cert_keys";
-const AKASH_CERT_STORE_KEY: &str = "akash_certificate_store";
 const AKASH_PROVIDER_INFO_PREFIX: &str = "akash_provider_info";
 // const HEADSTASH: &str = "headstash";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions";
@@ -119,6 +117,9 @@ const GUILD_RAG_AUDIT_PREFIX: &str = "gateway/rag_audit";
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
     pub cs: CnidariumStorage,
+    /// Mutex to serialize write operations and prevent JMT key/value race conditions.
+    /// cnidarium's JMT can get into inconsistent state if concurrent writes happen.
+    write_lock: tokio::sync::Mutex<()>,
 }
 
 /// Cached provider info for human-readable display.
@@ -139,7 +140,15 @@ impl ErgorsStorage {
         std::fs::create_dir_all(path)?;
         Ok(Self {
             cs: CnidariumStorage::load(path.to_path_buf(), prefixes).await?,
+            write_lock: tokio::sync::Mutex::new(()),
         })
+    }
+
+    /// Commit a delta with write lock to prevent JMT race conditions.
+    async fn commit_delta(&self, delta: cnidarium::StateDelta<cnidarium::Snapshot>) -> HoResult<()> {
+        let _guard = self.write_lock.lock().await;
+        self.cs.commit(delta).await?;
+        Ok(())
     }
 
     pub async fn put_prompt_w_ctx(
@@ -190,7 +199,7 @@ impl ErgorsStorage {
         debug!("Storing prompt {} with timestamp index", id);
 
         // Commit the changes
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         info!(
             "💾 Successfully stored prompt: {} with key: {}",
@@ -341,7 +350,7 @@ impl ErgorsStorage {
 
         let key = storage_key(OPEN_RESPONSE_PREFIX, response_id);
         delta.put_raw(key, serde_json::to_vec(&session_data)?);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         debug!("Stored Open Response session: {}", response_id);
         Ok(())
@@ -536,7 +545,7 @@ impl ErgorsStorage {
         );
         delta.put_raw(timestamp_key, id.as_bytes().to_vec());
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         debug!("📝 Stored operation request: {} ({})", id, operation_type);
         Ok(())
@@ -566,7 +575,7 @@ impl ErgorsStorage {
         let operation_data = serde_json::to_vec(&operation)?;
         delta.put_raw(key, operation_data);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         debug!("✅ Updated operation with response: {}", id);
         Ok(())
@@ -610,7 +619,7 @@ impl ErgorsStorage {
         let operation_data = serde_json::to_vec(&operation)?;
         delta.put_raw(op_key, operation_data);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         warn!("❌ Recorded operation error: {} - {}", id, error_msg);
         Ok(())
@@ -695,7 +704,7 @@ impl ErgorsStorage {
         let data = serde_json::to_vec(encrypted_key)?;
         delta.put_raw(key.clone(), data);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!(
             "🔐 Stored encrypted API key for provider: {}",
             provider_name
@@ -734,7 +743,7 @@ impl ErgorsStorage {
         let key = storage_key(API_KEY_PREFIX, provider_name);
 
         delta.delete(key);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!(
             "🗑️  Deleted encrypted API key for provider: {}",
             provider_name
@@ -776,7 +785,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let data = store.encode_to_vec();
         delta.put_raw(COSMOS_KEY_STORE_KEY.to_string(), data);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!(
             "🔐 Stored cosmos key store with {} keys",
             store.keys.len()
@@ -820,27 +829,33 @@ impl ErgorsStorage {
         let data = serde_json::to_vec(workflow)?;
         delta.put_raw(key.clone(), data);
 
-        // Create label index if label is provided and deployment is active
+        // Manage label indices based on workflow status
         if !workflow.label.is_empty() {
             let is_active = matches!(
                 workflow.status,
                 0 | 1 // Pending or Running
             );
 
+            let label_key = storage_key(AKASH_LABEL_INDEX_PREFIX, &workflow.label);
+            let active_label_key = storage_key(AKASH_ACTIVE_LABELS_PREFIX, &workflow.label);
+
             if is_active {
                 // Store label -> session_id mapping
-                let label_key = storage_key(AKASH_LABEL_INDEX_PREFIX, &workflow.label);
-                delta.put_raw(label_key.clone(), workflow.session_id.as_bytes().to_vec());
+                delta.put_raw(label_key, workflow.session_id.as_bytes().to_vec());
 
                 // Store in active labels set for quick uniqueness checks
-                let active_label_key = storage_key(AKASH_ACTIVE_LABELS_PREFIX, &workflow.label);
                 delta.put_raw(active_label_key, workflow.session_id.as_bytes().to_vec());
 
                 info!("🏷️  Indexed active deployment label: {} -> {}", workflow.label, workflow.session_id);
+            } else {
+                // Workflow is no longer active - remove from active labels
+                // (keep historical label_key for lookups, only remove active_label_key)
+                delta.delete(active_label_key);
+                info!("🏷️  Deactivated label (status={}): {}", workflow.status, workflow.label);
             }
         }
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!(
             "💾 Stored Akash workflow: {} (step: {:?}, label: {})",
             workflow.session_id,
@@ -999,7 +1014,7 @@ impl ErgorsStorage {
         let endpoints_key = storage_key(AKASH_ENDPOINTS_PREFIX, session_id);
         delta.delete(endpoints_key);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🗑️  Deleted Akash workflow and endpoints: {}", session_id);
         Ok(())
     }
@@ -1014,7 +1029,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let active_label_key = storage_key(AKASH_ACTIVE_LABELS_PREFIX, label);
         delta.delete(active_label_key);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         info!("🏷️  Deactivated label: {}", label);
         Ok(())
@@ -1037,7 +1052,7 @@ impl ErgorsStorage {
         let data = serde_json::to_vec(endpoints)?;
         delta.put_raw(key.clone(), data);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("💾 Stored {} endpoints for session: {}", endpoints.len(), session_id);
         Ok(())
     }
@@ -1068,7 +1083,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let key = storage_key(AKASH_ENDPOINTS_PREFIX, session_id);
         delta.delete(key);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🗑️  Deleted endpoints for session: {}", session_id);
         Ok(())
     }
@@ -1111,7 +1126,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let data = serde_json::to_vec(list)?;
         delta.put_raw(TRUSTED_PROVIDERS_KEY.to_string(), data);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!(
             "💾 Stored {} trusted providers",
             list.providers.len()
@@ -1235,265 +1250,7 @@ impl ErgorsStorage {
         Ok(())
     }
 
-    // ========================================
-    // Akash Certificate Private Key Storage
-    // ========================================
-
-    /// Store encrypted certificate private key for an owner address.
-    /// Keys are stored separately from workflows so they persist across multiple deployments.
-    pub async fn put_akash_cert_key(
-        &self,
-        owner_address: &str,
-        encrypted_key: &[u8],
-    ) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let key = storage_key(AKASH_CERT_KEYS_PREFIX, owner_address);
-        delta.put_raw(key.clone(), encrypted_key.to_vec());
-        self.cs.commit(delta).await?;
-        info!(
-            "🔐 Stored encrypted cert key for {} ({} bytes)",
-            owner_address,
-            encrypted_key.len()
-        );
-        Ok(())
-    }
-
-    /// Get encrypted certificate private key for an owner address.
-    pub async fn get_akash_cert_key(&self, owner_address: &str) -> HoResult<Option<Vec<u8>>> {
-        let snapshot = self.cs.latest_snapshot();
-        let key = storage_key(AKASH_CERT_KEYS_PREFIX, owner_address);
-
-        match snapshot.get_raw(&key).await {
-            Ok(Some(data)) => Ok(Some(data)),
-            Ok(None) => Ok(None),
-            Err(e) => Err(HoError::Storage(format!(
-                "Failed to retrieve cert key for {}: {}",
-                owner_address, e
-            ))),
-        }
-    }
-
-    /// Delete encrypted certificate private key for an owner address.
-    pub async fn delete_akash_cert_key(&self, owner_address: &str) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let key = storage_key(AKASH_CERT_KEYS_PREFIX, owner_address);
-        delta.delete(key);
-        self.cs.commit(delta).await?;
-        info!("🗑️  Deleted cert key for {}", owner_address);
-        Ok(())
-    }
-
-    // ========================================
-    // Akash Certificate Store (Multi-cert with Default)
-    // ========================================
-
-    /// Get the certificate store.
-    pub async fn get_akash_cert_store(
-        &self,
-    ) -> HoResult<ho_std::types::ergors::orch::v1::AkashCertificateStore> {
-        use ho_std::types::ergors::orch::v1::AkashCertificateStore;
-
-        let snapshot = self.cs.latest_snapshot();
-        match snapshot.get_raw(AKASH_CERT_STORE_KEY).await {
-            Ok(Some(data)) => {
-                let store: AkashCertificateStore = serde_json::from_slice(&data)?;
-                Ok(store)
-            }
-            Ok(None) => Ok(AkashCertificateStore {
-                certificates: vec![],
-                default_index: 0,
-                updated_at: None,
-            }),
-            Err(e) => Err(HoError::Storage(format!(
-                "Failed to get certificate store: {}",
-                e
-            ))),
-        }
-    }
-
-    /// Store the certificate store.
-    pub async fn put_akash_cert_store(
-        &self,
-        store: &ho_std::types::ergors::orch::v1::AkashCertificateStore,
-    ) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-        let data = serde_json::to_vec(store)?;
-        delta.put_raw(AKASH_CERT_STORE_KEY.to_string(), data);
-        self.cs.commit(delta).await?;
-        info!(
-            "💾 Stored certificate store ({} certs, default: {})",
-            store.certificates.len(),
-            store.default_index
-        );
-        Ok(())
-    }
-
-    /// Add a certificate to the store.
-    /// If this is the first certificate, it becomes the default.
-    pub async fn add_akash_cert(
-        &self,
-        label: &str,
-        serial: &str,
-        owner_address: &str,
-        encrypted_private_key: &[u8],
-    ) -> HoResult<u32> {
-        use ho_std::types::ergors::orch::v1::StoredAkashCertificate;
-
-        let mut store = self.get_akash_cert_store().await?;
-
-        // Check for duplicate serial
-        if store.certificates.iter().any(|c| c.serial == serial) {
-            return Err(HoError::Storage(format!(
-                "Certificate with serial {} already exists",
-                serial
-            )));
-        }
-
-        let now = pbjson_types::Timestamp {
-            seconds: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-            nanos: 0,
-        };
-
-        let index = store.certificates.len() as u32;
-
-        store.certificates.push(StoredAkashCertificate {
-            label: label.to_string(),
-            serial: serial.to_string(),
-            owner_address: owner_address.to_string(),
-            encrypted_private_key: encrypted_private_key.to_vec(),
-            created_at: Some(now),
-        });
-        store.updated_at = Some(now);
-
-        self.put_akash_cert_store(&store).await?;
-        info!(
-            "📜 Added certificate '{}' (serial: {}) at index {}",
-            label, serial, index
-        );
-        Ok(index)
-    }
-
-    /// Remove a certificate by index.
-    /// If the removed cert was default, default moves to index 0 (or stays if store is empty).
-    pub async fn remove_akash_cert(&self, index: u32) -> HoResult<()> {
-        let mut store = self.get_akash_cert_store().await?;
-
-        if index as usize >= store.certificates.len() {
-            return Err(HoError::Storage(format!(
-                "Certificate index {} out of bounds (have {} certs)",
-                index,
-                store.certificates.len()
-            )));
-        }
-
-        let removed = store.certificates.remove(index as usize);
-
-        // Adjust default index
-        if store.default_index == index {
-            store.default_index = 0;
-        } else if store.default_index > index {
-            store.default_index -= 1;
-        }
-
-        let now = pbjson_types::Timestamp {
-            seconds: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-            nanos: 0,
-        };
-        store.updated_at = Some(now);
-
-        self.put_akash_cert_store(&store).await?;
-        info!(
-            "🗑️  Removed certificate '{}' (serial: {}) from index {}",
-            removed.label, removed.serial, index
-        );
-        Ok(())
-    }
-
-    /// Set the default certificate by index.
-    pub async fn set_default_akash_cert(&self, index: u32) -> HoResult<()> {
-        let mut store = self.get_akash_cert_store().await?;
-
-        if index as usize >= store.certificates.len() {
-            return Err(HoError::Storage(format!(
-                "Certificate index {} out of bounds (have {} certs)",
-                index,
-                store.certificates.len()
-            )));
-        }
-
-        store.default_index = index;
-
-        let now = pbjson_types::Timestamp {
-            seconds: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-            nanos: 0,
-        };
-        store.updated_at = Some(now);
-
-        self.put_akash_cert_store(&store).await?;
-
-        let cert = &store.certificates[index as usize];
-        info!(
-            "✅ Set default certificate to index {} ('{}', serial: {})",
-            index, cert.label, cert.serial
-        );
-        Ok(())
-    }
-
-    /// Get the default certificate.
-    pub async fn get_default_akash_cert(
-        &self,
-    ) -> HoResult<Option<ho_std::types::ergors::orch::v1::StoredAkashCertificate>> {
-        let store = self.get_akash_cert_store().await?;
-
-        if store.certificates.is_empty() {
-            return Ok(None);
-        }
-
-        let index = store.default_index as usize;
-        if index >= store.certificates.len() {
-            // Fall back to first cert if default is out of bounds
-            return Ok(Some(store.certificates[0].clone()));
-        }
-
-        Ok(Some(store.certificates[index].clone()))
-    }
-
-    /// Get a certificate by index.
-    pub async fn get_akash_cert_by_index(
-        &self,
-        index: u32,
-    ) -> HoResult<Option<ho_std::types::ergors::orch::v1::StoredAkashCertificate>> {
-        let store = self.get_akash_cert_store().await?;
-
-        if index as usize >= store.certificates.len() {
-            return Ok(None);
-        }
-
-        Ok(Some(store.certificates[index as usize].clone()))
-    }
-
-    /// List all certificates with their indices.
-    pub async fn list_akash_certs(
-        &self,
-    ) -> HoResult<Vec<(u32, ho_std::types::ergors::orch::v1::StoredAkashCertificate)>> {
-        let store = self.get_akash_cert_store().await?;
-
-        Ok(store
-            .certificates
-            .into_iter()
-            .enumerate()
-            .map(|(i, c)| (i as u32, c))
-            .collect())
-    }
+    // NOTE: Certificate storage functions removed - JWT authentication is used instead
 
     // ========================================
     // Akash Provider Info Cache
@@ -1505,7 +1262,7 @@ impl ErgorsStorage {
         let key = storage_key(AKASH_PROVIDER_INFO_PREFIX, &info.address);
         let data = serde_json::to_vec(info)?;
         delta.put_raw(key.clone(), data);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         debug!("📋 Cached provider info for {}", info.address);
         Ok(())
     }
@@ -1578,7 +1335,7 @@ impl ErgorsStorage {
         let version_key = storage_key(PROXY_ROUTER_CONFIG_PREFIX, &format!("v{}", config.version));
         delta.put_raw(version_key.clone(), data);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!(
             "🔧 Stored proxy router config version {} (anthropic={}, openai={}, ollama={})",
             config.version,
@@ -1698,7 +1455,7 @@ impl ErgorsStorage {
             delta.put_raw(ts_index_key, session.session_id.as_bytes().to_vec());
         }
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         info!(
             "💾 Stored proxy session: {} (client: {}, model: {})",
@@ -1801,7 +1558,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let session_key = storage_key(PROXY_SESSION_PREFIX, session_id);
         delta.delete(session_key);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🗑️  Deleted proxy session: {}", session_id);
         Ok(())
     }
@@ -1876,7 +1633,7 @@ impl ErgorsStorage {
             delta.put_raw(ts_index_key, session.session_id.as_bytes().to_vec());
         }
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         info!(
             "💾 Stored fractal session: {} (type: {}, depth: {}, parent: {})",
@@ -2250,7 +2007,7 @@ impl ErgorsStorage {
             delta.delete(tag_index_key);
         }
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🗑️  Deleted fractal session: {}", session_id);
         Ok(())
     }
@@ -2272,7 +2029,7 @@ impl ErgorsStorage {
         let latest_data = serde_json::to_vec(snapshot)?;
         delta.put_raw(latest_key, latest_data);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!(
             "📸 Stored session state snapshot: {} (version: {})",
             session_id, snapshot.state_version
@@ -2348,7 +2105,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let key = storage_key(AUTHENTICATOR_PREFIX, endpoint_label);
         delta.put_raw(key.clone(), contract_address.as_bytes().to_vec());
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!(
             "🔐 Registered authenticator for endpoint '{}': {}",
             endpoint_label, contract_address
@@ -2389,7 +2146,7 @@ impl ErgorsStorage {
         let meta_key = storage_key(AUTHENTICATOR_META_PREFIX, endpoint_label);
         delta.delete(meta_key);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🗑️  Removed authenticator for endpoint '{}'", endpoint_label);
         Ok(())
     }
@@ -2403,7 +2160,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let key = storage_key(AUTHENTICATOR_META_PREFIX, endpoint_label);
         delta.put_raw(key, metadata.as_bytes().to_vec());
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         debug!(
             "Stored metadata for authenticator endpoint '{}'",
             endpoint_label
@@ -2497,7 +2254,7 @@ impl ErgorsStorage {
         let key = storage_key(SDL_TEMPLATE_CONTRACT_PREFIX, contract_address);
         delta.put_raw(key, info_bytes);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("📝 Registered SDL template contract: {}", contract_address);
         Ok(())
     }
@@ -2593,7 +2350,7 @@ impl ErgorsStorage {
         };
 
         delta.put_raw(key, serde_json::to_vec(&config)?);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         info!("RAG embedder configured: {} ({}, {} dims)", endpoint, model, dimension);
         Ok(())
@@ -2649,7 +2406,7 @@ impl ErgorsStorage {
         let key = storage_key(GATEWAY_CONFIG_PREFIX, &config.gateway_id);
         let data = serde_json::to_vec(config)?;
         delta.put_raw(key, data);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🌐 Stored gateway config: {}", config.gateway_id);
         Ok(())
     }
@@ -2724,7 +2481,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let key = storage_key2(GATEWAY_SESSIONS_PREFIX, gateway_id, thread_id);
         delta.put_raw(key, session_id.as_bytes().to_vec());
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🌐 Created gateway session: {} for {}:{}", session_id, gateway_id, thread_id);
         Ok(session_id)
     }
@@ -2738,7 +2495,7 @@ impl ErgorsStorage {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let key = storage_key(GATEWAY_TOKENS_PREFIX, gateway_id);
         delta.put_raw(key, encrypted_token.to_vec());
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🔐 Stored encrypted token for gateway: {}", gateway_id);
         Ok(())
     }
@@ -2793,7 +2550,7 @@ impl ErgorsStorage {
         let key = storage_key(GUILD_RAG_CONFIG_PREFIX, &config.guild_id);
         let data = serde_json::to_vec(config)?;
         delta.put_raw(key, data);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🧠 Stored guild RAG config: {}", config.guild_id);
         Ok(())
     }
@@ -2854,7 +2611,7 @@ impl ErgorsStorage {
         );
         let data = serde_json::to_vec(&log)?;
         delta.put_raw(key, data);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         if success {
             debug!("🧠 Guild RAG audit: {} {} {}", guild_id, operation, source_uri);
@@ -2928,7 +2685,7 @@ impl ErgorsStorage {
             delta.delete(chunk_key);
         }
         delta.delete(index_key);
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
 
         info!("🧠 Deleted {} chunks for source: {}", count, source_uri);
         Ok(count)
@@ -2971,7 +2728,7 @@ impl ErgorsStorage {
         let log_data = serde_json::to_vec(&log)?;
         delta.put_raw(log_key, log_data);
 
-        self.cs.commit(delta).await?;
+        self.commit_delta(delta).await?;
         info!("🔐 Stored encrypted secret: {} (by {})", secret.secret_id, accessor);
         Ok(())
     }
@@ -3033,7 +2790,7 @@ impl ErgorsStorage {
         if let Ok(log_data) = serde_json::to_vec(&log) {
             let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
             delta.put_raw(log_key, log_data);
-            let _ = self.cs.commit(delta).await;
+            let _ = self.commit_delta(delta).await;
         }
 
         if success {

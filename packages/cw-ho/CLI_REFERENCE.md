@@ -48,7 +48,7 @@ ergors [OPTIONS] <COMMAND>
 | `init new` | Initialize new node with full setup | Auto-generates:<br>- Encrypted node identity (Ed25519)<br>- SSH keys from custody<br>- API key encryption<br>- Sample .env file | `ergors init new` |
 | `init llms` | Configure LLM provider API keys | Prompts for API keys:<br>- Anthropic (Claude)<br>- OpenAI (GPT)<br>- Ollama (local)<br>- Grok (xAI)<br>- Akash ML<br>Saves to `api-keys.toml` | `ergors init llms` |
 | `init providers` | Configure provider key sharing | Sets per-provider ownership:<br>- `shared` - Shamir secret sharing<br>- `local` - Node-only<br>Configures k-of-n threshold | `ergors init providers` |
-| `init unsafe-wipe` | Delete all data in home directory | **DESTRUCTIVE** - Requires custody password (same as `init new`). Fails if no custody exists. Removes all config, encrypted keys, certificates, deployment workflows, prompt history, and session data. | `ergors init unsafe-wipe` |
+| `init unsafe-wipe` | Delete all data in home directory | **DESTRUCTIVE** - Requires custody password (same as `init new`). Fails if no custody exists. Removes all config, encrypted keys, deployment workflows, prompt history, and session data. | `ergors init unsafe-wipe` |
 | `init migrate` | Migrate from major versions | (TODO: not implemented) | `ergors init migrate` |
 
 **Init New Details:**
@@ -324,11 +324,11 @@ The trusted providers list filters which providers are considered for deployment
 **Automated Deployment Flow (--auto):**
 
 1. Check wallet balance (fails if < min-balance)
-2. Check/create Akash certificate
-3. Create deployment on chain (MsgCreateDeployment)
-4. Poll for provider bids (~12-30s)
-5. Select provider (cheapest or from trusted list)
-6. Create lease (MsgCreateLease)
+2. Create deployment on chain (MsgCreateDeployment)
+3. Poll for provider bids (~12-30s)
+4. Select provider (cheapest or from trusted list)
+5. Create lease (MsgCreateLease)
+6. Authenticate with provider (JWT)
 7. Send manifest to provider
 8. Retrieve and save service endpoints
 
@@ -513,88 +513,43 @@ ergors deploy close-deployment <session-id-or-label>
 - All escrow funds returned
 - Cannot be reopened
 
-### Certificate Management
+### Provider Authentication (JWT)
 
-Akash deployments require X.509 certificates for mTLS authentication with providers.
+ERGORS uses JWT (JSON Web Token) authentication for communicating with Akash providers. This replaces the previous mTLS certificate-based authentication.
 
-#### Create Certificate
+**How JWT Authentication Works:**
 
-Create or retrieve an Akash mTLS certificate:
+JWTs are **self-attested** by the client and validated per-request by the provider:
 
-```bash
-ergors deploy cert create [--key-name <NAME>] [--account-index <N>]
-```
+1. **Create JWT**: Client creates JWT with claims (issuer = account address, timestamps)
+2. **Sign JWT**: Client signs JWT with their secp256k1 wallet private key (ES256K algorithm)
+3. **Send Request**: Request includes `Authorization: Bearer <token>` header
+4. **Validate**: Provider fetches issuer's public key from on-chain state and verifies signature
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--key-name <NAME>` | Key name for signing | `default` |
-| `--account-index <N>` | HD account index | `0` |
+**No Challenge-Response**: Unlike some auth flows, there is NO challenge request or registration step. The client creates and signs the JWT entirely locally.
 
-**Process:**
-
-1. Derives Akash address from key
-2. Queries chain for existing valid certificate
-3. If found and key is stored locally, reuses it
-4. If not found, generates new X.509 certificate
-5. Broadcasts `MsgCreateCertificate` to Akash chain
-6. Stores encrypted private key in cnidarium storage
-
-#### Show Certificates
-
-List certificates for an address from chain:
-
-```bash
-ergors deploy cert show [--key-name <NAME>] [--account-index <N>]
-```
-
-**Output:**
-- Lists all certificates (valid and revoked)
-- Shows whether private key is stored locally
-- Warns if valid cert exists but key is missing
-
-#### Revoke Certificate
-
-Revoke an Akash certificate:
-
-```bash
-ergors deploy cert revoke [--key-name <NAME>] [--account-index <N>] [--serial <SERIAL>]
-```
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--key-name <NAME>` | Key name for signing | `default` |
-| `--account-index <N>` | HD account index | `0` |
-| `--serial <SERIAL>` | Certificate serial to revoke | First valid cert |
-
-**Process:**
-
-1. Broadcasts `MsgRevokeCertificate` to Akash chain
-2. Deletes encrypted private key from local storage
-3. Certificate marked as revoked on-chain
-
-**Certificate Storage:**
-
-- Encrypted private keys are stored by owner address in cnidarium
-- Keys persist across deployments and server restarts
-- Uses ChaCha20Poly1305 encryption with Argon2id key derivation
-- Storage key: `akash_cert_keys/{owner_address}`
-
-**Common Issue: Missing Private Key**
-
-If a certificate exists on chain but the private key is not in storage (created outside ERGORS):
+**JWT Structure:**
 
 ```
-WARNING: Certificate exists but private key is missing!
-mTLS authentication may fail
+Header:  {"alg": "ES256K", "typ": "JWT"}
+Claims:  {"iss": "akash1...", "iat": <now>, "exp": <now+15min>, "nbf": <now>}
+Signature: secp256k1(SHA256(header.claims))
 ```
 
-**Solution:**
+**Advantages over mTLS:**
 
-1. Revoke the existing certificate using Akash CLI:
-   ```bash
-   akash tx cert revoke --from <key>
-   ```
-2. Run a new deployment - ERGORS will create and store a new certificate
+- No certificate management required
+- No on-chain certificate transactions
+- Provider verifies signatures against on-chain account public keys
+- Simpler deployment workflow (fewer steps)
+- JWTs are short-lived (15 minutes, refreshed automatically)
+
+**Implementation Details:**
+
+- Uses the same secp256k1 private key used for blockchain transactions
+- Provider fetches public key from on-chain account state via `accountQuerier.GetAccountPublicKey`
+- No pre-registration or certificate publishing required
+- Compatible with all Akash providers supporting JWT auth (default since 2024)
 
 ### Provider Information
 

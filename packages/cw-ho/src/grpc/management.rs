@@ -163,9 +163,9 @@ use ho_std::types::ergors::orch::v1::{
     GetLeaseStatusRequest, LeaseStatusResponse,
     AddTrustedProviderRequest, RemoveTrustedProviderRequest,
     ListTrustedProvidersRequest, ListTrustedProvidersResponse, AkashWorkflowOptions, AkashLeaseInfo, AkashLeaseState,
-    // Certificate management types
+    // Certificate management types (deprecated - JWT auth used instead, stubs for trait compliance)
     CreateAkashCertificateRequest, CreateAkashCertificateResponse,
-    RevokeAkashCertificateRequest, ListAkashCertificatesRequest, ListAkashCertificatesResponse, AkashCertificateInfo,
+    RevokeAkashCertificateRequest, ListAkashCertificatesRequest, ListAkashCertificatesResponse,
     // RAG types
     RagIngestRequest, RagIngestResponse, RagQueryRequest, RagQueryResponse,
     RagStatusRequest, RagStatusResponse, RagDeleteRequest, RagOperationResult,
@@ -598,14 +598,31 @@ impl ManagementService for ManagementServiceImpl {
 
         // Add to store and persist
         manager.add_key_to_store(&mut store, encrypted, account_info.clone());
+        tracing::info!("💾 Saving cosmos key store with {} keys...", store.keys.len());
         if let Err(e) = self.state.s.put_cosmos_key_store(&store).await {
+            tracing::error!("❌ Failed to save key store: {}", e);
             return Err(Status::internal(format!("Failed to save key store: {}", e)));
+        }
+        tracing::info!("✅ Key store saved successfully");
+
+        // Verify the save by reading back
+        match self.state.s.get_cosmos_key_store().await {
+            Ok(Some(verified)) => {
+                tracing::info!("✅ Verified: key store has {} keys after save", verified.keys.len());
+            }
+            Ok(None) => {
+                tracing::error!("❌ Verification failed: key store is empty after save!");
+            }
+            Err(e) => {
+                tracing::error!("❌ Verification failed: {}", e);
+            }
         }
 
         // Update in-memory akash context key store if available
         if let Some(ref akash_ctx) = self.state.akash {
             let mut key_store = akash_ctx.key_store.write().await;
             *key_store = store;
+            tracing::info!("✅ Updated in-memory key store");
         }
 
         Ok(Response::new(ImportCosmosKeyResponse {
@@ -627,6 +644,21 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<OperationResult>, Status> {
         let req = request.into_inner();
 
+        // Require valid akash context (daemon must be initialized with custody password)
+        let akash_ctx = self.state.akash.as_ref().ok_or_else(|| {
+            Status::failed_precondition(
+                "Daemon not initialized with Akash context. Key deletion requires authentication.",
+            )
+        })?;
+
+        // Verify custody password is valid by attempting to unlock key manager
+        let mut manager = akash_ctx.key_manager.write().await;
+        if manager.unlock(&akash_ctx.custody_password).is_err() {
+            return Err(Status::unauthenticated(
+                "Invalid custody password. Key deletion requires valid authentication.",
+            ));
+        }
+
         let mut store = match self.state.s.get_cosmos_key_store().await {
             Ok(Some(s)) => s,
             Ok(None) => return Err(Status::not_found("No key store found")),
@@ -644,11 +676,9 @@ impl ManagementService for ManagementServiceImpl {
             return Err(Status::internal(format!("Failed to save key store: {}", e)));
         }
 
-        // Update in-memory akash context key store if available
-        if let Some(ref akash_ctx) = self.state.akash {
-            let mut key_store = akash_ctx.key_store.write().await;
-            *key_store = store;
-        }
+        // Update in-memory akash context key store
+        let mut key_store = akash_ctx.key_store.write().await;
+        *key_store = store;
 
         Ok(Response::new(OperationResult {
             success: true,
@@ -2597,6 +2627,13 @@ impl ManagementService for ManagementServiceImpl {
             nanos: 0,
         });
 
+        // Deactivate label index so label can be reused
+        if !workflow.label.is_empty() {
+            if let Err(e) = self.state.s.deactivate_deployment_label(&workflow.label).await {
+                tracing::warn!("Failed to deactivate label '{}': {}", workflow.label, e);
+            }
+        }
+
         // Persist
         self.state.s.put_akash_workflow(&workflow).await.ok();
 
@@ -3355,266 +3392,42 @@ impl ManagementService for ManagementServiceImpl {
         }
     }
 
-    // ============ Akash Certificate Management Handlers ============
+    // ============ Certificate Management (DEPRECATED) ============
+    // NOTE: Certificate-based mTLS authentication has been replaced with JWT authentication.
+    // These stub implementations exist only for gRPC trait compliance.
 
-    /// Create a new Akash mTLS certificate and broadcast to chain
+    /// DEPRECATED: Certificate creation no longer needed - JWT auth is used instead.
     async fn create_akash_certificate(
         &self,
-        request: Request<CreateAkashCertificateRequest>,
+        _request: Request<CreateAkashCertificateRequest>,
     ) -> Result<Response<CreateAkashCertificateResponse>, Status> {
-        let req = request.into_inner();
-
-        // Check if Akash context is available
-        let akash_ctx = self
-            .state
-            .akash
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition(
-                "Akash deployment context not initialized. Configure Akash settings first."
-            ))?;
-
-        // Get key name (default to "default")
-        let key_name = if req.key_name.is_empty() {
-            "default".to_string()
-        } else {
-            req.key_name.clone()
-        };
-
-        // Derive address from key
-        let encrypted_key = {
-            let key_store = akash_ctx.key_store.read().await;
-            EncryptedCosmosKeyManager::get_key_by_name(&key_store, &key_name)
-                .ok_or_else(|| Status::not_found(format!("Key '{}' not found", key_name)))?
-                .clone()
-        };
-
-        let address = {
-            let mut manager = akash_ctx.key_manager.write().await;
-            // Unlock if needed using custody password from context
-            if !manager.is_unlocked() {
-                manager.unlock(&akash_ctx.custody_password).map_err(|e| {
-                    Status::internal(format!("Failed to unlock key manager: {}", e))
-                })?;
-            }
-            let keypair = manager
-                .get_keypair(&encrypted_key, req.account_index)
-                .map_err(|e| Status::internal(format!("Failed to derive keypair: {}", e)))?;
-            cosmos_address_from_pubkey(keypair.public_key(), "akash")
-                .map_err(|e| Status::internal(format!("Failed to generate address: {}", e)))?
-        };
-
-        tracing::info!("Creating certificate for address: {}", address);
-
-        // Create certificate and broadcast to chain
-        match akash_ctx.cert_manager.create_new_certificate(
-            &key_name,
-            req.account_index,
-            &address,
-            &akash_ctx.custody_password,
-        ).await {
-            Ok((tx_hash, serial)) => {
-                tracing::info!("Certificate created: tx_hash={}, serial={}", tx_hash, serial);
-                Ok(Response::new(CreateAkashCertificateResponse {
-                    success: true,
-                    tx_hash,
-                    serial,
-                    error_message: String::new(),
-                }))
-            }
-            Err(e) => {
-                tracing::error!("Failed to create certificate: {}", e);
-                Ok(Response::new(CreateAkashCertificateResponse {
-                    success: false,
-                    tx_hash: String::new(),
-                    serial: String::new(),
-                    error_message: format!("{}", e),
-                }))
-            }
-        }
+        Ok(Response::new(CreateAkashCertificateResponse {
+            success: false,
+            tx_hash: String::new(),
+            serial: String::new(),
+            error_message: "Certificate management deprecated. JWT authentication is used for provider communication.".to_string(),
+        }))
     }
 
-    /// Revoke an existing Akash certificate
+    /// DEPRECATED: Certificate revocation no longer needed - JWT auth is used instead.
     async fn revoke_akash_certificate(
         &self,
-        request: Request<RevokeAkashCertificateRequest>,
+        _request: Request<RevokeAkashCertificateRequest>,
     ) -> Result<Response<OperationResult>, Status> {
-        let req = request.into_inner();
-
-        // Check if Akash context is available
-        let akash_ctx = self
-            .state
-            .akash
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition(
-                "Akash deployment context not initialized. Configure Akash settings first."
-            ))?;
-
-        // Get key name (default to "default")
-        let key_name = if req.key_name.is_empty() {
-            "default".to_string()
-        } else {
-            req.key_name.clone()
-        };
-
-        // Derive address from key
-        let encrypted_key = {
-            let key_store = akash_ctx.key_store.read().await;
-            EncryptedCosmosKeyManager::get_key_by_name(&key_store, &key_name)
-                .ok_or_else(|| Status::not_found(format!("Key '{}' not found", key_name)))?
-                .clone()
-        };
-
-        let address = {
-            let mut manager = akash_ctx.key_manager.write().await;
-            // Unlock if needed using custody password from context
-            if !manager.is_unlocked() {
-                manager.unlock(&akash_ctx.custody_password).map_err(|e| {
-                    Status::internal(format!("Failed to unlock key manager: {}", e))
-                })?;
-            }
-            let keypair = manager
-                .get_keypair(&encrypted_key, req.account_index)
-                .map_err(|e| Status::internal(format!("Failed to derive keypair: {}", e)))?;
-            cosmos_address_from_pubkey(keypair.public_key(), "akash")
-                .map_err(|e| Status::internal(format!("Failed to generate address: {}", e)))?
-        };
-
-        // If no serial provided, query for first valid cert
-        let serial = if req.serial.is_empty() {
-            // Query chain for existing certs
-            let certs = akash_ctx.cosmos.query_certificates(&address).await
-                .map_err(|e| Status::internal(format!("Failed to query certificates: {}", e)))?;
-
-            // Find first valid cert
-            let valid_cert = certs.iter().find(|c| {
-                c.certificate.as_ref().map(|cert| cert.state == 1).unwrap_or(false) // State::Valid = 1
-            });
-
-            match valid_cert {
-                Some(c) => c.serial.clone(),
-                None => {
-                    return Ok(Response::new(OperationResult {
-                        success: false,
-                        message: "No valid certificate found to revoke".to_string(),
-                    }));
-                }
-            }
-        } else {
-            req.serial.clone()
-        };
-
-        tracing::info!("Revoking certificate for {} (serial: {})", address, serial);
-
-        match akash_ctx.cert_manager.revoke_certificate(
-            &key_name,
-            req.account_index,
-            &address,
-            &serial,
-        ).await {
-            Ok(tx_hash) => {
-                tracing::info!("Certificate revoked: tx_hash={}", tx_hash);
-                Ok(Response::new(OperationResult {
-                    success: true,
-                    message: format!("Certificate revoked. tx_hash: {}", tx_hash),
-                }))
-            }
-            Err(e) => {
-                tracing::error!("Failed to revoke certificate: {}", e);
-                Ok(Response::new(OperationResult {
-                    success: false,
-                    message: format!("Failed to revoke certificate: {}", e),
-                }))
-            }
-        }
+        Ok(Response::new(OperationResult {
+            success: false,
+            message: "Certificate management deprecated. JWT authentication is used for provider communication.".to_string(),
+        }))
     }
 
-    /// List certificates for an address from chain
+    /// DEPRECATED: Certificate listing no longer needed - JWT auth is used instead.
     async fn list_akash_certificates(
         &self,
-        request: Request<ListAkashCertificatesRequest>,
+        _request: Request<ListAkashCertificatesRequest>,
     ) -> Result<Response<ListAkashCertificatesResponse>, Status> {
-        let req = request.into_inner();
-
-        // Check if Akash context is available
-        let akash_ctx = self
-            .state
-            .akash
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition(
-                "Akash deployment context not initialized. Configure Akash settings first."
-            ))?;
-
-        // Determine address to query
-        let address = if !req.address.is_empty() {
-            req.address.clone()
-        } else {
-            // Derive from key
-            let key_name = if req.key_name.is_empty() {
-                "default".to_string()
-            } else {
-                req.key_name.clone()
-            };
-
-            let encrypted_key = {
-                let key_store = akash_ctx.key_store.read().await;
-                EncryptedCosmosKeyManager::get_key_by_name(&key_store, &key_name)
-                    .ok_or_else(|| Status::not_found(format!(
-                        "Key '{}' not found. Run 'ergors keys import-mnemonic --label \"{}\"' to import a key first.",
-                        key_name, key_name
-                    )))?
-                    .clone()
-            };
-
-            let mut manager = akash_ctx.key_manager.write().await;
-            // Unlock if needed using custody password from context
-            if !manager.is_unlocked() {
-                manager.unlock(&akash_ctx.custody_password).map_err(|e| {
-                    Status::internal(format!(
-                        "Failed to unlock key manager: {}. If you ran 'unsafe-wipe', restart the engine with 'ergors start'.",
-                        e
-                    ))
-                })?;
-            }
-            let keypair = manager
-                .get_keypair(&encrypted_key, req.account_index)
-                .map_err(|e| Status::internal(format!(
-                    "Failed to derive keypair: {}. If you ran 'unsafe-wipe', restart the engine with 'ergors start'.",
-                    e
-                )))?;
-
-            cosmos_address_from_pubkey(keypair.public_key(), "akash")
-                .map_err(|e| Status::internal(format!("Failed to generate address: {}", e)))?
-        };
-
-        tracing::info!("Listing certificates for address: {}", address);
-
-        // Query chain for certificates
-        let certs = akash_ctx.cosmos.query_certificates(&address).await
-            .map_err(|e| Status::internal(format!("Failed to query certificates: {}", e)))?;
-
-        // Check storage for which certs have stored keys
-        let mut cert_infos = Vec::new();
-        for cert_resp in certs {
-            let state_str = cert_resp.certificate.as_ref()
-                .map(|c| if c.state == 1 { "valid" } else { "revoked" })
-                .unwrap_or("unknown")
-                .to_string();
-
-            // Check if we have the private key stored
-            let has_stored_key = self.state.s.get_akash_cert_key(&address).await
-                .map(|opt| opt.is_some())
-                .unwrap_or(false);
-
-            cert_infos.push(AkashCertificateInfo {
-                serial: cert_resp.serial,
-                state: state_str,
-                has_stored_key,
-            });
-        }
-
         Ok(Response::new(ListAkashCertificatesResponse {
-            certificates: cert_infos,
-            address,
+            certificates: vec![],
+            address: String::new(),
         }))
     }
 

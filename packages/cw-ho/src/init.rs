@@ -248,7 +248,6 @@ impl InitCmd {
                 if data_dir.exists() {
                     // Count items in known prefixes (best effort)
                     let prefixes = [
-                        ("akash_cert_keys", "Akash certificate private keys"),
                         ("akash_workflows", "Akash deployment workflows"),
                         ("operations", "Operation records"),
                         ("prompts", "Prompt/response history"),

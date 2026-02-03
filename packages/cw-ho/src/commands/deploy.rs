@@ -1449,6 +1449,59 @@ impl DeployCmd {
             DeployCmd::Cert { cmd } => {
                 match cmd {
                     CertCmd::Create { key_name, account_index } => {
+                        // Check if keys exist first
+                        let keys = client.list_cosmos_keys().await?;
+                        if keys.is_empty() {
+                            println!("No Cosmos keys found. A key is required to create certificates.");
+                            println!();
+
+                            // Check if stdin is a terminal for interactive prompt
+                            if !std::io::stdin().is_terminal() {
+                                eprintln!("Run 'ergors keys import-mnemonic' to import a key first.");
+                                std::process::exit(1);
+                            }
+
+                            print!("Import a mnemonic now? [Y/n]: ");
+                            std::io::Write::flush(&mut std::io::stdout())?;
+                            let mut answer = String::new();
+                            std::io::stdin().read_line(&mut answer)?;
+                            let answer = answer.trim().to_lowercase();
+
+                            if answer.is_empty() || answer == "y" || answer == "yes" {
+                                println!();
+                                println!("Importing key as 'default' for Akash (akashnet-2)...");
+                                println!();
+
+                                // Get mnemonic (hidden input)
+                                let mnemonic = crate::keys::get_mnemonic()?;
+
+                                // Import via gRPC (daemon uses custody password automatically)
+                                let import_resp = client.import_cosmos_key(
+                                    &mnemonic,
+                                    "Akash Deployment Key",  // label
+                                    "default",               // key_name
+                                    "akashnet-2",            // chain_id
+                                    "akash",                 // address_prefix
+                                    true,                    // make_default
+                                    "",                      // password (daemon uses custody)
+                                ).await?;
+
+                                if !import_resp.success {
+                                    eprintln!("Failed to import key: {}", import_resp.error_message);
+                                    std::process::exit(1);
+                                }
+
+                                if let Some(key_info) = &import_resp.key {
+                                    println!("Key imported successfully!");
+                                    println!("  Address: {}", key_info.address);
+                                    println!();
+                                }
+                            } else {
+                                println!("Run 'ergors keys import-mnemonic' to import a key first.");
+                                return Ok(());
+                            }
+                        }
+
                         println!("Creating Akash mTLS certificate...");
                         println!("  Key:   {} (index {})", key_name, account_index);
                         println!();

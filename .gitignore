@@ -8,7 +8,6 @@ target
 data
 node_modules
 logs
-priv
 archive
 docs/reviews
 proto/vendor

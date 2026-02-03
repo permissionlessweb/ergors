@@ -35,10 +35,7 @@ use ho_std::wasm::WasmRuntime;
 // Re-export the macro for external use
 use crate::{
     config::ErgorsConfig,
-    deploy::{
-        automated::AutomatedDeployer, certificate::CertificateManager,
-        cosmos_client::CosmosClient,
-    },
+    deploy::{automated::AutomatedDeployer, cosmos_client::CosmosClient},
     network::manager::PeerInfo,
     proxy::ProxyRouter,
     storage::ErgorsStorage,
@@ -82,30 +79,29 @@ pub struct ErgorsNetworkManifold {
 /// Akash deployment context containing all components needed for automated deployments.
 ///
 /// This is initialized lazily when Akash config is present and a key store exists.
+/// Uses JWT authentication for provider communication (no mTLS certificates required).
 #[derive(Clone)]
-/// Akash deployment context using layer-climb for transaction signing.
 pub struct AkashDeploymentContext {
     /// CosmosClient for chain queries
     pub cosmos: Arc<CosmosClient>,
-    /// Certificate manager
-    pub cert_manager: Arc<CertificateManager>,
     /// Key manager (unlocked with password)
     pub key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
     /// Key store
     pub key_store: Arc<RwLock<CosmosKeyStore>>,
     /// Akash deployment config
     pub akash_config: AkashDeployConfig,
-    /// Custody password for certificate private key encryption
+    /// Custody password for key encryption
     pub custody_password: String,
 }
 
 impl AkashDeploymentContext {
     /// Create automated deployer from this context.
+    ///
+    /// Uses JWT authentication for provider communication.
     pub fn create_deployer(&self, storage: Arc<ErgorsStorage>) -> AutomatedDeployer {
         AutomatedDeployer::new(
             storage,
             self.cosmos.clone(),
-            self.cert_manager.clone(),
             self.key_manager.clone(),
             self.key_store.clone(),
             self.akash_config.clone(),

@@ -127,7 +127,7 @@ impl DeploymentCacheRefresher {
         let mut result = RefreshResult::default();
 
         // Get all workflows from storage
-        let workflows = match self.storage.list_akash_workflows().await {
+        let all_workflows = match self.storage.list_akash_workflows().await {
             Ok(w) => w,
             Err(e) => {
                 result.errors.push(format!("Failed to list workflows: {}", e));
@@ -135,20 +135,23 @@ impl DeploymentCacheRefresher {
             }
         };
 
+        // Filter to only completed workflows with labels (candidates for cache refresh)
+        let workflows: Vec<_> = all_workflows
+            .into_iter()
+            .filter(|w| {
+                !w.label.is_empty() && w.status == AkashWorkflowStatus::Completed as i32
+            })
+            .collect();
+
         result.workflows_checked = workflows.len();
-        tracing::debug!("Checking {} workflows for cache refresh", workflows.len());
+        if !workflows.is_empty() {
+            tracing::debug!("Checking {} active workflows for cache refresh", workflows.len());
+        }
 
         // Process each completed workflow with a label
         for workflow in workflows {
-            // Skip workflows without labels (not intended for inference routing)
-            if workflow.label.is_empty() {
-                continue;
-            }
-
-            // Skip non-completed workflows
-            if workflow.status != AkashWorkflowStatus::Completed as i32 {
-                continue;
-            }
+            // Skip workflows without endpoints
+            // (already filtered for label and completed status above)
 
             // Skip workflows without endpoints
             if workflow.service_endpoints.is_empty() {
