@@ -320,11 +320,11 @@ All factory-created children are tracked by label, allowing programmatic queries
 
 ## Integration
 
-This contract is designed for integration with the Ergors orchestration system for managing Akash deployments. The `cw-ho` CLI tool handles:
+This contract is designed for integration with the Ergors orchestration system for managing Akash deployments. The `ergors` CLI tool handles:
 - Instantiating SDL contracts
 - Deploying rendered SDLs to Akash
 - Retrieving deployment results (peer IDs, endpoints)
 - Recording results back to contracts via `RecordDeploymentResults`
 - Chaining deployments via `InstantiateNew` with parent results
 
-See the main contracts README and `packages/cw-ho` for CLI integration details.
+See the main contracts README and `packages/ergors` for CLI integration details.

@@ -38,7 +38,7 @@ camino = { workspace = true }
 rand = { workspace = true }
 
 # Integration test dependencies - real node engine components
-ergors = { path = "../packages/cw-ho", features = ["cw"] }
+ergors = { path = "../packages/ergors", features = ["cw"] }
 cnidarium = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }

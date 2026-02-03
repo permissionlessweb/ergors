@@ -315,7 +315,7 @@ packages/
 │   ├── workspace.rs        # WorkspaceManager (worktree lifecycle)
 │   └── registry.rs         # WorkspaceRegistry
 │
-├── cw-ho/src/
+├── ergors/src/
 │   ├── git/
 │   │   ├── mod.rs          # Engine-side git module
 │   │   └── coordinator.rs  # P2P sync coordination

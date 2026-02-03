@@ -3,7 +3,7 @@ name = "ho-std"
 version = "0.1.0"
 edition = "2021"
 description = "ERGORS: Life Creativity Engine - Minimal Rust orchestrator for P2P AI agent coordination"
-authors = ["CW-Ho Team"]
+authors = ["ERGORS Team"]
 license = "MIT OR Apache-2.0"
 
 [package.metadata.docs.rs]

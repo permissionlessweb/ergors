@@ -118,7 +118,7 @@ All node-to-node communication uses X25519 ephemeral key exchange with ChaCha20-
 
 | Package | Binary | Description |
 |---------|--------|-------------|
-| [`ergors`](packages/cw-ho/) | `ergors` | Node engine - network, storage, orchestration |
+| [`ergors`](packages/ergors/) | `ergors` | Node engine - network, storage, orchestration |
 | [`ho-std`](packages/ho-std/) | — | Shared library - types, traits, custody |
 | [`ergors-proto`](./proto/) | — | Proto definitions & code generation |
 

@@ -651,19 +651,19 @@ ergors deploy close-deployment <session-id>
 
 | File | Purpose |
 |------|---------|
-| `packages/cw-ho/src/lib.rs` | `AkashDeploymentContext` definition |
-| `packages/cw-ho/src/server.rs` | Context initialization on startup |
-| `packages/cw-ho/src/deploy/signer.rs` | Transaction signing with layer-climb |
-| `packages/cw-ho/src/deploy/akash.rs` | Transaction broadcasting helpers |
-| `packages/cw-ho/src/deploy/certificate.rs` | Certificate management (with key persistence) |
-| `packages/cw-ho/src/deploy/automated.rs` | Workflow orchestration, provider info caching |
-| `packages/cw-ho/src/deploy/deployment_builder.rs` | Message builders (create, close, update, escrow) |
-| `packages/cw-ho/src/deploy/cosmos_client.rs` | Chain queries (balance, bids, leases, escrow) |
-| `packages/cw-ho/src/deploy/manifest.rs` | Manifest generation and provider communication |
-| `packages/cw-ho/src/grpc/management.rs` | gRPC handlers for deployment management |
-| `packages/cw-ho/src/commands/deploy.rs` | CLI implementation (including cert commands) |
-| `packages/cw-ho/src/client/mod.rs` | gRPC client methods |
-| `packages/cw-ho/src/storage.rs` | Cnidarium storage for workflows, cert keys, provider info |
+| `packages/ergors/src/lib.rs` | `AkashDeploymentContext` definition |
+| `packages/ergors/src/server.rs` | Context initialization on startup |
+| `packages/ergors/src/deploy/signer.rs` | Transaction signing with layer-climb |
+| `packages/ergors/src/deploy/akash.rs` | Transaction broadcasting helpers |
+| `packages/ergors/src/deploy/certificate.rs` | Certificate management (with key persistence) |
+| `packages/ergors/src/deploy/automated.rs` | Workflow orchestration, provider info caching |
+| `packages/ergors/src/deploy/deployment_builder.rs` | Message builders (create, close, update, escrow) |
+| `packages/ergors/src/deploy/cosmos_client.rs` | Chain queries (balance, bids, leases, escrow) |
+| `packages/ergors/src/deploy/manifest.rs` | Manifest generation and provider communication |
+| `packages/ergors/src/grpc/management.rs` | gRPC handlers for deployment management |
+| `packages/ergors/src/commands/deploy.rs` | CLI implementation (including cert commands) |
+| `packages/ergors/src/client/mod.rs` | gRPC client methods |
+| `packages/ergors/src/storage.rs` | Cnidarium storage for workflows, cert keys, provider info |
 | `proto/ergors/orch/v1/orch.proto` | Deployment workflow proto definitions |
 | `proto/ergors/management/v1/management.proto` | Management service proto definitions |
 
@@ -939,10 +939,10 @@ ergors deploy close-deployment qwen-inference
 |------|---------|
 | `packages/ho-std/src/llm/deployment_cache.rs` | In-memory O(1) cache for deployments |
 | `packages/ho-std/src/llm/router.rs` | LLM router with deployment-first routing |
-| `packages/cw-ho/src/grpc/management.rs` | Cache add/remove lifecycle hooks |
-| `packages/cw-ho/src/storage.rs` | Label storage indices and collision checks |
-| `packages/cw-ho/src/server.rs` | Background cache refresh task (30s) |
-| `packages/cw-ho/src/proxy/endpoints.rs` | `/v1/models` endpoint handler |
+| `packages/ergors/src/grpc/management.rs` | Cache add/remove lifecycle hooks |
+| `packages/ergors/src/storage.rs` | Label storage indices and collision checks |
+| `packages/ergors/src/server.rs` | Background cache refresh task (30s) |
+| `packages/ergors/src/proxy/endpoints.rs` | `/v1/models` endpoint handler |
 
 ### Features
 

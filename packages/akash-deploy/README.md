@@ -7,13 +7,13 @@
 ## Migration Path
 
 1. **Create `packages/akash-deploy`** with above structure
-2. **Implement `AkashBackend`** in `cw-ho`:
+2. **Implement `AkashBackend`** in `ergors`:
    - `CosmosClient` → queries
    - `broadcast_akash_msg` → transactions
    - `ErgorsStorage` → state persistence
    - `EncryptedCosmosKeyManager` → signing
-3. **Delete** workflow logic from `cw-ho/src/deploy/workflow.rs`
-4. **Keep** `cw-ho/src/deploy/` for backend implementation only
+3. **Delete** workflow logic from `ergors/src/deploy/workflow.rs`
+4. **Keep** `ergors/src/deploy/` for backend implementation only
 
 ---
 

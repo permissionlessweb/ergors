@@ -1,4 +1,4 @@
-# CW-HO
+# ERGORS
 
 A minimal helper orchestration (HO), written in Rust.
 

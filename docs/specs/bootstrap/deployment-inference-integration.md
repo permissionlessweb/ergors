@@ -188,7 +188,7 @@ pub async fn handle_request(&self, req: &PromptRequest, m: &str) -> HoResult<Pro
 
 ### 3. Lifecycle Hooks
 
-**File:** `packages/cw-ho/src/grpc/management.rs`
+**File:** `packages/ergors/src/grpc/management.rs`
 
 **On Completion:**
 
@@ -212,7 +212,7 @@ if !workflow.label.is_empty() {
 
 ### 4. Background Refresh
 
-**File:** `packages/cw-ho/src/server.rs`
+**File:** `packages/ergors/src/server.rs`
 
 ```rust
 let cache_refresh_handle = {
@@ -245,7 +245,7 @@ let cache_refresh_handle = {
 
 ### 5. Label Collision Prevention
 
-**File:** `packages/cw-ho/src/storage.rs`
+**File:** `packages/ergors/src/storage.rs`
 
 ```rust
 pub async fn check_label_collision(&self, label: &str) -> HoResult<Option<String>> {
@@ -350,7 +350,7 @@ let tokens_used = openai_response.get("usage").and_then(|usage| {
 
 ### GET /v1/models
 
-**File:** `packages/cw-ho/src/proxy/endpoints.rs`
+**File:** `packages/ergors/src/proxy/endpoints.rs`
 
 **Response Format:**
 
@@ -546,7 +546,7 @@ let response = self
 
 ## References
 
-- **CLI Reference:** `/packages/cw-ho/CLI_REFERENCE.md`
+- **CLI Reference:** `/packages/ergors/CLI_REFERENCE.md`
 - **Akash Deployment Spec:** `/docs/specs/bootstrap/akash-deployment.md`
 - **Proto Definitions:** `/proto/ergors/orch/v1/orch.proto`
 - **LLM Router:** `/packages/ho-std/src/llm/router.rs`

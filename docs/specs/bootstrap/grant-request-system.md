@@ -623,8 +623,8 @@ The grant request system can be tested using the ERGORS integration testing fram
 
 | Component | Location | Description |
 |-----------|----------|-------------|
-| `NetworkTopology` | `packages/cw-ho/src/deploy/testing/network.rs` | Multi-node network simulation |
-| `TestWalletManager` | `packages/cw-ho/src/deploy/testing/wallet.rs` | Wallet and grant management |
+| `NetworkTopology` | `packages/ergors/src/deploy/testing/network.rs` | Multi-node network simulation |
+| `TestWalletManager` | `packages/ergors/src/deploy/testing/wallet.rs` | Wallet and grant management |
 
 ### Testing Grant Acceptance Modes
 

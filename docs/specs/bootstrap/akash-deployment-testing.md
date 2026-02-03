@@ -9,7 +9,7 @@ This document describes the comprehensive testing suite for validating the ERGOR
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Integration Test Suite                        │
-│  packages/cw-ho/tests/src/akash_integration.rs                  │
+│  packages/ergors/tests/src/akash_integration.rs                  │
 └─────────────────────────────────────────────────────────────────┘
                               │
         ┌─────────────────────┼─────────────────────┐
@@ -29,7 +29,7 @@ This document describes the comprehensive testing suite for validating the ERGOR
 
 ## Components
 
-### 1. Testing Module (`packages/cw-ho/src/deploy/testing/`)
+### 1. Testing Module (`packages/ergors/src/deploy/testing/`)
 
 | Module | Description |
 |--------|-------------|
@@ -49,7 +49,7 @@ Standalone Docker image simulating inference providers without GPU requirements.
 | `docker-compose.yml` | Local testing with multiple instances |
 | `deploy.sdl.yaml` | Akash Network deployment template |
 
-### 3. Integration Tests (`packages/cw-ho/tests/src/akash_integration.rs`)
+### 3. Integration Tests (`packages/ergors/tests/src/akash_integration.rs`)
 
 Comprehensive test suite covering:
 
@@ -85,10 +85,10 @@ kubectl version --client
 
 ```bash
 # Run the automated setup script
-./packages/cw-ho/tests/scripts/setup-akash-dev.sh
+./packages/ergors/tests/scripts/setup-akash-dev.sh
 
 # Or with options
-./packages/cw-ho/tests/scripts/setup-akash-dev.sh --cluster-name my-test --cleanup
+./packages/ergors/tests/scripts/setup-akash-dev.sh --cluster-name my-test --cleanup
 ```
 
 This script:
@@ -156,7 +156,7 @@ These tests require the Akash development environment:
 
 ```bash
 # Setup environment first
-./packages/cw-ho/tests/scripts/setup-akash-dev.sh
+./packages/ergors/tests/scripts/setup-akash-dev.sh
 
 # Run integration tests
 cargo test -p ergors --features testing -- --ignored --nocapture
@@ -374,7 +374,7 @@ CW-AGENT/
 │       ├── docker-compose.yml
 │       ├── deploy.sdl.yaml
 │       └── README.md
-├── packages/cw-ho/
+├── packages/ergors/
 │   ├── src/deploy/testing/
 │   │   ├── mod.rs
 │   │   ├── environment.rs

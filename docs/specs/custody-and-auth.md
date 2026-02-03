@@ -10,10 +10,10 @@
 | Custody trait | `NodeIdentityCustody` | [`traits/mod.rs`](../../packages/ho-std/src/traits/mod.rs) |
 | Password custody | `PasswordEncryptedCustody` | [`custody/node_identity.rs`](../../packages/ho-std/src/custody/node_identity.rs) |
 | Identity storage | `IdentityStorage` | [`storage/identity.rs`](../../packages/ho-std/src/storage/identity.rs) |
-| Network integration | `start_network_with_custody` | [`network/manager.rs`](../../packages/cw-ho/src/network/manager.rs) |
-| Config helpers | `ErgorsConfig` | [`config.rs`](../../packages/cw-ho/src/config.rs) |
-| Contract authenticators | `contract_auth_middleware` | [`auth/middleware.rs`](../../packages/cw-ho/src/auth/middleware.rs) |
-| Authenticator handlers | `handle_*_authenticator` | [`auth/handlers.rs`](../../packages/cw-ho/src/auth/handlers.rs) |
+| Network integration | `start_network_with_custody` | [`network/manager.rs`](../../packages/ergors/src/network/manager.rs) |
+| Config helpers | `ErgorsConfig` | [`config.rs`](../../packages/ergors/src/config.rs) |
+| Contract authenticators | `contract_auth_middleware` | [`auth/middleware.rs`](../../packages/ergors/src/auth/middleware.rs) |
+| Authenticator handlers | `handle_*_authenticator` | [`auth/handlers.rs`](../../packages/ergors/src/auth/handlers.rs) |
 
 **Security model:** Private keys encrypted at rest (Argon2 + ChaCha20Poly1305), decrypted on-demand with TTL caching.
 
@@ -26,8 +26,8 @@ ERGORS implements layered security:
 | Layer | Purpose | Primitives | Source |
 |-------|---------|------------|--------|
 | Identity Custody | Secure key storage | Argon2 + ChaCha20Poly1305 | [`custody/`](../../packages/ho-std/src/custody/) |
-| API Authentication | Request signing | Ed25519 | [`middleware/`](../../packages/cw-ho/src/middleware/) |
-| Transport Encryption | Node communication | X25519 + ChaCha20Poly1305 | [`network/`](../../packages/cw-ho/src/network/) |
+| API Authentication | Request signing | Ed25519 | [`middleware/`](../../packages/ergors/src/middleware/) |
+| Transport Encryption | Node communication | X25519 + ChaCha20Poly1305 | [`network/`](../../packages/ergors/src/network/) |
 
 ---
 
@@ -111,7 +111,7 @@ cache_ttl_secs = 300
 identity_path = "~/.ergors/node_identity.enc"
 ```
 
-Config helpers in [`config.rs`](../../packages/cw-ho/src/config.rs):
+Config helpers in [`config.rs`](../../packages/ergors/src/config.rs):
 
 ```rust
 let custody = config.create_password_custody();
@@ -138,7 +138,7 @@ custody.unlock(&password).await?;
 
 ### Request Signing
 
-> **Middleware:** [`middleware/auth.rs`](../../packages/cw-ho/src/middleware/auth.rs)
+> **Middleware:** [`middleware/auth.rs`](../../packages/ergors/src/middleware/auth.rs)
 
 | Field | Purpose |
 |-------|---------|
@@ -191,7 +191,7 @@ ERGORS supports programmable authentication via CosmWasm contracts. Nodes can re
 
 ### Authenticator Registry
 
-> **Storage:** [`storage.rs`](../../packages/cw-ho/src/storage.rs)
+> **Storage:** [`storage.rs`](../../packages/ergors/src/storage.rs)
 
 Each node maintains an authenticator registry in Cnidarium storage:
 
@@ -233,7 +233,7 @@ Format: `ergors{node_id}_{caller_pubkey_hash}`
 
 ### Management API
 
-> **Handlers:** [`auth/handlers.rs`](../../packages/cw-ho/src/auth/handlers.rs)
+> **Handlers:** [`auth/handlers.rs`](../../packages/ergors/src/auth/handlers.rs)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -367,7 +367,7 @@ Whitelist-based endpoint authentication supporting both allowlist mode (default 
 
 ### Middleware Flow
 
-> **Implementation:** [`auth/middleware.rs`](../../packages/cw-ho/src/auth/middleware.rs)
+> **Implementation:** [`auth/middleware.rs`](../../packages/ergors/src/auth/middleware.rs)
 
 ```rust
 pub async fn contract_auth_middleware(
@@ -408,7 +408,7 @@ pub async fn contract_auth_middleware(
 
 Contracts can be deployed during node startup via configuration or manually using the ContractManager:
 
-> **Manager:** [`contracts/manager.rs`](../../packages/cw-ho/src/contracts/manager.rs)
+> **Manager:** [`contracts/manager.rs`](../../packages/ergors/src/contracts/manager.rs)
 
 ```rust
 use crate::contracts::ContractManager;
@@ -483,7 +483,7 @@ HKDF-SHA256 derives 4 directional keys from X25519 shared secret.
 
 ## 5. Network Integration
 
-> **Implementation:** [`network/manager.rs`](../../packages/cw-ho/src/network/manager.rs)
+> **Implementation:** [`network/manager.rs`](../../packages/ergors/src/network/manager.rs)
 
 ```rust
 // Recommended: custody-backed
@@ -579,11 +579,11 @@ All types defined in proto files with generated Rust code:
 
 | Component | Source |
 |-----------|--------|
-| Auth middleware | [`auth/middleware.rs`](../../packages/cw-ho/src/auth/middleware.rs) |
-| Auth handlers | [`auth/handlers.rs`](../../packages/cw-ho/src/auth/handlers.rs) |
-| Auth module | [`auth/mod.rs`](../../packages/cw-ho/src/auth/mod.rs) |
-| Storage methods | [`storage.rs`](../../packages/cw-ho/src/storage.rs) |
-| Contract manager | [`contracts/manager.rs`](../../packages/cw-ho/src/contracts/manager.rs) |
+| Auth middleware | [`auth/middleware.rs`](../../packages/ergors/src/auth/middleware.rs) |
+| Auth handlers | [`auth/handlers.rs`](../../packages/ergors/src/auth/handlers.rs) |
+| Auth module | [`auth/mod.rs`](../../packages/ergors/src/auth/mod.rs) |
+| Storage methods | [`storage.rs`](../../packages/ergors/src/storage.rs) |
+| Contract manager | [`contracts/manager.rs`](../../packages/ergors/src/contracts/manager.rs) |
 | Auth registry updater | [`contracts/cw-middleware-auth/`](../../contracts/cw-middleware-auth/) |
 | Whitelist authenticator | [`contracts/cw-auth/`](../../contracts/cw-auth/) |
 

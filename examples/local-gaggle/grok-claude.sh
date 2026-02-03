@@ -1,2 +1,2 @@
 #!/bin/sh
-# Grok + Claude Via Goose & Cw-Ho
+# Grok + Claude Via Goose & Ergors

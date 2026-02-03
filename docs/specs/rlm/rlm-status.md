@@ -104,16 +104,16 @@ Discord /prompt → retrieve_guild_context()
 
 **Created (3):**
 - `packages/ergors-rlm/` (entire crate)
-- `packages/cw-ho/src/grpc/doc_loader.rs`
-- `packages/cw-ho/src/grpc/rlm_docs.rs`
+- `packages/ergors/src/grpc/doc_loader.rs`
+- `packages/ergors/src/grpc/rlm_docs.rs`
 
 **Modified (6):**
 - `proto/ergors/gateway/v1/gateway.proto`
 - `proto/ergors/orch/v1/orch.proto`
-- `packages/cw-ho/Cargo.toml`
-- `packages/cw-ho/src/main.rs`
-- `packages/cw-ho/src/grpc/mod.rs`
-- `packages/cw-ho/src/gateway/discord.rs`
+- `packages/ergors/Cargo.toml`
+- `packages/ergors/src/main.rs`
+- `packages/ergors/src/grpc/mod.rs`
+- `packages/ergors/src/gateway/discord.rs`
 
 ## Next Steps
 

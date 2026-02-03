@@ -8,11 +8,11 @@ This document describes the **Sacred Geometric Node Architecture** - the living 
 
 | Concept | Type/Struct | Source |
 |---------|-------------|--------|
-| Network manifold | `ErgorsNetworkManifold` | [`network/manager.rs`](../../packages/cw-ho/src/network/manager.rs) |
+| Network manifold | `ErgorsNetworkManifold` | [`network/manager.rs`](../../packages/ergors/src/network/manager.rs) |
 | Node identity | `NodeIdentity` | [`types/ergors/gen/ergors.network.v1.rs`](../../packages/ho-std/src/types/ergors/gen/ergors.network.v1.rs) |
 | Node types | `NodeType` enum | [`types/ergors/gen/ergors.network.v1.rs`](../../packages/ho-std/src/types/ergors/gen/ergors.network.v1.rs) |
 | Network config | `NetworkConfig` | [`network/config.rs`](../../packages/ho-std/src/network/config.rs) |
-| Authentication | `AuthLayer` | [`middleware/auth.rs`](../../packages/cw-ho/src/middleware/auth.rs) |
+| Authentication | `AuthLayer` | [`middleware/auth.rs`](../../packages/ergors/src/middleware/auth.rs) |
 
 **Network model:** Tetrahedral mesh (4 vertices, 6 edges) with Commonware P2P, 4-channel message routing, Ed25519 authentication.
 
@@ -67,7 +67,7 @@ Each vertex maintains its own fractal consciousness while contributing to the co
 
 ### ErgorsNetworkManifold
 
-> **Source:** [`packages/cw-ho/src/network/manager.rs`](../../packages/cw-ho/src/network/manager.rs)
+> **Source:** [`packages/ergors/src/network/manager.rs`](../../packages/ergors/src/network/manager.rs)
 
 The `ErgorsNetworkManifold` is the central network manager orchestrating all peer-to-peer communication using Commonware libraries. It harmonizes multiple consciousness streams:
 
@@ -236,7 +236,7 @@ Data flows from executor nodes to the coordinator:
 | Layer | Mechanism | Source |
 |-------|-----------|--------|
 | **Signatures** | Ed25519 on all messages | Commonware cryptography |
-| **Namespace signing** | "ergors-network" prefix | [`manager.rs`](../../packages/cw-ho/src/network/manager.rs) |
+| **Namespace signing** | "ergors-network" prefix | [`manager.rs`](../../packages/ergors/src/network/manager.rs) |
 | **Timestamp validation** | Replay attack prevention | Auth middleware |
 | **Rate limiting** | Per-channel limits | `governor` crate |
 | **Identity custody** | Password-encrypted keys | [`custody/`](../../packages/ho-std/src/custody/) |
@@ -292,9 +292,9 @@ The implementation embodies mathematical harmony:
 
 | Component | Location |
 |-----------|----------|
-| Network manager | [`packages/cw-ho/src/network/manager.rs`](../../packages/cw-ho/src/network/manager.rs) |
+| Network manager | [`packages/ergors/src/network/manager.rs`](../../packages/ergors/src/network/manager.rs) |
 | Network types | [`packages/ho-std/src/types/ergors/gen/ergors.network.v1.rs`](../../packages/ho-std/src/types/ergors/gen/ergors.network.v1.rs) |
-| HTTP server | [`packages/cw-ho/src/server.rs`](../../packages/cw-ho/src/server.rs) |
+| HTTP server | [`packages/ergors/src/server.rs`](../../packages/ergors/src/server.rs) |
 | Network config | [`packages/ho-std/src/network/`](../../packages/ho-std/src/network/) |
 | Proto definitions | [`proto/ergors/network/v1/network.proto`](../../proto/ergors/network/v1/network.proto) |
 

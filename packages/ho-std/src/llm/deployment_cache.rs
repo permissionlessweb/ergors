@@ -74,20 +74,20 @@ impl DeploymentProviderCache {
         }
     }
 
-    /// Basic refresh - deprecated in favor of DeploymentCacheRefresher in cw-ho.
+    /// Basic refresh - deprecated in favor of DeploymentCacheRefresher in ergors.
     ///
     /// For proper cache refresh with chain verification (lease status, escrow balance),
-    /// use `crate::deploy::cache_refresher::DeploymentCacheRefresher` in cw-ho.
+    /// use `crate::deploy::cache_refresher::DeploymentCacheRefresher` in ergors.
     ///
     /// This method only provides basic cache operations - for production use,
-    /// the cw-ho refresher should be used which has access to CosmosClient.
-    #[deprecated(note = "Use DeploymentCacheRefresher in cw-ho for chain-verified refresh")]
+    /// the ergors refresher should be used which has access to CosmosClient.
+    #[deprecated(note = "Use DeploymentCacheRefresher in ergors for chain-verified refresh")]
     pub async fn refresh<S>(&self, _storage: &S) -> HoResult<usize>
     where
         S: cnidarium::StateRead,
     {
         // This method is now a no-op.
-        // Actual refresh is done by DeploymentCacheRefresher in cw-ho which has
+        // Actual refresh is done by DeploymentCacheRefresher in ergors which has
         // access to CosmosClient for lease verification and escrow balance checks.
         Ok(self.cache.read().await.len())
     }

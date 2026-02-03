@@ -534,4 +534,4 @@ This mock provider is designed to work with the ERGORS Akash deployment workflow
 3. Run integration tests validating the full 16-step deployment workflow
 4. Verify agentic tool calls and responses
 
-See `packages/cw-ho/tests/src/akash_integration.rs` for test examples.
+See `packages/ergors/tests/src/akash_integration.rs` for test examples.

@@ -148,4 +148,4 @@ mod tests {
 }
 
 // address derivation 
-// keys subcommands: // packages/cw-ho/src/keys/mod.rs:23
+// keys subcommands: // packages/ergors/src/keys/mod.rs:23

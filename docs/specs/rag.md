@@ -10,7 +10,7 @@ The ERGORS engine provides native RAG (Retrieval-Augmented Generation) support t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     ERGORS Engine (cw-ho)                   │
+│                     ERGORS Engine (ergors)                   │
 ├─────────────────────────────────────────────────────────────┤
 │  rag.rs                                                     │
 │  ├── new_remote(storage, endpoint, model, dim) → HybridRAG  │
@@ -70,7 +70,7 @@ Standalone RAG library with no circular dependencies.
 - `openai` - Enables RemoteEmbedder and OpenAIEmbedder
 - `candle` - Enables CandleEmbedder for local inference
 
-### cw-ho (Engine Integration)
+### ergors (Engine Integration)
 
 Thin wrapper in `src/rag.rs` that bridges engine storage to ergors-rag.
 
@@ -93,7 +93,7 @@ Simple embedding function in `src/llm/embed.rs`.
 
 ## API Reference
 
-### Engine API (cw-ho)
+### Engine API (ergors)
 
 ```rust
 use ergors::rag;
@@ -388,7 +388,7 @@ packages/ergors-rag/
     ├── ingest.rs        # Chunking + embedding pipeline
     └── query.rs         # Retrieval flows
 
-packages/cw-ho/src/
+packages/ergors/src/
 └── rag.rs              # Engine integration wrapper
 
 packages/ho-std/src/llm/

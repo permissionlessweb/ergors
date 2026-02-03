@@ -138,7 +138,7 @@ message RagContextChunk {
 
 #### 1.1 Add guild RAG config to storage
 
-**File:** `packages/cw-ho/src/storage.rs`
+**File:** `packages/ergors/src/storage.rs`
 
 ```rust
 const GUILD_RAG_CONFIG_PREFIX: &str = "gateway/rag_config";
@@ -173,7 +173,7 @@ impl ErgorsStorage {
 
 #### 2.1 Add RAG admin commands
 
-**File:** `packages/cw-ho/src/gateway/discord.rs`
+**File:** `packages/ergors/src/gateway/discord.rs`
 
 ```rust
 /// Ingest a URL into this guild's knowledge base (admin only)
@@ -373,7 +373,7 @@ async fn check_rag_admin_role(ctx: &Context<'_>) -> Result<(), anyhow::Error> {
 
 #### 3.1 Modify prompt handler to inject RAG context
 
-**File:** `packages/cw-ho/src/gateway/discord.rs`
+**File:** `packages/ergors/src/gateway/discord.rs`
 
 Update the `prompt` slash command:
 
@@ -633,7 +633,7 @@ rag_source_index/
 ## Dependencies
 
 ```toml
-# packages/cw-ho/Cargo.toml
+# packages/ergors/Cargo.toml
 
 [dependencies]
 reqwest = { version = "0.13", features = ["json"], optional = true }

@@ -133,8 +133,8 @@ flowchart TB
 | WasmRuntime | `packages/ho-std/src/wasm/runtime.rs` | Contract lifecycle (store, instantiate, execute, query) |
 | CnidariumStorage | `packages/ho-std/src/wasm/backend.rs` | Thread-safe state access via StateDelta |
 | WasmVmBackend | `packages/ho-std/src/wasm/backend.rs` | Address validation, crypto ops, querier |
-| HTTP Handlers | `packages/cw-ho/src/cosmwasm.rs` | REST API endpoints |
-| Contract Manager | `packages/cw-ho/src/contracts/manager.rs` | Named contract resolution, auto-deployment |
+| HTTP Handlers | `packages/ergors/src/cosmwasm.rs` | REST API endpoints |
+| Contract Manager | `packages/ergors/src/contracts/manager.rs` | Named contract resolution, auto-deployment |
 
 ### Contract Address Generation
 
@@ -314,14 +314,14 @@ cw = ["cosmwasm-vm", "cosmwasm-std"]
 
 | Component | Path |
 |-----------|------|
-| HTTP Handlers | `packages/cw-ho/src/cosmwasm.rs` |
-| Server Routes | `packages/cw-ho/src/server.rs` |
+| HTTP Handlers | `packages/ergors/src/cosmwasm.rs` |
+| Server Routes | `packages/ergors/src/server.rs` |
 | WasmRuntime | `packages/ho-std/src/wasm/runtime.rs` |
 | Storage Backend | `packages/ho-std/src/wasm/backend.rs` |
 | State Extensions | `packages/ho-std/src/wasm/state_ext.rs` |
-| Contract Manager | `packages/cw-ho/src/contracts/manager.rs` |
-| SDL Manager | `packages/cw-ho/src/deploy/sdl.rs` |
-| CLI Commands | `packages/cw-ho/src/commands/mod.rs` |
+| Contract Manager | `packages/ergors/src/contracts/manager.rs` |
+| SDL Manager | `packages/ergors/src/deploy/sdl.rs` |
+| CLI Commands | `packages/ergors/src/commands/mod.rs` |
 | E2E Wrappers | `scripts/e2e/lib/ergors.sh` |
 | E2E Tests | `scripts/e2e/tests/contracts.sh` |
 
