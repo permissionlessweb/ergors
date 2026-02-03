@@ -236,7 +236,10 @@ impl ManifestBuilder {
         // SDL structure: deployment: { <service>: { <placement>: { ... } } }
         let group_name = self.extract_group_name(deployment_section)?;
 
-        let services = self.parse_services(services_section, deployment_section, profiles_section)?;
+        let mut services = self.parse_services(services_section, deployment_section, profiles_section)?;
+
+        // Provider requires services sorted by name
+        services.sort_by(|a, b| a.name.cmp(&b.name));
 
         if !services.is_empty() {
             groups.push(ManifestGroup {
