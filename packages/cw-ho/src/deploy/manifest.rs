@@ -327,6 +327,9 @@ impl ManifestBuilder {
         let args = if args.is_empty() { None } else { Some(args) };
         let env = if env.is_empty() { None } else { Some(env) };
 
+        // Parse storage params (mount points)
+        let params = self.parse_storage_params(config);
+
         Ok(ManifestService {
             name: name.to_string(),
             image,
@@ -336,7 +339,7 @@ impl ManifestBuilder {
             expose,
             count,
             resources,
-            params: None,
+            params,
             credentials: None,
         })
     }
@@ -388,6 +391,34 @@ impl ManifestBuilder {
                 })
             })
             .unwrap_or_default()
+    }
+
+    fn parse_storage_params(&self, config: &serde_yaml::Value) -> Option<ManifestServiceParams> {
+        let params_section = config.get("params")?.get("storage")?;
+        let params_map = params_section.as_mapping()?;
+
+        let mut storage_params = Vec::new();
+        for (name, value) in params_map {
+            let name = name.as_str()?;
+            let mount = value.get("mount")?.as_str()?;
+            let read_only = value
+                .get("readOnly")
+                .and_then(|r| r.as_bool())
+                .unwrap_or(false);
+            storage_params.push(ManifestStorageParams {
+                name: name.to_string(),
+                mount: mount.to_string(),
+                read_only,
+            });
+        }
+
+        if storage_params.is_empty() {
+            None
+        } else {
+            Some(ManifestServiceParams {
+                storage: storage_params,
+            })
+        }
     }
 
     fn parse_expose(&self, config: &serde_yaml::Value) -> Result<Vec<ManifestServiceExpose>> {
@@ -536,9 +567,59 @@ impl ManifestBuilder {
             .and_then(|u| u.as_u64())
             .unwrap_or(0);
 
+        let mut gpu_attributes: Vec<serde_json::Value> = Vec::new();
+
+        // Parse GPU attributes (vendor/model/ram composite keys)
+        // Must match deployment_builder's parse_gpu() format for provider cross-validation
+        if gpu_units > 0 {
+            if let Some(gpu_section) = resources.get("gpu") {
+                if let Some(attrs) = gpu_section.get("attributes") {
+                    if let Some(vendor_section) = attrs.get("vendor") {
+                        if let Some(vendor_map) = vendor_section.as_mapping() {
+                            for (vendor_name, vendor_config) in vendor_map {
+                                let vendor = vendor_name.as_str().unwrap_or("nvidia");
+                                if let Some(models) = vendor_config.as_sequence() {
+                                    for model_entry in models {
+                                        if let Some(model_map) = model_entry.as_mapping() {
+                                            let model_name = model_map
+                                                .get(serde_yaml::Value::String("model".to_string()))
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("");
+
+                                            let ram = model_map
+                                                .get(serde_yaml::Value::String("ram".to_string()))
+                                                .and_then(|v| v.as_str());
+
+                                            let iface = model_map
+                                                .get(serde_yaml::Value::String("interface".to_string()))
+                                                .and_then(|v| v.as_str());
+
+                                            if !model_name.is_empty() {
+                                                let mut key = format!("vendor/{}/model/{}", vendor, model_name);
+                                                if let Some(ram_value) = ram {
+                                                    key.push_str(&format!("/ram/{}", ram_value));
+                                                }
+                                                if let Some(iface_value) = iface {
+                                                    key.push_str(&format!("/interface/{}", iface_value));
+                                                }
+                                                gpu_attributes.push(serde_json::json!({
+                                                    "key": key,
+                                                    "value": "true"
+                                                }));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let gpu = ManifestGpu {
             units: ManifestResourceValue { val: gpu_units.to_string() },
-            attributes: Vec::new(),
+            attributes: gpu_attributes,
         };
 
         Ok(ManifestResources {
@@ -586,10 +667,39 @@ impl ManifestBuilder {
 
             let size_bytes = self.parse_size(size_str)?;
 
+            // Parse storage attributes (persistent, class)
+            let mut storage_attrs: Vec<serde_json::Value> = Vec::new();
+            if let Some(attrs) = storage.get("attributes") {
+                if let Some(persistent) = attrs.get("persistent") {
+                    let val = match persistent {
+                        serde_yaml::Value::Bool(b) => b.to_string(),
+                        serde_yaml::Value::String(s) => s.clone(),
+                        _ => "false".to_string(),
+                    };
+                    storage_attrs.push(serde_json::json!({
+                        "key": "persistent",
+                        "value": val
+                    }));
+                }
+                if let Some(class) = attrs.get("class") {
+                    let val = class.as_str().unwrap_or("default");
+                    storage_attrs.push(serde_json::json!({
+                        "key": "class",
+                        "value": val
+                    }));
+                }
+                // Sort attributes by key for consistency with Go
+                storage_attrs.sort_by(|a, b| {
+                    let ak = a.get("key").and_then(|k| k.as_str()).unwrap_or("");
+                    let bk = b.get("key").and_then(|k| k.as_str()).unwrap_or("");
+                    ak.cmp(bk)
+                });
+            }
+
             storage_list.push(ManifestStorage {
                 name,
                 size: ManifestResourceValue { val: size_bytes.to_string() },
-                attributes: Vec::new(),
+                attributes: storage_attrs,
             });
         }
 
