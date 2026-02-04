@@ -86,7 +86,7 @@ Each node runs an embedded CosmWasm VM, enabling smart contracts as programmable
 
 ### P2P Network (Tetrahedral Mesh)
 
-Nodes form a fully-connected mesh topology using Commonware P2P. using Ed25519-signed messages, Nodes discover peers, exchange capabilities, and coordinate without central servers. *There are lots of fun iteration to implement here ::)* 
+Nodes form a fully-connected mesh topology using Commonware P2P. using Ed25519-signed messages, Nodes discover peers, exchange capabilities, and coordinate without central servers. *There are lots of fun iteration to implement here ::)*
 
 → *[Network Spec](./docs/specs/network.md)*
 
@@ -212,9 +212,9 @@ just doc-open         # Build and open documentation
 
 ## Environment Variables
 
-### RUST_LOG
+Ergors engines explicity avoid using environment variables for sensititve data such as api-keys, private keys , etc.
 
-> [for a dedicated list of environment variables and their defaults check here.](./packages/ho-std/src/constants.rs)
+### RUST_LOG
 
 Controls the logging level for the entire application. This is the standard Rust tracing environment variable.
 
@@ -243,27 +243,69 @@ export RUST_LOG=ergors::middleware=debug        # Debug middleware operations
 export RUST_LOG=ergors::storage=trace           # Trace storage operations
 ```
 
-## Testing Library
+## Testing
 
-Tests using orchestration servers are essentially scripts that can be used to verify integrity of logic, including its deployments, upgrades and migrations. we have a dedicated library and tooling specifically for this purpose.
+Dedicated test library and tooling for verifying integrity of logic across deployments, upgrades, and migrations.
 
-### Mock Server
+### Test Infrastructure
 
-### Mock Inference Provider
+| Category | Location | Description |
+|----------|----------|-------------|
+| **Unit Tests** | `packages/*/src/**/*.rs` | 100+ `#[cfg(test)]` modules across all packages covering custody, keys, storage, LLM routing, WASM runtime, secret sharing, ephemeral keys, network, RAG, and more |
+| **Integration Test Suite** | [`tests/src/`](./tests/) | Modular test library (`ergors-tests`) with cargo features: `e2e`, `mock-only`, `integration`. Covers storage CRUD, session management, custody, orchestration, WASM lifecycle, network topology, and LLM routing against real Cnidarium storage |
+| **Property-Based Tests** | `packages/ho-std/src/keys/`, `packages/ho-std/src/action/` | Proptest-driven verification for key diversification (AES-128 round-trips), incoming viewing keys, and memo encryption/decryption |
+| **CosmWasm Contract Tests** | [`contracts/`](./contracts/) | `cw_multi_test` integration tests for `cw-sdl` (SDL template storage/rendering), `cw-middleware-auth` (authorization registry), and `cw-auth` (contract-based authentication) |
+| **Proto Derive Tests** | [`proto/rs-derive/tests/`](./proto/rs-derive/tests/) | Macro expansion tests for proto-derived query and struct generation |
 
-* static responses from prompt requests
-  * completions
-  * prompts
-  * toolcalling
-  * api calls
-  * mpc servers
-  * embeddings
+### Mock Infrastructure
 
-### Authentication Testing
+| Component | Location | Description |
+|-----------|----------|-------------|
+| **Mock Inference Provider** | [`docker/mock-inference-provider/`](./docker/mock-inference-provider/) | Standalone Axum HTTP server simulating Ollama (`/api/generate`, `/api/chat`, `/api/tags`), OpenAI (`/v1/completions`, `/v1/chat/completions`, `/v1/models`), and TGI (`/generate`, `/generate_stream`) APIs. Supports configurable latency, error injection, SSE streaming, tool call recording, and API key validation. Deployable via Docker or Akash SDL |
+| **Mock Cosmos Chain** | [`tests/src/mock_client/chain.rs`](./tests/src/mock_client/chain.rs) | In-memory blockchain state with balance tracking (uakt), authz grant management, and feegrant simulation |
+| **Mock Storage** | [`tests/src/mock_client/storage.rs`](./tests/src/mock_client/storage.rs) | In-memory session and workflow state persistence with query-by-status/type/owner |
+| **Mock Workflow Engine** | [`tests/src/mock_client/workflow.rs`](./tests/src/mock_client/workflow.rs) | Full 17-step Akash deployment workflow simulation with step transitions and error injection at any step |
+| **Mock Management Client** | [`tests/src/mock_client/mod.rs`](./tests/src/mock_client/mod.rs) | Mock `ManagementServiceClient` for unit testing gRPC handlers without a running server |
 
-* key gen siging libary
-* custody middleware integration tests (reference penumbra testing library)
-* integration test library
+### Cross-Language Verification
+
+| Tool | Location | Description |
+|------|----------|-------------|
+| **JWT Verify (Go)** | [`tests/scripts/jwt-verify/`](./tests/scripts/jwt-verify/) | Cross-language JWT verification using actual Akash provider libraries (`gateway/utils`). Commands: `jwt` (ES256K verify), `manifest` (hash verify), `all` (full validation), `gen-fixture` (generate test fixtures from SDL). Rust generates JWTs, Go verifies them |
+| **Rust JWT Gen** | [`tests/scripts/jwt-verify/examples/rust-jwt-gen/`](./tests/scripts/jwt-verify/examples/rust-jwt-gen/) | Generates ES256K-signed JWTs and manifest hashes for cross-validation against the Go verifier |
+
+### E2E Test Suites
+
+| Suite | Location | Description |
+|-------|----------|-------------|
+| **Network** | [`scripts/e2e/tests/network.sh`](./scripts/e2e/tests/network.sh) | Node connectivity, health checks, peer discovery |
+| **Grants** | [`scripts/e2e/tests/grants.sh`](./scripts/e2e/tests/grants.sh) | Authz grant request and approval workflows |
+| **Deployment** | [`scripts/e2e/tests/deployment.sh`](./scripts/e2e/tests/deployment.sh) | Full Akash deployment lifecycle: bid acceptance, manifest submission, endpoint verification |
+| **Security** | [`scripts/e2e/tests/security.sh`](./scripts/e2e/tests/security.sh) | JWT validation, certificate generation, authz security |
+| **Contracts** | [`scripts/e2e/tests/contracts.sh`](./scripts/e2e/tests/contracts.sh) | CosmWasm contract instantiation, SDL template queries |
+| **API** | [`scripts/e2e/tests/api.sh`](./scripts/e2e/tests/api.sh) | Open Responses API, OpenAI compatibility, streaming, error handling |
+| **Orchestrator** | [`scripts/e2e/main.sh`](./scripts/e2e/main.sh) | Full E2E pipeline: build binary, spawn coordinator + executor nodes, setup Kind cluster, deploy mock inference, run all suites, cleanup |
+
+### Running Tests
+
+```sh
+# Unit & integration tests
+just test                                    # Run all workspace tests
+just test-pkg ho-std                         # Test specific package
+cargo test -p ergors-tests --all-features    # Full integration suite
+
+# Feature-gated tests
+cargo test -p ergors-tests --features integration   # Cross-component tests
+cargo test -p ergors-tests --features mock-only     # Mock-only tests
+cargo test -p ergors-tests --features e2e           # E2E (requires Docker + Kind)
+
+# E2E bash suites
+./scripts/e2e/main.sh                        # Full E2E pipeline
+./scripts/e2e/main.sh --test deployment      # Single suite (network|grants|deployment|security|contracts|api)
+
+# Cross-language JWT verification
+cd tests/scripts/jwt-verify && just test     # Rust generates, Go verifies
+```
 
 ## DEPENDENCIES
 
