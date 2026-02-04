@@ -917,6 +917,51 @@ Once the bot is configured and enabled, users can interact via Discord:
 | `/prompt <message>` | Send a prompt to the AI |
 | `/thread [name]` | Create a new conversation thread |
 | `/clear` | Clear conversation history in current thread |
+| `/ingest <url>` | Ingest URL or GitHub repository into guild knowledge base (admin only) |
+| `/ragsources` | List all ingested sources in guild knowledge base |
+| `/ragstatus` | Show RAG configuration and stats for this guild |
+
+##### `/ingest` - GitHub Repository Support
+
+The `/ingest` command supports both regular URLs and GitHub repository URLs:
+
+**Regular URLs:**
+```
+/ingest url:https://example.com/docs.html label:example-docs
+```
+
+**GitHub Repositories:**
+```
+/ingest url:https://github.com/owner/repo label:repo-docs
+/ingest url:https://github.com/owner/repo/tree/branch-name
+```
+
+**GitHub Ingestion Behavior:**
+
+- Automatically detects GitHub URLs and uses `githem` for proper git cloning
+- Performs shallow clone (minimal network/disk usage)
+- Filters files using githem presets (excludes binaries, `node_modules`, etc.)
+- Ingests each file individually for better RAG retrieval granularity
+- Stores files in guild-scoped knowledge base with tags: `guild:*`, `repo:*`, `user:*`
+- Supports branches, PRs, and commits via githem's URL parser
+
+**Document Type Options:**
+
+- `doc_type:documentation` or `doc_type:docs` - Use Standard preset (includes docs + source code)
+- `doc_type:code` - Use CodeOnly preset (source files only, excludes docs)
+- `doc_type:minimal` - Use Minimal preset (minimal filtering, mostly just binaries excluded)
+- Default: Standard preset if not specified
+
+**Example:**
+```
+/ingest url:https://github.com/cosmology-tech/interchain label:interchain-docs doc_type:documentation
+```
+
+**Requirements:**
+
+- User must have RAG admin role for the guild
+- RAG must be configured globally (`ergors rag configure`)
+- GitHub ingestion requires `--features github-ingest` at compile time (enabled by default)
 
 ### Discord Setup Workflow
 

@@ -8,7 +8,8 @@
 //!
 //! - [`MockCosmosChain`]: Simulates blockchain state (balances, authz, feegrants)
 //! - [`MockStorage`]: In-memory storage for sessions and workflows
-//! - [`MockWorkflowEngine`]: Executes the 17-step Akash deployment workflow
+//! - [`TestBackend`]: Implements `AkashBackend` trait backed by MockCosmosChain
+//! - [`MockWorkflowEngine`]: Wraps real `DeploymentWorkflow<TestBackend>`
 //! - [`MockManagementClient`]: Composes all components into a testable client
 //!
 //! # Example
@@ -25,35 +26,36 @@
 //!     client.chain_mut().fund_account("akash1exec...", 100_000);
 //!
 //!     // Create workflow
-//!     let workflow = client.create_workflow("test-session").await.unwrap();
+//!     let workflow = client.create_akash_deployment("test-session", "sdl...", None).await.unwrap();
 //!     assert_eq!(workflow.current_step, AkashWorkflowStep::KeySelection as i32);
 //! }
 //! ```
 
 mod chain;
 mod storage;
+pub mod test_backend;
 mod types;
 mod workflow;
 
 pub use chain::MockCosmosChain;
 pub use storage::MockStorage;
+pub use test_backend::TestBackend;
 pub use types::*;
 pub use workflow::MockWorkflowEngine;
 
 use anyhow::{anyhow, Result};
 use ho_std::types::ergors::management::v1::FractalSession;
 use ho_std::types::ergors::network::v1::{NodeIdentity, NodeType};
-use ho_std::types::ergors::orch::v1::{
-    AkashDeploymentWorkflow, AkashWorkflowStatus,
-};
+use ho_std::types::ergors::orch::v1::{AkashDeploymentWorkflow, AkashWorkflowStatus};
 use ho_std::utils::IdGenerator;
+use std::sync::{Arc, RwLock};
 
 /// Mock implementation of ManagementServiceClient for testing.
 ///
 /// Does not use gRPC - all operations are in-memory. Provides controllable
 /// behavior for testing edge cases and failure scenarios.
 pub struct MockManagementClient {
-    chain: MockCosmosChain,
+    chain: Arc<RwLock<MockCosmosChain>>,
     storage: MockStorage,
     workflow_engine: MockWorkflowEngine,
     node_identity: NodeIdentity,
@@ -73,10 +75,11 @@ impl Default for MockManagementClient {
 impl MockManagementClient {
     /// Create a new mock client with default configuration.
     pub fn new() -> Self {
+        let chain = Arc::new(RwLock::new(MockCosmosChain::new()));
         Self {
-            chain: MockCosmosChain::new(),
+            chain: Arc::clone(&chain),
             storage: MockStorage::new(),
-            workflow_engine: MockWorkflowEngine::new(),
+            workflow_engine: MockWorkflowEngine::new(chain),
             node_identity: NodeIdentity {
                 host: "127.0.0.1".to_string(),
                 p2p_port: 26656,
@@ -109,14 +112,19 @@ impl MockManagementClient {
         client
     }
 
-    /// Get mutable reference to chain for test setup.
-    pub fn chain_mut(&mut self) -> &mut MockCosmosChain {
-        &mut self.chain
+    /// Get mutable access to chain for test setup.
+    ///
+    /// Returns a write guard that derefs to `&mut MockCosmosChain`.
+    /// The guard is dropped at the end of the expression, releasing the lock.
+    pub fn chain_mut(&self) -> std::sync::RwLockWriteGuard<'_, MockCosmosChain> {
+        self.chain.write().unwrap()
     }
 
-    /// Get reference to chain for assertions.
-    pub fn chain(&self) -> &MockCosmosChain {
-        &self.chain
+    /// Get read access to chain for assertions.
+    ///
+    /// Returns a read guard that derefs to `&MockCosmosChain`.
+    pub fn chain(&self) -> std::sync::RwLockReadGuard<'_, MockCosmosChain> {
+        self.chain.read().unwrap()
     }
 
     /// Get mutable reference to storage.
@@ -132,6 +140,11 @@ impl MockManagementClient {
     /// Get reference to workflow engine for assertions.
     pub fn workflow_engine(&self) -> &MockWorkflowEngine {
         &self.workflow_engine
+    }
+
+    /// Get mutable reference to workflow engine for configuration.
+    pub fn workflow_engine_mut(&mut self) -> &mut MockWorkflowEngine {
+        &mut self.workflow_engine
     }
 
     /// Inject an error to be returned on next operation.
@@ -206,10 +219,11 @@ impl MockManagementClient {
             .ok_or_else(|| anyhow!("Workflow not found: {}", session_id))?
             .clone();
 
-        // Execute the step
+        // Execute the step via the real workflow engine
         let updated = self
             .workflow_engine
-            .advance_workflow(workflow, &mut self.chain)?;
+            .advance_workflow(workflow)
+            .await?;
 
         // Update storage
         self.storage.put_workflow(updated.clone());
@@ -329,22 +343,25 @@ impl MockManagementClient {
         }
 
         // Create the grants on chain
-        for msg_type in &request.msg_types {
-            self.chain.grant_authz(
-                &request.granter_address,
-                &request.grantee_address,
-                msg_type,
-                request.duration_seconds,
-            )?;
-        }
+        {
+            let mut chain = self.chain.write().unwrap();
+            for msg_type in &request.msg_types {
+                chain.grant_authz(
+                    &request.granter_address,
+                    &request.grantee_address,
+                    msg_type,
+                    request.duration_seconds,
+                )?;
+            }
 
-        if request.spend_limit_uakt > 0 {
-            self.chain.create_feegrant(
-                &request.granter_address,
-                &request.grantee_address,
-                request.spend_limit_uakt,
-                request.duration_seconds,
-            )?;
+            if request.spend_limit_uakt > 0 {
+                chain.create_feegrant(
+                    &request.granter_address,
+                    &request.grantee_address,
+                    request.spend_limit_uakt,
+                    request.duration_seconds,
+                )?;
+            }
         }
 
         request.status = GrantRequestStatus::Confirmed;
@@ -384,7 +401,7 @@ impl MockManagementClient {
     /// Query balance for an address.
     pub async fn query_balance(&mut self, address: &str, denom: &str) -> Result<u64> {
         self.check_injection().await?;
-        Ok(self.chain.get_balance(address, denom))
+        Ok(self.chain.read().unwrap().get_balance(address, denom))
     }
 }
 
@@ -471,8 +488,6 @@ impl MockNodeNetwork {
                         .await
                 }
                 GrantAcceptanceMode::Whitelist => {
-                    // For whitelist mode, we'd check if executor is whitelisted
-                    // For now, always approve if we have whitelisted entries
                     if !self.whitelisted_pubkeys.is_empty() {
                         self.coordinator.approve_grant(&request.request_id).await
                     } else {
@@ -482,7 +497,6 @@ impl MockNodeNetwork {
                     }
                 }
                 GrantAcceptanceMode::Manual => {
-                    // Don't auto-process in manual mode
                     continue;
                 }
             };

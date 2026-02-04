@@ -39,6 +39,7 @@ rand = { workspace = true }
 
 # Integration test dependencies - real node engine components
 ergors = { path = "../packages/ergors", features = ["cw"] }
+akash-deploy = { path = "../packages/akash-deploy" }
 cnidarium = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }

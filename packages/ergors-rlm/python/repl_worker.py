@@ -73,6 +73,9 @@ def execute_rlm_query(params: Dict[str, Any]) -> Dict[str, Any]:
     max_iterations = params.get("max_iterations", 10)
     max_sub_calls = params.get("max_sub_calls", 50)
 
+    sys.stderr.write(f"RLM: Starting query with {len(documents)} documents\n")
+    sys.stderr.flush()
+
     # Create callback for sub-LLM calls (call back to Rust parent)
     def llm_query_callback(prompt: str, model: str = "claude-3-5-sonnet") -> str:
         """Send sub-LLM request to parent process via JSON-RPC."""
@@ -95,16 +98,26 @@ def execute_rlm_query(params: Dict[str, Any]) -> Dict[str, Any]:
         return response["result"]
 
     # Initialize REPL engine
+    sys.stderr.write("RLM: Initializing REPL engine\n")
+    sys.stderr.flush()
     engine = ReplEngine(documents=documents, llm_query_fn=llm_query_callback)
 
     # Execute query
-    result = engine.execute(
-        query=query,
-        max_iterations=max_iterations,
-        max_sub_calls=max_sub_calls
-    )
-
-    return result
+    sys.stderr.write("RLM: Executing query\n")
+    sys.stderr.flush()
+    try:
+        result = engine.execute(
+            query=query,
+            max_iterations=max_iterations,
+            max_sub_calls=max_sub_calls
+        )
+        sys.stderr.write(f"RLM: Query completed successfully\n")
+        sys.stderr.flush()
+        return result
+    except Exception as e:
+        sys.stderr.write(f"RLM: Query failed with error: {type(e).__name__}: {e}\n")
+        sys.stderr.flush()
+        raise
 
 
 if __name__ == "__main__":

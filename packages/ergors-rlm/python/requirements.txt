@@ -1,7 +1,8 @@
 # Python dependencies for RLM REPL worker
 
 # Sandbox for safe code execution
-RestrictedPython==6.2
+# Use latest version compatible with Python 3.12+
+RestrictedPython>=7.0
 
 # No external dependencies needed - we use stdlib for JSON-RPC
 # and the parent process handles LLM calls

@@ -478,14 +478,20 @@ fn generate_certificate(owner: &str) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), Depl
 }
 
 /// Build manifest from SDL.
+///
+/// # PLACEHOLDER WARNING
+///
+/// This is a stub that returns raw SDL bytes instead of a proper Akash manifest.
+/// Tests pass because `TestBackend::send_manifest()` is a no-op.
+///
+/// **DO NOT deploy to production** until this is replaced with real SDL parsing
+/// and manifest protobuf generation. Real providers will reject these manifests.
 fn build_manifest(sdl: &str, _dseq: u64) -> Result<Vec<u8>, DeployError> {
-    // Placeholder — actual implementation parses SDL and builds protobuf manifest
-    // The backend might handle this or you might want sdl.rs/manifest.rs modules
     if sdl.is_empty() {
         return Err(DeployError::Manifest("empty SDL".into()));
     }
 
-    // For now, just return SDL bytes. Real impl would parse and convert.
+    // STUB: Real implementation must parse SDL and build protobuf manifest
     Ok(sdl.as_bytes().to_vec())
 }
 

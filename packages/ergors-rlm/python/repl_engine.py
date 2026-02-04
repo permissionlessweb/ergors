@@ -8,8 +8,8 @@ import io
 import sys
 from contextlib import redirect_stdout
 from typing import List, Dict, Any, Callable, Set, Optional
-from RestrictedPython import compile_restricted, safe_globals
-from RestrictedPython.Guards import guarded_iter_unpack_sequence, safer_getattr, safe_builtins
+from RestrictedPython import compile_restricted
+from RestrictedPython.Guards import guarded_iter_unpack_sequence, safer_getattr, safe_builtins, safe_globals
 from RestrictedPython.PrintCollector import PrintCollector
 
 
@@ -58,7 +58,11 @@ class ReplEngine:
             self.iterations += 1
 
             # Call root LLM for next action
+            sys.stderr.write(f"RLM: Iteration {i+1}, calling root LLM...\n")
+            sys.stderr.flush()
             llm_response = self._call_root_llm(messages)
+            sys.stderr.write(f"RLM: Got LLM response: {llm_response[:200]}...\n")
+            sys.stderr.flush()
 
             # Check for FINAL() tag
             if "FINAL(" in llm_response:
@@ -73,6 +77,8 @@ class ReplEngine:
 
             for code_block in code_blocks:
                 try:
+                    sys.stderr.write(f"RLM: Executing code block:\n{code_block[:100]}...\n")
+                    sys.stderr.flush()
                     # Create fresh globals for each execution to prevent state pollution
                     repl_globals = self._create_safe_globals()
                     # Provide read-only context via tuple (immutable)
@@ -82,6 +88,10 @@ class ReplEngine:
                     output = self._execute_code(code_block, repl_globals)
                     execution_output.append(f"[Code executed successfully]\n{output}")
                 except Exception as e:
+                    sys.stderr.write(f"RLM: Code execution error: {type(e).__name__}: {e}\n")
+                    sys.stderr.flush()
+                    import traceback
+                    traceback.print_exc(file=sys.stderr)
                     execution_output.append(f"[Execution error]\n{str(e)}")
 
             # Track sources referenced in code
@@ -105,49 +115,41 @@ class ReplEngine:
 
     def _create_safe_globals(self) -> Dict[str, Any]:
         """Create safe global namespace for code execution with RestrictedPython guards."""
+        # Start with RestrictedPython 7+ safe_globals which includes proper guards
+        safe_dict = safe_globals.copy()
 
-        # Safe getitem for dictionary/list subscript access
-        def safe_getitem(obj, key):
-            """Allow subscript access for dicts, lists, tuples."""
-            return obj[key]
-
-        # Start with RestrictedPython's safe_builtins and extend with common functions
-        extended_builtins = safe_builtins.copy()
-        extended_builtins.update({
-            'len': len,
-            'str': str,
-            'int': int,
-            'float': float,
-            'bool': bool,
+        # Add additional safe builtins not in default
+        safe_dict['__builtins__'].update({
             'list': list,
             'dict': dict,
-            'tuple': tuple,
             'set': set,
-            'range': range,
             'enumerate': enumerate,
             'zip': zip,
             'map': map,
             'filter': filter,
-            'sorted': sorted,
             'sum': sum,
             'min': min,
             'max': max,
             'any': any,
             'all': all,
-            'isinstance': isinstance,
-            'type': type,
         })
 
-        safe_dict = {
-            '__builtins__': extended_builtins,
-            '_getattr_': safer_getattr,
-            '_getitem_': safe_getitem,
-            '_getiter_': iter,  # Required for "for x in iterable" loops
-            '_iter_unpack_sequence_': guarded_iter_unpack_sequence,
-            '_print_': PrintCollector,  # Required for print() to work
-            # Special function to signal final answer
-            'FINAL': self._final_marker,
-        }
+        # Add iteration guard required for for loops
+        safe_dict['_iter_unpack_sequence_'] = guarded_iter_unpack_sequence
+        safe_dict['_getiter_'] = iter
+
+        # Add getitem guard for subscript access (dict[key], list[index])
+        def safe_getitem(obj, key):
+            """Allow subscript access for dicts, lists, tuples."""
+            return obj[key]
+        safe_dict['_getitem_'] = safe_getitem
+
+        # Add PrintCollector for print() support
+        safe_dict['_print_'] = PrintCollector
+
+        # Special function to signal final answer
+        safe_dict['FINAL'] = self._final_marker
+
         return safe_dict
 
     def _make_llm_query_wrapper(self, max_sub_calls: int) -> Callable:
@@ -175,8 +177,12 @@ class ReplEngine:
 
     def _execute_code(self, code: str, globals_dict: Dict[str, Any]) -> str:
         """Execute code in restricted environment and capture output."""
-        # Compile with RestrictedPython
-        byte_code = compile_restricted(code, '<string>', 'exec')
+        try:
+            # Compile with RestrictedPython (may raise SyntaxError in v7+)
+            byte_code = compile_restricted(code, '<string>', 'exec')
+        except SyntaxError as e:
+            # RestrictedPython 7+ raises SyntaxError for compilation issues
+            raise Exception(f"RestrictedPython compilation error: {e}")
 
         # Capture stdout (for any non-print output)
         output = io.StringIO()

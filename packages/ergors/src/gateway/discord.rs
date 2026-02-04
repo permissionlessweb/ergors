@@ -100,7 +100,7 @@ pub struct DiscordData {
     pub rlm_service: Option<Arc<ergors_rlm::RlmService>>,
 }
 
-type Context<'a> = poise::Context<'a, DiscordData, anyhow::Error>;
+pub(crate) type Context<'a> = poise::Context<'a, DiscordData, anyhow::Error>;
 
 /// Discord gateway implementation using Poise framework
 pub struct DiscordGateway {
@@ -544,6 +544,15 @@ async fn ingest(
 
     // Defer - ingestion can take time
     ctx.defer().await?;
+
+    // Dispatch to GitHub ingestion if URL is a GitHub repo
+    #[cfg(feature = "github-ingest")]
+    {
+        if url.starts_with("https://github.com/") || url.starts_with("http://github.com/") {
+            return crate::gateway::github_ingest::ingest_github_repo(&ctx, &url, label, doc_type)
+                .await;
+        }
+    }
 
     let guild_id = ctx.guild_id().unwrap().to_string();
     let user_id = ctx.author().id.to_string();
@@ -1272,7 +1281,7 @@ fn format_response_with_sources(response_parts: &[String], rag: Option<&RagConte
 }
 
 /// Log a guild RAG audit event with error handling
-async fn log_rag_audit(
+pub(crate) async fn log_rag_audit(
     storage: &ErgorsStorage,
     guild_id: &str,
     user_id: &str,

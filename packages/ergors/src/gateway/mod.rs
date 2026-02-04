@@ -9,5 +9,8 @@ pub mod manager;
 #[cfg(feature = "discord")]
 pub mod discord;
 
+#[cfg(feature = "github-ingest")]
+pub mod github_ingest;
+
 pub use crypto::{decrypt_gateway_secret, encrypt_gateway_secret, GATEWAY_SECRET_ENCRYPTION_METHOD};
 pub use manager::GatewayManager;

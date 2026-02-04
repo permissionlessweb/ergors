@@ -139,7 +139,7 @@ check:
 
 # Full check with all features
 check-all:
-    cargo check --workspace --all-features
+    cargo chec --workspace --all-features
 
 # Clippy lints
 clippy:
@@ -293,6 +293,7 @@ b := "build"
 r := "build-release"
 t := "test"
 c := "check"
+chec := "check"
 i := "install"
 cw := "contracts-optimize"
 ct := "contracts-test"

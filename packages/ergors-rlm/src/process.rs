@@ -30,9 +30,19 @@ impl ReplWorker {
     pub fn spawn(id: usize) -> Result<Self> {
         let python_script = concat!(env!("CARGO_MANIFEST_DIR"), "/python/repl_worker.py");
 
-        debug!("Spawning RLM worker {} with script: {}", id, python_script);
+        // Try to use venv python if available, fall back to system python3
+        let venv_path_file = concat!(env!("CARGO_MANIFEST_DIR"), "/target/venv_python_path");
+        let python_cmd = std::fs::read_to_string(venv_path_file)
+            .ok()
+            .filter(|p| std::path::Path::new(p.trim()).exists())
+            .unwrap_or_else(|| "python3".to_string());
 
-        let mut process = tokio::process::Command::new("python3")
+        debug!(
+            "Spawning RLM worker {} with python: {} script: {}",
+            id, python_cmd, python_script
+        );
+
+        let mut process = tokio::process::Command::new(python_cmd.trim())
             .arg(python_script)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
