@@ -7,6 +7,10 @@
 //!
 //! These tests verify that all components work together correctly.
 
+mod deployment_workflow;
+mod bootstrap_workflow;
+mod proxy_routing;
+
 use ho_std::types::ergors::orch::v1::{
     AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep,
 };
