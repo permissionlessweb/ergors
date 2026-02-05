@@ -3,6 +3,7 @@
 .opencode/plans
 .claude/skills
 .claude/mcp/*.lock
+.claude/settings.json
 .DS_Store
 .vscode/
 target
