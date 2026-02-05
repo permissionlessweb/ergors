@@ -373,9 +373,9 @@ impl SSHConnectionManager {
         info!("🔧 Setting up workspace on target node");
 
         let setup_commands = vec![
-            "mkdir -p ~/CW-AGENT",
-            "cd ~/CW-AGENT && tar -xzf ~/workspace.tar.gz",
-            "cd ~/CW-AGENT && ls -la",
+            "mkdir -p ~/ergors",
+            "cd ~/ergors && tar -xzf ~/workspace.tar.gz",
+            "cd ~/ergors && ls -la",
             "rm ~/workspace.tar.gz",
         ];
 

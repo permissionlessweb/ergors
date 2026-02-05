@@ -63,7 +63,7 @@ pub const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024; // 10 MiB;
 // WORKSPACE RELATED
 pub const CNIDARIUM_STORAGE: &str = "./data/cnidarium";
 pub const WORKSPACE: &str = "../../src";
-pub const WORKSPACE_HOME: &str = "~/CW-AGENT";
+pub const WORKSPACE_HOME: &str = "~/ergors";
 pub const WORKSPACE_ARCHIVE_PATH: &str = "./workspace.tar.gz";
 
 // TOOLS RELATED

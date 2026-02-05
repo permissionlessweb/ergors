@@ -111,7 +111,7 @@ githem . --include "*.rs,*.toml" -o rust-only.md
 
 ```bash
 # Full repository with standard filtering
-githem /Users/returniflost/CW-AGENT -o cw-agent.md --preset standard
+githem ~/ergors -o cw-agent.md --preset standard
 
 # Check the output
 wc -l cw-agent.md  # See line count

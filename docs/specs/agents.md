@@ -88,5 +88,3 @@ Agentic workflows are programmable and accessible through the orchestrator’s R
 The agentic workflow system in ERGORS represents a recursive, network-enhanced approach to AI orchestration, where agents, managed by a Rust-based core orchestrator binary, collaborate across distributed nodes to achieve complex, asynchronous, and long-running tasks. By embedding principles of sacred geometry, deterministic state management, and continuous feedback through Sandloops, ERGORS reduces creative friction and empowers communities to build public goods through intelligent automation. This specification serves as a blueprint for understanding and extending agent management within the ERGORS ecosystem, reflecting the recursive nature of the project itself as a tool for building tools.
 
 ---
-
-You can copy and paste this content into a new `agents.md` file in your workspace at `/Users/returniflost/ergors/specs/agent.md` or the appropriate location. If you need assistance with creating the file directly in your workspace, let me know, and I can use the `developer__text_editor` tool to write this content to the file.
