@@ -22,7 +22,7 @@
 
 use super::chain::MockCosmosChain;
 use super::test_backend::{FailureConfig, MockProviderConfig, TestBackend, TestSigner};
-use akash_deploy::{
+use akash_deploy_rs::{
     AkashBackend, DeploymentState, DeploymentWorkflow, Step, StepResult, WorkflowConfig,
 };
 use anyhow::{anyhow, Result};

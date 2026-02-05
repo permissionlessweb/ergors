@@ -1,12 +1,12 @@
 //! Manifest management for Akash deployments.
 //!
-//! This module demonstrates how to use the `akash-deploy` library for manifest
+//! This module demonstrates how to use the `akash-deploy-rs` library for manifest
 //! building, combined with application-level JWT authentication and provider
 //! communication.
 //!
 //! # Architecture
 //!
-//! - **Manifest building**: Delegated to `akash-deploy` library
+//! - **Manifest building**: Delegated to `akash-deploy-rs` library
 //!   - `ManifestBuilder` for SDL → manifest conversion
 //!   - `to_canonical_json` for deterministic hash computation
 //!   - All manifest types (ManifestService, ManifestGroup, etc.)
@@ -34,11 +34,11 @@ use std::time::Duration;
 use ho_std::keys::cosmos::CosmosKeyPair;
 
 // ============================================================================
-// Re-export types from akash-deploy library
+// Re-export types from akash-deploy-rs library
 // ============================================================================
 
 // Manifest types
-pub use akash_deploy::{
+pub use akash_deploy_rs::{
     to_canonical_json, ManifestBuilder, ManifestCredentials, ManifestCpu, ManifestGroup,
     ManifestGpu, ManifestHttpOptions, ManifestMemory, ManifestResourceValue, ManifestResources,
     ManifestService, ManifestServiceExpose, ManifestServiceParams, ManifestStorage,
@@ -46,10 +46,10 @@ pub use akash_deploy::{
 };
 
 // JWT types - use library implementation instead of duplicating
-pub use akash_deploy::{CachedJwt, JwtBuilder, JwtClaims, JwtLeases};
+pub use akash_deploy_rs::{CachedJwt, JwtBuilder, JwtClaims, JwtLeases};
 
 // ============================================================================
-// JWT Authentication (uses akash-deploy library)
+// JWT Authentication (uses akash-deploy-rs library)
 // ============================================================================
 
 /// JWT authentication client for Akash providers.
@@ -98,11 +98,11 @@ impl JwtAuthClient {
             }
         }
 
-        // Build claims using akash-deploy library types
+        // Build claims using akash-deploy-rs library types
         let claims = JwtClaims::new(address)
             .with_jti(&uuid::Uuid::new_v4().to_string());
 
-        // Build and sign using akash-deploy JwtBuilder
+        // Build and sign using akash-deploy-rs JwtBuilder
         let jwt = JwtBuilder::new().build_and_sign(&claims, |message| {
             keypair.sign_jwt_es256k(message)
         })?;

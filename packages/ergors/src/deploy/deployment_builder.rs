@@ -17,8 +17,8 @@ use ho_std::types::ergors::akash::market::{v1::BidId, v1beta5::MsgCreateLease};
 use ho_std::types::ergors::cosmos::base::v1beta1::{Coin, DecCoin};
 use sha2::{Digest, Sha256};
 
-// Re-export from akash-deploy library
-pub use akash_deploy::to_canonical_json;
+// Re-export from akash-deploy-rs library
+pub use akash_deploy_rs::to_canonical_json;
 
 /// Minimum deposit for deployment in uakt (0.5 AKT)
 pub const MIN_DEPOSIT_UAKT: u64 = 500_000;
@@ -86,8 +86,8 @@ impl DeploymentBuilder {
             hasher.update(manifest_str.as_bytes());
             hasher.finalize().to_vec()
         } else {
-            // Build manifest and hash its canonical JSON using akash-deploy library
-            let manifest_builder = akash_deploy::ManifestBuilder::new(&self.owner, self.dseq);
+            // Build manifest and hash its canonical JSON using akash-deploy-rs library
+            let manifest_builder = akash_deploy_rs::ManifestBuilder::new(&self.owner, self.dseq);
             let manifest_groups = manifest_builder.build_from_sdl(sdl_yaml)
                 .map_err(|e| anyhow!("Manifest build failed: {}", e))?;
             let manifest_json_str = to_canonical_json(&manifest_groups)?;

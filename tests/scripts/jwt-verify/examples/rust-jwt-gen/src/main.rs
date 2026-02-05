@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// Import manifest builder and canonical JSON from akash-deploy library
-use akash_deploy::{to_canonical_json, ManifestBuilder};
+// Import manifest builder and canonical JSON from akash-deploy-rs library
+use akash_deploy_rs::{to_canonical_json, ManifestBuilder};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct JwtHeader {

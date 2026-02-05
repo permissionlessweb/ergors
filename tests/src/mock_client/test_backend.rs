@@ -4,7 +4,7 @@
 //! enabling tests to exercise actual workflow logic instead of reimplementing it.
 
 use super::chain::MockCosmosChain;
-use akash_deploy::{
+use akash_deploy_rs::{
     AkashBackend, Bid, BidId, CertificateInfo, DeployError, DeploymentState, EscrowInfo, LeaseId,
     LeaseInfo, ProviderInfo, ProviderLeaseStatus, Resources, ServiceEndpoint, TxResult,
 };
