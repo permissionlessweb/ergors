@@ -7,6 +7,7 @@
 //! - Integration with Cnidarium verifiable storage (JMT-based)
 
 pub mod backend;
+pub mod event_router;
 pub mod runtime;
 pub mod state_ext;
 pub mod state_keys;
@@ -17,5 +18,6 @@ pub use backend::WasmVmBackend;
 pub use backend::{
     CnidariumQuerier, CnidariumStorage, ContractInfoResponse, QuerierStateReader, WasmVmBackend,
 };
+pub use event_router::{parse_engine_actions, parse_response_attributes, ActionResult, EngineAction};
 pub use runtime::WasmRuntime;
 pub use state_ext::{WasmVmCnidariumStateRead, WasmVmCnidariumStateWrite};

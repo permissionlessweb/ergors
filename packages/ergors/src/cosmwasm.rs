@@ -164,9 +164,12 @@ async fn handle_execute_contract(
     r: serde_json::Value,
 ) -> Json<serde_json::Value> {
     use ho_std::types::cosmwasm::wasm::v1::{MsgExecuteContract, MsgExecuteContractResponse};
+    use ho_std::wasm::event_router::{parse_engine_actions, parse_response_attributes};
 
     match serde_json::from_value::<MsgExecuteContract>(r) {
         Ok(msg) => {
+            let contract_addr = msg.contract.clone();
+
             // Convert funds from proto Coin to cosmwasm_std::Coin
             let funds: Vec<cosmwasm_std::Coin> = msg
                 .funds
@@ -183,12 +186,34 @@ async fn handle_execute_contract(
                 .await
             {
                 Ok(response) => {
-                    let data = response
-                        .into_result()
-                        .ok()
-                        .and_then(|r| r.data)
-                        .map(|b| b.to_vec())
-                        .unwrap_or_default();
+                    let data = match response.into_result() {
+                        Ok(ref res) => {
+                            // Parse events for engine actions before consuming data
+                            let event_actions = parse_engine_actions(&res.events);
+                            let attr_actions = parse_response_attributes(&res.attributes);
+
+                            let all_actions: Vec<_> = event_actions
+                                .into_iter()
+                                .chain(attr_actions.into_iter())
+                                .collect();
+
+                            if !all_actions.is_empty() {
+                                let state_clone = state.clone();
+                                let contract = contract_addr.clone();
+                                tokio::spawn(async move {
+                                    crate::wasm_events::handle_engine_actions(
+                                        &state_clone,
+                                        all_actions,
+                                        &contract,
+                                    )
+                                    .await;
+                                });
+                            }
+
+                            res.data.as_ref().map(|b| b.to_vec()).unwrap_or_default()
+                        }
+                        Err(_) => Vec::new(),
+                    };
 
                     let response_data = MsgExecuteContractResponse { data };
                     Json(
@@ -388,6 +413,32 @@ pub async fn handle_cosmwasm_execute(
                 // Extract data and events from response
                 match response.into_result() {
                     Ok(sub_response) => {
+                        // Parse engine actions from events before serializing
+                        use ho_std::wasm::event_router::{
+                            parse_engine_actions, parse_response_attributes,
+                        };
+
+                        let event_actions = parse_engine_actions(&sub_response.events);
+                        let attr_actions = parse_response_attributes(&sub_response.attributes);
+
+                        let all_actions: Vec<_> = event_actions
+                            .into_iter()
+                            .chain(attr_actions.into_iter())
+                            .collect();
+
+                        if !all_actions.is_empty() {
+                            let state_clone = state.clone();
+                            let contract = req.contract.clone();
+                            tokio::spawn(async move {
+                                crate::wasm_events::handle_engine_actions(
+                                    &state_clone,
+                                    all_actions,
+                                    &contract,
+                                )
+                                .await;
+                            });
+                        }
+
                         let data = sub_response.data.map(|b| {
                             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &b)
                         });
