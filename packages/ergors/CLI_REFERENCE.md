@@ -22,6 +22,7 @@ ergors [OPTIONS] <COMMAND>
 | `config` | Manage configuration values | set, get, list, init |
 | `manage-auth` | User authentication management | register, revoke |
 | `keys` | Manage Cosmos funding keys | import-mnemonic, list, delete, set-default |
+| `bootstrap` | Bootstrap new nodes via Akash or SSH | node, list, status, delete |
 | `gateway` | Communication gateway management | list, status, enable, disable, discord |
 
 ---
@@ -184,6 +185,9 @@ When running, the engine exposes:
 | `/v1/chat/completions` | OpenAI-compatible chat completions (proxies to configured provider or deployment) |
 | `/v1/messages` | Anthropic-compatible messages API |
 | `/v1/models` | List available models (configured providers + active Akash deployments) |
+| `/orchestrate/bootstrap` | POST - Initiate node bootstrap |
+| `/orchestrate/bootstrap/sessions` | GET - List bootstrap sessions (?active=true) |
+| `/orchestrate/bootstrap/sessions/{id}` | GET - Get session status, DELETE - Delete session |
 | `/health` | Health check endpoint |
 | `/metrics` | Prometheus-compatible metrics |
 
@@ -271,6 +275,77 @@ ERGORS uses PID file locking to prevent multiple instances:
 | `0` | Success |
 | `1` | General error (config load failed, storage error, etc.) |
 | Non-zero | Runtime error with message on stderr |
+
+---
+
+## Bootstrap Commands
+
+Bootstrap new ergors nodes via Akash cloud deployment. Uses HTTP API endpoints on the running daemon.
+
+### Bootstrap Node
+
+```bash
+ergors bootstrap node [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--node-type <TYPE>` | Node type: coordinator, executor | `executor` |
+| `--image <TAG>` | Docker image tag | Latest from registry |
+| `--method <METHOD>` | Bootstrap method: akash, ssh | `akash` |
+| `--peers <ADDRS>` | Comma-separated bootstrap peer addresses | Coordinator's own address |
+| `--env <KEY=VALUE>` | Custom environment variables (repeatable) | - |
+| `--ssh <USER@HOST:PORT>` | SSH connection string (for ssh method) | - |
+
+**Bootstrap Flow (Akash):**
+
+1. Generate Ed25519 identity + config for new node
+2. Create Akash deployment with node Docker image
+3. Wait for deployment to become ready
+4. Establish P2P connection with new node
+5. Send config.toml and encrypted custody file via P2P
+6. Verify node is online and functional
+
+**Example:**
+
+```bash
+ergors bootstrap node --node-type executor --method akash
+```
+
+### List Bootstrap Sessions
+
+```bash
+ergors bootstrap list [--active]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--active` | Show only in-progress sessions |
+
+### Bootstrap Session Status
+
+```bash
+ergors bootstrap status <SESSION_ID>
+```
+
+Shows step, node type, P2P connection status, Akash DSEQ, provider, errors.
+
+### Delete Bootstrap Session
+
+```bash
+ergors bootstrap delete <SESSION_ID> [--force]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Skip confirmation prompt |
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ERGORS_API_ADDR` | Override HTTP API address (default: derived from gRPC host + port 8080) |
+| `BOOTSTRAP_IMAGE_TAG` | Override default Docker image tag for bootstrapped nodes |
 
 ---
 

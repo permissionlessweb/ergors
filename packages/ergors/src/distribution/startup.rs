@@ -5,7 +5,8 @@
 //! and distribution manager.
 
 use super::{ApiKeyDistributor, default_provider_configs};
-use crate::bootstrap::{BootstrapConfig, BootstrapHandler, BootstrapInitiator};
+// TODO: Re-integrate bootstrap with new architecture
+// use crate::bootstrap::{BootstrapConfig, BootstrapHandler, BootstrapInitiator};
 use crate::network::KeySharingHandler;
 use ho_std::ephemeral::{EphemeralKeyManager, DEFAULT_TTL};
 use ho_std::error::{HoError, HoResult};
@@ -24,10 +25,6 @@ use tracing::{debug, info};
 pub struct KeyDistributionSystem {
     /// Ephemeral key manager for caching decrypted keys
     pub ephemeral_manager: Arc<EphemeralKeyManager>,
-    /// Bootstrap handler (coordinator only)
-    pub bootstrap_handler: Option<Arc<BootstrapHandler>>,
-    /// Bootstrap initiator (non-coordinator only)
-    pub bootstrap_initiator: Option<Arc<BootstrapInitiator>>,
     /// Key sharing network handler
     pub key_sharing_handler: Option<Arc<KeySharingHandler>>,
     /// API key distributor (coordinator only)
@@ -37,44 +34,33 @@ pub struct KeyDistributionSystem {
 }
 
 impl KeyDistributionSystem {
+    // TODO: Refactor to use new bootstrap architecture (BootstrapOrchestrator + BootstrapReceiver)
+
     /// Initialize the key distribution system for a coordinator node
     ///
     /// # Arguments
     /// * `node_privkey` - The coordinator's private key
-    /// * `config` - Optional custom bootstrap configuration
     pub fn new_coordinator(
         node_privkey: Arc<NodePrivKey>,
-        config: Option<BootstrapConfig>,
     ) -> Self {
-        let config = config.unwrap_or_default();
         let ephemeral_manager = Arc::new(EphemeralKeyManager::new(DEFAULT_TTL));
 
-        let bootstrap_handler = Arc::new(BootstrapHandler::new(
+        let distributor = Some(Arc::new(ApiKeyDistributor::new(
             node_privkey.clone(),
             ephemeral_manager.clone(),
-            config,
-        ));
+        )));
 
-        let distributor = Arc::new(ApiKeyDistributor::new(
-            node_privkey.clone(),
-            bootstrap_handler.clone(),
-            ephemeral_manager.clone(),
-        ));
-
-        let key_sharing_handler = Arc::new(KeySharingHandler::new_coordinator(
-            bootstrap_handler.clone(),
+        let key_sharing_handler = Some(Arc::new(KeySharingHandler::new_coordinator(
             ephemeral_manager.clone(),
             node_privkey,
-        ));
+        )));
 
         info!("Initialized key distribution system for coordinator");
 
         Self {
             ephemeral_manager,
-            bootstrap_handler: Some(bootstrap_handler),
-            bootstrap_initiator: None,
-            key_sharing_handler: Some(key_sharing_handler),
-            distributor: Some(distributor),
+            key_sharing_handler,
+            distributor,
             is_coordinator: true,
         }
     }
@@ -84,35 +70,22 @@ impl KeyDistributionSystem {
     /// # Arguments
     /// * `node_privkey` - The node's private key
     /// * `identity` - The node's identity
-    /// * `config` - Optional custom bootstrap configuration
     pub fn new_node(
         node_privkey: Arc<NodePrivKey>,
-        identity: NodeIdentity,
-        config: Option<BootstrapConfig>,
+        _identity: NodeIdentity,
     ) -> Self {
-        let config = config.unwrap_or_default();
         let ephemeral_manager = Arc::new(EphemeralKeyManager::new(DEFAULT_TTL));
 
-        let bootstrap_initiator = Arc::new(BootstrapInitiator::new(
-            node_privkey.clone(),
-            identity,
-            ephemeral_manager.clone(),
-            config,
-        ));
-
-        let key_sharing_handler = Arc::new(KeySharingHandler::new_node(
-            bootstrap_initiator.clone(),
+        let key_sharing_handler = Some(Arc::new(KeySharingHandler::new_node(
             ephemeral_manager.clone(),
             node_privkey,
-        ));
+        )));
 
         info!("Initialized key distribution system for node");
 
         Self {
             ephemeral_manager,
-            bootstrap_handler: None,
-            bootstrap_initiator: Some(bootstrap_initiator),
-            key_sharing_handler: Some(key_sharing_handler),
+            key_sharing_handler,
             distributor: None,
             is_coordinator: false,
         }
@@ -143,16 +116,7 @@ impl KeyDistributionSystem {
         Ok(())
     }
 
-    /// Set the identity contract address (coordinator only)
-    pub fn set_identity_contract(&self, address: &str) -> HoResult<()> {
-        let handler = self.bootstrap_handler.as_ref().ok_or_else(|| {
-            HoError::Cfg("Bootstrap handler only available on coordinator".to_string())
-        })?;
-
-        handler.set_identity_contract(address.to_string());
-        info!("Set identity contract address: {}", address);
-        Ok(())
-    }
+    // Note: Identity contract management moved to BootstrapOrchestrator in new architecture
 
     /// Set an API key for a provider (coordinator only)
     pub fn set_provider_key(&self, provider: &str, api_key: Vec<u8>) -> HoResult<()> {
@@ -217,12 +181,11 @@ mod tests {
     #[test]
     fn test_coordinator_system() {
         let privkey = Arc::new(NodePrivKey::new(&mut OsRng));
-        let system = KeyDistributionSystem::new_coordinator(privkey, None);
+        let system = KeyDistributionSystem::new_coordinator(privkey);
 
         assert!(system.is_coordinator);
-        assert!(system.bootstrap_handler.is_some());
+        assert!(system.key_sharing_handler.is_some());
         assert!(system.distributor.is_some());
-        assert!(system.bootstrap_initiator.is_none());
     }
 
     #[test]
@@ -238,11 +201,10 @@ mod tests {
             node_type: "executor".to_string(),
             public_key: None,
         };
-        let system = KeyDistributionSystem::new_node(privkey, identity, None);
+        let system = KeyDistributionSystem::new_node(privkey, identity);
 
         assert!(!system.is_coordinator);
-        assert!(system.bootstrap_initiator.is_some());
-        assert!(system.bootstrap_handler.is_none());
+        assert!(system.key_sharing_handler.is_some());
         assert!(system.distributor.is_none());
     }
 

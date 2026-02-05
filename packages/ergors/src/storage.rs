@@ -107,6 +107,9 @@ const RAG_CONFIG_PREFIX: &str = "rag_config/";
 const GATEWAY_CONFIG_PREFIX: &str = "gateway/config";
 const GATEWAY_SESSIONS_PREFIX: &str = "gateway/sessions";
 const GATEWAY_TOKENS_PREFIX: &str = "custody/gateway_tokens";
+
+// Bootstrap session storage prefix
+const BOOTSTRAP_SESSION_PREFIX: &str = "bootstrap_sessions";
 const ENCRYPTED_SECRETS_PREFIX: &str = "custody/secrets";
 const SECRET_ACCESS_LOG_PREFIX: &str = "audit/secret_access";
 
@@ -2827,6 +2830,83 @@ impl ErgorsStorage {
         }
 
         Ok(logs)
+    }
+
+    // ===== Bootstrap Session Storage =====
+
+    /// Save bootstrap session state
+    pub async fn save_bootstrap_state(
+        &self,
+        session_id: &str,
+        state: &crate::bootstrap::BootstrapState,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(BOOTSTRAP_SESSION_PREFIX, session_id);
+        let data = serde_json::to_vec(state)
+            .map_err(|e| HoError::Storage(format!("Failed to serialize bootstrap state: {}", e)))?;
+        delta.put_raw(key, data);
+        self.commit_delta(delta).await?;
+        debug!("💾 Saved bootstrap session: {}", session_id);
+        Ok(())
+    }
+
+    /// Load bootstrap session state
+    pub async fn load_bootstrap_state(
+        &self,
+        session_id: &str,
+    ) -> HoResult<Option<crate::bootstrap::BootstrapState>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(BOOTSTRAP_SESSION_PREFIX, session_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let state = serde_json::from_slice(&data)
+                    .map_err(|e| HoError::Storage(format!("Failed to deserialize bootstrap state: {}", e)))?;
+                Ok(Some(state))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to load bootstrap session {}: {}", session_id, e);
+                Err(HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// List all bootstrap sessions
+    pub async fn list_bootstrap_sessions(&self) -> HoResult<Vec<crate::bootstrap::BootstrapState>> {
+        let snapshot = self.cs.latest_snapshot();
+        let mut sessions = Vec::new();
+        let mut stream = snapshot.prefix_raw(BOOTSTRAP_SESSION_PREFIX);
+
+        while let Some(entry_result) = stream.next().await {
+            match entry_result {
+                Ok((_key, data)) => {
+                    match serde_json::from_slice::<crate::bootstrap::BootstrapState>(&data) {
+                        Ok(state) => sessions.push(state),
+                        Err(e) => warn!("Failed to deserialize bootstrap session: {}", e),
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading bootstrap session stream: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        // Sort by created_at (most recent first)
+        sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        Ok(sessions)
+    }
+
+    /// Delete bootstrap session
+    pub async fn delete_bootstrap_session(&self, session_id: &str) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let key = storage_key(BOOTSTRAP_SESSION_PREFIX, session_id);
+        delta.delete(key);
+        self.commit_delta(delta).await?;
+        info!("🗑️  Deleted bootstrap session: {}", session_id);
+        Ok(())
     }
 }
 

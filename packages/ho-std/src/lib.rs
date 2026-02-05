@@ -37,6 +37,7 @@ pub mod types;
 
 // pub mod action;
 // pub mod view;
+pub mod bootstrap;
 pub mod custody;
 pub mod ephemeral;
 pub mod keys;

@@ -4,6 +4,7 @@
 //! For local operations (without daemon), use the direct command modules
 //! (e.g., config_cmd, keys, init).
 
+pub mod bootstrap;
 pub mod deploy;
 pub mod gateway;
 pub mod rag;
@@ -24,6 +25,7 @@ pub struct CliContext {
     pub json: bool,
 }
 
+pub use bootstrap::BootstrapCmd;
 pub use deploy::DeployCmd;
 pub use gateway::GatewayCmd;
 pub use rag::RagCmd;

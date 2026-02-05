@@ -8,7 +8,7 @@
 - ALL cli references are located in `./packages/ergors/CLI_REFERENCE.md`. ALWAYS when new cli features or iterating features, we update these to maintain accurate..
 - ALWAYS take the opportunity to minimize new type difintions, for preventing unesseary type bloat & tech-debt.
 - ALL types generated from types give us access to the prost::name & type_url(). prioritize use of these over hard coded type urls when interacting with msgs.
-- when performing code reviews, write the review to a md file to share with teammates.
+- when performing code reviews, write the review to a md file to share with teammates. keep these organized in a dedicated `review` folder, with subfolders of the primary task at hand (not the current task being done, but the singular high level task that the multiple incremental steps we take (implement review, review-review) is specific to. ). for example, if we are integrating discord gateway support, we have one subfolder in the review folder that is dedicated to all the turns/steps for reviewing in `review/discord-gateway/**`
 
 ## IMPORTANT LOCATIONS
 

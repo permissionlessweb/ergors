@@ -239,7 +239,7 @@ impl AkashBackend for TestBackend {
             .ok_or_else(|| DeployError::Query(format!("lease not found for dseq {}", dseq)))?;
 
         Ok(LeaseInfo {
-            state: akash_deploy::LeaseState::Active,
+            state: akash_deploy_rs::LeaseState::Active,
             price_uakt: lease.price_uakt,
         })
     }

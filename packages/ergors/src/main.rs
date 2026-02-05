@@ -14,7 +14,7 @@ use ergors::{
     call::CallCmd,
     client::ManagementClient,
     commands::{
-        CliContext, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd, RagCmd,
+        BootstrapCmd, CliContext, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd, RagCmd,
         RemoteConfigCmd, SdlCmd, WorkspaceCmd,
     },
     config::ErgorsConfig,
@@ -133,6 +133,9 @@ pub enum Commands {
     /// Git workspace management
     #[command(subcommand)]
     Workspace(WorkspaceCmd),
+    /// Bootstrap new nodes via Akash or SSH
+    #[command(subcommand)]
+    Bootstrap(BootstrapCmd),
     /// Akash deployment management
     #[command(subcommand)]
     Deploy(DeployCmd),
@@ -239,6 +242,7 @@ async fn execute_grpc_command(cli: &Cli) -> Result<()> {
         Commands::Network(cmd) => cmd.execute(&ctx, client?).await?,
         Commands::Provider(cmd) => cmd.execute(&ctx, client?).await?,
         Commands::Workspace(cmd) => cmd.execute(&ctx, client?).await?,
+        Commands::Bootstrap(cmd) => cmd.execute(&ctx).await?,
         Commands::Deploy(cmd) => cmd.execute(&ctx, client?).await?,
         Commands::Sdl(cmd) => cmd.execute(&ctx, client?).await?,
         Commands::Rag(cmd) => cmd.execute(&ctx, client?).await?,

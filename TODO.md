@@ -5,6 +5,11 @@
 - toad support: <https://github.com/batrachianai/toad>
 - claw-machine support:
 
+## OPTIMIZATIONS
+
+- session reference and loading: should be able to name, list , create new sessions, referenced by the location of the project specified (similar to claude code,opencode etc)
+- refactor codebase: improve the location of logic, managed by separation of concern more effectively. lots of akash-sepcifc code scattered through out deploy
+
 ## COSMWASM
 
 **Issues**: [#2 CosmWasm Integration](https://github.com/permissionlessweb/ergors/issues/2)

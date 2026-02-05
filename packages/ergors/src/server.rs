@@ -155,7 +155,11 @@ impl Server {
                 { path: "/api/cosmwasm/instantiate2", method: post, handler: crate::cosmwasm::handle_cosmwasm_instantiate2 },
                 { path: "/api/cosmwasm/execute", method: post, handler: crate::cosmwasm::handle_cosmwasm_execute },
                 { path: "/api/cosmwasm/query", method: post, handler: crate::cosmwasm::handle_cosmwasm_query },
-                // { path: "/orchestrate/bootstrap", method: post, handler: crate::deploy::handle_bootstrap },
+                // Bootstrap endpoints
+                { path: "/orchestrate/bootstrap", method: post, handler: crate::deploy::bootstrap::handle_bootstrap },
+                { path: "/orchestrate/bootstrap/sessions", method: get, handler: crate::deploy::bootstrap::handle_list_bootstrap_sessions },
+                { path: "/orchestrate/bootstrap/sessions/{session_id}", method: get, handler: crate::deploy::bootstrap::handle_bootstrap_status },
+                { path: "/orchestrate/bootstrap/sessions/{session_id}", method: delete, handler: crate::deploy::bootstrap::handle_delete_bootstrap_session },
                 { path: "/health", method: get, handler: handle_health },
             ],
             protected_routes: [

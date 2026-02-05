@@ -6,7 +6,8 @@
 //! - Key revocation broadcasts
 //! - Key heartbeat/refresh messages
 
-use crate::bootstrap::{BootstrapHandler, BootstrapInitiator};
+// TODO: Re-integrate bootstrap with new architecture
+// use crate::bootstrap::{BootstrapHandler, BootstrapInitiator};
 use ho_std::ephemeral::EphemeralKeyManager;
 use ho_std::error::{HoError, HoResult};
 use ho_std::keys::commonware::{NodePrivKey, NodePubkey};
@@ -16,17 +17,13 @@ use ho_std::types::ergors::network::v1::{
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Channel ID for key sharing protocol
 pub const KEY_SHARING_CHANNEL: u8 = 4;
 
 /// Key sharing handler for processing network messages
 pub struct KeySharingHandler {
-    /// Bootstrap handler (coordinator side)
-    bootstrap_handler: Option<Arc<BootstrapHandler>>,
-    /// Bootstrap initiator (node side)
-    bootstrap_initiator: Option<Arc<BootstrapInitiator>>,
     /// Ephemeral key manager
     key_manager: Arc<EphemeralKeyManager>,
     /// Our node's private key
@@ -40,13 +37,10 @@ pub struct KeySharingHandler {
 impl KeySharingHandler {
     /// Create a new key sharing handler for coordinator nodes
     pub fn new_coordinator(
-        bootstrap_handler: Arc<BootstrapHandler>,
         key_manager: Arc<EphemeralKeyManager>,
         node_privkey: Arc<NodePrivKey>,
     ) -> Self {
         Self {
-            bootstrap_handler: Some(bootstrap_handler),
-            bootstrap_initiator: None,
             key_manager,
             node_privkey,
             is_coordinator: true,
@@ -56,13 +50,10 @@ impl KeySharingHandler {
 
     /// Create a new key sharing handler for regular nodes
     pub fn new_node(
-        bootstrap_initiator: Arc<BootstrapInitiator>,
         key_manager: Arc<EphemeralKeyManager>,
         node_privkey: Arc<NodePrivKey>,
     ) -> Self {
         Self {
-            bootstrap_handler: None,
-            bootstrap_initiator: Some(bootstrap_initiator),
             key_manager,
             node_privkey,
             is_coordinator: false,
@@ -101,77 +92,31 @@ impl KeySharingHandler {
     async fn handle_request(
         &self,
         from: &NodePubkey,
-        request: KeyShareRequest,
+        _request: KeyShareRequest,
     ) -> HoResult<Option<KeySharingMessage>> {
         if !self.is_coordinator {
             warn!("Non-coordinator received key share request, ignoring");
             return Ok(None);
         }
 
-        let handler = self.bootstrap_handler.as_ref().ok_or_else(|| {
-            HoError::Cfg("Bootstrap handler not initialized".to_string())
-        })?;
+        debug!("Received key share request from {:?}", from);
 
-        debug!("Processing key share request from {:?}", from);
-
-        // Verify challenge response
-        let challenge_response = request.challenge_response.ok_or_else(|| {
-            HoError::Cfg("Key share request missing challenge response".to_string())
-        })?;
-
-        // Create a minimal bootstrap request to use the handler
-        let bootstrap_request = ho_std::types::ergors::orch::v1::BootstrapRequest {
-            bootstrap_method: None,
-            identity: Some(ho_std::types::ergors::network::v1::NodeIdentity {
-                host: String::new(),
-                p2p_port: 0,
-                api_port: 0,
-                user: String::new(),
-                os: 0,
-                ssh_port: 0,
-                node_type: String::new(),
-                public_key: Some(request.requester_pubkey.clone()),
-            }),
-            challenge_response: Some(challenge_response),
-            requested_providers: request.providers.clone(),
-            preferred_mode: request.preferred_mode,
-        };
-
-        match handler.handle_bootstrap_request(&bootstrap_request) {
-            Ok(response) => {
-                info!(
-                    "Successfully generated {} shares for requester",
-                    response.secret_shares.len()
-                );
-
-                Ok(Some(KeySharingMessage {
-                    message_type: Some(MessageType::Response(KeyShareResponse {
-                        approved: response.status == "success",
-                        rejection_reason: if response.status == "success" {
-                            String::new()
-                        } else {
-                            response.summary
-                        },
-                        shares: response.secret_shares,
-                        next_challenge: response.next_challenge,
-                    })),
-                }))
-            }
-            Err(e) => {
-                warn!("Failed to process key share request: {}", e);
-                Ok(Some(KeySharingMessage {
-                    message_type: Some(MessageType::Response(KeyShareResponse {
-                        approved: false,
-                        rejection_reason: format!("Request processing failed: {}", e),
-                        shares: vec![],
-                        next_challenge: None,
-                    })),
-                }))
-            }
-        }
+        // P2P key sharing requests are not yet integrated with new bootstrap architecture
+        // Keys are currently distributed via file transfer during bootstrap
+        Ok(Some(KeySharingMessage {
+            message_type: Some(MessageType::Response(KeyShareResponse {
+                approved: false,
+                rejection_reason: "P2P key sharing not yet implemented. Keys are distributed during bootstrap via file transfer.".to_string(),
+                shares: vec![],
+                next_challenge: None,
+            })),
+        }))
     }
 
     /// Handle a key share response (node only)
+    ///
+    /// Note: P2P key sharing responses are not yet integrated with new bootstrap
+    /// architecture. Keys are currently received via file transfer during bootstrap.
     async fn handle_response(
         &self,
         _from: &NodePubkey,
@@ -182,34 +127,12 @@ impl KeySharingHandler {
             return Ok(None);
         }
 
-        let initiator = self.bootstrap_initiator.as_ref().ok_or_else(|| {
-            HoError::Cfg("Bootstrap initiator not initialized".to_string())
-        })?;
-
-        debug!("Processing key share response from coordinator");
+        debug!("Received key share response from coordinator");
 
         if !response.approved {
             warn!("Key share request rejected: {}", response.rejection_reason);
-            return Ok(None);
-        }
-
-        // Process the bootstrap response to extract and cache keys
-        let bootstrap_response = ho_std::types::ergors::orch::v1::BootstrapResponse {
-            id: String::new(),
-            target_node: String::new(),
-            status: if response.approved { "success" } else { "error" }.to_string(),
-            summary: response.rejection_reason.clone(),
-            timestamp: None,
-            duration_ms: 0,
-            identity_contract_address: String::new(),
-            secret_shares: response.shares,
-            next_challenge: response.next_challenge,
-        };
-
-        if let Err(e) = initiator.process_bootstrap_response(bootstrap_response) {
-            error!("Failed to process key share response: {}", e);
         } else {
-            info!("Successfully processed key shares, cached providers: {:?}", initiator.cached_providers());
+            info!("Key share approved but P2P distribution not yet integrated with new bootstrap architecture");
         }
 
         Ok(None)
@@ -312,8 +235,7 @@ impl std::fmt::Debug for KeySharingHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("KeySharingHandler")
             .field("is_coordinator", &self.is_coordinator)
-            .field("has_bootstrap_handler", &self.bootstrap_handler.is_some())
-            .field("has_bootstrap_initiator", &self.bootstrap_initiator.is_some())
+            .field("cached_providers", &self.key_manager.list_providers())
             .finish()
     }
 }
@@ -321,26 +243,19 @@ impl std::fmt::Debug for KeySharingHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::BootstrapConfig;
     use ho_std::ephemeral::DEFAULT_TTL;
     use rand::rngs::OsRng;
 
     fn create_coordinator_handler() -> KeySharingHandler {
         let privkey = Arc::new(NodePrivKey::new(&mut OsRng));
         let key_manager = Arc::new(EphemeralKeyManager::new(DEFAULT_TTL));
-        let bootstrap_handler = Arc::new(BootstrapHandler::new(
-            privkey.clone(),
-            key_manager.clone(),
-            BootstrapConfig::default(),
-        ));
-        KeySharingHandler::new_coordinator(bootstrap_handler, key_manager, privkey)
+        KeySharingHandler::new_coordinator(key_manager, privkey)
     }
 
     #[test]
     fn test_coordinator_handler() {
         let handler = create_coordinator_handler();
         assert!(handler.is_coordinator);
-        assert!(handler.bootstrap_handler.is_some());
     }
 
     #[test]

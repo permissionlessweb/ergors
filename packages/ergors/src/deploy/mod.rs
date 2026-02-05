@@ -1,4 +1,5 @@
 pub mod bootstrap;
+pub mod node_sdl;
 
 pub mod akash;
 pub mod api_client;

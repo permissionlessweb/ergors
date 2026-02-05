@@ -402,21 +402,6 @@ deployment:
     }
 
     #[test]
-    fn test_jwt_token_expiry() {
-        let token = JwtToken {
-            token: "test".to_string(),
-            expires_at: std::time::Instant::now() - Duration::from_secs(120),
-        };
-        assert!(token.is_expired());
-
-        let token = JwtToken {
-            token: "test".to_string(),
-            expires_at: std::time::Instant::now() + Duration::from_secs(120),
-        };
-        assert!(!token.is_expired());
-    }
-
-    #[test]
     fn test_parse_endpoints_new_format() {
         let json = r#"{
             "services": [

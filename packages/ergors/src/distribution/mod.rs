@@ -29,7 +29,8 @@ pub mod startup;
 
 pub use startup::{is_coordinator_node_type, KeyDistributionSystem};
 
-use crate::bootstrap::BootstrapHandler;
+// TODO: Re-integrate bootstrap with new architecture
+// use crate::bootstrap::BootstrapHandler;
 use ho_std::ephemeral::EphemeralKeyManager;
 use ho_std::error::{HoError, HoResult};
 use ho_std::keys::commonware::{NodePrivKey, NodePubkey};
@@ -78,8 +79,6 @@ pub struct ApiKeyDistributor {
     provider_configs: RwLock<HashMap<String, ProviderDistributionConfig>>,
     /// Our node's private key
     node_privkey: Arc<NodePrivKey>,
-    /// Bootstrap handler for challenge verification
-    bootstrap_handler: Arc<BootstrapHandler>,
     /// Ephemeral key manager
     key_manager: Arc<EphemeralKeyManager>,
 }
@@ -88,13 +87,11 @@ impl ApiKeyDistributor {
     /// Create a new API key distributor
     pub fn new(
         node_privkey: Arc<NodePrivKey>,
-        bootstrap_handler: Arc<BootstrapHandler>,
         key_manager: Arc<EphemeralKeyManager>,
     ) -> Self {
         Self {
             provider_configs: RwLock::new(HashMap::new()),
             node_privkey,
-            bootstrap_handler,
             key_manager,
         }
     }
@@ -107,23 +104,8 @@ impl ApiKeyDistributor {
             .unwrap()
             .insert(name.clone(), config.clone());
 
-        // Also configure in bootstrap handler
-        if let Some(ref encrypted_key) = config.encrypted_key {
-            let sharing_config = SecretSharingConfig {
-                mode: if config.ownership == ProviderOwnership::Local {
-                    KeySharingMode::Direct.into()
-                } else {
-                    KeySharingMode::Shamir.into()
-                },
-                threshold: config.threshold as u32,
-                total_shares: config.total_shares as u32,
-            };
-            self.bootstrap_handler.configure_provider(
-                &name,
-                encrypted_key.clone(),
-                sharing_config,
-            );
-        }
+        // Note: Provider configuration is now stored locally only.
+        // Bootstrap orchestrator will read from this config when needed.
 
         info!(
             "Configured provider '{}' for distribution (ownership: {:?}, threshold: {}/{})",
@@ -275,24 +257,10 @@ impl ApiKeyDistributor {
         let mut configs = self.provider_configs.write().unwrap();
 
         if let Some(config) = configs.get_mut(provider) {
-            config.encrypted_key = Some(api_key.clone());
+            config.encrypted_key = Some(api_key);
 
-            // Update bootstrap handler
-            let sharing_config = SecretSharingConfig {
-                mode: if config.ownership == ProviderOwnership::Local {
-                    KeySharingMode::Direct.into()
-                } else {
-                    KeySharingMode::Shamir.into()
-                },
-                threshold: config.threshold as u32,
-                total_shares: config.total_shares as u32,
-            };
-            self.bootstrap_handler.configure_provider(
-                provider,
-                api_key,
-                sharing_config,
-            );
-
+            // Note: API key is now stored in config only.
+            // Bootstrap orchestrator will read from this when distributing keys.
             info!("Updated API key for provider '{}'", provider);
             Ok(())
         } else {
@@ -359,18 +327,12 @@ pub fn default_provider_configs() -> Vec<ProviderDistributionConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::BootstrapConfig;
     use ho_std::ephemeral::DEFAULT_TTL;
 
     fn create_test_distributor() -> ApiKeyDistributor {
         let privkey = Arc::new(NodePrivKey::new(&mut OsRng));
         let key_manager = Arc::new(EphemeralKeyManager::new(DEFAULT_TTL));
-        let bootstrap_handler = Arc::new(BootstrapHandler::new(
-            privkey.clone(),
-            key_manager.clone(),
-            BootstrapConfig::default(),
-        ));
-        ApiKeyDistributor::new(privkey, bootstrap_handler, key_manager)
+        ApiKeyDistributor::new(privkey, key_manager)
     }
 
     #[test]

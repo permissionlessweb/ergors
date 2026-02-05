@@ -114,24 +114,24 @@ impl ErgorsNetworkManifold {
         let rate_quota = Quota::per_second(NonZeroU32::new(100).unwrap());
         let channels = config.channels.expect("channels does not exist");
         // Channel 0: Discovery
-        let (_discovery_sender, _discovery_receiver) =
+        let (discovery_sender, discovery_receiver) =
             network.register(0, rate_quota, channels.discovery_buffer.try_into().unwrap());
 
         // Channel 1: Tasks
-        let (_task_sender, _task_receiver) =
+        let (task_sender, task_receiver) =
             network.register(1, rate_quota, channels.task_buffer.try_into().unwrap());
 
         // Channel 2: State
-        let (_state_sender, _state_receiver) =
+        let (state_sender, state_receiver) =
             network.register(2, rate_quota, channels.state_buffer.try_into().unwrap());
 
         // Channel 3: Health
-        let (_health_sender, _health_receiver) =
+        let (health_sender, health_receiver) =
             network.register(3, rate_quota, channels.health_buffer.try_into().unwrap());
 
-        // Channel 4: Key Sharing (rate-limited to 10/sec for security)
+        // Channel 4: Key Sharing / Bootstrap (rate-limited to 10/sec for security)
         let key_sharing_quota = Quota::per_second(NonZeroU32::new(10).unwrap());
-        let (_key_sharing_sender, _key_sharing_receiver) =
+        let (key_sharing_sender, key_sharing_receiver) =
             network.register(4, key_sharing_quota, channels.key_sharing_buffer.try_into().unwrap());
 
         // Start the network
@@ -140,8 +140,20 @@ impl ErgorsNetworkManifold {
         // Store network handle for future shutdown
         *self.up.write().await = true;
 
-        // TODO: Store senders/receivers for use by the manager
-        // TODO: Start background message processing tasks
+        // Store senders/receivers for use by transport layer
+        self.channel_senders.insert(0, discovery_sender);
+        self.channel_senders.insert(1, task_sender);
+        self.channel_senders.insert(2, state_sender);
+        self.channel_senders.insert(3, health_sender);
+        self.channel_senders.insert(4, key_sharing_sender);
+
+        self.channel_receivers.insert(0, discovery_receiver);
+        self.channel_receivers.insert(1, task_receiver);
+        self.channel_receivers.insert(2, state_receiver);
+        self.channel_receivers.insert(3, health_receiver);
+        self.channel_receivers.insert(4, key_sharing_receiver);
+
+        // TODO: Start background message processing tasks for each channel
 
         // Spawn background task to monitor network
         let shutdown = self.shutdown.clone();
@@ -567,6 +579,30 @@ impl ErgorsNetworkManifold {
     /// Check if the network is running
     pub async fn is_running(&self) -> bool {
         *self.up.read().await
+    }
+
+    /// Check if a specific peer is connected by ed25519 public key
+    pub async fn is_peer_connected(&self, pubkey: &ed25519::PublicKey) -> bool {
+        self.peers.read().await.contains_key(pubkey)
+    }
+
+    /// Get the number of connected peers
+    pub async fn peer_count(&self) -> usize {
+        self.peers.read().await.len()
+    }
+
+    /// Create a BootstrapTransport from the Channel 4 (key_sharing) sender.
+    ///
+    /// The transport can be constructed before any peer connects - it just
+    /// needs the channel sender to address messages later when the peer is available.
+    pub fn create_bootstrap_transport(
+        &self,
+    ) -> HoResult<ho_std::bootstrap::BootstrapTransport> {
+        let sender = self
+            .channel_senders
+            .get(&4)
+            .ok_or_else(|| HoError::ChannelError("Channel 4 (key_sharing) not initialized".to_string()))?;
+        Ok(ho_std::bootstrap::BootstrapTransport::new(sender.clone()))
     }
 
     /// Broadcast raw bytes to all peers

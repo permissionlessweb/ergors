@@ -81,10 +81,34 @@ Start an ERGORS network for manual testing:
 
 ### DEPLOYMENT
 
+#### PHASE 1: simple deployment to provider via akash workflow automation
+
+- confirm actual bidding and accepting bid + manifest digest + provider response workflow is occuring (try default workflow first, check provider configurations for local enviroment to ensure provider will actually bid on msgs (wybot))
+- confirm ability to route msgs through the engine to the deployed provider
+
+### INFERENCE PROVIDERS
+
+#### Phase 1: Simple API KEY USAGE
+
+- ensure test exist that use a mock inference provider (must create api keys to allow us to test authenticated access (our mock inference providers should have this support))
+-
+
 ### COSMWASM
 
 ### BOOTSTRAPPING
 
-### AUTHENTICATION 
+#### PHASE 1: simple two device bootstrapping
 
-### STORAGE 
+- akash testing: spec/plan out how to actually implement e2e test for bootstrapping a node-engine from a node engine using akash. should we just use live testing situation (may be best to have reproducible script for this)
+- ssh testing: specify an available endpoint to boostrap/ssh into, perform tests where we provide api key to endpoint to make calls to a mock inference provider endpoint we have for our testing scenario and shared the endpoint on bootstrapping
+
+### AUTHENTICATION
+
+- node identity: will have to scope out what live test can be done here. primary overlap in testing with bootstrapping, as secure channel needs to use node pk authentication
+- key rotation:
+
+### STORAGE
+
+- test network state compression: fill up network state with many different various configurations and files. benchmark and 
+
+### Benchmarking

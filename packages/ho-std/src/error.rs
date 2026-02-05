@@ -60,6 +60,8 @@ pub enum HoError {
     Wasm(String),
     #[error("Crypto error: {0}")]
     Crypto(String),
+    #[error("Bootstrap error: {0}")]
+    BootstrapError(String),
     #[error("Serialization error: {0}")]
     Serialization(String),
     #[error("DeSerialization error: {0}")]
