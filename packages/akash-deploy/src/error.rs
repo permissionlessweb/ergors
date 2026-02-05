@@ -28,6 +28,9 @@ pub enum DeployError {
     #[error("certificate error: {0}")]
     Certificate(String),
 
+    #[error("JWT error: {0}")]
+    Jwt(String),
+
     #[error("timeout: {0}")]
     Timeout(String),
 }

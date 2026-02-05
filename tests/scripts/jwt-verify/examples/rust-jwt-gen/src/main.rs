@@ -26,9 +26,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// Import ACTUAL manifest builder and canonical JSON from the Rust engine
-use ergors::deploy::deployment_builder::to_canonical_json;
-use ergors::deploy::manifest::ManifestBuilder;
+// Import manifest builder and canonical JSON from akash-deploy library
+use akash_deploy::{to_canonical_json, ManifestBuilder};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct JwtHeader {

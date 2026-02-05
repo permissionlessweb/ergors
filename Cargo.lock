@@ -3165,6 +3165,7 @@ dependencies = [
 name = "ergors"
 version = "0.1.0"
 dependencies = [
+ "akash-deploy",
  "anyhow",
  "argon2",
  "async-stream",
@@ -8601,9 +8602,9 @@ checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 name = "rust-jwt-gen"
 version = "0.1.0"
 dependencies = [
+ "akash-deploy",
  "anyhow",
  "base64 0.22.1",
- "ergors",
  "hex",
  "ho-std",
  "serde",

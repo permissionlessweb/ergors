@@ -389,8 +389,8 @@ impl AkashBackend for TestBackend {
     ) -> Result<(), DeployError> {
         self.check_failure("send_manifest")?;
 
-        // NOTE: This no-op enables tests to pass with the placeholder build_manifest()
-        // in workflow.rs. Real implementation must validate manifest structure.
+        // No-op for unit tests - manifest structure validated by integration tests
+        // (tests/scripts/jwt-verify validates against actual Go provider code)
         Ok(())
     }
 

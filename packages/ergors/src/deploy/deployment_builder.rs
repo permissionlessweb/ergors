@@ -16,45 +16,15 @@ use ho_std::types::ergors::akash::deployment::v1beta4::{
 use ho_std::types::ergors::akash::market::{v1::BidId, v1beta5::MsgCreateLease};
 use ho_std::types::ergors::cosmos::base::v1beta1::{Coin, DecCoin};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+
+// Re-export from akash-deploy library
+pub use akash_deploy::to_canonical_json;
 
 /// Minimum deposit for deployment in uakt (0.5 AKT)
 pub const MIN_DEPOSIT_UAKT: u64 = 500_000;
 
 /// Default deposit for deployment in uakt (5 AKT)
 pub const DEFAULT_DEPOSIT_UAKT: u64 = 5_000_000;
-
-/// Serialize a value to canonical JSON with sorted keys.
-///
-/// Sorts all object keys alphabetically to produce deterministic JSON.
-/// Required for computing manifest version hash that matches provider validation.
-pub fn to_canonical_json<T: serde::Serialize + ?Sized>(value: &T) -> Result<String> {
-    let json_value = serde_json::to_value(value)
-        .map_err(|e| anyhow!("Failed to serialize to JSON value: {}", e))?;
-    let sorted = sort_json_value(json_value);
-    let json_str = serde_json::to_string(&sorted)
-        .map_err(|e| anyhow!("Failed to serialize sorted JSON: {}", e))?;
-
-    Ok(json_str)
-}
-
-/// Recursively sort all object keys in a JSON value.
-pub fn sort_json_value(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Object(map) => {
-            // Convert to BTreeMap for sorted keys
-            let sorted: BTreeMap<String, serde_json::Value> = map
-                .into_iter()
-                .map(|(k, v)| (k, sort_json_value(v)))
-                .collect();
-            serde_json::Value::Object(sorted.into_iter().collect())
-        }
-        serde_json::Value::Array(arr) => {
-            serde_json::Value::Array(arr.into_iter().map(sort_json_value).collect())
-        }
-        other => other,
-    }
-}
 
 /// Builder for MsgCreateDeployment from SDL.
 pub struct DeploymentBuilder {
@@ -116,9 +86,10 @@ impl DeploymentBuilder {
             hasher.update(manifest_str.as_bytes());
             hasher.finalize().to_vec()
         } else {
-            // Build manifest and hash its canonical JSON
-            let manifest_builder = crate::deploy::manifest::ManifestBuilder::new(&self.owner, self.dseq);
-            let manifest_groups = manifest_builder.build_from_sdl(sdl_yaml)?;
+            // Build manifest and hash its canonical JSON using akash-deploy library
+            let manifest_builder = akash_deploy::ManifestBuilder::new(&self.owner, self.dseq);
+            let manifest_groups = manifest_builder.build_from_sdl(sdl_yaml)
+                .map_err(|e| anyhow!("Manifest build failed: {}", e))?;
             let manifest_json_str = to_canonical_json(&manifest_groups)?;
 
             tracing::debug!("Manifest canonical JSON for hash: {}", manifest_json_str);

@@ -30,7 +30,7 @@ test: build-rust build-go test-jwt-only test-sdl
 # Build the Rust test binary (JWT + manifest generator)
 build-rust:
     @echo "🦀 Building Rust client..."
-    cd examples/rust-jwt-gen && cargo build --quiet 2>/dev/null
+    cd examples/rust-jwt-gen && cargo build 2>/dev/null
 
 # Build the Go provider validator
 build-go:

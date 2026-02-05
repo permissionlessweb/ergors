@@ -370,8 +370,8 @@ impl<'a, B: AkashBackend> DeploymentWorkflow<'a, B> {
             .await?
             .ok_or_else(|| DeployError::Provider("provider not found".into()))?;
 
-        // Build manifest from SDL
-        let manifest = build_manifest(sdl, lease.dseq)?;
+        // Build manifest from SDL using the actual ManifestBuilder
+        let manifest = build_manifest(&state.owner, sdl, lease.dseq)?;
 
         self.backend
             .send_manifest(&provider_info.host_uri, lease, &manifest, cert, key)
@@ -479,20 +479,22 @@ fn generate_certificate(owner: &str) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), Depl
 
 /// Build manifest from SDL.
 ///
-/// # PLACEHOLDER WARNING
-///
-/// This is a stub that returns raw SDL bytes instead of a proper Akash manifest.
-/// Tests pass because `TestBackend::send_manifest()` is a no-op.
-///
-/// **DO NOT deploy to production** until this is replaced with real SDL parsing
-/// and manifest protobuf generation. Real providers will reject these manifests.
-fn build_manifest(sdl: &str, _dseq: u64) -> Result<Vec<u8>, DeployError> {
+/// Uses `ManifestBuilder` to parse SDL and generate the canonical JSON manifest
+/// that providers expect. The manifest hash computed from this JSON must match
+/// the on-chain deployment.version hash.
+fn build_manifest(owner: &str, sdl: &str, dseq: u64) -> Result<Vec<u8>, DeployError> {
     if sdl.is_empty() {
         return Err(DeployError::Manifest("empty SDL".into()));
     }
 
-    // STUB: Real implementation must parse SDL and build protobuf manifest
-    Ok(sdl.as_bytes().to_vec())
+    // Use the actual ManifestBuilder to parse SDL
+    let builder = crate::manifest::ManifestBuilder::new(owner, dseq);
+    let manifest_groups = builder.build_from_sdl(sdl)?;
+
+    // Serialize to canonical JSON (deterministic, matches Go's encoding/json)
+    let canonical_json = crate::canonical::to_canonical_json(&manifest_groups)?;
+
+    Ok(canonical_json.into_bytes())
 }
 
 #[cfg(test)]

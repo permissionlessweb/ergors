@@ -1161,8 +1161,8 @@ impl AutomatedDeployer {
             .map(|(name, ep)| AkashServiceEndpoint {
                 service_name: name,
                 external_uri: ep.external_uri,
-                internal_port: ep.internal_port as u32,
-                external_port: ep.external_port as u32,
+                internal_port: ep.internal_port,
+                external_port: ep.external_port,
                 protocol: ep.protocol,
                 model_name: workflow.model_name.clone(),
             })
