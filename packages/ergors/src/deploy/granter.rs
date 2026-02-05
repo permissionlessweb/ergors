@@ -8,16 +8,101 @@
 //! - Tracks active grants and spending
 
 use anyhow::{anyhow, Result};
+use ho_std::types::ergors::cosmos::base::v1beta1::Coin;
 use ho_std::types::ergors::orch::v1::{
     GrantAcceptanceMode, GrantDefaults, GrantLimits, GrantRequest, GrantRequestParams,
     GrantRequestStatus, GrantType, GranterConfig, GranterInfo, WhitelistEntry,
 };
+use layer_climb::prelude::SigningClient;
+use layer_climb_proto::Any as ClimbAny;
 use pbjson_types::Timestamp;
+use prost::Message;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
+
+// ==================== Protobuf Message Types ====================
+//
+// Minimal prost-compatible structs for cosmos.authz.v1beta1 and
+// cosmos.feegrant.v1beta1 messages. These use prost 0.14 derive
+// exclusively to avoid version conflicts with layer_climb_proto
+// (which uses prost 0.13). Conversion to ClimbAny happens only
+// at the broadcast boundary.
+
+/// Local prost 0.14-compatible Any (avoids prost version conflict with layer_climb_proto)
+#[derive(Clone, PartialEq, Message)]
+pub(crate) struct ProtobufAny {
+    #[prost(string, tag = "1")]
+    pub type_url: String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub value: Vec<u8>,
+}
+
+/// Local prost 0.14-compatible Timestamp
+#[derive(Clone, PartialEq, Message)]
+pub(crate) struct ProtobufTimestamp {
+    #[prost(int64, tag = "1")]
+    pub seconds: i64,
+    #[prost(int32, tag = "2")]
+    pub nanos: i32,
+}
+
+/// cosmos.authz.v1beta1.GenericAuthorization
+#[derive(Clone, PartialEq, Message)]
+pub(crate) struct GenericAuthorization {
+    #[prost(string, tag = "1")]
+    pub msg: String,
+}
+
+/// cosmos.authz.v1beta1.Grant
+#[derive(Clone, PartialEq, Message)]
+pub(crate) struct AuthzGrant {
+    #[prost(message, optional, tag = "1")]
+    pub authorization: Option<ProtobufAny>,
+    #[prost(message, optional, tag = "2")]
+    pub expiration: Option<ProtobufTimestamp>,
+}
+
+/// cosmos.authz.v1beta1.MsgGrant
+#[derive(Clone, PartialEq, Message)]
+pub(crate) struct MsgGrant {
+    #[prost(string, tag = "1")]
+    pub granter: String,
+    #[prost(string, tag = "2")]
+    pub grantee: String,
+    #[prost(message, optional, tag = "3")]
+    pub grant: Option<AuthzGrant>,
+}
+
+/// cosmos.feegrant.v1beta1.BasicAllowance
+#[derive(Clone, PartialEq, Message)]
+pub(crate) struct BasicAllowance {
+    #[prost(message, repeated, tag = "1")]
+    pub spend_limit: Vec<Coin>,
+    #[prost(message, optional, tag = "2")]
+    pub expiration: Option<ProtobufTimestamp>,
+}
+
+/// cosmos.feegrant.v1beta1.MsgGrantAllowance
+#[derive(Clone, PartialEq, Message)]
+pub(crate) struct MsgGrantAllowance {
+    #[prost(string, tag = "1")]
+    pub granter: String,
+    #[prost(string, tag = "2")]
+    pub grantee: String,
+    #[prost(message, optional, tag = "3")]
+    pub allowance: Option<ProtobufAny>,
+}
+
+/// Type URL constants for cosmos authz/feegrant messages
+pub(crate) mod type_urls {
+    pub const MSG_GRANT: &str = "/cosmos.authz.v1beta1.MsgGrant";
+    pub const GENERIC_AUTHORIZATION: &str = "/cosmos.authz.v1beta1.GenericAuthorization";
+    pub const MSG_GRANT_ALLOWANCE: &str = "/cosmos.feegrant.v1beta1.MsgGrantAllowance";
+    pub const BASIC_ALLOWANCE: &str = "/cosmos.feegrant.v1beta1.BasicAllowance";
+}
 
 /// Default grant parameters
 pub const DEFAULT_MAX_DURATION_SECONDS: u64 = 172800; // 48 hours
@@ -38,6 +123,9 @@ pub struct GranterService {
     granter_address: String,
     /// Node's public key
     node_pubkey: Vec<u8>,
+    /// Layer-climb signing client for broadcasting transactions.
+    /// None when running without a live chain (tests, simulation).
+    signing_client: Option<Arc<RwLock<SigningClient>>>,
 }
 
 impl GranterService {
@@ -61,6 +149,7 @@ impl GranterService {
             next_request_id: Arc::new(RwLock::new(1)),
             granter_address,
             node_pubkey,
+            signing_client: None,
         }
     }
 
@@ -77,7 +166,23 @@ impl GranterService {
             next_request_id: Arc::new(RwLock::new(1)),
             granter_address,
             node_pubkey,
+            signing_client: None,
         }
+    }
+
+    /// Inject a signing client for on-chain transaction broadcasting.
+    ///
+    /// When set, `broadcast_authz_grant` and `broadcast_feegrant` will
+    /// build real protobuf messages and broadcast them via layer-climb.
+    /// When `None`, the service falls back to simulated broadcast
+    /// (useful for tests and offline operation).
+    pub fn set_signing_client(&mut self, client: Arc<RwLock<SigningClient>>) {
+        self.signing_client = Some(client);
+    }
+
+    /// Check whether a signing client has been configured.
+    pub fn has_signing_client(&self) -> bool {
+        self.signing_client.is_some()
     }
 
     /// Enable/disable the granter service
@@ -361,7 +466,11 @@ impl GranterService {
         Ok(())
     }
 
-    /// Broadcast MsgGrant transaction
+    /// Broadcast MsgGrant transaction.
+    ///
+    /// When a `SigningClient` is configured, builds real protobuf MsgGrant
+    /// messages (one per msg_type) and broadcasts them on-chain.
+    /// Falls back to simulated broadcast when no client is present.
     async fn broadcast_authz_grant(
         &self,
         request: &mut GrantRequest,
@@ -372,15 +481,85 @@ impl GranterService {
             self.granter_address, request.grantee_address, params.msg_types
         );
 
-        // In production: build and sign MsgGrant transaction
-        // For now, simulate successful broadcast
-        request.tx_hash = format!("authz_tx_{}", request.id);
+        // Determine which message types to authorize
+        let msg_types = if params.msg_types.is_empty() {
+            default_allowed_messages()
+        } else {
+            params.msg_types.clone()
+        };
+
+        match &self.signing_client {
+            Some(client_lock) => {
+                let client = client_lock.read().await;
+
+                // Compute expiration timestamp
+                let expiration = expiration_from_duration(params.duration_seconds);
+
+                // Build one MsgGrant per authorized message type and batch
+                // them into a single atomic transaction.
+                let msgs: Vec<ClimbAny> = msg_types
+                    .iter()
+                    .map(|msg_type| {
+                        let generic_auth = GenericAuthorization {
+                            msg: msg_type.clone(),
+                        };
+                        let auth_any = ProtobufAny {
+                            type_url: type_urls::GENERIC_AUTHORIZATION.to_string(),
+                            value: generic_auth.encode_to_vec(),
+                        };
+                        let grant = AuthzGrant {
+                            authorization: Some(auth_any),
+                            expiration: Some(expiration.clone()),
+                        };
+                        let msg_grant = MsgGrant {
+                            granter: self.granter_address.clone(),
+                            grantee: request.grantee_address.clone(),
+                            grant: Some(grant),
+                        };
+                        ClimbAny {
+                            type_url: type_urls::MSG_GRANT.to_string(),
+                            value: msg_grant.encode_to_vec(),
+                        }
+                    })
+                    .collect();
+
+                let mut tx_builder = client.tx_builder();
+                tx_builder.set_memo("ergors authz grant");
+
+                let tx_resp = tx_builder.broadcast(msgs).await.map_err(|e| {
+                    anyhow!("Failed to broadcast MsgGrant: {}", e)
+                })?;
+
+                if tx_resp.code != 0 {
+                    return Err(anyhow!(
+                        "MsgGrant tx failed (code {}): {}",
+                        tx_resp.code,
+                        tx_resp.raw_log
+                    ));
+                }
+
+                request.tx_hash = tx_resp.txhash.clone();
+                info!(
+                    "MsgGrant broadcast success: hash={}, height={}, gas={}",
+                    tx_resp.txhash, tx_resp.height, tx_resp.gas_used
+                );
+            }
+            None => {
+                // Simulated broadcast for tests / offline mode
+                warn!("No signing client configured, simulating authz grant broadcast");
+                request.tx_hash = format!("authz_tx_{}", request.id);
+            }
+        }
 
         debug!("MsgGrant broadcast complete: {}", request.tx_hash);
         Ok(())
     }
 
-    /// Broadcast MsgGrantAllowance transaction
+    /// Broadcast MsgGrantAllowance transaction.
+    ///
+    /// When a `SigningClient` is configured, builds a real protobuf
+    /// MsgGrantAllowance with BasicAllowance and broadcasts on-chain.
+    /// Falls back to simulated broadcast when no client is present.
     async fn broadcast_feegrant(
         &self,
         request: &mut GrantRequest,
@@ -391,12 +570,75 @@ impl GranterService {
             self.granter_address, request.grantee_address, params.spend_limit_uakt
         );
 
-        // In production: build and sign MsgGrantAllowance transaction
-        // For now, simulate successful broadcast
-        if request.tx_hash.is_empty() {
-            request.tx_hash = format!("feegrant_tx_{}", request.id);
-        } else {
-            request.tx_hash = format!("{},feegrant_tx_{}", request.tx_hash, request.id);
+        match &self.signing_client {
+            Some(client_lock) => {
+                let client = client_lock.read().await;
+
+                // Compute expiration timestamp
+                let expiration = expiration_from_duration(params.duration_seconds);
+
+                // Build BasicAllowance
+                let basic_allowance = BasicAllowance {
+                    spend_limit: vec![Coin {
+                        denom: "uakt".to_string(),
+                        amount: params.spend_limit_uakt.to_string(),
+                    }],
+                    expiration: Some(expiration),
+                };
+
+                let allowance_any = ProtobufAny {
+                    type_url: type_urls::BASIC_ALLOWANCE.to_string(),
+                    value: basic_allowance.encode_to_vec(),
+                };
+
+                let msg_grant_allowance = MsgGrantAllowance {
+                    granter: self.granter_address.clone(),
+                    grantee: request.grantee_address.clone(),
+                    allowance: Some(allowance_any),
+                };
+
+                let msg_any = ClimbAny {
+                    type_url: type_urls::MSG_GRANT_ALLOWANCE.to_string(),
+                    value: msg_grant_allowance.encode_to_vec(),
+                };
+
+                let mut tx_builder = client.tx_builder();
+                tx_builder.set_memo("ergors feegrant allowance");
+
+                let tx_resp = tx_builder.broadcast(vec![msg_any]).await.map_err(|e| {
+                    anyhow!("Failed to broadcast MsgGrantAllowance: {}", e)
+                })?;
+
+                if tx_resp.code != 0 {
+                    return Err(anyhow!(
+                        "MsgGrantAllowance tx failed (code {}): {}",
+                        tx_resp.code,
+                        tx_resp.raw_log
+                    ));
+                }
+
+                // Append feegrant tx hash (may already have authz hash)
+                let feegrant_hash = tx_resp.txhash.clone();
+                if request.tx_hash.is_empty() {
+                    request.tx_hash = feegrant_hash;
+                } else {
+                    request.tx_hash = format!("{},{}", request.tx_hash, feegrant_hash);
+                }
+
+                info!(
+                    "MsgGrantAllowance broadcast success: hash={}, height={}, gas={}",
+                    tx_resp.txhash, tx_resp.height, tx_resp.gas_used
+                );
+            }
+            None => {
+                // Simulated broadcast for tests / offline mode
+                warn!("No signing client configured, simulating feegrant broadcast");
+                if request.tx_hash.is_empty() {
+                    request.tx_hash = format!("feegrant_tx_{}", request.id);
+                } else {
+                    request.tx_hash = format!("{},feegrant_tx_{}", request.tx_hash, request.id);
+                }
+            }
         }
 
         debug!("MsgGrantAllowance broadcast complete");
@@ -462,7 +704,7 @@ fn default_allowed_messages() -> Vec<String> {
     ]
 }
 
-/// Get current timestamp
+/// Get current timestamp as pbjson Timestamp
 fn current_timestamp() -> Timestamp {
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -470,6 +712,18 @@ fn current_timestamp() -> Timestamp {
     Timestamp {
         seconds: now.as_secs() as i64,
         nanos: now.subsec_nanos() as i32,
+    }
+}
+
+/// Compute a ProtobufTimestamp that is `duration_seconds` from now.
+fn expiration_from_duration(duration_seconds: u64) -> ProtobufTimestamp {
+    let expiration = SystemTime::now() + Duration::from_secs(duration_seconds);
+    let since_epoch = expiration
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap();
+    ProtobufTimestamp {
+        seconds: since_epoch.as_secs() as i64,
+        nanos: since_epoch.subsec_nanos() as i32,
     }
 }
 
@@ -487,6 +741,7 @@ mod tests {
         let config = service.get_config().await;
         assert!(!config.enabled);
         assert_eq!(config.mode, GrantAcceptanceMode::RejectAll as i32);
+        assert!(!service.has_signing_client());
     }
 
     #[tokio::test]
@@ -636,5 +891,233 @@ mod tests {
         // Should no longer be pending
         let pending = service.list_pending_requests().await;
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn test_expiration_from_duration() {
+        let ts = expiration_from_duration(3600);
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert!(ts.seconds >= now + 3599);
+        assert!(ts.seconds <= now + 3601);
+    }
+
+    #[test]
+    fn test_protobuf_encoding_generic_authorization() {
+        let auth = GenericAuthorization {
+            msg: "/akash.deployment.v1beta3.MsgCreateDeployment".to_string(),
+        };
+        let bytes = auth.encode_to_vec();
+        assert!(!bytes.is_empty());
+        assert_eq!(bytes[0], 0x0A);
+    }
+
+    #[test]
+    fn test_protobuf_encoding_basic_allowance() {
+        let allowance = BasicAllowance {
+            spend_limit: vec![Coin {
+                denom: "uakt".to_string(),
+                amount: "5000000".to_string(),
+            }],
+            expiration: Some(ProtobufTimestamp {
+                seconds: 1700000000,
+                nanos: 0,
+            }),
+        };
+        let bytes = allowance.encode_to_vec();
+        assert!(!bytes.is_empty());
+
+        let decoded = BasicAllowance::decode(bytes.as_slice()).unwrap();
+        assert_eq!(decoded.spend_limit.len(), 1);
+        assert_eq!(decoded.spend_limit[0].denom, "uakt");
+        assert_eq!(decoded.spend_limit[0].amount, "5000000");
+    }
+
+    #[test]
+    fn test_protobuf_encoding_msg_grant() {
+        let auth = GenericAuthorization {
+            msg: "/akash.deployment.v1beta3.MsgCreateDeployment".to_string(),
+        };
+        let auth_any = ProtobufAny {
+            type_url: type_urls::GENERIC_AUTHORIZATION.to_string(),
+            value: auth.encode_to_vec(),
+        };
+        let grant = AuthzGrant {
+            authorization: Some(auth_any),
+            expiration: Some(ProtobufTimestamp {
+                seconds: 1700000000,
+                nanos: 0,
+            }),
+        };
+        let msg = MsgGrant {
+            granter: "akash1granter".to_string(),
+            grantee: "akash1grantee".to_string(),
+            grant: Some(grant),
+        };
+        let bytes = msg.encode_to_vec();
+        assert!(!bytes.is_empty());
+
+        let decoded = MsgGrant::decode(bytes.as_slice()).unwrap();
+        assert_eq!(decoded.granter, "akash1granter");
+        assert_eq!(decoded.grantee, "akash1grantee");
+        assert!(decoded.grant.is_some());
+    }
+
+    #[test]
+    fn test_protobuf_encoding_msg_grant_allowance() {
+        let allowance = BasicAllowance {
+            spend_limit: vec![Coin {
+                denom: "uakt".to_string(),
+                amount: "5000000".to_string(),
+            }],
+            expiration: None,
+        };
+        let allowance_any = ProtobufAny {
+            type_url: type_urls::BASIC_ALLOWANCE.to_string(),
+            value: allowance.encode_to_vec(),
+        };
+        let msg = MsgGrantAllowance {
+            granter: "akash1granter".to_string(),
+            grantee: "akash1grantee".to_string(),
+            allowance: Some(allowance_any),
+        };
+        let bytes = msg.encode_to_vec();
+        assert!(!bytes.is_empty());
+
+        let decoded = MsgGrantAllowance::decode(bytes.as_slice()).unwrap();
+        assert_eq!(decoded.granter, "akash1granter");
+        assert_eq!(decoded.grantee, "akash1grantee");
+        assert!(decoded.allowance.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_accept_all_authz_and_feegrant() {
+        let service = GranterService::new(
+            "akash1granter...".to_string(),
+            vec![1, 2, 3, 4],
+        );
+
+        service.set_enabled(true).await;
+        service.set_mode(GrantAcceptanceMode::AcceptAll).await;
+
+        let result = service.handle_request(
+            vec![10, 20, 30],
+            "akash1grantee...".to_string(),
+            GrantType::AuthzAndFeegrant,
+            GrantRequestParams {
+                duration_seconds: 3600,
+                spend_limit_uakt: 5_000_000,
+                msg_types: vec!["/akash.deployment.v1beta3.MsgCreateDeployment".to_string()],
+                purpose: "Deploy test".to_string(),
+            },
+        ).await.unwrap();
+
+        assert_eq!(result.status, GrantRequestStatus::Broadcasted as i32);
+        assert!(result.tx_hash.contains("authz_tx_"));
+        assert!(result.tx_hash.contains("feegrant_tx_"));
+
+        let active = service.list_active_grants().await;
+        assert_eq!(active.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_feegrant_only() {
+        let service = GranterService::new(
+            "akash1granter...".to_string(),
+            vec![1, 2, 3, 4],
+        );
+
+        service.set_enabled(true).await;
+        service.set_mode(GrantAcceptanceMode::AcceptAll).await;
+
+        let result = service.handle_request(
+            vec![10, 20, 30],
+            "akash1grantee...".to_string(),
+            GrantType::FeegrantOnly,
+            GrantRequestParams {
+                duration_seconds: 7200,
+                spend_limit_uakt: 2_000_000,
+                msg_types: vec![],
+                purpose: "Fee coverage".to_string(),
+            },
+        ).await.unwrap();
+
+        assert_eq!(result.status, GrantRequestStatus::Broadcasted as i32);
+        assert!(result.tx_hash.starts_with("feegrant_tx_"));
+        assert!(!result.tx_hash.contains("authz_tx_"));
+    }
+
+    /// Integration test: granter + requester pipeline in simulated mode
+    #[tokio::test]
+    async fn test_granter_requester_pipeline() {
+        use crate::deploy::requester::GrantRequesterService;
+
+        // Set up granter
+        let granter = GranterService::new(
+            "akash1granter_addr".to_string(),
+            vec![1, 2, 3, 4],
+        );
+        granter.set_enabled(true).await;
+        granter.set_mode(GrantAcceptanceMode::AcceptAll).await;
+
+        // Set up requester
+        let requester = GrantRequesterService::new(
+            vec![10, 20, 30],
+            "akash1grantee_addr".to_string(),
+            "akash1contract_addr".to_string(),
+        );
+
+        // Requester creates a request
+        let req = requester.request_authz_and_feegrant(
+            vec![1, 2, 3, 4], // granter pubkey
+            86400,
+            5_000_000,
+            "Automated deployment",
+        ).await.unwrap();
+
+        assert_eq!(req.status, GrantRequestStatus::Pending as i32);
+
+        // Granter handles the request (simulates what happens when
+        // granter receives the request via P2P or contract event)
+        let params = req.params.clone().unwrap();
+        let handled = granter.handle_request(
+            req.requester_pubkey.clone(),
+            req.grantee_address.clone(),
+            GrantType::AuthzAndFeegrant,
+            params,
+        ).await.unwrap();
+
+        // Should be broadcasted (simulated)
+        assert_eq!(handled.status, GrantRequestStatus::Broadcasted as i32);
+        assert!(!handled.tx_hash.is_empty());
+
+        // Requester updates its local tracking
+        requester.update_request_status(
+            req.id,
+            GrantRequestStatus::Broadcasted,
+            Some(&handled.tx_hash),
+            None,
+        ).await.unwrap();
+
+        // Verify requester sees the update
+        let updated = requester.query_request_status(req.id).await.unwrap();
+        assert_eq!(updated.status, GrantRequestStatus::Broadcasted as i32);
+        assert_eq!(updated.tx_hash, handled.tx_hash);
+
+        // Granter confirms on-chain
+        granter.confirm_grant(handled.id, &handled.tx_hash).await.unwrap();
+
+        // Requester marks confirmed
+        requester.update_request_status(
+            req.id,
+            GrantRequestStatus::Confirmed,
+            Some(&handled.tx_hash),
+            None,
+        ).await.unwrap();
+
+        let final_status = requester.query_request_status(req.id).await.unwrap();
+        assert_eq!(final_status.status, GrantRequestStatus::Confirmed as i32);
     }
 }
