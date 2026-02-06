@@ -76,6 +76,11 @@ impl ErgorsNetworkManifold {
         }
     }
 
+    /// Get the node's identity (includes updated public_key and bech32_address after network start)
+    pub fn identity(&self) -> &NodeIdentity {
+        &self.identity
+    }
+
     /// Start the network using commonware runtime pattern
     ///
     /// The private key should be obtained from custody before calling this method.
@@ -209,6 +214,23 @@ impl ErgorsNetworkManifold {
         let ed25519_private_key = ed25519::PrivateKey::decode(&private_key_bytes[..])
             .map_err(|_| HoError::NodePrivKeyNotFound)?;
         let public_key = ed25519_private_key.public_key();
+
+        // Update identity with Ed25519 public key and derived bech32 address
+        // This happens ONCE at startup and is stored permanently
+        let public_key_bytes: Vec<u8> = public_key.as_ref().to_vec();
+        self.identity.public_key = Some(public_key_bytes.clone());
+
+        // Derive bech32 address from Ed25519 public key with "ergors" prefix
+        // This MUST succeed during startup
+        let bech32_address = ho_std::keys::cosmos::cosmos_address_from_ed25519_pubkey(
+            &public_key_bytes,
+            "ergors"
+        )
+        .map_err(|e| HoError::Cfg(format!("Failed to derive bech32 address from Ed25519 public key: {}", e)))?;
+
+        self.identity.bech32_address = Some(bech32_address.clone());
+        info!("🔑 Node identity initialized with bech32 address: {}", bech32_address);
+
         let namespace = b"ergors-network";
 
         let commonware_config = authenticated::lookup::Config::recommended(
@@ -283,6 +305,23 @@ impl ErgorsNetworkManifold {
         let ed25519_private_key = ed25519::PrivateKey::decode(&private_key_bytes[..])
             .map_err(|_| HoError::NodePrivKeyNotFound)?;
         let public_key = ed25519_private_key.public_key();
+
+        // Update identity with Ed25519 public key and derived bech32 address
+        // This happens ONCE at startup and is stored permanently
+        let public_key_bytes: Vec<u8> = public_key.as_ref().to_vec();
+        self.identity.public_key = Some(public_key_bytes.clone());
+
+        // Derive bech32 address from Ed25519 public key with "ergors" prefix
+        // This MUST succeed during startup
+        let bech32_address = ho_std::keys::cosmos::cosmos_address_from_ed25519_pubkey(
+            &public_key_bytes,
+            "ergors"
+        )
+        .map_err(|e| HoError::Cfg(format!("Failed to derive bech32 address from Ed25519 public key: {}", e)))?;
+
+        self.identity.bech32_address = Some(bech32_address.clone());
+        info!("🔑 Node identity initialized with bech32 address: {}", bech32_address);
+
         let namespace = b"ergors-network";
 
         let commonware_config = authenticated::lookup::Config::recommended(

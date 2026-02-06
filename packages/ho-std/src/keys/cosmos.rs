@@ -213,6 +213,43 @@ impl CosmosKeyPair {
 /// Generate a cosmos bech32 address from a compressed public key
 ///
 /// Address = bech32(prefix, RIPEMD160(SHA256(pubkey)))
+/// Derive cosmos bech32 address from Ed25519 public key (32 bytes)
+///
+/// Ed25519 address derivation in Tendermint/Cosmos:
+/// 1. SHA256 hash the public key
+/// 2. Take first 20 bytes (no RIPEMD160 for Ed25519)
+/// 3. Bech32 encode with prefix
+pub fn cosmos_address_from_ed25519_pubkey(pubkey: &[u8], prefix: &str) -> Result<String> {
+    if pubkey.len() != 32 {
+        return Err(anyhow!(
+            "Ed25519 public key must be 32 bytes, got {}",
+            pubkey.len()
+        ));
+    }
+
+    // SHA256 hash of public key
+    let sha_hash = Sha256::digest(pubkey);
+
+    // Take first 20 bytes (Tendermint address format)
+    let addr_bytes = &sha_hash[..20];
+
+    // Bech32 encode
+    let encoded = bech32::encode(
+        prefix,
+        bech32::ToBase32::to_base32(&addr_bytes.to_vec()),
+        bech32::Variant::Bech32,
+    )
+    .map_err(|e| anyhow!("Bech32 encoding failed: {}", e))?;
+
+    Ok(encoded)
+}
+
+/// Derive cosmos bech32 address from secp256k1 public key (33 bytes compressed)
+///
+/// Secp256k1 address derivation in Cosmos:
+/// 1. SHA256 hash of compressed public key
+/// 2. RIPEMD160 hash of the SHA256 result
+/// 3. Bech32 encode with prefix
 pub fn cosmos_address_from_pubkey(pubkey: &[u8], prefix: &str) -> Result<String> {
     if pubkey.len() != 33 {
         return Err(anyhow!(

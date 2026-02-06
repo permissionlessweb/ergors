@@ -1098,26 +1098,80 @@ message AkashDeployConfig {
 // Configuration for dynamic LLM proxy routing
 // Stored in cnidarium for deterministic, immutable logging of endpoint changes
 message ProxyRouterConfig {
-  // Override base URL for Anthropic API requests
-  string anthropic_base_url = 1;
-  // Override base URL for OpenAI API requests
-  string openai_base_url = 2;
   // Override base URL for Ollama API requests
-  string ollama_base_url = 3;
-  // Model-specific routing rules (glob patterns -> URLs)
-  // e.g., "claude-*" -> "https://api.anthropic.com"
-  // e.g., "llama-*" -> "http://localhost:11434"
+  string ollama_base_url = 3 [deprecated = true];
+  // Model-specific routing rules (glob patterns -> provider IDs)
+  // e.g., "claude-*" -> "anthropic"
+  // e.g., "llama-*" -> "local-ollama"
+  // e.g., "grok-*" -> "my-grok-provider"
   map<string, string> model_routes = 4;
-  // API key overrides per upstream URL
-  map<string, string> api_keys = 5;
-  // Default API keys by provider type
-  map<string, string> provider_api_keys = 6;
   // Timestamp when this config was set/updated
   google.protobuf.Timestamp updated_at = 7;
   // Version number for this configuration (increments on each update)
   uint64 version = 8;
   // Optional description/reason for this configuration change
   string change_reason = 9;
+
+  // Generic provider configurations (replaces deprecated fields)
+  // Key is provider_id (e.g., "openai", "anthropic", "my-custom-provider")
+  // This is the NEW preferred way to configure inference providers
+  map<string, InferenceProviderConfig> providers = 10;
+}
+
+// Generic inference provider configuration
+// Supports any provider (OpenAI, Anthropic, Ollama, custom, etc.)
+message InferenceProviderConfig {
+  // Unique identifier for this provider (e.g., "openai", "my-grok", "local-ollama")
+  string provider_id = 1;
+
+  // Base URL for API requests (e.g., "https://api.openai.com", "http://localhost:11434")
+  string base_url = 2;
+
+  // API key for authentication (stored as plaintext reference or encrypted blob)
+  // For custody-managed keys, use api_key_ref instead
+  string api_key = 3;
+
+  // Reference to a custody-managed API key (alternative to api_key)
+  // Format: "custody://{key_id}" or "env://{ENV_VAR_NAME}"
+  string api_key_ref = 4;
+
+  // Provider type hint for protocol compatibility
+  InferenceProviderType provider_type = 5;
+
+  // Whether this provider is currently enabled
+  bool enabled = 6;
+
+  // Optional display name for UI/logs
+  string display_name = 7;
+
+  // Optional description of this provider instance
+  string description = 8;
+
+  // Extensible metadata for provider-specific config
+  map<string, string> metadata = 9;
+
+  // Maximum concurrent requests to this provider (0 = unlimited)
+  uint32 max_concurrent_requests = 10;
+
+  // Request timeout in seconds (0 = use default)
+  uint32 timeout_seconds = 11;
+
+  // Created timestamp
+  google.protobuf.Timestamp created_at = 12;
+
+  // Last updated timestamp
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+// Provider type enumeration for protocol compatibility
+enum InferenceProviderType {
+  INFERENCE_PROVIDER_TYPE_UNSPECIFIED = 0;
+  INFERENCE_PROVIDER_TYPE_ANTHROPIC = 1;   // Claude API protocol
+  INFERENCE_PROVIDER_TYPE_OPENAI = 2;      // OpenAI API protocol
+  INFERENCE_PROVIDER_TYPE_OLLAMA = 3;      // Ollama API protocol
+  INFERENCE_PROVIDER_TYPE_TGI = 4;         // HuggingFace TGI protocol
+  INFERENCE_PROVIDER_TYPE_VLLM = 5;        // vLLM API protocol
+  INFERENCE_PROVIDER_TYPE_CUSTOM = 99;     // Custom/unknown protocol
 }
 
 // Workflow step enumeration for Akash deployment wizard
@@ -1129,8 +1183,6 @@ enum AkashWorkflowStep {
   AKASH_WORKFLOW_STEP_BALANCE_CHECK = 2;
   AKASH_WORKFLOW_STEP_GRANT_REQUEST = 3;      // OPTIONAL: Request authz/feegrant (only if --request-grant-from)
   AKASH_WORKFLOW_STEP_GRANT_WAIT = 4;         // OPTIONAL: Wait for grant approval (follows GRANT_REQUEST)
-  AKASH_WORKFLOW_STEP_AUTHZ_SETUP = 5;        // DEPRECATED: Handled in grant flow
-  AKASH_WORKFLOW_STEP_FEEGRANT_SETUP = 6;     // DEPRECATED: Handled in grant flow
   AKASH_WORKFLOW_STEP_SDL_CONFIGURATION = 7;
   AKASH_WORKFLOW_STEP_CERTIFICATE_SETUP = 8;
   AKASH_WORKFLOW_STEP_DEPLOYMENT_CREATE = 9;
@@ -1139,7 +1191,6 @@ enum AkashWorkflowStep {
   AKASH_WORKFLOW_STEP_LEASE_CREATE = 12;
   AKASH_WORKFLOW_STEP_MANIFEST_SEND = 13;
   AKASH_WORKFLOW_STEP_ENDPOINT_RETRIEVAL = 14;
-  AKASH_WORKFLOW_STEP_ENDPOINT_TESTING = 15;  // DEPRECATED: Connectivity checked at start
   AKASH_WORKFLOW_STEP_COMPLETE = 16;
   AKASH_WORKFLOW_STEP_FAILED = 17;
   AKASH_WORKFLOW_STEP_CONNECTIVITY_CHECK = 18; // NEW: Verify Akash network reachable (runs first)
@@ -1389,10 +1440,6 @@ enum AkashLeaseState {
 
 // Workflow automation options (from CLI flags)
 message AkashWorkflowOptions {
-  // DEPRECATED: Grants are now opt-in via request_grant_from. Ignored.
-  bool skip_grants = 1 [deprecated = true];
-  // DEPRECATED: Auto-select is now the default. Use interactive_bid=true for manual selection.
-  bool auto_select_bid = 2 [deprecated = true];
   // Minimum balance required to proceed (uakt)
   uint64 min_balance_uakt = 3;
   // Blocks to wait for bids (default: 2)

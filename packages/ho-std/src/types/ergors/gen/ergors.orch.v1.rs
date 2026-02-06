@@ -2752,32 +2752,16 @@ impl ::prost::Name for AkashDeployConfig {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProxyRouterConfig {
-    /// Override base URL for Anthropic API requests
-    #[prost(string, tag = "1")]
-    pub anthropic_base_url: ::prost::alloc::string::String,
-    /// Override base URL for OpenAI API requests
-    #[prost(string, tag = "2")]
-    pub openai_base_url: ::prost::alloc::string::String,
     /// Override base URL for Ollama API requests
+    #[deprecated]
     #[prost(string, tag = "3")]
     pub ollama_base_url: ::prost::alloc::string::String,
-    /// Model-specific routing rules (glob patterns -> URLs)
-    /// e.g., "claude-*" -> "<https://api.anthropic.com">
-    /// e.g., "llama-*" -> "<http://localhost:11434">
+    /// Model-specific routing rules (glob patterns -> provider IDs)
+    /// e.g., "claude-*" -> "anthropic"
+    /// e.g., "llama-*" -> "local-ollama"
+    /// e.g., "grok-\*" -> "my-grok-provider"
     #[prost(map = "string, string", tag = "4")]
     pub model_routes: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
-    /// API key overrides per upstream URL
-    #[prost(map = "string, string", tag = "5")]
-    pub api_keys: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
-    /// Default API keys by provider type
-    #[prost(map = "string, string", tag = "6")]
-    pub provider_api_keys: ::std::collections::HashMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
@@ -2790,6 +2774,14 @@ pub struct ProxyRouterConfig {
     /// Optional description/reason for this configuration change
     #[prost(string, tag = "9")]
     pub change_reason: ::prost::alloc::string::String,
+    /// Generic provider configurations (replaces deprecated fields)
+    /// Key is provider_id (e.g., "openai", "anthropic", "my-custom-provider")
+    /// This is the NEW preferred way to configure inference providers
+    #[prost(map = "string, message", tag = "10")]
+    pub providers: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        InferenceProviderConfig,
+    >,
 }
 impl ::prost::Name for ProxyRouterConfig {
     const NAME: &'static str = "ProxyRouterConfig";
@@ -2799,6 +2791,66 @@ impl ::prost::Name for ProxyRouterConfig {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.ProxyRouterConfig".into()
+    }
+}
+/// Generic inference provider configuration
+/// Supports any provider (OpenAI, Anthropic, Ollama, custom, etc.)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InferenceProviderConfig {
+    /// Unique identifier for this provider (e.g., "openai", "my-grok", "local-ollama")
+    #[prost(string, tag = "1")]
+    pub provider_id: ::prost::alloc::string::String,
+    /// Base URL for API requests (e.g., "<https://api.openai.com",> "<http://localhost:11434">)
+    #[prost(string, tag = "2")]
+    pub base_url: ::prost::alloc::string::String,
+    /// API key for authentication (stored as plaintext reference or encrypted blob)
+    /// For custody-managed keys, use api_key_ref instead
+    #[prost(string, tag = "3")]
+    pub api_key: ::prost::alloc::string::String,
+    /// Reference to a custody-managed API key (alternative to api_key)
+    /// Format: "custody://{key_id}" or "env://{ENV_VAR_NAME}"
+    #[prost(string, tag = "4")]
+    pub api_key_ref: ::prost::alloc::string::String,
+    /// Provider type hint for protocol compatibility
+    #[prost(enumeration = "InferenceProviderType", tag = "5")]
+    pub provider_type: i32,
+    /// Whether this provider is currently enabled
+    #[prost(bool, tag = "6")]
+    pub enabled: bool,
+    /// Optional display name for UI/logs
+    #[prost(string, tag = "7")]
+    pub display_name: ::prost::alloc::string::String,
+    /// Optional description of this provider instance
+    #[prost(string, tag = "8")]
+    pub description: ::prost::alloc::string::String,
+    /// Extensible metadata for provider-specific config
+    #[prost(map = "string, string", tag = "9")]
+    pub metadata: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    /// Maximum concurrent requests to this provider (0 = unlimited)
+    #[prost(uint32, tag = "10")]
+    pub max_concurrent_requests: u32,
+    /// Request timeout in seconds (0 = use default)
+    #[prost(uint32, tag = "11")]
+    pub timeout_seconds: u32,
+    /// Created timestamp
+    #[prost(message, optional, tag = "12")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Last updated timestamp
+    #[prost(message, optional, tag = "13")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for InferenceProviderConfig {
+    const NAME: &'static str = "InferenceProviderConfig";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.InferenceProviderConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.InferenceProviderConfig".into()
     }
 }
 /// Authz grant tracking for workflow permissions
@@ -3242,14 +3294,6 @@ impl ::prost::Name for AkashLeaseInfo {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AkashWorkflowOptions {
-    /// DEPRECATED: Grants are now opt-in via request_grant_from. Ignored.
-    #[deprecated]
-    #[prost(bool, tag = "1")]
-    pub skip_grants: bool,
-    /// DEPRECATED: Auto-select is now the default. Use interactive_bid=true for manual selection.
-    #[deprecated]
-    #[prost(bool, tag = "2")]
-    pub auto_select_bid: bool,
     /// Minimum balance required to proceed (uakt)
     #[prost(uint64, tag = "3")]
     pub min_balance_uakt: u64,
@@ -4978,6 +5022,55 @@ impl DeploymentStatus {
         }
     }
 }
+/// Provider type enumeration for protocol compatibility
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum InferenceProviderType {
+    Unspecified = 0,
+    /// Claude API protocol
+    Anthropic = 1,
+    /// OpenAI API protocol
+    Openai = 2,
+    /// Ollama API protocol
+    Ollama = 3,
+    /// HuggingFace TGI protocol
+    Tgi = 4,
+    /// vLLM API protocol
+    Vllm = 5,
+    /// Custom/unknown protocol
+    Custom = 99,
+}
+impl InferenceProviderType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "INFERENCE_PROVIDER_TYPE_UNSPECIFIED",
+            Self::Anthropic => "INFERENCE_PROVIDER_TYPE_ANTHROPIC",
+            Self::Openai => "INFERENCE_PROVIDER_TYPE_OPENAI",
+            Self::Ollama => "INFERENCE_PROVIDER_TYPE_OLLAMA",
+            Self::Tgi => "INFERENCE_PROVIDER_TYPE_TGI",
+            Self::Vllm => "INFERENCE_PROVIDER_TYPE_VLLM",
+            Self::Custom => "INFERENCE_PROVIDER_TYPE_CUSTOM",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INFERENCE_PROVIDER_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "INFERENCE_PROVIDER_TYPE_ANTHROPIC" => Some(Self::Anthropic),
+            "INFERENCE_PROVIDER_TYPE_OPENAI" => Some(Self::Openai),
+            "INFERENCE_PROVIDER_TYPE_OLLAMA" => Some(Self::Ollama),
+            "INFERENCE_PROVIDER_TYPE_TGI" => Some(Self::Tgi),
+            "INFERENCE_PROVIDER_TYPE_VLLM" => Some(Self::Vllm),
+            "INFERENCE_PROVIDER_TYPE_CUSTOM" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+}
 /// Workflow step enumeration for Akash deployment wizard
 /// NOTE: Step ordering is handled in code, not by enum values.
 /// CONNECTIVITY_CHECK runs first regardless of its numeric value.
@@ -4992,10 +5085,6 @@ pub enum AkashWorkflowStep {
     GrantRequest = 3,
     /// OPTIONAL: Wait for grant approval (follows GRANT_REQUEST)
     GrantWait = 4,
-    /// DEPRECATED: Handled in grant flow
-    AuthzSetup = 5,
-    /// DEPRECATED: Handled in grant flow
-    FeegrantSetup = 6,
     SdlConfiguration = 7,
     CertificateSetup = 8,
     DeploymentCreate = 9,
@@ -5004,8 +5093,6 @@ pub enum AkashWorkflowStep {
     LeaseCreate = 12,
     ManifestSend = 13,
     EndpointRetrieval = 14,
-    /// DEPRECATED: Connectivity checked at start
-    EndpointTesting = 15,
     Complete = 16,
     Failed = 17,
     /// NEW: Verify Akash network reachable (runs first)
@@ -5023,8 +5110,6 @@ impl AkashWorkflowStep {
             Self::BalanceCheck => "AKASH_WORKFLOW_STEP_BALANCE_CHECK",
             Self::GrantRequest => "AKASH_WORKFLOW_STEP_GRANT_REQUEST",
             Self::GrantWait => "AKASH_WORKFLOW_STEP_GRANT_WAIT",
-            Self::AuthzSetup => "AKASH_WORKFLOW_STEP_AUTHZ_SETUP",
-            Self::FeegrantSetup => "AKASH_WORKFLOW_STEP_FEEGRANT_SETUP",
             Self::SdlConfiguration => "AKASH_WORKFLOW_STEP_SDL_CONFIGURATION",
             Self::CertificateSetup => "AKASH_WORKFLOW_STEP_CERTIFICATE_SETUP",
             Self::DeploymentCreate => "AKASH_WORKFLOW_STEP_DEPLOYMENT_CREATE",
@@ -5033,7 +5118,6 @@ impl AkashWorkflowStep {
             Self::LeaseCreate => "AKASH_WORKFLOW_STEP_LEASE_CREATE",
             Self::ManifestSend => "AKASH_WORKFLOW_STEP_MANIFEST_SEND",
             Self::EndpointRetrieval => "AKASH_WORKFLOW_STEP_ENDPOINT_RETRIEVAL",
-            Self::EndpointTesting => "AKASH_WORKFLOW_STEP_ENDPOINT_TESTING",
             Self::Complete => "AKASH_WORKFLOW_STEP_COMPLETE",
             Self::Failed => "AKASH_WORKFLOW_STEP_FAILED",
             Self::ConnectivityCheck => "AKASH_WORKFLOW_STEP_CONNECTIVITY_CHECK",
@@ -5047,8 +5131,6 @@ impl AkashWorkflowStep {
             "AKASH_WORKFLOW_STEP_BALANCE_CHECK" => Some(Self::BalanceCheck),
             "AKASH_WORKFLOW_STEP_GRANT_REQUEST" => Some(Self::GrantRequest),
             "AKASH_WORKFLOW_STEP_GRANT_WAIT" => Some(Self::GrantWait),
-            "AKASH_WORKFLOW_STEP_AUTHZ_SETUP" => Some(Self::AuthzSetup),
-            "AKASH_WORKFLOW_STEP_FEEGRANT_SETUP" => Some(Self::FeegrantSetup),
             "AKASH_WORKFLOW_STEP_SDL_CONFIGURATION" => Some(Self::SdlConfiguration),
             "AKASH_WORKFLOW_STEP_CERTIFICATE_SETUP" => Some(Self::CertificateSetup),
             "AKASH_WORKFLOW_STEP_DEPLOYMENT_CREATE" => Some(Self::DeploymentCreate),
@@ -5057,7 +5139,6 @@ impl AkashWorkflowStep {
             "AKASH_WORKFLOW_STEP_LEASE_CREATE" => Some(Self::LeaseCreate),
             "AKASH_WORKFLOW_STEP_MANIFEST_SEND" => Some(Self::ManifestSend),
             "AKASH_WORKFLOW_STEP_ENDPOINT_RETRIEVAL" => Some(Self::EndpointRetrieval),
-            "AKASH_WORKFLOW_STEP_ENDPOINT_TESTING" => Some(Self::EndpointTesting),
             "AKASH_WORKFLOW_STEP_COMPLETE" => Some(Self::Complete),
             "AKASH_WORKFLOW_STEP_FAILED" => Some(Self::Failed),
             "AKASH_WORKFLOW_STEP_CONNECTIVITY_CHECK" => Some(Self::ConnectivityCheck),

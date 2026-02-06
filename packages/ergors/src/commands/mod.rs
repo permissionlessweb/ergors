@@ -206,7 +206,15 @@ impl EngineCmd {
 #[derive(Subcommand)]
 pub enum NodeCmd {
     /// Show node identity
-    Info,
+    Info {
+        /// Address prefix for bech32 encoding (e.g., "ergors", "akash", "cosmos")
+        /// Allows viewing the node's Ed25519 address with any prefix
+        #[arg(long, default_value = "ergors")]
+        prefix: String,
+        /// Show addresses for all common prefixes
+        #[arg(long)]
+        all_prefixes: bool,
+    },
     /// Generate new node identity
     Generate {
         /// Node type: coordinator, executor, referee, development
@@ -239,19 +247,51 @@ pub enum NodeCmd {
 impl NodeCmd {
     pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
-            NodeCmd::Info => {
+            NodeCmd::Info { prefix, all_prefixes } => {
+                use ho_std::keys::cosmos::cosmos_address_from_ed25519_pubkey;
+
                 let identity = client.get_node_identity().await?;
 
+                // Derive addresses with different prefixes if requested
+                let addresses = if *all_prefixes {
+                    // Common Cosmos ecosystem prefixes
+                    let prefixes = vec!["ergors", "akash", "cosmos", "osmo", "juno", "stars"];
+                    prefixes.iter()
+                        .filter_map(|p| {
+                            identity.public_key.as_ref().and_then(|pk| {
+                                cosmos_address_from_ed25519_pubkey(pk, p)
+                                    .ok()
+                                    .map(|addr| (p.to_string(), addr))
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                } else if prefix != "ergors" {
+                    // Derive address with custom prefix
+                    identity.public_key.as_ref()
+                        .and_then(|pk| {
+                            cosmos_address_from_ed25519_pubkey(pk, prefix)
+                                .ok()
+                                .map(|addr| vec![(prefix.clone(), addr)])
+                        })
+                        .unwrap_or_default()
+                } else {
+                    vec![]
+                };
+
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "host": identity.host,
-                            "node_type": identity.node_type,
-                            "p2p_port": identity.p2p_port,
-                            "api_port": identity.api_port,
-                        }))?
-                    );
+                    let mut json = serde_json::json!({
+                        "host": identity.host,
+                        "node_type": identity.node_type,
+                        "p2p_port": identity.p2p_port,
+                        "api_port": identity.api_port,
+                        "bech32_address": identity.bech32_address,
+                    });
+                    if !addresses.is_empty() {
+                        json["addresses"] = serde_json::json!(addresses.iter().map(|(p, a)| {
+                            serde_json::json!({"prefix": p, "address": a})
+                        }).collect::<Vec<_>>());
+                    }
+                    println!("{}", serde_json::to_string_pretty(&json)?);
                 } else {
                     println!("Node Identity");
                     println!("=============");
@@ -261,6 +301,17 @@ impl NodeCmd {
                     println!("API Port:  {}", identity.api_port);
                     if let Some(pk) = &identity.public_key {
                         println!("Public Key: {}", hex::encode(pk));
+                    }
+                    if let Some(addr) = &identity.bech32_address {
+                        println!("Address (ergors): {}", addr);
+                    }
+
+                    // Show additional addresses
+                    if !addresses.is_empty() {
+                        println!("\nAdditional Prefixes:");
+                        for (p, addr) in addresses {
+                            println!("  {:<8}: {}", p, addr);
+                        }
                     }
                 }
                 Ok(())
@@ -292,6 +343,9 @@ impl NodeCmd {
                 if *public_only {
                     if let Some(pk) = &identity.public_key {
                         println!("{}", hex::encode(pk));
+                    }
+                    if let Some(addr) = &identity.bech32_address {
+                        println!("Address:    {}", addr);
                     }
                 } else {
                     println!(

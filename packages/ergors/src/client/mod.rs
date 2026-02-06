@@ -948,8 +948,6 @@ impl ManagementClient {
             .run_akash_deployment(RunAkashDeploymentRequest {
                 session_id: session_id.to_string(),
                 options: Some(AkashWorkflowOptions {
-                    skip_grants: request_grant_from.is_empty(), // deprecated: skip if no grant requested
-                    auto_select_bid: !interactive_bid,          // deprecated: auto if not interactive
                     min_balance_uakt,
                     bid_wait_blocks: 2,
                     trusted_providers,

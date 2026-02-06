@@ -1349,11 +1349,9 @@ impl ErgorsStorage {
 
         self.commit_delta(delta).await?;
         info!(
-            "🔧 Stored proxy router config version {} (anthropic={}, openai={}, ollama={})",
+            "🔧 Stored proxy router config version {} ({} providers configured)",
             config.version,
-            config.anthropic_base_url,
-            config.openai_base_url,
-            config.ollama_base_url
+            config.providers.len()
         );
         Ok(())
     }

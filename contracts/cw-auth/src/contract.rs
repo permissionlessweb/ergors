@@ -285,7 +285,7 @@ fn query_list_whitelist(
 ) -> StdResult<ListWhitelistResponse> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
 
-    let start = start_after.as_deref().map(cosmwasm_std::Bound::exclusive);
+    let start = start_after.as_deref().map(cw_storage_plus::Bound::exclusive);
 
     let addresses: Vec<String> = WHITELIST
         .range(deps.storage, start, None, Order::Ascending)

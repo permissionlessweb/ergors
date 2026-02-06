@@ -13,7 +13,7 @@
 #   --skip-cleanup     Keep everything running after tests
 #   --verbose          Enable verbose output
 #   --skip-ethereum   Skip Ethereum/Anvil setup
-#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|all)
+#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|all)
 #   --akash-home PATH  Set Akash repo location
 #   --help             Show this help message
 #
@@ -59,6 +59,10 @@ source "${SCRIPT_DIR}/tests/api.sh"
 source "${SCRIPT_DIR}/tests/bootstrap.sh"
 # shellcheck source=tests/ethereum.sh
 source "${SCRIPT_DIR}/tests/ethereum.sh"
+# shellcheck source=tests/inference.sh
+source "${SCRIPT_DIR}/tests/inference.sh"
+# shellcheck source=tests/sdl_storage.sh
+source "${SCRIPT_DIR}/tests/sdl_storage.sh"
 
 # =============================================================================
 # Configuration
@@ -71,6 +75,7 @@ SKIP_CLEANUP=false
 SKIP_ETHEREUM=false
 VERBOSE=false
 TEST_SUITE="all"
+MOCK_PROVIDER_PORT=11434
 
 START_TIME=$(date +%s)
 
@@ -154,6 +159,9 @@ cleanup() {
     fi
 
     log_step "Cleanup"
+
+    # Stop inference provider
+    cleanup_inference_tests
 
     # Stop Ethereum network
     ethereum_cleanup
@@ -253,6 +261,13 @@ run_infrastructure_phase() {
             log_error "Akash infrastructure setup failed"
             exit 1
         }
+
+        # Import keys into running nodes (now that faucet is available)
+        if [[ "$SKIP_NETWORK" != true ]]; then
+            ergors_import_keys_post_startup || {
+                log_warn "Key import failed (tests may fail)"
+            }
+        fi
     fi
 
     # Start local Ethereum network (Anvil)
@@ -305,6 +320,14 @@ run_tests() {
         ethereum)
             run_ethereum_tests
             ;;
+        inference)
+            run_network_tests  # Ensure nodes are up
+            run_inference_tests
+            ;;
+        sdl-storage)
+            run_network_tests  # Ensure nodes are up
+            run_sdl_storage_tests
+            ;;
         all)
             # Phase 1: Network tests
             run_network_tests
@@ -332,10 +355,16 @@ run_tests() {
             if [[ "$SKIP_ETHEREUM" != true ]]; then
                 run_ethereum_tests
             fi
+
+            # Phase 9: Inference provider routing tests
+            run_inference_tests
+
+            # Phase 10: SDL storage dual-path tests
+            run_sdl_storage_tests
             ;;
         *)
             log_error "Unknown test suite: $TEST_SUITE"
-            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, all"
+            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, all"
             exit 1
             ;;
     esac

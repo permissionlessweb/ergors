@@ -350,7 +350,7 @@ impl LLMRouterConfigTrait for CwHoLlmRouterConfig {
 // Proxy Configuration
 // ==============================================
 
-use crate::proxy::router::ProxyRouterConfig;
+use ho_std::types::ergors::orch::v1::{InferenceProviderConfig, InferenceProviderType, ProxyRouterConfig};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the LLM proxy service
@@ -433,29 +433,130 @@ impl ProxyConfig {
     pub fn from_env() -> Self {
         let mut config = Self::default();
 
-        // Override Anthropic base URL from env
+        // Create Anthropic provider from env if specified
         if let Ok(url) = std::env::var("ANTHROPIC_API_BASE") {
-            config.router.anthropic_base_url = Some(url);
+            let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
+            let provider = InferenceProviderConfig {
+                provider_id: "anthropic".to_string(),
+                base_url: url,
+                api_key,
+                api_key_ref: String::new(),
+                provider_type: InferenceProviderType::Anthropic as i32,
+                enabled: true,
+                display_name: "Anthropic".to_string(),
+                description: "Anthropic Claude API".to_string(),
+                metadata: std::collections::HashMap::new(),
+                max_concurrent_requests: 0,
+                timeout_seconds: 0,
+                created_at: Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                }),
+                updated_at: Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                }),
+            };
+            config.router.providers.insert("anthropic".to_string(), provider);
+        } else if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+            // Just key, use default URL
+            let provider = InferenceProviderConfig {
+                provider_id: "anthropic".to_string(),
+                base_url: "https://api.anthropic.com".to_string(),
+                api_key: key,
+                api_key_ref: String::new(),
+                provider_type: InferenceProviderType::Anthropic as i32,
+                enabled: true,
+                display_name: "Anthropic".to_string(),
+                description: "Anthropic Claude API".to_string(),
+                metadata: std::collections::HashMap::new(),
+                max_concurrent_requests: 0,
+                timeout_seconds: 0,
+                created_at: Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                }),
+                updated_at: Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                }),
+            };
+            config.router.providers.insert("anthropic".to_string(), provider);
         }
 
-        // Override OpenAI base URL from env
+        // Create OpenAI provider from env if specified
         if let Ok(url) = std::env::var("OPENAI_API_BASE") {
-            config.router.openai_base_url = Some(url);
-        }
-
-        // Load API keys from env
-        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            config
-                .router
-                .provider_api_keys
-                .insert("anthropic".to_string(), key);
-        }
-
-        if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            config
-                .router
-                .provider_api_keys
-                .insert("openai".to_string(), key);
+            let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+            let provider = InferenceProviderConfig {
+                provider_id: "openai".to_string(),
+                base_url: url,
+                api_key,
+                api_key_ref: String::new(),
+                provider_type: InferenceProviderType::Openai as i32,
+                enabled: true,
+                display_name: "OpenAI".to_string(),
+                description: "OpenAI API".to_string(),
+                metadata: std::collections::HashMap::new(),
+                max_concurrent_requests: 0,
+                timeout_seconds: 0,
+                created_at: Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                }),
+                updated_at: Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                }),
+            };
+            config.router.providers.insert("openai".to_string(), provider);
+        } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+            // Just key, use default URL
+            let provider = InferenceProviderConfig {
+                provider_id: "openai".to_string(),
+                base_url: "https://api.openai.com".to_string(),
+                api_key: key,
+                api_key_ref: String::new(),
+                provider_type: InferenceProviderType::Openai as i32,
+                enabled: true,
+                display_name: "OpenAI".to_string(),
+                description: "OpenAI API".to_string(),
+                metadata: std::collections::HashMap::new(),
+                max_concurrent_requests: 0,
+                timeout_seconds: 0,
+                created_at: Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                }),
+                updated_at: Some(pbjson_types::Timestamp {
+                    seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                    nanos: 0,
+                }),
+            };
+            config.router.providers.insert("openai".to_string(), provider);
         }
 
         config
@@ -463,25 +564,140 @@ impl ProxyConfig {
 
     /// Merge environment variables into existing config
     pub fn with_env_overrides(mut self) -> Self {
-        // Environment variables take precedence
+        // Environment variables take precedence - update or create provider configs
+
+        // Anthropic provider
         if let Ok(url) = std::env::var("ANTHROPIC_API_BASE") {
-            self.router.anthropic_base_url = Some(url);
+            let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
+            let provider = self.router.providers.entry("anthropic".to_string())
+                .or_insert_with(|| InferenceProviderConfig {
+                    provider_id: "anthropic".to_string(),
+                    base_url: String::new(),
+                    api_key: String::new(),
+                    api_key_ref: String::new(),
+                    provider_type: InferenceProviderType::Anthropic as i32,
+                    enabled: true,
+                    display_name: "Anthropic".to_string(),
+                    description: "Anthropic Claude API".to_string(),
+                    metadata: std::collections::HashMap::new(),
+                    max_concurrent_requests: 0,
+                    timeout_seconds: 0,
+                    created_at: Some(pbjson_types::Timestamp {
+                        seconds: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }),
+                    updated_at: Some(pbjson_types::Timestamp {
+                        seconds: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }),
+                });
+            provider.base_url = url;
+            if !api_key.is_empty() {
+                provider.api_key = api_key;
+            }
+        } else if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+            let provider = self.router.providers.entry("anthropic".to_string())
+                .or_insert_with(|| InferenceProviderConfig {
+                    provider_id: "anthropic".to_string(),
+                    base_url: "https://api.anthropic.com".to_string(),
+                    api_key: String::new(),
+                    api_key_ref: String::new(),
+                    provider_type: InferenceProviderType::Anthropic as i32,
+                    enabled: true,
+                    display_name: "Anthropic".to_string(),
+                    description: "Anthropic Claude API".to_string(),
+                    metadata: std::collections::HashMap::new(),
+                    max_concurrent_requests: 0,
+                    timeout_seconds: 0,
+                    created_at: Some(pbjson_types::Timestamp {
+                        seconds: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }),
+                    updated_at: Some(pbjson_types::Timestamp {
+                        seconds: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }),
+                });
+            provider.api_key = key;
         }
 
+        // OpenAI provider
         if let Ok(url) = std::env::var("OPENAI_API_BASE") {
-            self.router.openai_base_url = Some(url);
-        }
-
-        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            self.router
-                .provider_api_keys
-                .insert("anthropic".to_string(), key);
-        }
-
-        if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            self.router
-                .provider_api_keys
-                .insert("openai".to_string(), key);
+            let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+            let provider = self.router.providers.entry("openai".to_string())
+                .or_insert_with(|| InferenceProviderConfig {
+                    provider_id: "openai".to_string(),
+                    base_url: String::new(),
+                    api_key: String::new(),
+                    api_key_ref: String::new(),
+                    provider_type: InferenceProviderType::Openai as i32,
+                    enabled: true,
+                    display_name: "OpenAI".to_string(),
+                    description: "OpenAI API".to_string(),
+                    metadata: std::collections::HashMap::new(),
+                    max_concurrent_requests: 0,
+                    timeout_seconds: 0,
+                    created_at: Some(pbjson_types::Timestamp {
+                        seconds: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }),
+                    updated_at: Some(pbjson_types::Timestamp {
+                        seconds: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }),
+                });
+            provider.base_url = url;
+            if !api_key.is_empty() {
+                provider.api_key = api_key;
+            }
+        } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+            let provider = self.router.providers.entry("openai".to_string())
+                .or_insert_with(|| InferenceProviderConfig {
+                    provider_id: "openai".to_string(),
+                    base_url: "https://api.openai.com".to_string(),
+                    api_key: String::new(),
+                    api_key_ref: String::new(),
+                    provider_type: InferenceProviderType::Openai as i32,
+                    enabled: true,
+                    display_name: "OpenAI".to_string(),
+                    description: "OpenAI API".to_string(),
+                    metadata: std::collections::HashMap::new(),
+                    max_concurrent_requests: 0,
+                    timeout_seconds: 0,
+                    created_at: Some(pbjson_types::Timestamp {
+                        seconds: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }),
+                    updated_at: Some(pbjson_types::Timestamp {
+                        seconds: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }),
+                });
+            provider.api_key = key;
         }
 
         self
@@ -506,9 +722,6 @@ mod proxy_config_tests {
             enabled = true
             bind_addr = "127.0.0.1:9090"
 
-            [router]
-            anthropic_base_url = "https://custom.anthropic.com"
-
             [router.model_routes]
             "llama-*" = "http://localhost:11434"
 
@@ -520,10 +733,6 @@ mod proxy_config_tests {
 
         let config: ProxyConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.bind_addr, "127.0.0.1:9090");
-        assert_eq!(
-            config.router.anthropic_base_url,
-            Some("https://custom.anthropic.com".to_string())
-        );
         assert!(config.router.model_routes.contains_key("llama-*"));
         assert!(!config.capture.include_chunks);
         assert_eq!(config.capture.max_sessions, 1000);

@@ -104,6 +104,10 @@ pub struct NodeIdentity {
     pub node_type: ::prost::alloc::string::String,
     #[prost(bytes = "vec", optional, tag = "8")]
     pub public_key: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    /// Bech32-encoded address derived from the node's Ed25519 public key
+    /// Uses akash prefix by default (akash1...)
+    #[prost(string, optional, tag = "9")]
+    pub bech32_address: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for NodeIdentity {
     const NAME: &'static str = "NodeIdentity";

@@ -133,7 +133,7 @@ impl InitCmd {
         let config_path = home_dir.as_ref().join(ho_std::constants::CONFIG_FILE_NAME);
         let config = match self.subcmd.clone() {
             InitTopSubCmd::New {} => {
-                let config = ErgorsConfig::new(home_dir.as_ref());
+                let mut config = ErgorsConfig::new(home_dir.as_ref());
                 let current = env::current_dir().unwrap();
                 let template_path = camino::Utf8Path::new(current.to_str().unwrap());
                 let output_path = home_dir.as_ref().join(".env");
@@ -193,9 +193,14 @@ impl InitCmd {
                 println!("   ────────────────────────────────────");
                 println!("   Your API keys will be encrypted using your custody password");
                 println!("   and stored securely. Press Enter to skip any provider.\n");
-                
+
                 let encrypted_keys_path = home_dir.as_ref().join("api-keys.enc");
                 self.configure_api_keys_encrypted(&encrypted_keys_path, &password)?;
+
+                // Enable CosmWasm and configure cw-sdl contract deployment
+                println!("\n📦 Configuring CosmWasm Contracts");
+                println!("   ─────────────────────────────────");
+                self.configure_cosmwasm_contracts(&mut config, home_dir.as_ref())?;
 
                 config
             }
@@ -645,6 +650,87 @@ impl InitCmd {
         println!("  Fingerprint: {}", git_identity.ssh_fingerprint());
         println!();
         println!("Add the public key to your git remotes for authentication.");
+
+        Ok(())
+    }
+
+    /// Configure CosmWasm contracts for deployment on startup
+    ///
+    /// Enables CosmWasm and adds the cw-sdl contract to initial_contracts.
+    /// The contract will be automatically deployed when the node starts.
+    fn configure_cosmwasm_contracts(
+        &self,
+        config: &mut ErgorsConfig,
+        home_dir: &camino::Utf8Path,
+    ) -> Result<()> {
+        use ho_std::types::ergors::orch::v1::{
+            ContractConfig, ContractDeployment, CosmwasmConfig,
+        };
+
+        // Find cw-sdl.wasm artifact
+        // Try multiple locations: current directory contracts/artifacts, home dir, relative paths
+        let artifact_paths = [
+            "contracts/artifacts/cw_sdl.wasm",
+            "../contracts/artifacts/cw_sdl.wasm",
+            "../../contracts/artifacts/cw_sdl.wasm",
+        ];
+
+        let mut cw_sdl_path: Option<camino::Utf8PathBuf> = None;
+        for path_str in &artifact_paths {
+            let path = camino::Utf8PathBuf::from(path_str);
+            if path.exists() {
+                cw_sdl_path = Some(path);
+                break;
+            }
+        }
+
+        let wasm_path = if let Some(path) = cw_sdl_path {
+            path.to_string()
+        } else {
+            // Fallback: assume it will be in home dir
+            let fallback = home_dir.join("cw_sdl.wasm");
+            println!("⚠️  Warning: cw-sdl.wasm not found in standard locations.");
+            println!("   Contract will be deployed from: {}", fallback);
+            println!("   Make sure to place the artifact there before starting the node.");
+            fallback.to_string()
+        };
+
+        // Create ContractDeployment for cw-sdl
+        let cw_sdl_contract = ContractDeployment {
+            name: "cw-sdl-template".to_string(),
+            wasm_path: wasm_path.clone(),
+            wasm_bytes: vec![], // Empty - load from file
+            init_msg: r#"{
+                "sdl_template": "",
+                "variable_defaults": {},
+                "label": "ergors-sdl-template",
+                "admin": ""
+            }"#.to_string(),
+            label: "ergors-sdl-template".to_string(),
+            admin: "".to_string(), // Will use node_id
+            required: false, // Not critical for node startup
+            config: Some(ContractConfig {
+                skip_if_exists: true,
+                migration: None, // No migration on first deploy
+                metadata: std::collections::HashMap::new(),
+            }),
+            deploy_on_node_types: vec!["coordinator".to_string()],
+        };
+
+        // Create CosmWasm config with cw-sdl contract
+        let cosmwasm_config = CosmwasmConfig {
+            enabled: true,
+            cache_dir: "".to_string(), // Use default
+            memory_limit: 33_554_432,  // 32MB
+            gas_limits: Some(ErgorsConfig::default_gas_limits()),
+            initial_contracts: vec![cw_sdl_contract],
+        };
+
+        config.set_cosmwasm(cosmwasm_config);
+
+        println!("   ✓ CosmWasm enabled");
+        println!("   ✓ cw-sdl contract configured for deployment");
+        println!("     Path: {}", wasm_path);
 
         Ok(())
     }

@@ -289,25 +289,12 @@ impl Server {
                     "📍 Loaded proxy router config from storage (version {})",
                     stored_config.version
                 );
-                // Convert proto config to in-memory config
-                let mut config = crate::proxy::ProxyRouterConfig::default();
-                if !stored_config.anthropic_base_url.is_empty() {
-                    config.anthropic_base_url = Some(stored_config.anthropic_base_url);
-                }
-                if !stored_config.openai_base_url.is_empty() {
-                    config.openai_base_url = Some(stored_config.openai_base_url);
-                }
-                if !stored_config.ollama_base_url.is_empty() {
-                    config.ollama_base_url = Some(stored_config.ollama_base_url);
-                }
-                config.model_routes = stored_config.model_routes;
-                config.api_keys = stored_config.api_keys;
-                config.provider_api_keys = stored_config.provider_api_keys;
-                config
+                // Use stored config directly (proto type is now the in-memory type)
+                stored_config
             }
             Ok(None) => {
                 tracing::info!("📍 No stored proxy router config found, using defaults");
-                crate::proxy::ProxyRouterConfig::default()
+                ho_std::types::ergors::orch::v1::ProxyRouterConfig::default()
             }
             Err(e) => {
                 tracing::warn!(
@@ -1058,8 +1045,11 @@ async fn handle_health(State(state): State<ErgorsAppState>) -> Json<HealthRespon
 }
 
 async fn handle_network_topology(State(state): State<ErgorsAppState>) -> Json<serde_json::Value> {
-    let topology = state.nm.lock().await.get_topology().await;
-    let identity = state.c.identity();
+    let nm = state.nm.lock().await;
+    let topology = nm.get_topology().await;
+    // Get identity from NetworkManifold (has updated public_key and bech32_address)
+    let identity = nm.identity();
+
     Json(serde_json::json!({
         "topology": topology,
         "node_identity": {
@@ -1067,6 +1057,7 @@ async fn handle_network_topology(State(state): State<ErgorsAppState>) -> Json<se
             "node_type": identity.node_type,
             "p2p_address": identity.p2p_address(),
             "api_address": identity.api_address(),
+            "bech32_address": identity.bech32_address.as_ref(),
         }
     }))
 }

@@ -196,10 +196,10 @@ test_sdl_contract_queries() {
         SDL_TEMPLATE_CONTRACT="$contract_addr"
         log_verbose "Using contract: $SDL_TEMPLATE_CONTRACT"
     elif echo "$list_output" | grep -qiE "error|failed"; then
-        test_fail "sdl_contract_list" "SDL list returned error" "Output: ${list_output:0:200}"
+        test_fail "sdl_contract_list" "SDL list returned error" "Output: ${list_output}"
         return 1
     else
-        test_fail "sdl_contract_list" "No SDL template contracts found" "Response: ${list_output:0:200}"
+        test_fail "sdl_contract_list" "No SDL template contracts found" "Response: ${list_output}"
         return 1
     fi
 
