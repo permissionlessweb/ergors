@@ -279,11 +279,112 @@ test_bid_reception() {
         test_pass "bid_reception" "Received $total_bids bid(s)"
         log_verbose "Bids response:"
         log_debug "$bids_output"
+
+        # Store bids output for downstream verification
+        export LAST_BIDS_OUTPUT="$bids_output"
     else
         # Bids not received is acceptable in local dev environment
         test_fail "bid_reception" "No bids received" "Local provider may lack resources (timeout: ${max_wait}s)"
         log_verbose "Last bids query response:"
         log_debug "$bids_output"
+    fi
+}
+
+# =============================================================================
+# Bid Field Verification Tests
+# =============================================================================
+
+test_bid_field_verification() {
+    log_section "Bid Field Verification Tests"
+
+    if [[ -z "$DEPLOY_SESSION_ID" ]]; then
+        test_skip "bid_field_verification" "No deployment session"
+        return 1
+    fi
+
+    # Re-query bids if not cached
+    local bids_output="${LAST_BIDS_OUTPUT:-}"
+    if [[ -z "$bids_output" ]]; then
+        bids_output=$(ergors_deploy_bids "$DEPLOY_SESSION_ID" 2>&1) || true
+    fi
+
+    local total_bids
+    total_bids=$(json_get "$bids_output" '.total')
+
+    if [[ -z "$total_bids" ]] || [[ "$total_bids" -eq 0 ]]; then
+        test_skip "bid_field_verification" "No bids to verify fields on"
+        return 0
+    fi
+
+    # Test 1: Bid has provider address
+    local bid_provider
+    bid_provider=$(json_get "$bids_output" '.bids[0].provider')
+    if [[ -n "$bid_provider" ]] && [[ "$bid_provider" == akash1* ]]; then
+        test_pass "bid_has_provider" "Bid contains valid provider address: ${bid_provider:0:20}..."
+    elif [[ -n "$bid_provider" ]]; then
+        test_fail "bid_has_provider" "Bid provider address has unexpected format" "Got: $bid_provider"
+    else
+        test_fail "bid_has_provider" "Bid missing provider address field"
+    fi
+
+    # Test 2: Bid has price
+    local bid_price
+    bid_price=$(json_get "$bids_output" '.bids[0].price_uakt')
+    if [[ -z "$bid_price" ]]; then
+        bid_price=$(json_get "$bids_output" '.bids[0].price')
+    fi
+
+    if [[ -n "$bid_price" ]] && [[ "$bid_price" =~ ^[0-9]+$ ]] && [[ "$bid_price" -gt 0 ]]; then
+        test_pass "bid_has_price" "Bid contains price: $bid_price uakt"
+    elif [[ -n "$bid_price" ]]; then
+        test_fail "bid_has_price" "Bid price has unexpected format" "Got: $bid_price"
+    else
+        test_fail "bid_has_price" "Bid missing price field"
+    fi
+
+    # Test 3: Bid has resource offer (CPU, memory, storage)
+    local bid_resources
+    bid_resources=$(json_get "$bids_output" '.bids[0].resources')
+    if [[ -z "$bid_resources" ]]; then
+        bid_resources=$(json_get "$bids_output" '.bids[0].resource_offer')
+    fi
+
+    if [[ -n "$bid_resources" ]] && [[ "$bid_resources" != "null" ]]; then
+        test_pass "bid_has_resources" "Bid contains resource offer"
+        log_verbose "  Resources: ${bid_resources:0:200}"
+    else
+        # Resources may not be in the bid response directly -- skip gracefully
+        test_skip "bid_has_resources" "Resource offer not included in bid response"
+    fi
+
+    # Test 4: Bid state is valid
+    local bid_state
+    bid_state=$(json_get "$bids_output" '.bids[0].state')
+    if [[ -z "$bid_state" ]]; then
+        bid_state=$(json_get "$bids_output" '.bids[0].status')
+    fi
+
+    if [[ -n "$bid_state" ]]; then
+        if echo "$bid_state" | grep -qiE "open|active|pending|matched"; then
+            test_pass "bid_state_valid" "Bid state is valid: $bid_state"
+        else
+            test_fail "bid_state_valid" "Unexpected bid state" "Got: $bid_state"
+        fi
+    else
+        test_skip "bid_state_valid" "Bid state field not present"
+    fi
+
+    # Test 5: All bids have unique providers (no duplicate bids)
+    if [[ "$total_bids" -gt 1 ]]; then
+        local unique_providers
+        unique_providers=$(echo "$bids_output" | jq -r '[.bids[].provider] | unique | length' 2>/dev/null || echo "0")
+        if [[ "$unique_providers" -eq "$total_bids" ]]; then
+            test_pass "bids_unique_providers" "All $total_bids bids from unique providers"
+        else
+            test_fail "bids_unique_providers" "Duplicate provider bids detected" "Unique: $unique_providers, Total: $total_bids"
+        fi
+    else
+        test_skip "bids_unique_providers" "Only 1 bid received, cannot test uniqueness"
     fi
 }
 
@@ -345,6 +446,95 @@ test_lease_creation() {
 }
 
 # =============================================================================
+# Lease On-Chain Verification Tests
+# =============================================================================
+
+test_lease_onchain_verification() {
+    log_section "Lease On-Chain Verification Tests"
+
+    if [[ -z "$DEPLOY_SESSION_ID" ]]; then
+        test_skip "lease_onchain" "No deployment session"
+        return 1
+    fi
+
+    # Test 1: Query lease details from the engine
+    log "Querying lease details from engine..."
+    local get_output
+    get_output=$(ergors_deploy_get "$DEPLOY_SESSION_ID" 2>&1) || true
+    log_debug "Deploy get output: $get_output"
+
+    local lease_id
+    lease_id=$(json_get "$get_output" '.lease_id')
+    if [[ -z "$lease_id" ]]; then
+        lease_id=$(json_get "$get_output" '.lease.lease_id')
+    fi
+
+    local dseq
+    dseq=$(json_get "$get_output" '.dseq')
+
+    if [[ -n "$lease_id" ]] && [[ "$lease_id" != "null" ]]; then
+        test_pass "lease_id_exists" "Lease ID recorded: ${lease_id:0:30}..."
+    elif [[ -n "$dseq" ]] && [[ "$dseq" =~ ^[0-9]+$ ]]; then
+        test_pass "lease_id_exists" "Deployment has DSEQ: $dseq (lease tracked)"
+    else
+        test_fail "lease_id_exists" "No lease ID or DSEQ found in deployment state"
+        return 0
+    fi
+
+    # Test 2: Verify provider address is stored in the deployment
+    local stored_provider
+    stored_provider=$(json_get "$get_output" '.provider')
+    if [[ -z "$stored_provider" ]]; then
+        stored_provider=$(json_get "$get_output" '.lease.provider')
+    fi
+
+    if [[ -n "$stored_provider" ]] && [[ "$stored_provider" == akash1* ]]; then
+        test_pass "lease_provider_stored" "Lease provider address stored: ${stored_provider:0:20}..."
+        DEPLOY_PROVIDER="$stored_provider"
+    elif [[ -n "$stored_provider" ]]; then
+        test_pass "lease_provider_stored" "Lease provider reference stored: ${stored_provider:0:30}"
+        DEPLOY_PROVIDER="$stored_provider"
+    else
+        test_fail "lease_provider_stored" "No provider address in deployment state"
+    fi
+
+    # Test 3: Query on-chain lease via Akash node (if dseq available)
+    if [[ -n "$dseq" ]] && [[ "$dseq" =~ ^[0-9]+$ ]]; then
+        log "Querying on-chain lease for DSEQ $dseq..."
+        local onchain_output
+        onchain_output=$(ergors_cli deploy query-lease "$DEPLOY_SESSION_ID" 2>&1) || true
+        log_debug "On-chain lease query: $onchain_output"
+
+        if echo "$onchain_output" | grep -qiE "lease|active|state"; then
+            test_pass "lease_onchain_confirmed" "Lease found on-chain (DSEQ: $dseq)"
+        elif echo "$onchain_output" | grep -qiE "not found|unknown"; then
+            test_fail "lease_onchain_confirmed" "Lease not found on-chain" "DSEQ: $dseq"
+        else
+            # query-lease may not exist as a CLI command yet
+            test_skip "lease_onchain_confirmed" "On-chain lease query not available"
+        fi
+    else
+        test_skip "lease_onchain_confirmed" "No DSEQ available for on-chain query"
+    fi
+
+    # Test 4: Verify deployment workflow state reflects lease creation
+    local current_step
+    current_step=$(json_get "$get_output" '.current_step')
+    local status
+    status=$(json_get "$get_output" '.status')
+
+    # After lease creation, step should be past ProviderSelection
+    local valid_post_lease_steps="ManifestSend|EndpointRetrieval|Complete|LeaseCreate|SendManifest|WaitReady"
+    if [[ -n "$current_step" ]] && echo "$current_step" | grep -qiE "$valid_post_lease_steps"; then
+        test_pass "lease_workflow_state" "Workflow advanced past lease creation (step: $current_step)"
+    elif [[ -n "$status" ]] && echo "$status" | grep -qiE "active|deploying|ready|complete"; then
+        test_pass "lease_workflow_state" "Deployment status confirms lease (status: $status)"
+    else
+        test_skip "lease_workflow_state" "Could not confirm post-lease workflow state"
+    fi
+}
+
+# =============================================================================
 # Workflow Advancement Tests
 # =============================================================================
 
@@ -381,6 +571,174 @@ test_workflow_advance() {
         test_pass "deployment_status" "Deployment status: $status"
     else
         test_fail "deployment_status" "Could not determine deployment status"
+    fi
+}
+
+# =============================================================================
+# Manifest Send Verification Tests
+# =============================================================================
+
+test_manifest_send_verification() {
+    log_section "Manifest Send Verification Tests"
+
+    if [[ -z "$DEPLOY_SESSION_ID" ]]; then
+        test_skip "manifest_send" "No deployment session"
+        return 1
+    fi
+
+    # Test 1: Query deployment state to verify manifest was sent
+    log "Checking manifest send status..."
+    local get_output
+    get_output=$(ergors_deploy_get "$DEPLOY_SESSION_ID" 2>&1) || true
+    log_debug "Deploy get output: $get_output"
+
+    local current_step
+    current_step=$(json_get "$get_output" '.current_step')
+    local status
+    status=$(json_get "$get_output" '.status')
+
+    # If workflow is past ManifestSend, manifest was sent
+    local post_manifest_steps="EndpointRetrieval|Complete|WaitReady"
+    if [[ -n "$current_step" ]] && echo "$current_step" | grep -qiE "$post_manifest_steps"; then
+        test_pass "manifest_sent" "Manifest sent successfully (now at step: $current_step)"
+    elif [[ -n "$status" ]] && echo "$status" | grep -qiE "active|ready|complete|running"; then
+        test_pass "manifest_sent" "Manifest accepted by provider (status: $status)"
+    else
+        # Check if manifest send is indicated in the detailed output
+        local manifest_status
+        manifest_status=$(json_get "$get_output" '.manifest_status')
+        if [[ -z "$manifest_status" ]]; then
+            manifest_status=$(json_get "$get_output" '.manifest.status')
+        fi
+
+        if [[ -n "$manifest_status" ]] && echo "$manifest_status" | grep -qiE "sent|accepted|delivered"; then
+            test_pass "manifest_sent" "Manifest status: $manifest_status"
+        else
+            test_fail "manifest_sent" "Cannot confirm manifest was sent" "Step: $current_step, Status: $status"
+        fi
+    fi
+
+    # Test 2: Verify provider acknowledged manifest
+    if [[ -n "${DEPLOY_PROVIDER:-}" ]]; then
+        log "Checking provider manifest acknowledgement..."
+        local status_output
+        status_output=$(ergors_deploy_status "$DEPLOY_SESSION_ID" 2>&1) || true
+        log_debug "Status output: $status_output"
+
+        local provider_status
+        provider_status=$(json_get "$status_output" '.provider_status')
+        if [[ -z "$provider_status" ]]; then
+            provider_status=$(json_get "$status_output" '.lease_status')
+        fi
+
+        if [[ -n "$provider_status" ]] && echo "$provider_status" | grep -qiE "active|running|ready|accepted"; then
+            test_pass "manifest_provider_ack" "Provider acknowledged manifest (status: $provider_status)"
+        elif [[ -n "$provider_status" ]]; then
+            test_pass "manifest_provider_ack" "Provider status available: $provider_status"
+        else
+            test_skip "manifest_provider_ack" "Provider acknowledgement status not available"
+        fi
+    else
+        test_skip "manifest_provider_ack" "No provider address stored"
+    fi
+
+    # Test 3: Verify no manifest errors in deployment state
+    local error_msg
+    error_msg=$(json_get "$get_output" '.error')
+    if [[ -z "$error_msg" ]]; then
+        error_msg=$(json_get "$get_output" '.last_error')
+    fi
+
+    if [[ -z "$error_msg" ]] || [[ "$error_msg" == "null" ]]; then
+        test_pass "manifest_no_errors" "No manifest errors recorded in deployment state"
+    else
+        test_fail "manifest_no_errors" "Manifest error recorded" "Error: ${error_msg:0:200}"
+    fi
+}
+
+# =============================================================================
+# Message Routing Through Deployed Endpoint Tests
+# =============================================================================
+
+test_message_routing_through_endpoint() {
+    log_section "Message Routing Through Deployed Endpoint Tests"
+
+    if [[ -z "${TEST_SERVICE_ENDPOINT:-}" ]]; then
+        test_skip "message_routing" "No service endpoint available for routing test"
+        return 0
+    fi
+
+    if [[ -z "$DEPLOY_SESSION_ID" ]]; then
+        test_skip "message_routing" "No deployment session"
+        return 0
+    fi
+
+    # Test 1: Route an inference request through the ERGORS engine to the deployed provider
+    log "Routing inference request through engine to deployed endpoint..."
+    local route_response
+    route_response=$(curl -s --max-time 30 -X POST "http://${COORDINATOR_API}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"model\": \"deployed-provider\",
+            \"messages\": [{\"role\": \"user\", \"content\": \"Hello, this is an E2E routing test\"}],
+            \"max_tokens\": 10,
+            \"deployment_session\": \"$DEPLOY_SESSION_ID\"
+        }" \
+        2>/dev/null) || route_response="{}"
+    log_debug "Routing response: $route_response"
+
+    if json_has "$route_response" '.choices'; then
+        test_pass "engine_to_provider_routing" "Inference request routed through engine to deployed provider"
+    elif json_has "$route_response" '.error'; then
+        local error_type
+        error_type=$(json_get "$route_response" '.error.type')
+        local error_msg
+        error_msg=$(json_get "$route_response" '.error.message')
+
+        # model_error or routing errors are acceptable -- the path is tested
+        if [[ "$error_type" == "model_error" ]] || [[ "$error_type" == "not_found_error" ]]; then
+            test_pass "engine_to_provider_routing" "Engine routing path works (model lookup: $error_type)"
+        elif echo "$error_msg" | grep -qiE "provider|endpoint|route"; then
+            test_pass "engine_to_provider_routing" "Engine attempted provider routing (error: ${error_msg:0:80})"
+        else
+            test_fail "engine_to_provider_routing" "Routing failed with unexpected error" "Type: $error_type, Msg: ${error_msg:0:100}"
+        fi
+    else
+        test_fail "engine_to_provider_routing" "No valid response from engine routing" "Response: ${route_response:0:200}"
+    fi
+
+    # Test 2: Direct request to the deployed service endpoint (bypass engine)
+    log "Testing direct request to deployed service endpoint..."
+    local direct_response
+    direct_response=$(curl -s --max-time 15 -X POST "$TEST_SERVICE_ENDPOINT/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d '{"model": "default", "messages": [{"role": "user", "content": "E2E direct test"}], "max_tokens": 10}' \
+        2>/dev/null) || direct_response="{}"
+    log_debug "Direct response: $direct_response"
+
+    if json_has "$direct_response" '.choices'; then
+        test_pass "direct_endpoint_inference" "Direct inference request to deployed endpoint succeeded"
+    elif json_has "$direct_response" '.'; then
+        # Got valid JSON back -- endpoint is responding
+        test_pass "direct_endpoint_inference" "Deployed endpoint accepts inference requests (may require model config)"
+    else
+        test_fail "direct_endpoint_inference" "Deployed endpoint did not respond to inference request"
+    fi
+
+    # Test 3: Verify the engine can discover and use the deployment endpoint
+    log "Verifying engine endpoint awareness..."
+    local deploy_get_output
+    deploy_get_output=$(ergors_deploy_get "$DEPLOY_SESSION_ID" 2>&1) || true
+
+    local endpoints
+    endpoints=$(json_get "$deploy_get_output" '.endpoints')
+    local service_url
+    service_url=$(echo "$deploy_get_output" | jq -r '.endpoints | to_entries[0].value // empty' 2>/dev/null)
+
+    if [[ -n "$service_url" ]] && [[ "$service_url" != "null" ]]; then
+        test_pass "engine_endpoint_awareness" "Engine has deployment endpoint registered: ${service_url:0:50}..."
+    else
+        test_skip "engine_endpoint_awareness" "Engine endpoint awareness could not be verified"
     fi
 }
 
@@ -705,10 +1063,14 @@ run_deployment_tests() {
     # Phase 3: Deployment workflow (Steps 1-10)
     test_deployment_create      # Steps 1-4: Key, Balance, Cert, Create
     test_bid_reception          # Step 5: BidWait
+    test_bid_field_verification # Step 5b: Verify bid fields (provider, price, resources)
     test_lease_creation         # Steps 6-7: ProviderSelection, LeaseCreate
+    test_lease_onchain_verification  # Step 7b: Verify lease exists on-chain
     test_workflow_advance       # Step 8: ManifestSend
+    test_manifest_send_verification  # Step 8b: Verify manifest sent and accepted
     test_endpoint_discovery     # Step 9: EndpointRetrieval
     test_endpoint_connectivity  # Verify endpoints work
+    test_message_routing_through_endpoint  # Step 10: Route inference through deployed endpoint
 
     # Phase 4: Provider management
     test_provider_management

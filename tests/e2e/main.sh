@@ -12,7 +12,7 @@
 #   --skip-akash       Skip Akash/Kind setup (use existing)
 #   --skip-cleanup     Keep everything running after tests
 #   --verbose          Enable verbose output
-#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|all)
+#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|all)
 #   --akash-home PATH  Set Akash repo location
 #   --help             Show this help message
 #
@@ -52,6 +52,8 @@ source "${SCRIPT_DIR}/tests/security.sh"
 source "${SCRIPT_DIR}/tests/contracts.sh"
 # shellcheck source=tests/api.sh
 source "${SCRIPT_DIR}/tests/api.sh"
+# shellcheck source=tests/bootstrap.sh
+source "${SCRIPT_DIR}/tests/bootstrap.sh"
 
 # =============================================================================
 # Configuration
@@ -276,6 +278,10 @@ run_tests() {
             run_network_tests  # Ensure nodes are up
             run_api_tests
             ;;
+        bootstrap)
+            run_network_tests  # Ensure nodes are up
+            run_bootstrap_tests
+            ;;
         all)
             # Phase 1: Network tests
             run_network_tests
@@ -295,10 +301,13 @@ run_tests() {
             # Phase 6: Provider setup + deployment tests
             akash_setup_provider || log_warn "Provider setup had issues"
             run_deployment_tests
+
+            # Phase 7: Bootstrap tests
+            run_bootstrap_tests
             ;;
         *)
             log_error "Unknown test suite: $TEST_SUITE"
-            log_error "Valid options: network, grants, deployment, security, contracts, api, all"
+            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, all"
             exit 1
             ;;
     esac

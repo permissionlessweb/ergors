@@ -446,8 +446,8 @@ ergors_cli() {
             shift
             _ergors_node_api "coordinator" "$@"
             ;;
-        deploy|sdl)
-            # Deploy and SDL commands use CLI binary (connects to gRPC server)
+        deploy|sdl|bootstrap)
+            # Deploy, SDL, and Bootstrap commands use CLI binary (connects to gRPC server)
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
                 "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
                 echo '{"error":"'"$subcommand"' command failed"}'
@@ -480,7 +480,7 @@ ergors_cli_executor() {
             shift
             _ergors_node_api "executor" "$@"
             ;;
-        deploy|sdl)
+        deploy|sdl|bootstrap)
             # CLI commands that need gRPC
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
                 "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
@@ -943,6 +943,100 @@ ergors_cw_instantiate2() {
         -H "Content-Type: application/json" \
         -d "{\"code_id\": $code_id, \"sender\": \"$sender\", \"admin\": $admin_json, \"label\": \"$label\", \"msg\": $msg, \"salt\": \"$salt\", \"funds\": $funds}" \
         2>/dev/null || echo '{"error":"request failed"}'
+}
+
+# =============================================================================
+# Grant Configuration Commands (GranterService / GrantRequesterService)
+# =============================================================================
+
+# Configure granter acceptance mode (auto, manual, whitelist)
+# Usage: ergors_grant_configure_mode <mode>
+ergors_grant_configure_mode() {
+    local mode="$1"
+    ergors_cli deploy grant-config --acceptance-mode "$mode" 2>&1
+}
+
+# Add address to granter whitelist
+# Usage: ergors_grant_whitelist_add <address>
+ergors_grant_whitelist_add() {
+    local address="$1"
+    ergors_cli deploy grant-whitelist add "$address" 2>&1
+}
+
+# Remove address from granter whitelist
+# Usage: ergors_grant_whitelist_remove <address>
+ergors_grant_whitelist_remove() {
+    local address="$1"
+    ergors_cli deploy grant-whitelist remove "$address" 2>&1
+}
+
+# Check if address is on granter whitelist
+# Usage: ergors_grant_whitelist_check <address>
+ergors_grant_whitelist_check() {
+    local address="$1"
+    ergors_cli deploy grant-whitelist check "$address" 2>&1
+}
+
+# Set spending limit for a grantee
+# Usage: ergors_grant_set_spending_limit <grantee_address> <limit_uakt>
+ergors_grant_set_spending_limit() {
+    local grantee="$1"
+    local limit="$2"
+    ergors_cli deploy grant-spending-limit \
+        --grantee "$grantee" \
+        --limit "$limit" \
+        2>&1
+}
+
+# Query spending for a grantee
+# Usage: ergors_grant_query_spending <grantee_address>
+ergors_grant_query_spending() {
+    local grantee="$1"
+    ergors_cli deploy grant-spending \
+        --grantee "$grantee" \
+        2>&1
+}
+
+# =============================================================================
+# Bootstrap Commands
+# =============================================================================
+
+# Generate bootstrap configuration
+# Usage: ergors_bootstrap_config_generate [--node-type TYPE] [--target-name NAME] [--image-tag TAG]
+ergors_bootstrap_config_generate() {
+    ergors_cli bootstrap config-generate "$@" 2>&1
+}
+
+# Generate SDL from bootstrap configuration
+# Usage: ergors_bootstrap_sdl_generate [--node-type TYPE] [--target-name NAME] [--image-tag TAG] [--cpu N] [--memory SIZE] [--storage SIZE]
+ergors_bootstrap_sdl_generate() {
+    ergors_cli bootstrap sdl-generate "$@" 2>&1
+}
+
+# Initiate a bootstrap workflow
+# Usage: ergors_bootstrap_initiate [--node-type TYPE] [--target-name NAME] [--image-tag TAG]
+ergors_bootstrap_initiate() {
+    ergors_cli bootstrap initiate "$@" 2>&1
+}
+
+# Query bootstrap workflow status
+# Usage: ergors_bootstrap_status <workflow_id>
+ergors_bootstrap_status() {
+    local workflow_id="$1"
+    ergors_cli bootstrap status "$workflow_id" 2>&1
+}
+
+# List all bootstrap workflows
+# Usage: ergors_bootstrap_list
+ergors_bootstrap_list() {
+    ergors_cli bootstrap list 2>&1
+}
+
+# Cancel a bootstrap workflow
+# Usage: ergors_bootstrap_cancel <workflow_id>
+ergors_bootstrap_cancel() {
+    local workflow_id="$1"
+    ergors_cli bootstrap cancel "$workflow_id" 2>&1
 }
 
 # =============================================================================

@@ -133,6 +133,19 @@ test-verbose:
 test-jwt:
     @cd tests/scripts/jwt-verify && just test
 
+# Run E2E integration tests (all suites)
+e2e *args:
+    @echo "🧪 Running E2E integration tests..."
+    @bash tests/e2e/main.sh {{args}}
+
+# Run specific E2E test suite (network|grants|deployment|security|contracts|api|bootstrap|all)
+e2e-suite suite:
+    @bash tests/e2e/main.sh --test {{suite}}
+
+# Run E2E tests with verbose output
+e2e-verbose *args:
+    @bash tests/e2e/main.sh --verbose {{args}}
+
 # Quick check (faster than full build)
 check:
     cargo chec
@@ -297,3 +310,4 @@ chec := "check"
 i := "install"
 cw := "contracts-optimize"
 ct := "contracts-test"
+e := "e2e"
