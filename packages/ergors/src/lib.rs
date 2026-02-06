@@ -22,6 +22,7 @@ pub mod open_responses;
 pub mod orchestrator;
 pub mod proxy;
 pub mod rag;
+pub mod sentinel;
 pub mod server;
 pub mod session;
 pub mod storage;

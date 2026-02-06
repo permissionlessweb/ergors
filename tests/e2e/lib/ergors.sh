@@ -148,6 +148,26 @@ ERGORS_CUSTODY_PASSWORD=${TEST_CUSTODY_PASSWORD}
 EOF
 }
 
+_ergors_configure_local_chain() {
+    local home_dir="$1"
+    local rpc_endpoint="${2:-http://127.0.0.1:26657}"
+    local grpc_endpoint="${3:-http://127.0.0.1:9090}"
+
+    log_verbose "Configuring local chain: rpc=$rpc_endpoint, grpc=$grpc_endpoint"
+
+    ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$home_dir" config set-chain local \
+        --name "Akash Local" \
+        --prefix "akash" \
+        --denom "uakt" \
+        --rpc "$rpc_endpoint" \
+        --grpc "$grpc_endpoint" \
+        --gas-prices "0.025uakt" \
+        --gas-adjustment "1.5" \
+        --keyring-backend "test" \
+        --default-key "default" 2>&1 || return 1
+}
+
 _ergors_init_node() {
     local home_dir="$1"
     local node_id="$2"
@@ -269,6 +289,14 @@ ergors_start_network() {
     if ! wait_for_port "127.0.0.1" "$exec_grpc" 30; then
         log_error "Executor failed to start"
         return 1
+    fi
+
+    # Configure local Akash chain in cnidarium
+    log "Configuring local Akash chain..."
+    if ! _ergors_configure_local_chain "$coord_home" "http://127.0.0.1:26657" "http://127.0.0.1:9090"; then
+        log_warn "Failed to configure local chain (will use defaults)"
+    else
+        log_success "Local chain configured"
     fi
 
     # Export for child scripts
@@ -438,7 +466,7 @@ ergors_cli() {
     local subcommand="${1:-}"
 
     # Build gRPC address for CLI commands
-    local grpc_addr="http://${COORDINATOR_GRPC:-localhost:50051}"
+    local grpc_addr="http://${COORDINATOR_GRPC}"
 
     case "$subcommand" in
         node)
@@ -449,20 +477,17 @@ ergors_cli() {
         deploy|sdl|bootstrap)
             # Deploy, SDL, and Bootstrap commands use CLI binary (connects to gRPC server)
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
-                echo '{"error":"'"$subcommand"' command failed"}'
+                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1
             ;;
         keys)
             # Keys commands use the ergors binary (local, no gRPC needed)
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$coord_home" keys "$@" 2>&1 || \
-                echo '{"error":"keys command failed"}'
+                "$ERGORS_BIN" --home "$coord_home" keys "$@" 2>&1
             ;;
         *)
             # Default: try as ergors binary subcommand with gRPC
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
-                echo '{"error":"command failed"}'
+                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1
             ;;
     esac
 }
@@ -473,7 +498,7 @@ ergors_cli_executor() {
     local subcommand="${1:-}"
 
     # Build gRPC address for CLI commands
-    local grpc_addr="http://${EXECUTOR_GRPC:-localhost:50111}"
+    local grpc_addr="http://${EXECUTOR_GRPC}"
 
     case "$subcommand" in
         node)
@@ -483,19 +508,16 @@ ergors_cli_executor() {
         deploy|sdl|bootstrap)
             # CLI commands that need gRPC
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
-                echo '{"error":"command failed"}'
+                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1
             ;;
         keys)
             # Keys commands are local (no gRPC needed)
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$exec_home" keys "$@" 2>&1 || \
-                echo '{"error":"keys command failed"}'
+                "$ERGORS_BIN" --home "$exec_home" keys "$@" 2>&1
             ;;
         *)
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
-                echo '{"error":"command failed"}'
+                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1
             ;;
     esac
 }
@@ -528,8 +550,8 @@ _ergors_node_api() {
             fi
             ;;
         address)
-            # Parse --prefix argument
-            local prefix="akash"
+            # Parse --prefix argument (default to ergors, not akash)
+            local prefix="ergors"
             while [[ $# -gt 0 ]]; do
                 case "$1" in
                     --prefix) prefix="$2"; shift 2 ;;
@@ -1043,16 +1065,40 @@ ergors_bootstrap_cancel() {
 # SDL Template Commands (built on generic CosmWasm query)
 # =============================================================================
 
-# List SDL template contracts (queries storage, not contract)
+# List SDL template contracts (queries storage via gRPC)
 ergors_sdl_list() {
-    # This queries the node's storage for registered SDL contracts
+    # This queries the engine via gRPC for registered SDL contracts
     # Returns contracts with addresses, labels, and code_ids
     local coord_home="${TEST_DIR}/coordinator"
+    local grpc_addr="http://${COORDINATOR_GRPC}"
 
-    # Use the ergors binary to list contracts from storage
+    # Use the ergors binary to list contracts from engine (requires gRPC connection)
     ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        "$ERGORS_BIN" --home "$coord_home" sdl list 2>&1 || echo '{"error":"sdl list failed"}'
+        "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" sdl list 2>&1
 }
+
+# =============================================================================
+# Chain Config Functions
+# =============================================================================
+
+ergors_config_get_chain() {
+    local chain_id="$1"
+    local coord_home="${TEST_DIR}/coordinator"
+
+    ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" config get-chain "$chain_id" 2>&1
+}
+
+ergors_config_list_chains() {
+    local coord_home="${TEST_DIR}/coordinator"
+
+    ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" config list-chains 2>&1
+}
+
+# =============================================================================
+# SDL Query Functions
+# =============================================================================
 
 # Get SDL template from contract
 ergors_sdl_get_template() {

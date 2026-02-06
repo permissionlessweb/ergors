@@ -41,6 +41,7 @@
 **Issues**: [#6 Key Management & Auth](https://github.com/permissionlessweb/ergors/issues/6)
 
 - condense key sharing/rotation,Oauth, threshold signatures into custody and keys libraries
+- avoid ERGORS_CUSTODY_PASSWORD usage always, remove from codebase and fix any logic (sentienel) that requires usage of this value
 
 ## COMMUNICATION
 

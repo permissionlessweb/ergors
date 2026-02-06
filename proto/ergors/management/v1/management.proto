@@ -231,6 +231,16 @@ service ManagementService {
   rpc GetSdlDefaults(GetSdlDefaultsRequest) returns (GetSdlDefaultsResponse);
   // Render SDL template with variables
   rpc RenderSdlTemplate(RenderSdlTemplateRequest) returns (RenderSdlTemplateResponse);
+
+  // Cosmos Chain Configuration (Cnidarium-backed)
+  // Set or update chain configuration
+  rpc SetChainConfig(SetChainConfigRequest) returns (SetChainConfigResponse);
+  // Get chain configuration by chain ID
+  rpc GetChainConfig(GetChainConfigRequest) returns (GetChainConfigResponse);
+  // List all registered chain configurations
+  rpc ListChainConfigs(ListChainConfigsRequest) returns (ListChainConfigsResponse);
+  // Delete a chain configuration
+  rpc DeleteChainConfig(DeleteChainConfigRequest) returns (DeleteChainConfigResponse);
 }
 
 // Common empty request
@@ -1484,4 +1494,41 @@ message GetDiscordConfigResponse {
   string command_prefix = 4;
   bool respond_to_mentions = 5;
   bool respond_to_dms = 6;
+}
+
+// ============================================
+// Cosmos Chain Configuration Messages
+// ============================================
+
+message SetChainConfigRequest {
+  ergors.orch.v1.CosmosChainConfig config = 1;
+}
+
+message SetChainConfigResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetChainConfigRequest {
+  string chain_id = 1;
+}
+
+message GetChainConfigResponse {
+  ergors.orch.v1.CosmosChainConfig config = 1;
+  bool found = 2;
+}
+
+message ListChainConfigsRequest {}
+
+message ListChainConfigsResponse {
+  repeated ergors.orch.v1.CosmosChainConfig chains = 1;
+}
+
+message DeleteChainConfigRequest {
+  string chain_id = 1;
+}
+
+message DeleteChainConfigResponse {
+  bool success = 1;
+  string message = 2;
 }

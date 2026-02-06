@@ -23,6 +23,7 @@ use ergors::{
     grpc::{management::{start_grpc_server, ManagementServiceImpl}, RlmDocService},
     init::InitCmd,
     keys::KeysCmd,
+    sentinel::SentinelServer,
     server::Server as CwHoServer,
 };
 use ho_std::{
@@ -286,6 +287,34 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
         .map_err(|e| ho_std::llm::HoError::Cfg(format!("Failed to acquire PID lock: {}", e)))?;
 
     info!("Starting ERGORS engine...");
+
+    // Sentinel mode: run lightweight init server when ERGORS_ADMIN_PUBKEY is
+    // set and no identity file exists yet. The sentinel collects secrets via
+    // Ed25519-signed HTTP requests, then falls through to normal startup.
+    let admin_pubkey = std::env::var("ERGORS_ADMIN_PUBKEY").ok();
+    let identity_path = cli.home.join("node_identity.enc");
+
+    if let Some(ref pubkey) = admin_pubkey {
+        if !identity_path.exists() {
+            info!("Sentinel mode: ERGORS_ADMIN_PUBKEY set, no identity — starting sentinel");
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| ho_std::llm::HoError::Cfg(format!("tokio runtime: {}", e)))?;
+            let sentinel_pw = rt
+                .block_on(async {
+                    SentinelServer::new(pubkey, cli.home.clone())
+                        .run()
+                        .await
+                })
+                .map_err(|e| ho_std::llm::HoError::Cfg(format!("sentinel failed: {}", e)))?;
+            // Sentinel done — config.toml, node_identity.enc, api-keys.enc now exist.
+            // Set env var here while still single-threaded (before commonware Runner spawns threads).
+            if let Some(pw) = sentinel_pw {
+                std::env::set_var("ERGORS_CUSTODY_PASSWORD", &pw);
+            }
+        }
+    }
 
     // commonware runtime of the server with the config defined.
     let home = cli.home.clone();

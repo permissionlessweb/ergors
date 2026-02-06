@@ -81,6 +81,8 @@ Start an ERGORS network for manual testing:
 
 ### DEPLOYMENT
 
+- trusted/limited runtime: ensure functionliaty for our minimized trusted runtime so that we can first allow an admin to configure the sensitive information before actually starting the engine.
+
 #### PHASE 1: simple deployment to provider via akash workflow automation
 
 - confirm actual bidding and accepting bid + manifest digest + provider response workflow is occuring (try default workflow first, check provider configurations for local enviroment to ensure provider will actually bid on msgs (wybot))
@@ -109,6 +111,6 @@ Start an ERGORS network for manual testing:
 
 ### STORAGE
 
-- test network state compression: fill up network state with many different various configurations and files. benchmark and 
+- test network state compression: fill up network state with many different various configurations and files. benchmark and
 
 ### Benchmarking

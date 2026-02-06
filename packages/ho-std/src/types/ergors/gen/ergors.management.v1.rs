@@ -3410,6 +3410,137 @@ impl ::prost::Name for GetDiscordConfigResponse {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetChainConfigRequest {
+    #[prost(message, optional, tag = "1")]
+    pub config: ::core::option::Option<super::super::orch::v1::CosmosChainConfig>,
+}
+impl ::prost::Name for SetChainConfigRequest {
+    const NAME: &'static str = "SetChainConfigRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SetChainConfigRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SetChainConfigRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetChainConfigResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SetChainConfigResponse {
+    const NAME: &'static str = "SetChainConfigResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SetChainConfigResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SetChainConfigResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetChainConfigRequest {
+    #[prost(string, tag = "1")]
+    pub chain_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GetChainConfigRequest {
+    const NAME: &'static str = "GetChainConfigRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetChainConfigRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetChainConfigRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetChainConfigResponse {
+    #[prost(message, optional, tag = "1")]
+    pub config: ::core::option::Option<super::super::orch::v1::CosmosChainConfig>,
+    #[prost(bool, tag = "2")]
+    pub found: bool,
+}
+impl ::prost::Name for GetChainConfigResponse {
+    const NAME: &'static str = "GetChainConfigResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetChainConfigResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetChainConfigResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListChainConfigsRequest {}
+impl ::prost::Name for ListChainConfigsRequest {
+    const NAME: &'static str = "ListChainConfigsRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListChainConfigsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListChainConfigsRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListChainConfigsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub chains: ::prost::alloc::vec::Vec<super::super::orch::v1::CosmosChainConfig>,
+}
+impl ::prost::Name for ListChainConfigsResponse {
+    const NAME: &'static str = "ListChainConfigsResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListChainConfigsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListChainConfigsResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteChainConfigRequest {
+    #[prost(string, tag = "1")]
+    pub chain_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeleteChainConfigRequest {
+    const NAME: &'static str = "DeleteChainConfigRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.DeleteChainConfigRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.DeleteChainConfigRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteChainConfigResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeleteChainConfigResponse {
+    const NAME: &'static str = "DeleteChainConfigResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.DeleteChainConfigResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.DeleteChainConfigResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum EngineState {
@@ -6854,6 +6985,127 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Cosmos Chain Configuration (Cnidarium-backed)
+        /// Set or update chain configuration
+        pub async fn set_chain_config(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetChainConfigResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/SetChainConfig",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "SetChainConfig",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get chain configuration by chain ID
+        pub async fn get_chain_config(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetChainConfigResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/GetChainConfig",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "GetChainConfig",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List all registered chain configurations
+        pub async fn list_chain_configs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListChainConfigsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListChainConfigsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListChainConfigs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListChainConfigs",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Delete a chain configuration
+        pub async fn delete_chain_config(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteChainConfigResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/DeleteChainConfig",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "DeleteChainConfig",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -7557,6 +7809,39 @@ pub mod management_service_server {
             request: tonic::Request<super::RenderSdlTemplateRequest>,
         ) -> std::result::Result<
             tonic::Response<super::RenderSdlTemplateResponse>,
+            tonic::Status,
+        >;
+        /// Cosmos Chain Configuration (Cnidarium-backed)
+        /// Set or update chain configuration
+        async fn set_chain_config(
+            &self,
+            request: tonic::Request<super::SetChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetChainConfigResponse>,
+            tonic::Status,
+        >;
+        /// Get chain configuration by chain ID
+        async fn get_chain_config(
+            &self,
+            request: tonic::Request<super::GetChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetChainConfigResponse>,
+            tonic::Status,
+        >;
+        /// List all registered chain configurations
+        async fn list_chain_configs(
+            &self,
+            request: tonic::Request<super::ListChainConfigsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListChainConfigsResponse>,
+            tonic::Status,
+        >;
+        /// Delete a chain configuration
+        async fn delete_chain_config(
+            &self,
+            request: tonic::Request<super::DeleteChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteChainConfigResponse>,
             tonic::Status,
         >;
     }
@@ -12344,6 +12629,196 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RenderSdlTemplateSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/SetChainConfig" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetChainConfigSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::SetChainConfigRequest>
+                    for SetChainConfigSvc<T> {
+                        type Response = super::SetChainConfigResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetChainConfigRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::set_chain_config(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetChainConfigSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/GetChainConfig" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetChainConfigSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::GetChainConfigRequest>
+                    for GetChainConfigSvc<T> {
+                        type Response = super::GetChainConfigResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetChainConfigRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::get_chain_config(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetChainConfigSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListChainConfigs" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListChainConfigsSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ListChainConfigsRequest>
+                    for ListChainConfigsSvc<T> {
+                        type Response = super::ListChainConfigsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListChainConfigsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_chain_configs(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListChainConfigsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/DeleteChainConfig" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteChainConfigSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::DeleteChainConfigRequest>
+                    for DeleteChainConfigSvc<T> {
+                        type Response = super::DeleteChainConfigResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteChainConfigRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::delete_chain_config(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteChainConfigSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

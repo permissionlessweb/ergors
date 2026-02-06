@@ -255,7 +255,7 @@ impl NodeCmd {
                 // Derive addresses with different prefixes if requested
                 let addresses = if *all_prefixes {
                     // Common Cosmos ecosystem prefixes
-                    let prefixes = vec!["ergors", "akash", "cosmos", "osmo", "juno", "stars"];
+                    let prefixes = ["ergors", "akash", "cosmos", "osmo", "juno", "stars"];
                     prefixes.iter()
                         .filter_map(|p| {
                             identity.public_key.as_ref().and_then(|pk| {

@@ -13,7 +13,7 @@
 #   --skip-cleanup     Keep everything running after tests
 #   --verbose          Enable verbose output
 #   --skip-ethereum   Skip Ethereum/Anvil setup
-#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|all)
+#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|sentinel|all)
 #   --akash-home PATH  Set Akash repo location
 #   --help             Show this help message
 #
@@ -63,6 +63,8 @@ source "${SCRIPT_DIR}/tests/ethereum.sh"
 source "${SCRIPT_DIR}/tests/inference.sh"
 # shellcheck source=tests/sdl_storage.sh
 source "${SCRIPT_DIR}/tests/sdl_storage.sh"
+# shellcheck source=tests/sentinel.sh
+source "${SCRIPT_DIR}/tests/sentinel.sh"
 
 # =============================================================================
 # Configuration
@@ -328,6 +330,9 @@ run_tests() {
             run_network_tests  # Ensure nodes are up
             run_sdl_storage_tests
             ;;
+        sentinel)
+            run_sentinel_tests
+            ;;
         all)
             # Phase 1: Network tests
             run_network_tests
@@ -361,10 +366,13 @@ run_tests() {
 
             # Phase 10: SDL storage dual-path tests
             run_sdl_storage_tests
+
+            # Phase 11: Sentinel mode tests (standalone, no network needed)
+            run_sentinel_tests
             ;;
         *)
             log_error "Unknown test suite: $TEST_SUITE"
-            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, all"
+            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, sentinel, all"
             exit 1
             ;;
     esac

@@ -100,6 +100,9 @@ const AUTHENTICATOR_META_PREFIX: &str = "authenticators/metadata";
 // SDL Template Contract Storage Prefix
 const SDL_TEMPLATE_CONTRACT_PREFIX: &str = "sdl_template_contracts";
 
+// Cosmos Chain Configuration Storage Prefix
+const COSMOS_CHAIN_CONFIG_PREFIX: &str = "cosmos_chain_configs";
+
 // RAG vector database prefixes
 const RAG_CONFIG_PREFIX: &str = "rag_config/";
 
@@ -2326,6 +2329,106 @@ impl ErgorsStorage {
         }
 
         Ok(results)
+    }
+
+    // ============================================
+    // Cosmos Chain Configuration Storage Methods
+    // ============================================
+
+    /// Store or update a Cosmos chain configuration in cnidarium
+    pub async fn put_chain_config(
+        &self,
+        config: &ho_std::types::ergors::orch::v1::CosmosChainConfig,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        // Serialize config to JSON
+        let config_bytes = serde_json::to_vec(config)?;
+
+        // Store with chain_id as key
+        let key = storage_key(COSMOS_CHAIN_CONFIG_PREFIX, &config.chain_id);
+        delta.put_raw(key, config_bytes);
+
+        self.commit_delta(delta).await?;
+        info!(
+            "Stored chain config for: {} ({})",
+            config.chain_name, config.chain_id
+        );
+        Ok(())
+    }
+
+    /// Get a Cosmos chain configuration by chain ID
+    pub async fn get_chain_config(
+        &self,
+        chain_id: &str,
+    ) -> HoResult<Option<ho_std::types::ergors::orch::v1::CosmosChainConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(COSMOS_CHAIN_CONFIG_PREFIX, chain_id);
+
+        match snapshot.get_raw(&key).await {
+            Ok(Some(data)) => {
+                let config: ho_std::types::ergors::orch::v1::CosmosChainConfig =
+                    serde_json::from_slice(&data)?;
+                Ok(Some(config))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Error getting chain config for {}: {}", chain_id, e);
+                Err(e.into())
+            }
+        }
+    }
+
+    /// List all registered Cosmos chain configurations
+    pub async fn list_chain_configs(
+        &self,
+    ) -> HoResult<Vec<ho_std::types::ergors::orch::v1::CosmosChainConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = COSMOS_CHAIN_CONFIG_PREFIX;
+        let mut stream = snapshot.prefix_raw(prefix);
+        let mut results = Vec::new();
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok((_key, value)) => {
+                    match serde_json::from_slice::<ho_std::types::ergors::orch::v1::CosmosChainConfig>(&value) {
+                        Ok(config) => results.push(config),
+                        Err(e) => {
+                            warn!("Error deserializing chain config: {}", e);
+                            continue;
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading chain config stream: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Delete a Cosmos chain configuration
+    pub async fn delete_chain_config(&self, chain_id: &str) -> HoResult<()> {
+        let snapshot = self.cs.latest_snapshot();
+        let key = storage_key(COSMOS_CHAIN_CONFIG_PREFIX, chain_id);
+
+        // Check if config exists before deleting
+        match snapshot.get_raw(&key).await {
+            Ok(None) => {
+                return Err(anyhow::anyhow!("Chain config '{}' not found", chain_id).into());
+            }
+            Err(e) => return Err(e.into()),
+            Ok(Some(_)) => {} // Exists, proceed with deletion
+        }
+
+        let mut delta = cnidarium::StateDelta::new(snapshot);
+        delta.delete(key);
+
+        self.commit_delta(delta).await?;
+        info!("Deleted chain config for: {}", chain_id);
+        Ok(())
     }
 
     // ===== RAG Vector Database Storage Methods =====

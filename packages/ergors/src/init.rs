@@ -148,12 +148,17 @@ impl InitCmd {
                 let custody = PasswordEncryptedCustody::new(&identity_path);
 
                 let password = if custody.exists() {
-                    println!("✅ Encrypted node identity already exists at: {}", identity_path);
+                    println!(
+                        "✅ Encrypted node identity already exists at: {}",
+                        identity_path
+                    );
                     // Need to get password for API key encryption
                     prompt_for_password("Enter custody password for API key encryption: ")?
                 } else {
                     println!("\n🔐 Creating encrypted node identity...");
-                    println!("This will be used for network authentication and API key encryption.");
+                    println!(
+                        "This will be used for network authentication and API key encryption."
+                    );
                     println!();
 
                     let password = self.create_custody_password()?;
@@ -166,8 +171,11 @@ impl InitCmd {
                         .node_type(config.identity().node_type.clone())
                         .build();
 
-                    custody.create_identity(&password, Some(metadata))
-                        .map_err(|e| anyhow::anyhow!("Failed to create encrypted identity: {}", e))?;
+                    custody
+                        .create_identity(&password, Some(metadata))
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to create encrypted identity: {}", e)
+                        })?;
 
                     println!("✅ Created encrypted node identity at: {}", identity_path);
                     password
@@ -177,8 +185,9 @@ impl InitCmd {
                 // This is required because generate_ssh_keys_from_custody needs access to the private key
                 let rt = tokio::runtime::Runtime::new()?;
                 if !custody.is_unlocked() {
-                    rt.block_on(custody.unlock(&password))
-                        .map_err(|e| anyhow::anyhow!("Failed to unlock custody for SSH key generation: {}", e))?;
+                    rt.block_on(custody.unlock(&password)).map_err(|e| {
+                        anyhow::anyhow!("Failed to unlock custody for SSH key generation: {}", e)
+                    })?;
                 }
 
                 // Generate SSH keys from the encrypted custody
@@ -235,8 +244,7 @@ impl InitCmd {
 
                 // Require custody password to verify ownership
                 let custody = PasswordEncryptedCustody::new(&identity_path);
-                let password =
-                    prompt_for_password("Enter custody password to confirm: ")?;
+                let password = prompt_for_password("Enter custody password to confirm: ")?;
 
                 // Verify password works by attempting unlock
                 let rt = tokio::runtime::Runtime::new()?;
@@ -368,25 +376,31 @@ impl InitCmd {
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async {
             if !custody.is_unlocked() {
-                let password = prompt_for_password("Enter custody password for SSH key generation: ")?;
-                custody.unlock(&password).await.map_err(|e| {
-                    anyhow::anyhow!("Failed to unlock custody: {}", e)
-                })?;
+                let password =
+                    prompt_for_password("Enter custody password for SSH key generation: ")?;
+                custody
+                    .unlock(&password)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to unlock custody: {}", e))?;
             }
 
-            custody.export_ssh_keys(ssh_dir.as_std_path()).await.map_err(|e| {
-                anyhow::anyhow!("Failed to export SSH keys: {}", e)
-            })?;
+            custody
+                .export_ssh_keys(ssh_dir.as_std_path())
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to export SSH keys: {}", e))?;
 
             // Get public key for display
-            let pubkey = custody.public_key().map_err(|e| {
-                anyhow::anyhow!("Failed to get public key: {}", e)
-            })?;
+            let pubkey = custody
+                .public_key()
+                .map_err(|e| anyhow::anyhow!("Failed to get public key: {}", e))?;
 
             println!("\n🔑 SSH keys generated:");
             println!("  Private: {}/id_ed25519", ssh_dir);
             println!("  Public:  {}/id_ed25519.pub", ssh_dir);
-            println!("  Public key (hex): {}...", hex::encode(&pubkey.0.to_vec()[..8]));
+            println!(
+                "  Public key (hex): {}...",
+                hex::encode(&pubkey.0.to_vec()[..8])
+            );
             println!();
             println!("Add the public key to your git remotes for authentication.");
 
@@ -552,7 +566,7 @@ impl InitCmd {
         let providers = [
             ("anthropic", "Anthropic (Claude)", "ANTHROPIC_API_KEY", true),
             ("openai", "OpenAI (GPT)", "OPENAI_API_KEY", true),
-            ("ollama", "Ollama (Local)", "", false),  // No API key needed
+            ("ollama", "Ollama (Local)", "", false), // No API key needed
             ("grok", "xAI (Grok)", "GROK_API_KEY", true),
             ("akashml", "Akash ML", "AKASHML_API_KEY", true),
         ];
@@ -663,9 +677,7 @@ impl InitCmd {
         config: &mut ErgorsConfig,
         home_dir: &camino::Utf8Path,
     ) -> Result<()> {
-        use ho_std::types::ergors::orch::v1::{
-            ContractConfig, ContractDeployment, CosmwasmConfig,
-        };
+        use ho_std::types::ergors::orch::v1::{ContractConfig, ContractDeployment, CosmwasmConfig};
 
         // Find cw-sdl.wasm artifact
         // Try multiple locations: current directory contracts/artifacts, home dir, relative paths
@@ -705,10 +717,11 @@ impl InitCmd {
                 "variable_defaults": {},
                 "label": "ergors-sdl-template",
                 "admin": ""
-            }"#.to_string(),
+            }"#
+            .to_string(),
             label: "ergors-sdl-template".to_string(),
             admin: "".to_string(), // Will use node_id
-            required: false, // Not critical for node startup
+            required: false,       // Not critical for node startup
             config: Some(ContractConfig {
                 skip_if_exists: true,
                 migration: None, // No migration on first deploy

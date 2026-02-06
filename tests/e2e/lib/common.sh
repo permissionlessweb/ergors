@@ -428,6 +428,7 @@ cleanup_all_processes() {
         # ERGORS ports (base 50100)
         50100 50101 50102  # Coordinator
         50110 50111 50112  # Executor
+        50200              # Sentinel
         # Akash ports
         26657 26656 9090 1317  # Node
         8443 8444              # Provider

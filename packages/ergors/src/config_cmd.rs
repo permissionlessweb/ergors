@@ -9,8 +9,15 @@ use camino::Utf8Path;
 use ho_std::constants::CONFIG_FILE_NAME;
 use ho_std::traits::HoConfigTrait;
 use ho_std::types::ergors::{
+    management::v1::{
+        management_service_client::ManagementServiceClient, DeleteChainConfigRequest,
+        GetChainConfigRequest, ListChainConfigsRequest, SetChainConfigRequest,
+    },
     network::v1::{ChannelConfig, NetworkConfig, NodeIdentity},
-    orch::v1::{ContractConfig, ContractDeployment, CosmwasmConfig, LlmRouterConfig},
+    orch::v1::{
+        AkashDeployConfig, ContractConfig, ContractDeployment, CosmosChainConfig, CosmwasmConfig,
+        LlmRouterConfig,
+    },
     storage::v1::StorageConfig,
 };
 
@@ -68,6 +75,71 @@ pub enum ConfigSubCmd {
         #[clap(long)]
         sdl_wasm_path: Option<String>,
     },
+
+    /// Configure a Cosmos SDK chain (stored in cnidarium)
+    #[clap(display_order = 500)]
+    SetChain {
+        /// Chain ID (e.g., "akashnet-2", "local", "osmosis-1")
+        chain_id: String,
+
+        /// Human-readable chain name
+        #[clap(long)]
+        name: String,
+
+        /// Bech32 address prefix (e.g., "akash", "osmo", "cosmos")
+        #[clap(long)]
+        prefix: String,
+
+        /// Base denom (e.g., "uakt", "uosmo", "uatom")
+        #[clap(long)]
+        denom: String,
+
+        /// RPC endpoints (comma-separated)
+        #[clap(long)]
+        rpc: String,
+
+        /// gRPC endpoints (comma-separated)
+        #[clap(long)]
+        grpc: String,
+
+        /// REST/LCD endpoints (comma-separated, optional)
+        #[clap(long)]
+        rest: Option<String>,
+
+        /// Gas prices (e.g., "0.025uakt")
+        #[clap(long, default_value = "0.025")]
+        gas_prices: String,
+
+        /// Gas adjustment multiplier
+        #[clap(long, default_value = "1.5")]
+        gas_adjustment: f64,
+
+        /// Keyring backend (os, file, test)
+        #[clap(long, default_value = "test")]
+        keyring_backend: String,
+
+        /// Default key name
+        #[clap(long, default_value = "default")]
+        default_key: String,
+    },
+
+    /// Get a Cosmos chain configuration
+    #[clap(display_order = 600)]
+    GetChain {
+        /// Chain ID to retrieve
+        chain_id: String,
+    },
+
+    /// List all configured Cosmos chains
+    #[clap(display_order = 700)]
+    ListChains {},
+
+    /// Delete a Cosmos chain configuration
+    #[clap(display_order = 800)]
+    DeleteChain {
+        /// Chain ID to delete
+        chain_id: String,
+    },
 }
 
 impl ConfigCmd {
@@ -90,6 +162,43 @@ impl ConfigCmd {
                 *with_sdl_contract,
                 sdl_wasm_path.as_deref(),
             ),
+            ConfigSubCmd::SetChain {
+                chain_id,
+                name,
+                prefix,
+                denom,
+                rpc,
+                grpc,
+                rest,
+                gas_prices,
+                gas_adjustment,
+                keyring_backend,
+                default_key,
+            } => {
+                tokio::runtime::Runtime::new()?.block_on(self.set_chain(
+                    home_dir,
+                    chain_id,
+                    name,
+                    prefix,
+                    denom,
+                    rpc,
+                    grpc,
+                    rest.as_deref(),
+                    gas_prices,
+                    *gas_adjustment,
+                    keyring_backend,
+                    default_key,
+                ))
+            }
+            ConfigSubCmd::GetChain { chain_id } => {
+                tokio::runtime::Runtime::new()?.block_on(self.get_chain(home_dir, chain_id))
+            }
+            ConfigSubCmd::ListChains {} => {
+                tokio::runtime::Runtime::new()?.block_on(self.list_chains(home_dir))
+            }
+            ConfigSubCmd::DeleteChain { chain_id } => {
+                tokio::runtime::Runtime::new()?.block_on(self.delete_chain(home_dir, chain_id))
+            }
         }
     }
 
@@ -366,6 +475,56 @@ impl ConfigCmd {
                 self.ensure_cosmwasm(config)?.memory_limit = value.parse()?;
             }
 
+            // === akash fields ===
+            ["akash", "chain_id"] => {
+                self.ensure_akash(config)?.chain_id = value.to_string();
+            }
+            ["akash", "gas_prices"] => {
+                self.ensure_akash(config)?.gas_prices = value.to_string();
+            }
+            ["akash", "gas_adjustment"] => {
+                self.ensure_akash(config)?.gas_adjustment = value.parse()?;
+            }
+            ["akash", "keyring_backend"] => {
+                self.ensure_akash(config)?.keyring_backend = value.to_string();
+            }
+            ["akash", "default_key_name"] => {
+                self.ensure_akash(config)?.default_key_name = value.to_string();
+            }
+            ["akash", "rpc_endpoints"] => {
+                // Parse comma-separated endpoints
+                self.ensure_akash(config)?.rpc_endpoints = value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            ["akash", "grpc_endpoints"] => {
+                // Parse comma-separated endpoints
+                self.ensure_akash(config)?.grpc_endpoints = value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            ["akash", "rest_endpoints"] => {
+                // Parse comma-separated endpoints
+                self.ensure_akash(config)?.rest_endpoints = value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            ["akash", "max_retries_per_endpoint"] => {
+                self.ensure_akash(config)?.max_retries_per_endpoint = value.parse()?;
+            }
+            ["akash", "max_total_retries"] => {
+                self.ensure_akash(config)?.max_total_retries = value.parse()?;
+            }
+            ["akash", "connection_timeout_seconds"] => {
+                self.ensure_akash(config)?.connection_timeout_seconds = value.parse()?;
+            }
+
             _ => {
                 return Err(anyhow!(
                     "Unknown config key: '{}'. Run 'ergors config list' to see available keys.",
@@ -434,6 +593,18 @@ impl ConfigCmd {
             .cosmwasm
             .as_mut()
             .ok_or_else(|| anyhow!("cosmwasm config not found"))
+    }
+
+    /// Ensure akash config exists
+    fn ensure_akash<'a>(&self, config: &'a mut ErgorsConfig) -> Result<&'a mut AkashDeployConfig> {
+        if config.0.akash.is_none() {
+            config.0.akash = Some(ErgorsConfig::default_akash_config());
+        }
+        config
+            .0
+            .akash
+            .as_mut()
+            .ok_or_else(|| anyhow!("akash config not found"))
     }
 
     /// Get a configuration value
@@ -521,6 +692,56 @@ impl ConfigCmd {
                 .map(|c| c.enabled.to_string())
                 .unwrap_or_default()),
 
+            // akash
+            ["akash", "chain_id"] => Ok(config
+                .0
+                .akash
+                .as_ref()
+                .map(|a| a.chain_id.clone())
+                .unwrap_or_default()),
+            ["akash", "gas_prices"] => Ok(config
+                .0
+                .akash
+                .as_ref()
+                .map(|a| a.gas_prices.clone())
+                .unwrap_or_default()),
+            ["akash", "gas_adjustment"] => Ok(config
+                .0
+                .akash
+                .as_ref()
+                .map(|a| a.gas_adjustment.to_string())
+                .unwrap_or_default()),
+            ["akash", "keyring_backend"] => Ok(config
+                .0
+                .akash
+                .as_ref()
+                .map(|a| a.keyring_backend.clone())
+                .unwrap_or_default()),
+            ["akash", "default_key_name"] => Ok(config
+                .0
+                .akash
+                .as_ref()
+                .map(|a| a.default_key_name.clone())
+                .unwrap_or_default()),
+            ["akash", "rpc_endpoints"] => Ok(config
+                .0
+                .akash
+                .as_ref()
+                .map(|a| a.rpc_endpoints.join(","))
+                .unwrap_or_default()),
+            ["akash", "grpc_endpoints"] => Ok(config
+                .0
+                .akash
+                .as_ref()
+                .map(|a| a.grpc_endpoints.join(","))
+                .unwrap_or_default()),
+            ["akash", "rest_endpoints"] => Ok(config
+                .0
+                .akash
+                .as_ref()
+                .map(|a| a.rest_endpoints.join(","))
+                .unwrap_or_default()),
+
             _ => Err(anyhow!("Unknown config key: '{}'", path.join("."))),
         }
     }
@@ -567,10 +788,211 @@ impl ConfigCmd {
         println!("  cosmwasm.cache_dir           (string)  - WASM cache directory");
         println!("  cosmwasm.memory_limit        (u64)     - Memory limit in bytes");
         println!();
+        println!("[akash]");
+        println!("  akash.chain_id               (string)  - Chain ID (e.g., 'akashnet-2', 'local')");
+        println!("  akash.gas_prices             (string)  - Gas prices (e.g., '0.025uakt')");
+        println!("  akash.gas_adjustment         (f64)     - Gas adjustment multiplier");
+        println!("  akash.keyring_backend        (string)  - Keyring backend ('os', 'file', 'test')");
+        println!("  akash.default_key_name       (string)  - Default key name for deployments");
+        println!("  akash.rpc_endpoints          (csv)     - RPC endpoints (comma-separated)");
+        println!("  akash.grpc_endpoints         (csv)     - gRPC endpoints (comma-separated)");
+        println!("  akash.rest_endpoints         (csv)     - REST/LCD endpoints (comma-separated)");
+        println!();
         println!("Usage:");
         println!("  ergors config init --node-type executor --api-port 50051 --p2p-port 26656");
         println!("  ergors config set network.listen_port 9090");
+        println!("  ergors config set akash.chain_id 'local'");
+        println!("  ergors config set akash.rpc_endpoints 'http://localhost:26657'");
         println!("  ergors config get identity.node_type");
+
+        Ok(())
+    }
+
+    // === Chain Config Commands (using gRPC to cnidarium) ===
+
+    /// Get gRPC endpoint from config
+    fn get_grpc_endpoint(&self, home_dir: &Utf8Path) -> Result<String> {
+        let config_path = home_dir.join(CONFIG_FILE_NAME);
+        let config = ErgorsConfig::load(&config_path)?;
+
+        let host = config
+            .0
+            .identity
+            .as_ref()
+            .map(|i| i.host.as_str())
+            .unwrap_or("127.0.0.1");
+
+        let port = config
+            .0
+            .identity
+            .as_ref()
+            .map(|i| i.api_port)
+            .unwrap_or(50051);
+
+        Ok(format!("http://{}:{}", host, port))
+    }
+
+    /// Normalize endpoint URL - adds http:// scheme if missing
+    fn normalize_endpoint(endpoint: &str) -> String {
+        let trimmed = endpoint.trim();
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            trimmed.to_string()
+        } else {
+            format!("http://{}", trimmed)
+        }
+    }
+
+    /// Parse comma-separated endpoints and normalize them
+    fn parse_endpoints(input: &str) -> Vec<String> {
+        input
+            .split(',')
+            .map(Self::normalize_endpoint)
+            .collect()
+    }
+
+    /// Configure a Cosmos SDK chain
+    async fn set_chain(
+        &self,
+        home_dir: &Utf8Path,
+        chain_id: &str,
+        name: &str,
+        prefix: &str,
+        denom: &str,
+        rpc: &str,
+        grpc: &str,
+        rest: Option<&str>,
+        gas_prices: &str,
+        gas_adjustment: f64,
+        keyring_backend: &str,
+        default_key: &str,
+    ) -> Result<()> {
+        let endpoint = self.get_grpc_endpoint(home_dir)?;
+        let mut client = ManagementServiceClient::connect(endpoint).await?;
+
+        let config = CosmosChainConfig {
+            chain_id: chain_id.to_string(),
+            chain_name: name.to_string(),
+            bech32_prefix: prefix.to_string(),
+            denom: denom.to_string(),
+            gas_prices: gas_prices.to_string(),
+            gas_adjustment,
+            rpc_endpoints: Self::parse_endpoints(rpc),
+            grpc_endpoints: Self::parse_endpoints(grpc),
+            rest_endpoints: rest.map(Self::parse_endpoints).unwrap_or_default(),
+            max_retries_per_endpoint: 3,
+            max_total_retries: 10,
+            connection_timeout_seconds: 30,
+            keyring_backend: keyring_backend.to_string(),
+            default_key_name: default_key.to_string(),
+            features: vec![],
+            trusted_addresses: vec![],
+            updated_at: chrono::Utc::now().timestamp(),
+            updated_by: std::env::var("USER").unwrap_or_else(|_| "unknown".to_string()),
+        };
+
+        let request = tonic::Request::new(SetChainConfigRequest {
+            config: Some(config),
+        });
+
+        let response = client.set_chain_config(request).await?;
+        let result = response.into_inner();
+
+        if result.success {
+            println!("{}", result.message);
+        } else {
+            return Err(anyhow!("Failed to set chain config: {}", result.message));
+        }
+
+        Ok(())
+    }
+
+    /// Get a Cosmos chain configuration
+    async fn get_chain(&self, home_dir: &Utf8Path, chain_id: &str) -> Result<()> {
+        let endpoint = self.get_grpc_endpoint(home_dir)?;
+        let mut client = ManagementServiceClient::connect(endpoint).await?;
+
+        let request = tonic::Request::new(GetChainConfigRequest {
+            chain_id: chain_id.to_string(),
+        });
+
+        let response = client.get_chain_config(request).await?;
+        let result = response.into_inner();
+
+        if let Some(config) = result.config {
+            println!("Chain: {} ({})", config.chain_name, config.chain_id);
+            println!("  Prefix:       {}", config.bech32_prefix);
+            println!("  Denom:        {}", config.denom);
+            println!("  Gas:          {} (adj: {})", config.gas_prices, config.gas_adjustment);
+            println!("  Keyring:      {}", config.keyring_backend);
+            println!("  Default Key:  {}", config.default_key_name);
+            println!("  RPC:          {}", config.rpc_endpoints.join(", "));
+            println!("  gRPC:         {}", config.grpc_endpoints.join(", "));
+            if !config.rest_endpoints.is_empty() {
+                println!("  REST:         {}", config.rest_endpoints.join(", "));
+            }
+            if config.updated_at > 0 {
+                let dt = chrono::DateTime::from_timestamp(config.updated_at, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                println!("  Updated:      {} by {}", dt, config.updated_by);
+            }
+        } else {
+            return Err(anyhow!("Chain '{}' not found", chain_id));
+        }
+
+        Ok(())
+    }
+
+    /// List all configured Cosmos chains
+    async fn list_chains(&self, home_dir: &Utf8Path) -> Result<()> {
+        let endpoint = self.get_grpc_endpoint(home_dir)?;
+        let mut client = ManagementServiceClient::connect(endpoint).await?;
+
+        let request = tonic::Request::new(ListChainConfigsRequest {});
+
+        let response = client.list_chain_configs(request).await?;
+        let result = response.into_inner();
+
+        if result.chains.is_empty() {
+            println!("No chains configured.");
+            println!();
+            println!("Use 'ergors config set-chain' to configure a chain:");
+            println!("  ergors config set-chain local \\");
+            println!("    --name \"Akash Local\" \\");
+            println!("    --prefix akash \\");
+            println!("    --denom uakt \\");
+            println!("    --rpc http://localhost:26657 \\");
+            println!("    --grpc http://localhost:9090");
+        } else {
+            println!("Configured Cosmos chains:");
+            println!();
+            for config in result.chains {
+                println!("  {} ({})", config.chain_name, config.chain_id);
+                println!("    Prefix: {}, Denom: {}", config.bech32_prefix, config.denom);
+                println!("    RPC: {}", config.rpc_endpoints.first().unwrap_or(&"none".to_string()));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Delete a Cosmos chain configuration
+    async fn delete_chain(&self, home_dir: &Utf8Path, chain_id: &str) -> Result<()> {
+        let endpoint = self.get_grpc_endpoint(home_dir)?;
+        let mut client = ManagementServiceClient::connect(endpoint).await?;
+
+        let request = tonic::Request::new(DeleteChainConfigRequest {
+            chain_id: chain_id.to_string(),
+        });
+
+        let response = client.delete_chain_config(request).await?;
+        let result = response.into_inner();
+
+        if result.success {
+            println!("{}", result.message);
+        } else {
+            return Err(anyhow!("Failed to delete chain config: {}", result.message));
+        }
 
         Ok(())
     }

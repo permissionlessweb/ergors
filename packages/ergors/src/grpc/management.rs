@@ -131,6 +131,15 @@ use ho_std::types::ergors::management::v1::{
     GetSdlDefaultsResponse,
     RenderSdlTemplateRequest,
     RenderSdlTemplateResponse,
+    // Chain config types
+    SetChainConfigRequest,
+    SetChainConfigResponse,
+    GetChainConfigRequest,
+    GetChainConfigResponse,
+    ListChainConfigsRequest,
+    ListChainConfigsResponse,
+    DeleteChainConfigRequest,
+    DeleteChainConfigResponse,
     // Key address query types
     GetKeyAddressRequest,
     GetKeyAddressResponse,
@@ -4059,6 +4068,109 @@ impl ManagementService for ManagementServiceImpl {
         #[cfg(not(feature = "cw"))]
         {
             Err(Status::unimplemented("CosmWasm support not enabled"))
+        }
+    }
+
+    // ============================================
+    // Cosmos Chain Configuration Management
+    // ============================================
+
+    /// Set or update a Cosmos chain configuration (stored in cnidarium)
+    async fn set_chain_config(
+        &self,
+        request: Request<SetChainConfigRequest>,
+    ) -> Result<Response<SetChainConfigResponse>, Status> {
+        let req = request.into_inner();
+
+        let config = req.config.ok_or_else(|| {
+            Status::invalid_argument("Chain config is required")
+        })?;
+
+        if config.chain_id.is_empty() {
+            return Err(Status::invalid_argument("chain_id cannot be empty"));
+        }
+
+        tracing::info!("Setting chain config for: {} ({})", config.chain_name, config.chain_id);
+
+        match self.state.s.put_chain_config(&config).await {
+            Ok(()) => Ok(Response::new(SetChainConfigResponse {
+                success: true,
+                message: format!("Chain config stored for: {}", config.chain_id),
+            })),
+            Err(e) => {
+                tracing::error!("Failed to store chain config: {}", e);
+                Err(Status::internal(format!("Failed to store chain config: {}", e)))
+            }
+        }
+    }
+
+    /// Get a Cosmos chain configuration by chain ID (from cnidarium)
+    async fn get_chain_config(
+        &self,
+        request: Request<GetChainConfigRequest>,
+    ) -> Result<Response<GetChainConfigResponse>, Status> {
+        let req = request.into_inner();
+
+        if req.chain_id.is_empty() {
+            return Err(Status::invalid_argument("chain_id cannot be empty"));
+        }
+
+        tracing::info!("Getting chain config for: {}", req.chain_id);
+
+        match self.state.s.get_chain_config(&req.chain_id).await {
+            Ok(Some(config)) => Ok(Response::new(GetChainConfigResponse {
+                config: Some(config),
+                found: true,
+            })),
+            Ok(None) => Ok(Response::new(GetChainConfigResponse {
+                config: None,
+                found: false,
+            })),
+            Err(e) => {
+                tracing::error!("Failed to get chain config: {}", e);
+                Err(Status::internal(format!("Failed to get chain config: {}", e)))
+            }
+        }
+    }
+
+    /// List all registered Cosmos chain configurations (from cnidarium)
+    async fn list_chain_configs(
+        &self,
+        _request: Request<ListChainConfigsRequest>,
+    ) -> Result<Response<ListChainConfigsResponse>, Status> {
+        tracing::info!("Listing all chain configs");
+
+        match self.state.s.list_chain_configs().await {
+            Ok(chains) => Ok(Response::new(ListChainConfigsResponse { chains })),
+            Err(e) => {
+                tracing::error!("Failed to list chain configs: {}", e);
+                Err(Status::internal(format!("Failed to list chain configs: {}", e)))
+            }
+        }
+    }
+
+    /// Delete a Cosmos chain configuration (from cnidarium)
+    async fn delete_chain_config(
+        &self,
+        request: Request<DeleteChainConfigRequest>,
+    ) -> Result<Response<DeleteChainConfigResponse>, Status> {
+        let req = request.into_inner();
+
+        if req.chain_id.is_empty() {
+            return Err(Status::invalid_argument("chain_id cannot be empty"));
+        }
+
+        tracing::info!("Deleting chain config for: {}", req.chain_id);
+
+        match self.state.s.delete_chain_config(&req.chain_id).await {
+            Ok(()) => Ok(Response::new(DeleteChainConfigResponse {
+                success: true,
+                message: format!("Chain config deleted for: {}", req.chain_id),
+            })),
+            Err(e) => {
+                tracing::error!("Failed to delete chain config: {}", e);
+                Err(Status::internal(format!("Failed to delete chain config: {}", e)))
+            }
         }
     }
 

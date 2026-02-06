@@ -180,6 +180,32 @@ fn validate_timestamp(timestamp_str: &str) -> Result<(), Auth> {
     Ok(())
 }
 
+/// Validate an admin-signed request against an expected Ed25519 public key.
+///
+/// Extracts `x-signature`, `x-timestamp`, `x-public-key` headers, validates
+/// the timestamp window, verifies the Ed25519 signature over `H(body||timestamp)`,
+/// and confirms the public key matches `expected_pubkey_hex`.
+pub fn validate_admin_signature(
+    headers: &HeaderMap,
+    body: &[u8],
+    expected_pubkey_hex: &str,
+) -> Result<(), Auth> {
+    let signature = extract_header(headers, "x-signature")?;
+    let timestamp = extract_header(headers, "x-timestamp")?;
+    let public_key = extract_header(headers, "x-public-key")?;
+
+    // Verify the public key matches expected admin key
+    if public_key != expected_pubkey_hex {
+        warn!("Public key mismatch: expected {}, got {}", expected_pubkey_hex, public_key);
+        return Err(Auth::VerificationFailed);
+    }
+
+    validate_timestamp(&timestamp)?;
+    validate_crypto_signature_with_body(&signature, &timestamp, &public_key, body)?;
+
+    Ok(())
+}
+
 use anyhow::Result;
 use rand::{CryptoRng, RngCore};
 

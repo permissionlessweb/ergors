@@ -170,6 +170,80 @@ deployment:
 
         Ok(sdl)
     }
+
+    /// Generate an SDL for sentinel mode deployment.
+    ///
+    /// The sentinel SDL contains ONLY the admin public key (which is public information)
+    /// and basic node configuration. Zero secrets in the SDL — the admin provides
+    /// custody password, API keys, and config via Ed25519-signed HTTP requests
+    /// to the sentinel endpoints after deployment.
+    pub fn generate_sentinel_sdl(&self, admin_pubkey_hex: &str) -> Result<String> {
+        if self.base_config.image_tag.is_empty() {
+            return Err(anyhow!("image_tag cannot be empty"));
+        }
+        if admin_pubkey_hex.is_empty() {
+            return Err(anyhow!("admin_pubkey_hex cannot be empty"));
+        }
+
+        let config = &self.base_config;
+
+        let sdl = format!(
+            r#"---
+version: "2.0"
+
+services:
+  ergors:
+    image: {}
+    expose:
+      - port: {}
+        as: 80
+        to:
+          - global: true
+      - port: {}
+        as: 26969
+        proto: tcp
+        to:
+          - global: true
+    env:
+      - ERGORS_ADMIN_PUBKEY={}
+      - NODE_TYPE={}
+      - API_PORT={}
+      - P2P_PORT={}
+
+profiles:
+  compute:
+    ergors:
+      resources:
+        cpu:
+          units: 2
+        memory:
+          size: 4Gi
+        storage:
+          - size: 20Gi
+  placement:
+    akash:
+      pricing:
+        ergors:
+          denom: uakt
+          amount: 10000
+
+deployment:
+  ergors:
+    akash:
+      profile: ergors
+      count: 1
+"#,
+            config.image_tag,
+            config.api_port,
+            config.p2p_port,
+            admin_pubkey_hex,
+            config.node_type.as_str_name(),
+            config.api_port,
+            config.p2p_port,
+        );
+
+        Ok(sdl)
+    }
 }
 
 #[cfg(test)]
@@ -222,6 +296,37 @@ mod tests {
 
         let generator = NodeSdlGenerator::new(config);
         let result = generator.generate_executor_sdl();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_generate_sentinel_sdl() {
+        let config = NodeBootstrapConfig {
+            node_type: NodeType::Executor,
+            image_tag: "ghcr.io/test/ergors:v1.0.0".to_string(),
+            ..Default::default()
+        };
+
+        let generator = NodeSdlGenerator::new(config);
+        let pubkey = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        let sdl = generator.generate_sentinel_sdl(pubkey).unwrap();
+
+        assert!(sdl.contains("version: \"2.0\""));
+        assert!(sdl.contains("ghcr.io/test/ergors:v1.0.0"));
+        assert!(sdl.contains(&format!("ERGORS_ADMIN_PUBKEY={}", pubkey)));
+        assert!(sdl.contains("NODE_TYPE="));
+        assert!(sdl.contains("API_PORT=8080"));
+        assert!(sdl.contains("P2P_PORT=26969"));
+        // Sentinel SDL should NOT contain secrets
+        assert!(!sdl.contains("ERGORS_CUSTODY_PASSWORD"));
+        assert!(!sdl.contains("ANTHROPIC_API_KEY"));
+    }
+
+    #[test]
+    fn test_sentinel_sdl_empty_pubkey_fails() {
+        let config = NodeBootstrapConfig::default();
+        let generator = NodeSdlGenerator::new(config);
+        let result = generator.generate_sentinel_sdl("");
         assert!(result.is_err());
     }
 }

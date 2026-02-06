@@ -351,6 +351,32 @@ impl ContractManager {
                     "Contract '{}' already deployed at {}, skipping",
                     contract.name, address
                 );
+
+                // Even though we're skipping deployment, ensure SDL template contracts are registered
+                if contract.name.contains("sdl") && contract.name.contains("template") {
+                    // Check if already registered
+                    if let Ok(None) = self.storage.get_sdl_template_contract(&address).await {
+                        info!(
+                            "Registering existing SDL template contract: {}",
+                            contract.name
+                        );
+                        let sdl_label = if contract.label.is_empty() {
+                            Some(contract.name.clone())
+                        } else {
+                            Some(contract.label.clone())
+                        };
+                        // We don't have code_id here, use 0 as placeholder
+                        // TODO: retrieve actual code_id from contract info
+                        if let Err(e) = self
+                            .storage
+                            .register_sdl_template_contract(&address, sdl_label, 0)
+                            .await
+                        {
+                            warn!("Failed to register existing SDL template contract: {}", e);
+                        }
+                    }
+                }
+
                 return Ok(address);
             }
         }

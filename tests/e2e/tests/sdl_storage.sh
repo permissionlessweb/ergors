@@ -62,6 +62,54 @@ CW_SDL_CONTRACT_ADDR=""
 # CosmWasm cw-sdl Contract Tests (Using Real CLI/API)
 # =============================================================================
 
+test_local_chain_config() {
+    log_section "Local Chain Config Verification"
+
+    # Verify that the local chain was configured during network startup
+    log "Checking if 'local' chain config exists..."
+
+    local output
+    output=$(ergors_config_get_chain "local")
+
+    if echo "$output" | grep -q "Akash Local"; then
+        log_success "✓ Local chain config exists with correct name"
+    else
+        log_error "✗ Local chain config not found or incorrect"
+        log_debug "Output: $output"
+        return 1
+    fi
+
+    if echo "$output" | grep -q "Prefix:.*akash"; then
+        log_success "✓ Bech32 prefix is 'akash'"
+    else
+        log_error "✗ Bech32 prefix not found or incorrect"
+        return 1
+    fi
+
+    if echo "$output" | grep -q "Denom:.*uakt"; then
+        log_success "✓ Denom is 'uakt'"
+    else
+        log_error "✗ Denom not found or incorrect"
+        return 1
+    fi
+
+    if echo "$output" | grep -q "http://127.0.0.1:26657"; then
+        log_success "✓ RPC endpoint configured with proper http:// scheme"
+    else
+        log_error "✗ RPC endpoint missing or lacks scheme"
+        return 1
+    fi
+
+    if echo "$output" | grep -q "http://127.0.0.1:9090"; then
+        log_success "✓ gRPC endpoint configured with proper http:// scheme"
+    else
+        log_error "✗ gRPC endpoint missing or lacks scheme"
+        return 1
+    fi
+
+    log_success "Local chain config verified successfully"
+}
+
 test_cw_sdl_contract_deployed() {
     log_section "CosmWasm cw-sdl Contract Deployment Validation"
 
@@ -342,6 +390,7 @@ run_sdl_storage_tests() {
 
     # These tests use the ACTUAL CLI wrappers and CosmWasm query API
     # No fabricated endpoints, no silent skips
+    test_local_chain_config
     test_cw_sdl_contract_deployed
     test_cw_sdl_template_query
     test_cw_sdl_variable_defaults
