@@ -4654,6 +4654,51 @@ impl ::prost::Name for RlmQueryResponse {
         "/ergors.orch.v1.RlmQueryResponse".into()
     }
 }
+/// A generic inbox message representing an action request between nodes
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct InboxMessage {
+    #[prost(uint64, tag = "1")]
+    pub id: u64,
+    /// Action type identifier (e.g. "grant_request", "bootstrap", "deploy")
+    #[prost(string, tag = "2")]
+    pub action_type: ::prost::alloc::string::String,
+    /// Sender node identity
+    #[prost(bytes = "vec", tag = "3")]
+    pub sender_pubkey: ::prost::alloc::vec::Vec<u8>,
+    /// Proto type URL for the payload (e.g. "/ergors.orch.v1.GrantRequest")
+    #[prost(string, tag = "4")]
+    pub payload_type_url: ::prost::alloc::string::String,
+    /// Serialized proto payload bytes
+    #[prost(bytes = "vec", tag = "5")]
+    pub payload: ::prost::alloc::vec::Vec<u8>,
+    /// Current status
+    #[prost(enumeration = "InboxMessageStatus", tag = "6")]
+    pub status: i32,
+    /// Human-readable summary for inbox display
+    #[prost(string, tag = "7")]
+    pub summary: ::prost::alloc::string::String,
+    /// Reason for rejection (if rejected)
+    #[prost(string, tag = "8")]
+    pub rejection_reason: ::prost::alloc::string::String,
+    /// Result data from accepted action (if any)
+    #[prost(string, tag = "9")]
+    pub result: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "10")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag = "11")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for InboxMessage {
+    const NAME: &'static str = "InboxMessage";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.InboxMessage".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.InboxMessage".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -5295,6 +5340,43 @@ impl GrantAcceptanceMode {
             "GRANT_ACCEPTANCE_MODE_REJECT_ALL" => Some(Self::RejectAll),
             "GRANT_ACCEPTANCE_MODE_WHITELIST" => Some(Self::Whitelist),
             "GRANT_ACCEPTANCE_MODE_MANUAL" => Some(Self::Manual),
+            _ => None,
+        }
+    }
+}
+/// Status of an inbox message
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum InboxMessageStatus {
+    Unspecified = 0,
+    Pending = 1,
+    Accepted = 2,
+    Rejected = 3,
+    Expired = 4,
+}
+impl InboxMessageStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "INBOX_MESSAGE_STATUS_UNSPECIFIED",
+            Self::Pending => "INBOX_MESSAGE_STATUS_PENDING",
+            Self::Accepted => "INBOX_MESSAGE_STATUS_ACCEPTED",
+            Self::Rejected => "INBOX_MESSAGE_STATUS_REJECTED",
+            Self::Expired => "INBOX_MESSAGE_STATUS_EXPIRED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INBOX_MESSAGE_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "INBOX_MESSAGE_STATUS_PENDING" => Some(Self::Pending),
+            "INBOX_MESSAGE_STATUS_ACCEPTED" => Some(Self::Accepted),
+            "INBOX_MESSAGE_STATUS_REJECTED" => Some(Self::Rejected),
+            "INBOX_MESSAGE_STATUS_EXPIRED" => Some(Self::Expired),
             _ => None,
         }
     }

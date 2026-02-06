@@ -188,6 +188,13 @@ When running, the engine exposes:
 | `/orchestrate/bootstrap` | POST - Initiate node bootstrap |
 | `/orchestrate/bootstrap/sessions` | GET - List bootstrap sessions (?active=true) |
 | `/orchestrate/bootstrap/sessions/{id}` | GET - Get session status, DELETE - Delete session |
+| `/api/inbox/submit` | POST - Submit generic inbox message |
+| `/api/inbox/grant` | POST - Submit grant request (convenience) |
+| `/api/inbox/{id}` | GET - Get inbox message status |
+| `/api/inbox` | GET - List pending inbox messages (protected) |
+| `/api/inbox/{id}/accept` | POST - Accept inbox message (protected) |
+| `/api/inbox/{id}/reject` | POST - Reject inbox message (protected) |
+| `/api/inbox/config` | GET/POST - Read/update granter config (protected) |
 | `/health` | Health check endpoint |
 | `/metrics` | Prometheus-compatible metrics |
 
@@ -724,28 +731,296 @@ ergors deploy remove-provider <address>
 
 ### Grant Management
 
+Grant requests are now handled through the **generic inbox system** (see [Inbox API](#inbox-api) below). Nodes submit grant requests to a granter's inbox, and the granter can accept or reject them.
+
 ```bash
-# Request authz grant from coordinator
-ergors deploy request-grant \
-  --granter <address> \
-  --grantee <address> \
-  --msg-type /akash.deployment.v1beta3.MsgCreateDeployment \
-  --allowance 10000000
+# Request authz grant from coordinator (via inbox)
+curl -X POST http://<granter-host>/api/inbox/grant \
+  -H "Content-Type: application/json" \
+  -d '{
+    "granter_address": "akash1...",
+    "grantee_address": "akash1...",
+    "grant_type": "GRANT_TYPE_AUTHZ",
+    "msg_type_url": "/akash.deployment.v1beta3.MsgCreateDeployment",
+    "spend_limit": "10000000"
+  }'
 
-# Approve/reject grant request
-ergors deploy approve-grant <request-id> [--reject] [--reason <text>]
+# Approve/reject via inbox
+curl -X POST http://<granter-host>/api/inbox/{id}/accept
+curl -X POST http://<granter-host>/api/inbox/{id}/reject \
+  -d '{"reason": "Insufficient trust level"}'
 
-# Revoke existing grant
+# List pending grant requests in inbox
+curl http://<granter-host>/api/inbox?action_type=grant_request
+
+# Revoke existing grant (unchanged)
 ergors deploy revoke-grant --granter <addr> --grantee <addr> [--msg-type <type>]
-
-# List grant requests
-ergors deploy list-grants [--granter <addr>] [--grantee <addr>] [--status <pending|approved>]
 ```
 
 ### Query Balance
 
 ```bash
 ergors deploy query-balance <address> [--denom uakt]
+```
+
+---
+
+## Inbox API
+
+Generic message inbox system backed by cnidarium storage. Allows nodes to submit action requests (grant requests, etc.) to other nodes, where the operator can accept or reject them.
+
+### Architecture
+
+```
+Requester Node                          Granter/Operator Node
+─────────────                          ─────────────────────
+POST /api/inbox/submit ──────────────► handle_submit()
+POST /api/inbox/grant  ──────────────► handle_submit_grant()
+GET  /api/inbox/{id}   ──────────────► handle_get_message()
+
+                                       Protected (operator only):
+                                       GET  /api/inbox           → list pending
+                                       POST /api/inbox/{id}/accept
+                                       POST /api/inbox/{id}/reject
+                                       GET  /api/inbox/config
+                                       POST /api/inbox/config
+```
+
+### Public Endpoints
+
+#### Submit Generic Message
+
+```
+POST /api/inbox/submit
+```
+
+Submit any action type to the inbox. The payload is proto-encoded bytes with a type URL for deserialization.
+
+**Request Body:**
+
+```json
+{
+  "action_type": "grant_request",
+  "sender_pubkey": "<hex-encoded-pubkey>",
+  "payload_type_url": "/ergors.orch.v1.GrantRequest",
+  "payload": "<base64-encoded-proto-bytes>",
+  "summary": "Requesting authz grant for deployment operations"
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "id": 1,
+  "action_type": "grant_request",
+  "status": "INBOX_MESSAGE_STATUS_PENDING",
+  "summary": "Requesting authz grant for deployment operations",
+  "created_at": "2026-02-05T00:00:00Z"
+}
+```
+
+#### Submit Grant Request (Convenience)
+
+```
+POST /api/inbox/grant
+```
+
+Convenience endpoint for grant requests. Automatically encodes `GrantRequest` as the payload and checks granter configuration for auto-accept/reject.
+
+**Request Body:**
+
+```json
+{
+  "granter_address": "akash1...",
+  "grantee_address": "akash1...",
+  "grant_type": "GRANT_TYPE_AUTHZ",
+  "msg_type_url": "/akash.deployment.v1beta3.MsgCreateDeployment",
+  "spend_limit": "10000000"
+}
+```
+
+**Behavior:**
+
+| Granter Mode | Result |
+|--------------|--------|
+| `auto` | Immediately accepted and broadcast on-chain |
+| `whitelist` | Accepted if sender pubkey is in whitelist, otherwise rejected |
+| `manual` | Saved as pending, operator must accept/reject via protected endpoints |
+
+**Response (201):**
+
+```json
+{
+  "id": 1,
+  "action_type": "grant_request",
+  "status": "INBOX_MESSAGE_STATUS_PENDING",
+  "summary": "Grant request: GRANT_TYPE_AUTHZ for akash1..."
+}
+```
+
+#### Get Message Status
+
+```
+GET /api/inbox/{id}
+```
+
+Check the status of a previously submitted inbox message. Also searches history for completed/rejected messages.
+
+**Response (200):**
+
+```json
+{
+  "id": 1,
+  "action_type": "grant_request",
+  "status": "INBOX_MESSAGE_STATUS_ACCEPTED",
+  "result": "tx_hash: ABC123...",
+  "created_at": "2026-02-05T00:00:00Z",
+  "updated_at": "2026-02-05T00:01:00Z"
+}
+```
+
+### Protected Endpoints (Operator Only)
+
+#### List Inbox
+
+```
+GET /api/inbox[?action_type=grant_request]
+```
+
+List all pending inbox messages. Optionally filter by action type.
+
+**Response (200):**
+
+```json
+{
+  "messages": [
+    {
+      "id": 1,
+      "action_type": "grant_request",
+      "status": "INBOX_MESSAGE_STATUS_PENDING",
+      "summary": "Grant request: GRANT_TYPE_AUTHZ for akash1..."
+    }
+  ],
+  "total": 1
+}
+```
+
+#### Accept Message
+
+```
+POST /api/inbox/{id}/accept
+```
+
+Accept a pending inbox message. For grant requests, this triggers on-chain broadcast of `MsgGrant` or `MsgGrantAllowance`.
+
+**Response (200):**
+
+```json
+{
+  "id": 1,
+  "status": "INBOX_MESSAGE_STATUS_ACCEPTED",
+  "result": "Grant broadcast initiated"
+}
+```
+
+#### Reject Message
+
+```
+POST /api/inbox/{id}/reject
+```
+
+Reject a pending inbox message with an optional reason.
+
+**Request Body:**
+
+```json
+{
+  "reason": "Insufficient trust level"
+}
+```
+
+**Response (200):**
+
+```json
+{
+  "id": 1,
+  "status": "INBOX_MESSAGE_STATUS_REJECTED",
+  "rejection_reason": "Insufficient trust level"
+}
+```
+
+#### Get Granter Config
+
+```
+GET /api/inbox/config
+```
+
+Read the current granter configuration (acceptance mode, whitelist, limits).
+
+#### Update Granter Config
+
+```
+POST /api/inbox/config
+```
+
+Update the granter configuration.
+
+**Request Body:**
+
+```json
+{
+  "mode": "GRANTER_MODE_MANUAL",
+  "whitelist": [
+    {
+      "pubkey": "<hex>",
+      "label": "trusted-executor-1"
+    }
+  ],
+  "max_spend_limit": "50000000",
+  "allowed_msg_types": [
+    "/akash.deployment.v1beta3.MsgCreateDeployment",
+    "/akash.deployment.v1beta3.MsgCloseDeployment"
+  ]
+}
+```
+
+### Storage
+
+Inbox messages are persisted in cnidarium with the following index structure:
+
+| Prefix | Key Format | Purpose |
+|--------|------------|---------|
+| `inbox` | `inbox/{id}` | Primary message storage |
+| `inbox_status` | `inbox_status/{status}:{id}` | Status index for listing |
+| `inbox_sender` | `inbox_sender/{hex}:{id}` | Sender index for lookups |
+| `inbox_action` | `inbox_action/{action}:{id}` | Action type index for filtering |
+| `inbox_history` | `inbox_history/{id}` | Completed/rejected messages |
+
+### Proto Types
+
+```protobuf
+enum InboxMessageStatus {
+  INBOX_MESSAGE_STATUS_UNSPECIFIED = 0;
+  INBOX_MESSAGE_STATUS_PENDING = 1;
+  INBOX_MESSAGE_STATUS_ACCEPTED = 2;
+  INBOX_MESSAGE_STATUS_REJECTED = 3;
+  INBOX_MESSAGE_STATUS_EXPIRED = 4;
+}
+
+message InboxMessage {
+  uint64 id = 1;
+  string action_type = 2;
+  bytes sender_pubkey = 3;
+  string payload_type_url = 4;
+  bytes payload = 5;
+  InboxMessageStatus status = 6;
+  string summary = 7;
+  string rejection_reason = 8;
+  string result = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
 ```
 
 ---

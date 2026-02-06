@@ -161,6 +161,10 @@ impl Server {
                 { path: "/orchestrate/bootstrap/sessions/{session_id}", method: get, handler: crate::deploy::bootstrap::handle_bootstrap_status },
                 { path: "/orchestrate/bootstrap/sessions/{session_id}", method: delete, handler: crate::deploy::bootstrap::handle_delete_bootstrap_session },
                 { path: "/health", method: get, handler: handle_health },
+                // Inbox public routes (any node can submit/query)
+                { path: "/api/inbox/submit", method: post, handler: crate::deploy::grant_inbox::handle_submit },
+                { path: "/api/inbox/grant", method: post, handler: crate::deploy::grant_inbox::handle_submit_grant },
+                { path: "/api/inbox/{id}", method: get, handler: crate::deploy::grant_inbox::handle_get_message },
             ],
             protected_routes: [
                 { path: "/api/prompts", method: get, handler: handle_query },
@@ -175,6 +179,12 @@ impl Server {
                 { path: "/auth/list", method: get, handler: crate::auth::handle_list_authenticators },
                 { path: "/auth/check", method: get, handler: crate::auth::handle_check_authorization },
                 { path: "/auth/{endpoint_label}", method: delete, handler: crate::auth::handle_delete_authenticator },
+                // Inbox protected routes (operator manages inbox)
+                { path: "/api/inbox", method: get, handler: crate::deploy::grant_inbox::handle_list_inbox },
+                { path: "/api/inbox/{id}/accept", method: post, handler: crate::deploy::grant_inbox::handle_accept },
+                { path: "/api/inbox/{id}/reject", method: post, handler: crate::deploy::grant_inbox::handle_reject },
+                { path: "/api/inbox/config", method: get, handler: crate::deploy::grant_inbox::handle_get_granter_config },
+                { path: "/api/inbox/config", method: post, handler: crate::deploy::grant_inbox::handle_update_granter_config },
                 ]
         };
         let server_addr = format!(

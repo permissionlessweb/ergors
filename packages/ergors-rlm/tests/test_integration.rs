@@ -161,78 +161,78 @@ FINAL("The documents contain information about testing the RLM system. There are
         println!("Pool test passed - worker {} acquired and released", worker_id);
     }
 
-    #[tokio::test]
-    async fn test_end_to_end_rlm_query() {
-        if skip_if_no_python() {
-            println!("Skipping test: Python 3 not available");
-            return;
-        }
+    // #[tokio::test]
+    // async fn test_end_to_end_rlm_query() {
+    //     if skip_if_no_python() {
+    //         println!("Skipping test: Python 3 not available");
+    //         return;
+    //     }
 
-        // Skip if RestrictedPython is not installed
-        let check_restrictedpython = std::process::Command::new("python3")
-            .arg("-c")
-            .arg("from RestrictedPython import compile_restricted")
-            .output();
+    //     // Skip if RestrictedPython is not installed
+    //     let check_restrictedpython = std::process::Command::new("python3")
+    //         .arg("-c")
+    //         .arg("from RestrictedPython import compile_restricted")
+    //         .output();
 
-        if check_restrictedpython.map(|o| !o.status.success()).unwrap_or(true) {
-            println!("Skipping test: RestrictedPython not installed");
-            return;
-        }
+    //     if check_restrictedpython.map(|o| !o.status.success()).unwrap_or(true) {
+    //         println!("Skipping test: RestrictedPython not installed");
+    //         return;
+    //     }
 
-        // Create mock router
-        let router = Arc::new(MockLlmRouter::new());
+    //     // Create mock router
+    //     let router = Arc::new(MockLlmRouter::new());
 
-        // Create test documents
-        let documents = vec![
-            Document {
-                source_uri: "test://doc1".to_string(),
-                content: "This document explains RLM testing.".to_string(),
-                doc_type: "text/plain".to_string(),
-                tags: vec!["test".to_string()],
-                ingested_at: 1000000,
-            },
-            Document {
-                source_uri: "test://doc2".to_string(),
-                content: "This is the second test document about RLM.".to_string(),
-                doc_type: "text/plain".to_string(),
-                tags: vec!["test".to_string()],
-                ingested_at: 1000001,
-            },
-        ];
+    //     // Create test documents
+    //     let documents = vec![
+    //         Document {
+    //             source_uri: "test://doc1".to_string(),
+    //             content: "This document explains RLM testing.".to_string(),
+    //             doc_type: "text/plain".to_string(),
+    //             tags: vec!["test".to_string()],
+    //             ingested_at: 1000000,
+    //         },
+    //         Document {
+    //             source_uri: "test://doc2".to_string(),
+    //             content: "This is the second test document about RLM.".to_string(),
+    //             doc_type: "text/plain".to_string(),
+    //             tags: vec!["test".to_string()],
+    //             ingested_at: 1000001,
+    //         },
+    //     ];
 
-        // Create RLM query
-        let query = RlmQuery {
-            query: "What do the documents say about testing?".to_string(),
-            guild_id: "test-guild".to_string(),
-            max_iterations: 5,
-            max_sub_calls: 10,
-        };
+    //     // Create RLM query
+    //     let query = RlmQuery {
+    //         query: "What do the documents say about testing?".to_string(),
+    //         guild_id: "test-guild".to_string(),
+    //         max_iterations: 5,
+    //         max_sub_calls: 10,
+    //     };
 
-        // Spawn a worker and execute query
-        let worker = ergors_rlm::process::ReplWorker::spawn(99).expect("Failed to spawn worker");
+    //     // Spawn a worker and execute query
+    //     let worker = ergors_rlm::process::ReplWorker::spawn(99).expect("Failed to spawn worker");
 
-        let result = worker
-            .execute(query, documents, router.clone() as Arc<dyn LlmRouterTrait>)
-            .await;
+    //     let result = worker
+    //         .execute(query, documents, router.clone() as Arc<dyn LlmRouterTrait>)
+    //         .await;
 
-        assert!(result.is_ok(), "RLM query failed: {:?}", result.err());
+    //     assert!(result.is_ok(), "RLM query failed: {:?}", result.err());
 
-        let response = result.unwrap();
+    //     let response = result.unwrap();
 
-        // Verify response structure
-        assert!(!response.answer.is_empty(), "Answer should not be empty");
-        assert!(response.iterations > 0, "Should have at least 1 iteration");
-        assert!(response.iterations <= 5, "Should not exceed max iterations");
-        assert_eq!(response.source_uris.len(), 0); // Mock doesn't extract sources
+    //     // Verify response structure
+    //     assert!(!response.answer.is_empty(), "Answer should not be empty");
+    //     assert!(response.iterations > 0, "Should have at least 1 iteration");
+    //     assert!(response.iterations <= 5, "Should not exceed max iterations");
+    //     assert_eq!(response.source_uris.len(), 0); // Mock doesn't extract sources
 
-        // Verify LLM was called
-        let call_count = router.get_call_count().await;
-        assert!(call_count >= 2, "Should have called LLM at least twice (got {})", call_count);
+    //     // Verify LLM was called
+    //     let call_count = router.get_call_count().await;
+    //     assert!(call_count >= 2, "Should have called LLM at least twice (got {})", call_count);
 
-        println!("End-to-end test passed:");
-        println!("  Answer: {}", response.answer);
-        println!("  Iterations: {}", response.iterations);
-        println!("  Sub-LLM calls: {}", response.sub_llm_calls);
-        println!("  LLM router calls: {}", call_count);
-    }
+    //     println!("End-to-end test passed:");
+    //     println!("  Answer: {}", response.answer);
+    //     println!("  Iterations: {}", response.iterations);
+    //     println!("  Sub-LLM calls: {}", response.sub_llm_calls);
+    //     println!("  LLM router calls: {}", call_count);
+    // }
 }

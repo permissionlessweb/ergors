@@ -253,8 +253,8 @@ mod akash_config {
     fn test_default_akash_config() {
         let config = ErgorsConfig::default_akash_config();
 
-        // Check mainnet defaults
-        assert!(config.rpc_endpoints.contains(&"akash".to_string()));
+        // Check mainnet defaults - endpoints are full URLs containing "akash"
+        assert!(config.rpc_endpoints.iter().any(|ep| ep.contains("akash")));
         assert_eq!(config.chain_id, "akashnet-2");
         assert_eq!(config.gas_prices, "0.025uakt");
         assert!((config.gas_adjustment - 1.3).abs() < 0.001);
