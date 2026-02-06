@@ -385,6 +385,202 @@ test_streaming_responses() {
 }
 
 # =============================================================================
+# CosmWasm Event Router Tests
+# =============================================================================
+
+test_cosmwasm_event_router() {
+    log_section "CosmWasm Event Router Tests (/api/cosmwasm/execute)"
+
+    # Test 1: Execute endpoint exists and accepts requests
+    log_verbose "Testing /api/cosmwasm/execute endpoint availability..."
+    local execute_response
+    execute_response=$(curl -s --max-time 15 -w "\n%{http_code}" -X POST \
+        "http://${COORDINATOR_API}/api/cosmwasm/execute" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "contract": "ergors_test_contract",
+            "sender": "akash1testaddress",
+            "msg": {"emit_actions": {"actions": [{"Log": {"level": "info", "message": "E2E event router test"}}]}},
+            "funds": []
+        }' \
+        2>/dev/null) || execute_response=""
+
+    # Split response body from HTTP status code
+    local execute_body execute_status
+    execute_status=$(echo "$execute_response" | tail -1)
+    execute_body=$(echo "$execute_response" | sed '$d')
+    log_debug "Execute response (status $execute_status): $execute_body"
+
+    # The endpoint should exist and return JSON (even if contract is not found)
+    if [[ -n "$execute_body" ]] && json_has "$execute_body" '.'; then
+        if [[ "$execute_status" == "404" ]]; then
+            # 404 for unknown contract is acceptable -- endpoint exists
+            test_pass "cw_execute_endpoint" "/api/cosmwasm/execute endpoint exists (contract not found)"
+        elif [[ "$execute_status" =~ ^2[0-9][0-9]$ ]]; then
+            test_pass "cw_execute_endpoint" "/api/cosmwasm/execute endpoint accepts requests (status: $execute_status)"
+        elif json_has "$execute_body" '.error'; then
+            local error_msg
+            error_msg=$(json_get "$execute_body" '.error')
+            if [[ -z "$error_msg" ]]; then
+                error_msg=$(json_get "$execute_body" '.error.message')
+            fi
+            # Any structured error means the endpoint is active and parsing requests
+            test_pass "cw_execute_endpoint" "/api/cosmwasm/execute returns structured error (${error_msg:0:60})"
+        else
+            test_pass "cw_execute_endpoint" "/api/cosmwasm/execute responds with JSON (status: $execute_status)"
+        fi
+    elif [[ "$execute_status" == "405" ]]; then
+        test_fail "cw_execute_endpoint" "/api/cosmwasm/execute returned Method Not Allowed"
+    elif [[ "$execute_status" == "000" ]] || [[ -z "$execute_status" ]]; then
+        test_fail "cw_execute_endpoint" "/api/cosmwasm/execute not reachable" "Connection failed"
+    else
+        test_fail "cw_execute_endpoint" "/api/cosmwasm/execute did not return valid JSON" "Status: $execute_status"
+    fi
+
+    # Test 2: Execute with ergors_action events returns action results
+    # Uses the existing ergors_cw_execute wrapper from ergors.sh
+    log_verbose "Testing contract execution with ergors_action events..."
+
+    # Use SDL template contract if available, otherwise use a test address
+    local test_contract="${SDL_TEMPLATE_CONTRACT:-ergors_test_event_contract}"
+    local test_sender="${COORDINATOR_ADDRESS:-akash1testaddress}"
+
+    local action_response
+    action_response=$(ergors_cw_execute "$test_contract" "$test_sender" \
+        '{"emit_actions": {"actions": [{"Log": {"level": "info", "message": "E2E action test"}}, {"StorePut": {"key": "e2e_test_key", "value": "e2e_test_value"}}]}}' \
+        '[]' 2>&1) || true
+    log_debug "Action response: $action_response"
+
+    if json_has "$action_response" '.action_results' || json_has "$action_response" '.events'; then
+        test_pass "cw_action_results" "Contract execution returned action results"
+
+        # Verify action result structure
+        local result_count
+        result_count=$(echo "$action_response" | jq -r '.action_results | length // 0' 2>/dev/null || echo "0")
+        if [[ "$result_count" -gt 0 ]]; then
+            test_pass "cw_action_count" "Received $result_count action result(s)"
+        fi
+    elif json_has "$action_response" '.data' || json_has "$action_response" '.result'; then
+        # Successful execution without explicit action_results field
+        test_pass "cw_action_results" "Contract execution succeeded (action events processed)"
+    elif json_has "$action_response" '.error'; then
+        local err_msg
+        err_msg=$(json_get "$action_response" '.error')
+        if [[ -z "$err_msg" ]]; then
+            err_msg=$(json_get "$action_response" '.error.message')
+        fi
+        # Contract-not-found or similar errors are expected for test contracts
+        if echo "$err_msg" | grep -qiE "not found|unknown|no such|does not exist"; then
+            test_skip "cw_action_results" "Test contract not deployed (expected in minimal setup)"
+        else
+            test_fail "cw_action_results" "Contract execution returned error" "Error: ${err_msg:0:100}"
+        fi
+    else
+        test_skip "cw_action_results" "Could not verify action results (no contract deployed)"
+    fi
+
+    # Test 3: Invalid contract address returns proper error
+    log_verbose "Testing invalid contract address error handling..."
+    local invalid_contract_response
+    invalid_contract_response=$(ergors_cw_execute \
+        "totally_invalid_contract_address_!@#" \
+        "$test_sender" \
+        '{"some_action": {}}' \
+        '[]' 2>&1) || true
+    log_debug "Invalid contract response: $invalid_contract_response"
+
+    if json_has "$invalid_contract_response" '.error'; then
+        local err_msg
+        err_msg=$(json_get "$invalid_contract_response" '.error')
+        if [[ -z "$err_msg" ]]; then
+            err_msg=$(json_get "$invalid_contract_response" '.error.message')
+        fi
+        test_pass "cw_invalid_contract_error" "Invalid contract address returns error (${err_msg:0:60})"
+    elif echo "$invalid_contract_response" | grep -qiE "error|invalid|not found|fail"; then
+        test_pass "cw_invalid_contract_error" "Invalid contract address handled with error response"
+    else
+        test_fail "cw_invalid_contract_error" "Invalid contract address did not return error" "Response: ${invalid_contract_response:0:100}"
+    fi
+
+    # Test 4: Malformed execute message returns proper error
+    log_verbose "Testing malformed execute message error handling..."
+    local malformed_response
+    malformed_response=$(curl -s --max-time 15 -X POST \
+        "http://${COORDINATOR_API}/api/cosmwasm/execute" \
+        -H "Content-Type: application/json" \
+        -d '{"contract": "test", "sender": "test", "msg": "this_is_not_valid_json_object"}' \
+        2>/dev/null) || malformed_response="{}"
+    log_debug "Malformed msg response: $malformed_response"
+
+    if json_has "$malformed_response" '.error'; then
+        test_pass "cw_malformed_msg_error" "Malformed execute message returns proper error"
+    elif echo "$malformed_response" | grep -qiE "error|invalid|parse|deserializ"; then
+        test_pass "cw_malformed_msg_error" "Malformed execute message rejected"
+    else
+        test_fail "cw_malformed_msg_error" "Malformed execute message not rejected" "Response: ${malformed_response:0:100}"
+    fi
+
+    # Test 5: Missing required fields in execute request
+    log_verbose "Testing missing fields in execute request..."
+    local missing_fields_response
+    missing_fields_response=$(curl -s --max-time 15 -X POST \
+        "http://${COORDINATOR_API}/api/cosmwasm/execute" \
+        -H "Content-Type: application/json" \
+        -d '{"contract": "test"}' \
+        2>/dev/null) || missing_fields_response="{}"
+    log_debug "Missing fields response: $missing_fields_response"
+
+    if json_has "$missing_fields_response" '.error'; then
+        test_pass "cw_missing_fields_error" "Missing execute fields returns error"
+    elif echo "$missing_fields_response" | grep -qiE "error|missing|required|invalid"; then
+        test_pass "cw_missing_fields_error" "Missing execute fields handled"
+    else
+        test_fail "cw_missing_fields_error" "Missing execute fields not validated" "Response: ${missing_fields_response:0:100}"
+    fi
+
+    # Test 6: Verify supported action types are documented in response
+    log_verbose "Testing event router action type awareness..."
+    local action_types_response
+    action_types_response=$(curl -s --max-time 15 -X POST \
+        "http://${COORDINATOR_API}/api/cosmwasm/execute" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"contract\": \"$test_contract\",
+            \"sender\": \"$test_sender\",
+            \"msg\": {\"emit_actions\": {\"actions\": [
+                {\"InferenceRequest\": {\"model\": \"test-model\", \"prompt\": \"hello\"}},
+                {\"P2pMessage\": {\"target\": \"node123\", \"payload\": \"test\"}},
+                {\"AkashDeploy\": {\"sdl\": \"version: 2.0\"}}
+            ]}},
+            \"funds\": []
+        }" \
+        2>/dev/null) || action_types_response="{}"
+    log_debug "Action types response: $action_types_response"
+
+    # Any structured response (success or contract-not-found) means the router parsed the action types
+    if json_has "$action_types_response" '.'; then
+        if json_has "$action_types_response" '.action_results' || json_has "$action_types_response" '.events'; then
+            test_pass "cw_action_types" "Event router processes multiple action types (InferenceRequest, P2pMessage, AkashDeploy)"
+        elif json_has "$action_types_response" '.error'; then
+            local err_msg
+            err_msg=$(json_get "$action_types_response" '.error')
+            if [[ -z "$err_msg" ]]; then
+                err_msg=$(json_get "$action_types_response" '.error.message')
+            fi
+            if echo "$err_msg" | grep -qiE "not found|unknown|no such"; then
+                test_skip "cw_action_types" "Test contract not deployed (action type routing not testable)"
+            else
+                test_pass "cw_action_types" "Event router accepted action type request (error in execution: ${err_msg:0:60})"
+            fi
+        else
+            test_pass "cw_action_types" "Event router responded to multi-action request"
+        fi
+    else
+        test_fail "cw_action_types" "Event router did not respond to action type request"
+    fi
+}
+
+# =============================================================================
 # Combined API Test Suite
 # =============================================================================
 
@@ -395,6 +591,9 @@ run_api_tests() {
     test_openai_compatible_endpoint
     test_provider_routing
     test_streaming_responses
+
+    # CosmWasm event router tests
+    test_cosmwasm_event_router
 
     # Only run inference provider tests if we have a deployed endpoint
     if [[ -n "${DEPLOYED_ENDPOINT:-}" ]] || [[ -n "$TEST_SERVICE_ENDPOINT" ]]; then

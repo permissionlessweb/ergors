@@ -12,7 +12,8 @@
 #   --skip-akash       Skip Akash/Kind setup (use existing)
 #   --skip-cleanup     Keep everything running after tests
 #   --verbose          Enable verbose output
-#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|all)
+#   --skip-ethereum   Skip Ethereum/Anvil setup
+#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|all)
 #   --akash-home PATH  Set Akash repo location
 #   --help             Show this help message
 #
@@ -38,6 +39,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 source "${SCRIPT_DIR}/lib/akash.sh"
 # shellcheck source=lib/ergors.sh
 source "${SCRIPT_DIR}/lib/ergors.sh"
+# shellcheck source=lib/ethereum.sh
+source "${SCRIPT_DIR}/lib/ethereum.sh"
 
 # Source test suites
 # shellcheck source=tests/network.sh
@@ -52,6 +55,10 @@ source "${SCRIPT_DIR}/tests/security.sh"
 source "${SCRIPT_DIR}/tests/contracts.sh"
 # shellcheck source=tests/api.sh
 source "${SCRIPT_DIR}/tests/api.sh"
+# shellcheck source=tests/bootstrap.sh
+source "${SCRIPT_DIR}/tests/bootstrap.sh"
+# shellcheck source=tests/ethereum.sh
+source "${SCRIPT_DIR}/tests/ethereum.sh"
 
 # =============================================================================
 # Configuration
@@ -61,6 +68,7 @@ SKIP_CONTRACTS=false
 SKIP_NETWORK=false
 SKIP_AKASH=false
 SKIP_CLEANUP=false
+SKIP_ETHEREUM=false
 VERBOSE=false
 TEST_SUITE="all"
 
@@ -80,6 +88,7 @@ while [[ $# -gt 0 ]]; do
         --skip-network) SKIP_NETWORK=true; shift ;;
         --skip-akash) SKIP_AKASH=true; shift ;;
         --skip-cleanup) SKIP_CLEANUP=true; shift ;;
+        --skip-ethereum) SKIP_ETHEREUM=true; shift ;;
         --verbose) VERBOSE=true; shift ;;
         --test) TEST_SUITE="$2"; shift 2 ;;
         --akash-home) AKASH_HOME="$2"; shift 2 ;;
@@ -138,12 +147,16 @@ cleanup() {
         log_warn "Skipping cleanup (--skip-cleanup)"
         log_warn "Test dir: ${TEST_DIR}"
         log_warn "ERGORS PIDs: ${ERGORS_NODE_PIDS[*]:-none}"
+        log_warn "Anvil PID: ${ANVIL_PID:-none}"
         log_warn "Akash Node PID: ${AKASH_NODE_PID:-none}"
         log_warn "Akash Provider PID: ${AKASH_PROVIDER_PID:-none}"
         return
     fi
 
     log_step "Cleanup"
+
+    # Stop Ethereum network
+    ethereum_cleanup
 
     # Stop ERGORS network first (specific cleanup)
     ergors_stop_network
@@ -162,7 +175,7 @@ cleanup() {
 
     # Final verification - check if any known test ports are still in use
     local leftover_ports=()
-    for port in 50100 50101 50110 50111 26657 9090 8443; do
+    for port in 50100 50101 50110 50111 26657 9090 8443 8545; do
         if lsof -ti ":$port" &>/dev/null; then
             leftover_ports+=("$port")
         fi
@@ -242,6 +255,15 @@ run_infrastructure_phase() {
         }
     fi
 
+    # Start local Ethereum network (Anvil)
+    if [[ "$SKIP_ETHEREUM" == true ]]; then
+        log_warn "Skipping Ethereum setup"
+    else
+        ethereum_setup || {
+            log_warn "Ethereum setup failed (Anvil may not be installed)"
+        }
+    fi
+
     log_success "Infrastructure ready"
 }
 
@@ -276,6 +298,13 @@ run_tests() {
             run_network_tests  # Ensure nodes are up
             run_api_tests
             ;;
+        bootstrap)
+            run_network_tests  # Ensure nodes are up
+            run_bootstrap_tests
+            ;;
+        ethereum)
+            run_ethereum_tests
+            ;;
         all)
             # Phase 1: Network tests
             run_network_tests
@@ -295,10 +324,18 @@ run_tests() {
             # Phase 6: Provider setup + deployment tests
             akash_setup_provider || log_warn "Provider setup had issues"
             run_deployment_tests
+
+            # Phase 7: Bootstrap tests
+            run_bootstrap_tests
+
+            # Phase 8: Ethereum tests
+            if [[ "$SKIP_ETHEREUM" != true ]]; then
+                run_ethereum_tests
+            fi
             ;;
         *)
             log_error "Unknown test suite: $TEST_SUITE"
-            log_error "Valid options: network, grants, deployment, security, contracts, api, all"
+            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, all"
             exit 1
             ;;
     esac
