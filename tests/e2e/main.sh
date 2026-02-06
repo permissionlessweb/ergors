@@ -61,6 +61,8 @@ source "${SCRIPT_DIR}/tests/bootstrap.sh"
 source "${SCRIPT_DIR}/tests/ethereum.sh"
 # shellcheck source=tests/inference.sh
 source "${SCRIPT_DIR}/tests/inference.sh"
+# shellcheck source=tests/sdl_storage.sh
+source "${SCRIPT_DIR}/tests/sdl_storage.sh"
 
 # =============================================================================
 # Configuration
@@ -322,6 +324,10 @@ run_tests() {
             run_network_tests  # Ensure nodes are up
             run_inference_tests
             ;;
+        sdl-storage)
+            run_network_tests  # Ensure nodes are up
+            run_sdl_storage_tests
+            ;;
         all)
             # Phase 1: Network tests
             run_network_tests
@@ -352,10 +358,13 @@ run_tests() {
 
             # Phase 9: Inference provider routing tests
             run_inference_tests
+
+            # Phase 10: SDL storage dual-path tests
+            run_sdl_storage_tests
             ;;
         *)
             log_error "Unknown test suite: $TEST_SUITE"
-            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, all"
+            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, all"
             exit 1
             ;;
     esac
