@@ -1,4 +1,6 @@
 pub mod bootstrap;
+pub mod eth_client;
+pub mod eth_signer;
 pub mod node_sdl;
 
 pub mod akash;

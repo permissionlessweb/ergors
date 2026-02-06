@@ -13,7 +13,7 @@ pub async fn handle_headstash_claim(
     Json(_r): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
     // parse MsgClaimHeadstash
-    let _suite = zk_headstash::deploy::HeadstashSuite::new();
+    // let _suite = zk_headstash::deploy::HeadstashSuite::new(); // TODO: re-enable when zk-headstash is available
     // verify halo2-proof
 
     // save pending claim to mempool for use (inside dedicated storage layer of node)
