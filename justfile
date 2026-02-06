@@ -146,6 +146,24 @@ e2e-suite suite:
 e2e-verbose *args:
     @bash tests/e2e/main.sh --verbose {{args}}
 
+# Generate code coverage report (format: html or json, default: html)
+coverage format="html" *args="--workspace":
+    #!/bin/bash
+    set -e
+    IGNORE_FLAGS="--ignore-filename-regex 'packages/ho-std/src/types/ergors/gen/.*' --ignore-filename-regex 'proto/.*'"
+    if [ "{{format}}" = "json" ]; then
+        echo "Generating JSON coverage report..."
+        eval cargo llvm-cov {{args}} --json --output-path coverage.json $IGNORE_FLAGS
+        echo "Coverage report: coverage.json"
+    elif [ "{{format}}" = "html" ]; then
+        echo "Generating HTML coverage report..."
+        eval cargo llvm-cov {{args}} --html --output-dir coverage $IGNORE_FLAGS
+        echo "Coverage report: coverage/html/index.html"
+    else
+        echo "Unknown format: {{format}}. Use 'html' or 'json'."
+        exit 1
+    fi
+
 # Quick check (faster than full build)
 check:
     cargo chec
@@ -308,6 +326,7 @@ t := "test"
 c := "check"
 chec := "check"
 i := "install"
+cov := "coverage"
 cw := "contracts-optimize"
 ct := "contracts-test"
 e := "e2e"

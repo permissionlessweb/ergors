@@ -30,6 +30,8 @@ pub mod traits;
 #[cfg(feature = "cw")]
 pub mod cosmwasm;
 #[cfg(feature = "cw")]
+pub mod wasm_events;
+#[cfg(feature = "cw")]
 use ho_std::wasm::WasmRuntime;
 
 // Re-export the macro for external use

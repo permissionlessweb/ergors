@@ -432,90 +432,207 @@ fn is_expired(expiration: &str) -> bool {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn test_build_authz_grant_msg() {
-//         let manager = AkashAuthzManager::new(
-//             "https://rest-akash.ecostake.com".to_string(),
-//             "akashnet-2".to_string(),
-//         );
+    #[test]
+    fn test_build_authz_grant_msg() {
+        let manager = AkashAuthzManager::new(
+            "https://rest-akash.ecostake.com".to_string(),
+            "akashnet-2".to_string(),
+        );
 
-//         let msg = manager.build_authz_grant_msg(
-//             "akash1granter",
-//             "akash1grantee",
-//             msg_types::MSG_CREATE_DEPLOYMENT,
-//             Some(24),
-//         );
+        let all_types = msg_types::all_deployment_msg_types();
+        let create_deployment = &all_types[0]; // MsgCreateDeployment
 
-//         assert_eq!(msg["@type"], "/cosmos.authz.v1beta1.MsgGrant");
-//         assert_eq!(msg["granter"], "akash1granter");
-//         assert_eq!(msg["grantee"], "akash1grantee");
-//     }
+        let msg = manager.build_authz_grant_msg(
+            "akash1granter",
+            "akash1grantee",
+            create_deployment,
+            Some(24),
+        );
 
-//     #[test]
-//     fn test_build_feegrant_msg() {
-//         let manager = AkashAuthzManager::new(
-//             "https://rest-akash.ecostake.com".to_string(),
-//             "akashnet-2".to_string(),
-//         );
+        assert_eq!(msg["@type"], "/cosmos.authz.v1beta1.MsgGrant");
+        assert_eq!(msg["granter"], "akash1granter");
+        assert_eq!(msg["grantee"], "akash1grantee");
+        assert_eq!(
+            msg["grant"]["authorization"]["@type"],
+            "/cosmos.authz.v1beta1.GenericAuthorization"
+        );
+        assert_eq!(msg["grant"]["authorization"]["msg"], create_deployment.as_str());
+    }
 
-//         let msg =
-//             manager.build_feegrant_msg("akash1granter", "akash1grantee", Some(5_000_000), Some(24));
+    #[test]
+    fn test_build_feegrant_msg() {
+        let manager = AkashAuthzManager::new(
+            "https://rest-akash.ecostake.com".to_string(),
+            "akashnet-2".to_string(),
+        );
 
-//         assert_eq!(msg["@type"], "/cosmos.feegrant.v1beta1.MsgGrantAllowance");
-//         assert_eq!(msg["granter"], "akash1granter");
-//     }
+        let msg =
+            manager.build_feegrant_msg("akash1granter", "akash1grantee", Some(5_000_000), Some(24));
 
-//     #[test]
-//     fn test_all_deployment_msg_types() {
-//         let msg_types = msg_types::all_deployment_msg_types();
-//         assert!(msg_types.len() >= 6);
-//         assert!(msg_types.contains(&msg_types::MSG_CREATE_DEPLOYMENT));
-//         assert!(msg_types.contains(&msg_types::MSG_CREATE_LEASE));
-//     }
+        assert_eq!(msg["@type"], "/cosmos.feegrant.v1beta1.MsgGrantAllowance");
+        assert_eq!(msg["granter"], "akash1granter");
+        assert_eq!(msg["grantee"], "akash1grantee");
+        assert_eq!(
+            msg["allowance"]["@type"],
+            "/cosmos.feegrant.v1beta1.BasicAllowance"
+        );
+        assert_eq!(msg["allowance"]["spend_limit"][0]["denom"], "uakt");
+        assert_eq!(msg["allowance"]["spend_limit"][0]["amount"], "5000000");
+    }
 
-//     #[test]
-//     fn test_create_grant_record() {
-//         let manager = AkashAuthzManager::new(
-//             "https://rest-akash.ecostake.com".to_string(),
-//             "akashnet-2".to_string(),
-//         );
+    #[test]
+    fn test_all_deployment_msg_types() {
+        let all_types = msg_types::all_deployment_msg_types();
+        assert!(all_types.len() >= 6);
 
-//         let record = manager.create_grant_record(
-//             "akash1granter",
-//             "akash1grantee",
-//             &[
-//                 msg_types::MSG_CREATE_DEPLOYMENT,
-//                 msg_types::MSG_CREATE_LEASE,
-//             ],
-//             24,
-//             "ABC123TXHASH",
-//         );
+        // Verify expected type URLs are present (using prost::Name-generated URLs)
+        let has_create_deployment = all_types.iter().any(|t| t.contains("MsgCreateDeployment"));
+        let has_create_lease = all_types.iter().any(|t| t.contains("MsgCreateLease"));
+        assert!(has_create_deployment, "Missing MsgCreateDeployment in {:?}", all_types);
+        assert!(has_create_lease, "Missing MsgCreateLease in {:?}", all_types);
+    }
 
-//         assert_eq!(record.granter, "akash1granter");
-//         assert_eq!(record.grantee, "akash1grantee");
-//         assert_eq!(record.msg_type_urls.len(), 2);
-//         assert!(record.active);
-//     }
+    #[test]
+    fn test_create_grant_record() {
+        let manager = AkashAuthzManager::new(
+            "https://rest-akash.ecostake.com".to_string(),
+            "akashnet-2".to_string(),
+        );
 
-//     #[test]
-//     fn test_authz_status() {
-//         let mut status = AuthzStatus::default();
-//         // Empty missing_grants means all grants are present
-//         assert!(status.has_all_grants());
+        let all_types = msg_types::all_deployment_msg_types();
+        let create_deployment = &all_types[0];
+        let create_lease = all_types.iter().find(|t| t.contains("MsgCreateLease")).unwrap();
 
-//         status
-//             .missing_grants
-//             .push(msg_types::MSG_CREATE_DEPLOYMENT.to_string());
-//         assert!(!status.has_all_grants());
+        let record = manager.create_grant_record(
+            "akash1granter",
+            "akash1grantee",
+            &[
+                create_deployment.as_str(),
+                create_lease.as_str(),
+            ],
+            24,
+            "ABC123TXHASH",
+        );
 
-//         status.missing_grants.clear();
-//         status
-//             .existing_grants
-//             .push(msg_types::MSG_CREATE_DEPLOYMENT.to_string());
-//         assert!(status.has_all_grants());
-//     }
-// }
+        assert_eq!(record.granter, "akash1granter");
+        assert_eq!(record.grantee, "akash1grantee");
+        assert_eq!(record.msg_type_urls.len(), 2);
+        assert!(record.active);
+        assert_eq!(record.grant_tx_hash, "ABC123TXHASH");
+    }
+
+    #[test]
+    fn test_authz_status() {
+        let mut status = AuthzStatus::default();
+        // Empty missing_grants means all grants are present
+        assert!(status.has_all_grants());
+        assert!(!status.is_fully_authorized()); // no feegrant yet
+
+        status
+            .missing_grants
+            .push("/akash.deployment.v1beta3.MsgCreateDeployment".to_string());
+        assert!(!status.has_all_grants());
+
+        status.missing_grants.clear();
+        status
+            .existing_grants
+            .push("/akash.deployment.v1beta3.MsgCreateDeployment".to_string());
+        assert!(status.has_all_grants());
+
+        // Now set feegrant
+        status.has_feegrant = true;
+        assert!(status.is_fully_authorized());
+    }
+
+    #[test]
+    fn test_build_authz_revoke_msg() {
+        let manager = AkashAuthzManager::new(
+            "https://rest-akash.ecostake.com".to_string(),
+            "akashnet-2".to_string(),
+        );
+
+        let msg = manager.build_authz_revoke_msg(
+            "akash1granter",
+            "akash1grantee",
+            "/akash.deployment.v1beta3.MsgCreateDeployment",
+        );
+
+        assert_eq!(msg["@type"], "/cosmos.authz.v1beta1.MsgRevoke");
+        assert_eq!(msg["granter"], "akash1granter");
+        assert_eq!(msg["grantee"], "akash1grantee");
+        assert_eq!(msg["msg_type_url"], "/akash.deployment.v1beta3.MsgCreateDeployment");
+    }
+
+    #[test]
+    fn test_build_all_authz_grants() {
+        let manager = AkashAuthzManager::new(
+            "https://rest-akash.ecostake.com".to_string(),
+            "akashnet-2".to_string(),
+        );
+
+        let msgs = manager.build_all_authz_grants("akash1granter", "akash1grantee", Some(48));
+
+        // Should have one MsgGrant per deployment message type
+        let all_types = msg_types::all_deployment_msg_types();
+        assert_eq!(msgs.len(), all_types.len());
+
+        for msg in &msgs {
+            assert_eq!(msg["@type"], "/cosmos.authz.v1beta1.MsgGrant");
+            assert_eq!(msg["granter"], "akash1granter");
+            assert_eq!(msg["grantee"], "akash1grantee");
+        }
+    }
+
+    #[test]
+    fn test_create_feegrant_record() {
+        let manager = AkashAuthzManager::new(
+            "https://rest-akash.ecostake.com".to_string(),
+            "akashnet-2".to_string(),
+        );
+
+        let all_types = msg_types::all_deployment_msg_types();
+        let record = manager.create_feegrant_record(
+            "akash1granter",
+            "akash1grantee",
+            5_000_000,
+            24,
+            "FEEGRANT_TX_HASH",
+            Some(all_types),
+        );
+
+        assert_eq!(record.granter, "akash1granter");
+        assert_eq!(record.grantee, "akash1grantee");
+        assert_eq!(record.spend_limit_uakt, 5_000_000);
+        assert_eq!(record.spent_uakt, 0);
+        assert!(record.active);
+        assert_eq!(record.grant_tx_hash, "FEEGRANT_TX_HASH");
+        assert!(!record.allowed_messages.is_empty());
+    }
+
+    #[test]
+    fn test_expiration_calculation() {
+        // calculate_expiration produces RFC3339 string in the future
+        let exp = calculate_expiration(24);
+        let parsed = chrono::DateTime::parse_from_rfc3339(&exp);
+        assert!(parsed.is_ok(), "Should produce valid RFC3339 timestamp: {}", exp);
+        let exp_time = parsed.unwrap();
+        let now = chrono::Utc::now();
+        // Should be approximately 24 hours in the future
+        let diff = exp_time.signed_duration_since(now);
+        assert!(diff.num_hours() >= 23 && diff.num_hours() <= 25);
+    }
+
+    #[test]
+    fn test_is_expired() {
+        // A timestamp in the past should be expired
+        assert!(is_expired("2020-01-01T00:00:00Z"));
+        // A timestamp far in the future should not be expired
+        assert!(!is_expired("2099-01-01T00:00:00Z"));
+        // Invalid timestamp defaults to not expired
+        assert!(!is_expired("not-a-timestamp"));
+    }
+}

@@ -117,6 +117,15 @@ const SECRET_ACCESS_LOG_PREFIX: &str = "audit/secret_access";
 const GUILD_RAG_CONFIG_PREFIX: &str = "gateway/rag_config";
 const GUILD_RAG_AUDIT_PREFIX: &str = "gateway/rag_audit";
 
+// Generic Inbox storage prefixes
+const INBOX_PREFIX: &str = "inbox";
+const INBOX_STATUS_PREFIX: &str = "inbox_status";
+const INBOX_SENDER_PREFIX: &str = "inbox_sender";
+const INBOX_ACTION_PREFIX: &str = "inbox_action";
+const INBOX_HISTORY_PREFIX: &str = "inbox_history";
+const INBOX_CONFIG_KEY: &str = "config/inbox";
+const INBOX_NEXT_ID_KEY: &str = "config/inbox_next_id";
+
 /// Defines the storage used for this CwHo. implemenations in ./storage.rs
 pub struct ErgorsStorage {
     pub cs: CnidariumStorage,
@@ -2907,6 +2916,282 @@ impl ErgorsStorage {
         self.commit_delta(delta).await?;
         info!("🗑️  Deleted bootstrap session: {}", session_id);
         Ok(())
+    }
+
+    // ===== Generic Inbox Storage =====
+
+    /// Get the next inbox message ID (atomic increment).
+    pub async fn next_inbox_id(&self) -> HoResult<u64> {
+        let snapshot = self.cs.latest_snapshot();
+        let current = match snapshot.get_raw(INBOX_NEXT_ID_KEY).await {
+            Ok(Some(data)) if data.len() == 8 => {
+                u64::from_be_bytes(data.try_into().unwrap())
+            }
+            _ => 1,
+        };
+        let next = current + 1;
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        delta.put_raw(INBOX_NEXT_ID_KEY.to_string(), next.to_be_bytes().to_vec());
+        self.commit_delta(delta).await?;
+        Ok(current)
+    }
+
+    /// Save an inbox message with status, sender, and action_type indexes.
+    pub async fn save_inbox_message(&self, msg: &InboxMessage) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let id_str = msg.id.to_string();
+        let data = serde_json::to_vec(msg)?;
+
+        // Primary key: inbox/{id}
+        delta.put_raw(storage_key(INBOX_PREFIX, &id_str), data);
+
+        // Status index: inbox_status/{status}:{id}
+        let status_val = msg.status.to_string();
+        delta.put_raw(
+            storage_key2(INBOX_STATUS_PREFIX, &status_val, &id_str),
+            id_str.as_bytes().to_vec(),
+        );
+
+        // Sender index: inbox_sender/{hex_pubkey}:{id}
+        let sender_hex = hex::encode(&msg.sender_pubkey);
+        delta.put_raw(
+            storage_key2(INBOX_SENDER_PREFIX, &sender_hex, &id_str),
+            id_str.as_bytes().to_vec(),
+        );
+
+        // Action type index: inbox_action/{action_type}:{id}
+        delta.put_raw(
+            storage_key2(INBOX_ACTION_PREFIX, &msg.action_type, &id_str),
+            id_str.as_bytes().to_vec(),
+        );
+
+        self.commit_delta(delta).await?;
+        debug!("Saved inbox message {} (action: {})", msg.id, msg.action_type);
+        Ok(())
+    }
+
+    /// Get an inbox message by ID (checks inbox first, then history).
+    pub async fn get_inbox_message(&self, id: u64) -> HoResult<Option<InboxMessage>> {
+        let snapshot = self.cs.latest_snapshot();
+        let id_str = id.to_string();
+
+        // Check inbox
+        if let Ok(Some(data)) = snapshot.get_raw(&storage_key(INBOX_PREFIX, &id_str)).await {
+            let msg: InboxMessage = serde_json::from_slice(&data)?;
+            return Ok(Some(msg));
+        }
+
+        // Check history
+        if let Ok(Some(data)) = snapshot.get_raw(&storage_key(INBOX_HISTORY_PREFIX, &id_str)).await
+        {
+            let msg: InboxMessage = serde_json::from_slice(&data)?;
+            return Ok(Some(msg));
+        }
+
+        Ok(None)
+    }
+
+    /// List inbox messages by status (prefix scan).
+    pub async fn list_inbox_by_status(&self, status: i32) -> HoResult<Vec<InboxMessage>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = query_prefix(INBOX_STATUS_PREFIX, &status.to_string());
+
+        let mut results = Vec::new();
+        let mut stream = snapshot.prefix_raw(&prefix);
+
+        while let Some(entry) = stream.next().await {
+            match entry {
+                Ok((_key, id_bytes)) => {
+                    let id_str = String::from_utf8_lossy(&id_bytes);
+                    if let Ok(id) = id_str.parse::<u64>() {
+                        if let Ok(Some(msg)) = self.get_inbox_message(id).await {
+                            results.push(msg);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Error scanning inbox status index: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        results.sort_by(|a, b| b.id.cmp(&a.id));
+        Ok(results)
+    }
+
+    /// List inbox messages by action type (prefix scan).
+    pub async fn list_inbox_by_action(&self, action_type: &str) -> HoResult<Vec<InboxMessage>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = query_prefix(INBOX_ACTION_PREFIX, action_type);
+
+        let mut results = Vec::new();
+        let mut stream = snapshot.prefix_raw(&prefix);
+
+        while let Some(entry) = stream.next().await {
+            match entry {
+                Ok((_key, id_bytes)) => {
+                    let id_str = String::from_utf8_lossy(&id_bytes);
+                    if let Ok(id) = id_str.parse::<u64>() {
+                        if let Ok(Some(msg)) = self.get_inbox_message(id).await {
+                            results.push(msg);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Error scanning inbox action index: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        results.sort_by(|a, b| b.id.cmp(&a.id));
+        Ok(results)
+    }
+
+    /// List inbox messages by sender pubkey (prefix scan).
+    pub async fn list_inbox_by_sender(&self, pubkey: &[u8]) -> HoResult<Vec<InboxMessage>> {
+        let snapshot = self.cs.latest_snapshot();
+        let prefix = query_prefix(INBOX_SENDER_PREFIX, &hex::encode(pubkey));
+
+        let mut results = Vec::new();
+        let mut stream = snapshot.prefix_raw(&prefix);
+
+        while let Some(entry) = stream.next().await {
+            match entry {
+                Ok((_key, id_bytes)) => {
+                    let id_str = String::from_utf8_lossy(&id_bytes);
+                    if let Ok(id) = id_str.parse::<u64>() {
+                        if let Ok(Some(msg)) = self.get_inbox_message(id).await {
+                            results.push(msg);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Error scanning inbox sender index: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        results.sort_by(|a, b| b.id.cmp(&a.id));
+        Ok(results)
+    }
+
+    /// Update an inbox message's status. Removes old status index, writes new one.
+    pub async fn update_inbox_status(
+        &self,
+        id: u64,
+        new_status: i32,
+        reason: &str,
+    ) -> HoResult<Option<InboxMessage>> {
+        let Some(mut msg) = self.get_inbox_message(id).await? else {
+            return Ok(None);
+        };
+
+        let old_status = msg.status.to_string();
+        let id_str = id.to_string();
+
+        msg.status = new_status;
+        if !reason.is_empty() {
+            msg.rejection_reason = reason.to_string();
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap();
+        msg.updated_at = Some(pbjson_types::Timestamp {
+            seconds: now.as_secs() as i64,
+            nanos: now.subsec_nanos() as i32,
+        });
+
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        // Remove old status index
+        delta.delete(storage_key2(INBOX_STATUS_PREFIX, &old_status, &id_str));
+
+        // Write new status index
+        delta.put_raw(
+            storage_key2(INBOX_STATUS_PREFIX, &new_status.to_string(), &id_str),
+            id_str.as_bytes().to_vec(),
+        );
+
+        // Update primary record
+        delta.put_raw(
+            storage_key(INBOX_PREFIX, &id_str),
+            serde_json::to_vec(&msg)?,
+        );
+
+        self.commit_delta(delta).await?;
+        debug!("Updated inbox message {} status to {}", id, new_status);
+        Ok(Some(msg))
+    }
+
+    /// Move an inbox message from inbox to history (terminal states).
+    pub async fn move_to_inbox_history(&self, id: u64) -> HoResult<()> {
+        let id_str = id.to_string();
+        let snapshot = self.cs.latest_snapshot();
+
+        let inbox_key = storage_key(INBOX_PREFIX, &id_str);
+        let Some(data) = snapshot.get_raw(&inbox_key).await.ok().flatten() else {
+            return Ok(());
+        };
+
+        let msg: InboxMessage = serde_json::from_slice(&data)?;
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        // Write to history
+        delta.put_raw(storage_key(INBOX_HISTORY_PREFIX, &id_str), data);
+
+        // Remove from inbox
+        delta.delete(inbox_key);
+
+        // Remove indexes
+        delta.delete(storage_key2(
+            INBOX_STATUS_PREFIX,
+            &msg.status.to_string(),
+            &id_str,
+        ));
+        delta.delete(storage_key2(
+            INBOX_SENDER_PREFIX,
+            &hex::encode(&msg.sender_pubkey),
+            &id_str,
+        ));
+        delta.delete(storage_key2(
+            INBOX_ACTION_PREFIX,
+            &msg.action_type,
+            &id_str,
+        ));
+
+        self.commit_delta(delta).await?;
+        debug!("Moved inbox message {} to history", id);
+        Ok(())
+    }
+
+    // ===== Granter Config Storage =====
+
+    /// Save granter configuration.
+    pub async fn save_granter_config(&self, config: &GranterConfig) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        delta.put_raw(INBOX_CONFIG_KEY.to_string(), serde_json::to_vec(config)?);
+        self.commit_delta(delta).await?;
+        debug!("Saved granter config");
+        Ok(())
+    }
+
+    /// Get granter configuration.
+    pub async fn get_granter_config(&self) -> HoResult<Option<GranterConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+        match snapshot.get_raw(INBOX_CONFIG_KEY).await {
+            Ok(Some(data)) => {
+                let config: GranterConfig = serde_json::from_slice(&data)?;
+                Ok(Some(config))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get granter config: {}", e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
     }
 }
 

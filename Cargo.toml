@@ -142,6 +142,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde-cw-value = "0.7.0"
 serde_json = "1.0"
 serde_with = { version = "3.5.1" }
+serial_test = "3"
 serde_yaml = "0.9.34-deprecated"
 sha2 = "0.10"
 ssh-key = { version = "0.6", features = ["ed25519"] }

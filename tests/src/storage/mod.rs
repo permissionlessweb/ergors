@@ -18,6 +18,7 @@ use ho_std::types::ergors::orch::v1::{
 // ============================================================================
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_storage_health_check() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("health_check").await.unwrap();
@@ -27,6 +28,7 @@ async fn test_storage_health_check() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_storage_snapshot_creation() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("snapshot_test").await.unwrap();
@@ -41,6 +43,7 @@ async fn test_storage_snapshot_creation() {
 // ============================================================================
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_akash_workflow_crud() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("workflow_crud").await.unwrap();
@@ -116,6 +119,7 @@ async fn test_akash_workflow_crud() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_akash_workflow_list() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("workflow_list").await.unwrap();
@@ -162,6 +166,7 @@ async fn test_akash_workflow_list() {
 // ============================================================================
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_fractal_session_crud() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("session_crud").await.unwrap();
@@ -260,6 +265,7 @@ async fn test_fractal_session_crud() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_fractal_session_parent_child_hierarchy() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("session_hierarchy")
@@ -340,6 +346,7 @@ async fn test_fractal_session_parent_child_hierarchy() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_fractal_session_query_by_status() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("session_query_status")
@@ -396,6 +403,7 @@ async fn test_fractal_session_query_by_status() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_multiple_sequential_workflow_writes() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("sequential_writes")
