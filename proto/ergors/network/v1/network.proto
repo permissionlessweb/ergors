@@ -44,6 +44,9 @@ message NodeIdentity {
   uint32 ssh_port = 6;
   string node_type = 7;
   optional bytes public_key = 8;
+  // Bech32-encoded address derived from the node's Ed25519 public key
+  // Uses akash prefix by default (akash1...)
+  optional string bech32_address = 9;
 }
 
 

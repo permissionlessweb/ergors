@@ -283,7 +283,6 @@ message NodeIdentity {
   uint32 ssh_port = 6;
   string node_type = 7;
   optional bytes public_key = 8;
-  optional bytes private_key = 9;  // DEPRECATED: Use custody instead
 }
 ```
 

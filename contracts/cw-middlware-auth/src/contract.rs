@@ -10,6 +10,7 @@ use crate::msg::{
     ListAuthorizedResponse, QueryMsg,
 };
 use crate::state::{Config, AUTHORIZED, CONFIG};
+use cw2::set_contract_version;
 
 const CONTRACT_NAME: &str = "crates.io:cw-middleware-auth";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");

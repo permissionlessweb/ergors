@@ -1,7 +1,7 @@
 //! HTTP endpoint handlers for the LLM proxy.
 
 use crate::proxy::capture::{create_capture_service, CaptureMessage};
-use crate::proxy::router::ProxyRouterConfig;
+use ho_std::types::ergors::orch::v1::ProxyRouterConfig;
 use crate::proxy::session::{detect_client_type, extract_api_key, extract_session_id};
 use crate::proxy::streaming::{create_anthropic_sse_stream, create_openai_sse_stream};
 use crate::ErgorsAppState;
@@ -502,8 +502,8 @@ pub async fn handle_update_proxy_config(
     State(state): State<ErgorsAppState>,
     Json(config): Json<ProxyRouterConfig>,
 ) -> Json<serde_json::Value> {
-    info!("Updating proxy router config: anthropic={:?}, openai={:?}, ollama={:?}",
-        config.anthropic_base_url, config.openai_base_url, config.ollama_base_url);
+    info!("Updating proxy router config: {} providers, {} model routes",
+        config.providers.len(), config.model_routes.len());
 
     // Load current config from storage to get version
     let current_version = match state.s.get_proxy_router_config().await {
@@ -518,14 +518,11 @@ pub async fn handle_update_proxy_config(
         }
     };
 
-    // Create proto config for storage
+    // Create proto config for storage with incremented version
     let proto_config = ho_std::types::ergors::orch::v1::ProxyRouterConfig {
-        anthropic_base_url: config.anthropic_base_url.clone().unwrap_or_default(),
-        openai_base_url: config.openai_base_url.clone().unwrap_or_default(),
-        ollama_base_url: config.ollama_base_url.clone().unwrap_or_default(),
+        ollama_base_url: config.ollama_base_url.clone(),
         model_routes: config.model_routes.clone(),
-        api_keys: config.api_keys.clone(),
-        provider_api_keys: config.provider_api_keys.clone(),
+        providers: config.providers.clone(),
         updated_at: Some(pbjson_types::Timestamp {
             seconds: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -548,7 +545,7 @@ pub async fn handle_update_proxy_config(
 
     // Update in-memory router
     let mut router = state.pr.write().await;
-    router.update_config(config);
+    router.update_config(proto_config.clone());
 
     Json(serde_json::json!({
         "success": true,
@@ -569,10 +566,9 @@ pub async fn handle_get_proxy_config(
     let stored_config = state.s.get_proxy_router_config().await.ok().flatten();
 
     let mut response = serde_json::json!({
-        "anthropic_base_url": config.anthropic_base_url,
-        "openai_base_url": config.openai_base_url,
         "ollama_base_url": config.ollama_base_url,
         "model_routes": config.model_routes,
+        "providers": config.providers,
     });
 
     // Add version and audit info if available from storage

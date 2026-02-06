@@ -342,7 +342,9 @@ impl ManagementService for ManagementServiceImpl {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<NodeIdentity>, Status> {
-        let identity = self.state.c.identity();
+        // Get identity from NetworkManifold (has updated public_key and bech32_address)
+        let nm = self.state.nm.lock().await;
+        let identity = nm.identity();
 
         Ok(Response::new(NodeIdentity {
             host: identity.host.clone(),
@@ -353,6 +355,7 @@ impl ManagementService for ManagementServiceImpl {
             ssh_port: identity.ssh_port,
             node_type: identity.node_type.clone(),
             public_key: identity.public_key.clone(),
+            bech32_address: identity.bech32_address.clone(),
         }))
     }
 
@@ -2661,7 +2664,7 @@ impl ManagementService for ManagementServiceImpl {
 
         // Store discovered endpoints in the workflow
         workflow.endpoints = req.endpoints;
-        workflow.current_step = AkashWorkflowStep::EndpointTesting as i32;
+        workflow.current_step = AkashWorkflowStep::EndpointRetrieval as i32;
         workflow.updated_at = Some(pbjson_types::Timestamp {
             seconds: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2704,12 +2707,9 @@ impl ManagementService for ManagementServiceImpl {
 
         // Create new proto config with incremented version
         let proto_config = ho_std::types::ergors::orch::v1::ProxyRouterConfig {
-            anthropic_base_url: req.anthropic_base_url.clone(),
-            openai_base_url: req.openai_base_url.clone(),
             ollama_base_url: req.ollama_base_url.clone(),
             model_routes: req.model_routes.clone(),
-            api_keys: std::collections::HashMap::new(), // Not exposed in gRPC yet
-            provider_api_keys: std::collections::HashMap::new(), // Not exposed in gRPC yet
+            providers: std::collections::HashMap::new(), // TODO: populate from request
             updated_at: Some(pbjson_types::Timestamp {
                 seconds: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -2728,28 +2728,15 @@ impl ManagementService for ManagementServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Failed to persist config: {}", e)))?;
 
-        // Update in-memory proxy router
-        let mut in_memory_config = crate::proxy::ProxyRouterConfig::default();
-        if !req.openai_base_url.is_empty() {
-            in_memory_config.openai_base_url = Some(req.openai_base_url.clone());
-        }
-        if !req.anthropic_base_url.is_empty() {
-            in_memory_config.anthropic_base_url = Some(req.anthropic_base_url.clone());
-        }
-        if !req.ollama_base_url.is_empty() {
-            in_memory_config.ollama_base_url = Some(req.ollama_base_url.clone());
-        }
-        in_memory_config.model_routes = req.model_routes;
-
+        // Update in-memory proxy router with the proto config
         let mut router = self.state.pr.write().await;
-        router.update_config(in_memory_config);
+        router.update_config(proto_config.clone());
 
         tracing::info!(
-            "Proxy routes configured v{}: openai={}, anthropic={}, ollama={}",
+            "Proxy routes configured v{}: {} providers, {} model routes",
             proto_config.version,
-            req.openai_base_url,
-            req.anthropic_base_url,
-            req.ollama_base_url,
+            proto_config.providers.len(),
+            proto_config.model_routes.len(),
         );
 
         Ok(Response::new(OperationResult {
@@ -2796,8 +2783,6 @@ impl ManagementService for ManagementServiceImpl {
 
         // Apply options if provided
         let options = req.options.unwrap_or_else(|| AkashWorkflowOptions {
-            skip_grants: false,              // Deprecated, ignored
-            auto_select_bid: true,           // Deprecated, default behavior
             min_balance_uakt: 5_000_000,
             bid_wait_blocks: 2,
             trusted_providers: vec![],
@@ -2809,10 +2794,8 @@ impl ManagementService for ManagementServiceImpl {
         });
 
         tracing::info!(
-            "Running automated deployment for session {} (skip_grants={}, auto_select_bid={})",
-            req.session_id,
-            options.skip_grants,
-            options.auto_select_bid
+            "Running automated deployment for session {}",
+            req.session_id
         );
 
         // Unlock key manager with provided password

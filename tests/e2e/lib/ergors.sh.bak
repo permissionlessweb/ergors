@@ -183,11 +183,11 @@ _ergors_import_keys_to_node() {
     }
 
     # Import mnemonic using ergors engine binary
-    # Both ERGORS_CUSTODY_PASSWORD and ERGORS_MNEMONIC env vars enable non-interactive import
+    # ERGORS_CUSTODY_PASSWORD env var is read by the Rust code for non-interactive import
     local import_output
     import_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
+        --phrase "$mnemonic" \
         --label "E2E Faucet Key" \
         --key-name "faucet" \
         --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
@@ -691,8 +691,8 @@ ergors_import_faucet_key() {
     # Requires ERGORS_CUSTODY_PASSWORD for key encryption
     local import_output
     import_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
+        --phrase "$mnemonic" \
         --label "E2E Faucet Key" \
         --key-name "$key_name" \
         --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
@@ -1106,8 +1106,8 @@ ergors_import_keys_post_startup() {
     log "Importing faucet key into coordinator..."
     local coord_import
     coord_import=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$coord_home" keys import-mnemonic \
+        --phrase "$mnemonic" \
         --label "E2E Faucet Key" \
         --key-name "faucet" \
         --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
@@ -1127,8 +1127,8 @@ ergors_import_keys_post_startup() {
     log "Importing faucet key into executor..."
     local exec_import
     exec_import=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$exec_home" keys import-mnemonic \
+        --phrase "$mnemonic" \
         --label "E2E Faucet Key" \
         --key-name "faucet" \
         --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \

@@ -160,6 +160,7 @@ impl ConfigCmd {
                 ssh_port: 22,
                 node_type: node_type_cap.to_string(),
                 public_key: None,
+                bech32_address: None,
             }),
             storage: Some(StorageConfig {
                 data_dir: data_dir.to_string(),

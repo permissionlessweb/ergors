@@ -66,22 +66,48 @@ test_ergors_network() {
         test_fail "executor_node_info" "Executor node info failed" "No node_type in response"
     fi
 
-    # Test: Coordinator can derive cosmos address
-    local coord_addr
-    coord_addr=$(ergors_cli node address 2>&1) || true
-    log_verbose "Coordinator address response:"
-    log_debug "$coord_addr"
-    if json_has "$coord_addr" '.address'; then
-        local address
-        address=$(json_get "$coord_addr" '.address')
-        if [[ "$address" == akash1* ]]; then
-            test_pass "coordinator_cosmos_address" "Coordinator cosmos address: $address"
+    # Test: Coordinator node info includes bech32 address
+    if json_has "$coord_info" '.bech32_address'; then
+        local bech32_addr
+        bech32_addr=$(json_get "$coord_info" '.bech32_address')
+        if [[ "$bech32_addr" == ergors1* ]]; then
+            test_pass "coordinator_bech32_in_info" "Coordinator node info includes bech32: $bech32_addr"
         else
-            test_fail "coordinator_cosmos_address" "Invalid address format" "Got: $address"
+            test_fail "coordinator_bech32_in_info" "Invalid bech32 format in node info" "Got: $bech32_addr"
         fi
     else
-        test_fail "coordinator_cosmos_address" "Coordinator address query failed" "No address in response"
+        test_fail "coordinator_bech32_in_info" "Node info missing bech32_address field"
     fi
+
+    # Test: Executor node info includes bech32 address
+    if json_has "$exec_info" '.bech32_address'; then
+        local exec_bech32
+        exec_bech32=$(json_get "$exec_info" '.bech32_address')
+        if [[ "$exec_bech32" == ergors1* ]]; then
+            test_pass "executor_bech32_in_info" "Executor node info includes bech32: $exec_bech32"
+        else
+            test_fail "executor_bech32_in_info" "Invalid bech32 format in executor info" "Got: $exec_bech32"
+        fi
+    else
+        test_fail "executor_bech32_in_info" "Executor info missing bech32_address field"
+    fi
+
+    # # Test: Coordinator can derive cosmos address
+    # local coord_addr
+    # coord_addr=$(ergors_cli node address 2>&1) || true
+    # log_verbose "Coordinator address response:"
+    # log_debug "$coord_addr"
+    # if json_has "$coord_addr" '.address'; then
+    #     local address
+    #     address=$(json_get "$coord_addr" '.address')
+    #     if [[ "$address" == ergors1* ]]; then
+    #         test_pass "coordinator_cosmos_address" "Coordinator cosmos address: $address"
+    #     else
+    #         test_fail "coordinator_cosmos_address" "Invalid address format" "Got: $address"
+    #     fi
+    # else
+    #     test_fail "coordinator_cosmos_address" "Coordinator address query failed" "No address in response"
+    # fi
 
     # Test: Executor can derive cosmos address
     local exec_addr
@@ -91,7 +117,7 @@ test_ergors_network() {
     if json_has "$exec_addr" '.address'; then
         local address
         address=$(json_get "$exec_addr" '.address')
-        if [[ "$address" == akash1* ]]; then
+        if [[ "$address" == ergors1* ]]; then
             test_pass "executor_cosmos_address" "Executor cosmos address: $address"
         else
             test_fail "executor_cosmos_address" "Invalid address format" "Got: $address"
