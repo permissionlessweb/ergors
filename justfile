@@ -138,7 +138,7 @@ e2e *args:
     @echo "🧪 Running E2E integration tests..."
     @bash tests/e2e/main.sh {{args}}
 
-# Run specific E2E test suite (network|grants|deployment|security|contracts|api|bootstrap|all)
+# Run specific E2E test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|all)
 e2e-suite suite:
     @bash tests/e2e/main.sh --test {{suite}}
 
