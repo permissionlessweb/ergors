@@ -25,6 +25,7 @@ ho-std  = { workspace = true, features = ["rpc"] }
 ergors-rag = { path = "../ergors-rag", features = ["openai"] }
 ergors-rlm = { path = "../ergors-rlm", optional = true }
 akash-deploy-rs = { workspace = true }
+ethers = { workspace = true }
 anyhow = { workspace = true }
 argon2 = { workspace = true }
 async-stream = { workspace = true }

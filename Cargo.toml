@@ -167,6 +167,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 walkdir = "2"
+ethers = { version = "2", default-features = false, features = ["legacy", "rustls"] }
 ## zk-headstash = { path = "../TERPNETWORK/airdrop/zk-crates/zk-headstash" }
 
 # The profile that 'cargo dist' will build with
