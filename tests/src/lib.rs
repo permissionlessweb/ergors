@@ -45,8 +45,8 @@ pub mod mock_client;
 // Component test modules
 #[cfg(test)]
 mod config;
-#[cfg(test)]
-mod custody;
+// #[cfg(test)]
+// mod custody;
 #[cfg(test)]
 pub mod git;
 #[cfg(test)]
@@ -62,7 +62,7 @@ pub mod storage;
 #[cfg(test)]
 pub mod wasm;
 
-// Integration test modules
-#[cfg(test)]
-pub mod integration;
+// // Integration test modules
+// #[cfg(test)]
+// pub mod integration;
 

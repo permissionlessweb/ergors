@@ -36,6 +36,7 @@ tokio-test = "0.4"
 pbjson-types = { workspace = true }
 camino = { workspace = true }
 rand = { workspace = true }
+serial_test = { workspace = true }
 
 # Integration test dependencies - real node engine components
 ergors = { path = "../packages/ergors", features = ["cw"] }

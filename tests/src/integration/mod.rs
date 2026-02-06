@@ -19,6 +19,7 @@ use crate::common::setup::{init_test_tracing, IntegrationTestHarness};
 
 /// Test complete workflow lifecycle through storage
 #[tokio::test]
+#[serial_test::serial]
 async fn test_workflow_full_lifecycle() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("workflow_lifecycle")
@@ -96,6 +97,7 @@ async fn test_workflow_full_lifecycle() {
 
 /// Test workflow error handling and retry
 #[tokio::test]
+#[serial_test::serial]
 async fn test_workflow_error_and_retry() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("workflow_error").await.unwrap();
@@ -140,6 +142,7 @@ async fn test_workflow_error_and_retry() {
 
 /// Test workflow cancellation
 #[tokio::test]
+#[serial_test::serial]
 async fn test_workflow_cancellation() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("workflow_cancel")
@@ -171,6 +174,7 @@ async fn test_workflow_cancellation() {
 
 /// Test multiple workflows with filtering
 #[tokio::test]
+#[serial_test::serial]
 async fn test_multiple_workflows_filtering() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("workflows_filter")
@@ -235,48 +239,60 @@ async fn test_multiple_workflows_filtering() {
     assert_eq!(completed.len(), 1);
 }
 
-/// Test storage isolation between test instances
+/// Test storage isolation between test instances.
+///
+/// Each cnidarium instance opens many FDs (27 substores x RocksDB files),
+/// so we avoid holding two instances open simultaneously. Instead, we
+/// create one, write data, drop it to free FDs, then create a second
+/// and verify it can't see the first's data — proving path-based isolation.
 #[tokio::test]
+#[serial_test::serial]
 async fn test_storage_isolation() {
     init_test_tracing();
 
-    // Create two separate harnesses
-    let harness1 = IntegrationTestHarness::new("isolation_test_1")
-        .await
-        .unwrap();
-    let harness2 = IntegrationTestHarness::new("isolation_test_2")
-        .await
-        .unwrap();
+    // Phase 1: Create first storage, write data, verify it's readable, then drop
+    {
+        let harness1 = IntegrationTestHarness::new("isolation_test_1")
+            .await
+            .unwrap();
 
-    // Write to harness1
-    let workflow1 = AkashDeploymentWorkflow {
-        session_id: "isolated-workflow".to_string(),
-        current_step: AkashWorkflowStep::KeySelection as i32,
-        status: AkashWorkflowStatus::Pending as i32,
-        ..Default::default()
-    };
-    harness1
-        .storage()
-        .put_akash_workflow(&workflow1)
-        .await
-        .unwrap();
+        let workflow1 = AkashDeploymentWorkflow {
+            session_id: "isolated-workflow".to_string(),
+            current_step: AkashWorkflowStep::KeySelection as i32,
+            status: AkashWorkflowStatus::Pending as i32,
+            ..Default::default()
+        };
+        harness1
+            .storage()
+            .put_akash_workflow(&workflow1)
+            .await
+            .unwrap();
 
-    // harness2 should NOT see harness1's data
-    let from_harness2 = harness2
-        .storage()
-        .get_akash_workflow("isolated-workflow")
-        .await
-        .unwrap();
-    assert!(
-        from_harness2.is_none(),
-        "Storage should be isolated between test instances"
-    );
+        // harness1 should see its own data
+        let from_harness1 = harness1
+            .storage()
+            .get_akash_workflow("isolated-workflow")
+            .await
+            .unwrap();
+        assert!(from_harness1.is_some());
+    }
+    // harness1 dropped here — FDs freed
 
-    // harness1 should still see its own data
-    let from_harness1 = harness1
-        .storage()
-        .get_akash_workflow("isolated-workflow")
-        .await
-        .unwrap();
-    assert!(from_harness1.is_some());
+    // Phase 2: Create second storage at a different path, verify isolation
+    {
+        let harness2 = IntegrationTestHarness::new("isolation_test_2")
+            .await
+            .unwrap();
+
+        // harness2 should NOT see harness1's data
+        let from_harness2 = harness2
+            .storage()
+            .get_akash_workflow("isolated-workflow")
+            .await
+            .unwrap();
+        assert!(
+            from_harness2.is_none(),
+            "Storage should be isolated between test instances"
+        );
+    }
 }

@@ -17,6 +17,7 @@ use ho_std::types::ergors::management::v1::{
 
 /// Test creating and retrieving a session through storage
 #[tokio::test]
+#[serial_test::serial]
 async fn test_session_create_and_retrieve() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("session_create_retrieve")
@@ -82,6 +83,7 @@ async fn test_session_create_and_retrieve() {
 
 /// Test session lifecycle transitions
 #[tokio::test]
+#[serial_test::serial]
 async fn test_session_lifecycle_transitions() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("session_lifecycle")
@@ -145,6 +147,7 @@ async fn test_session_lifecycle_transitions() {
 
 /// Test fractal session hierarchy creation
 #[tokio::test]
+#[serial_test::serial]
 async fn test_fractal_hierarchy_creation() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("fractal_hierarchy")
@@ -218,6 +221,7 @@ async fn test_fractal_hierarchy_creation() {
 
 /// Test session query with multiple filters
 #[tokio::test]
+#[serial_test::serial]
 async fn test_session_complex_query() {
     init_test_tracing();
     let harness = IntegrationTestHarness::new("session_complex_query")

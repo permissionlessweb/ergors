@@ -213,6 +213,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_real_storage_initialization() {
         init_test_tracing();
         let harness = IntegrationTestHarness::new("storage_init_test").await.unwrap();

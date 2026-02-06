@@ -244,7 +244,7 @@ mod tests {
 
         // Verify identity was created
         assert!(config.identity.public_key.is_some());
-        assert_eq!(config.identity.node_type, "EXECUTOR");
+        assert_eq!(config.identity.node_type, "NODE_TYPE_EXECUTOR");
         assert_eq!(config.identity.p2p_port, 26969);
 
         // Verify network config
