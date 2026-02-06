@@ -10,6 +10,7 @@ pub mod climb_signer;
 pub mod cosmos_client;
 pub mod deployment_builder;
 pub mod endpoint_manager;
+pub mod grant_inbox;
 pub mod granter;
 pub mod manifest;
 pub mod reputation;

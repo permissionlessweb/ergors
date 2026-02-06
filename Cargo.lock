@@ -5048,7 +5048,7 @@ dependencies = [
 [[package]]
 name = "ics23"
 version = "0.12.1"
-source = "git+https://github.com/permissionlessweb/ics23?branch=prost-14.1#99df0272bf806e7e066ca41657b32873f8802e03"
+source = "git+https://github.com/permissionlessweb/ics23?branch=prost-14.1#dc6ba0a181b1a88f2e95e157d5c2f5c275489be1"
 dependencies = [
  "anyhow",
  "bytes",

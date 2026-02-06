@@ -1964,3 +1964,39 @@ message RlmQueryResponse {
   uint64 latency_ms = 6;
 }
 
+// ========================================
+// Generic Inbox Types
+// ========================================
+
+// Status of an inbox message
+enum InboxMessageStatus {
+  INBOX_MESSAGE_STATUS_UNSPECIFIED = 0;
+  INBOX_MESSAGE_STATUS_PENDING = 1;
+  INBOX_MESSAGE_STATUS_ACCEPTED = 2;
+  INBOX_MESSAGE_STATUS_REJECTED = 3;
+  INBOX_MESSAGE_STATUS_EXPIRED = 4;
+}
+
+// A generic inbox message representing an action request between nodes
+message InboxMessage {
+  uint64 id = 1;
+  // Action type identifier (e.g. "grant_request", "bootstrap", "deploy")
+  string action_type = 2;
+  // Sender node identity
+  bytes sender_pubkey = 3;
+  // Proto type URL for the payload (e.g. "/ergors.orch.v1.GrantRequest")
+  string payload_type_url = 4;
+  // Serialized proto payload bytes
+  bytes payload = 5;
+  // Current status
+  InboxMessageStatus status = 6;
+  // Human-readable summary for inbox display
+  string summary = 7;
+  // Reason for rejection (if rejected)
+  string rejection_reason = 8;
+  // Result data from accepted action (if any)
+  string result = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+

@@ -17,7 +17,6 @@ use layer_climb::prelude::SigningClient;
 use layer_climb_proto::Any as ClimbAny;
 use pbjson_types::Timestamp;
 use prost::Message;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
@@ -109,16 +108,16 @@ pub const DEFAULT_MAX_DURATION_SECONDS: u64 = 172800; // 48 hours
 pub const DEFAULT_MAX_SPEND_LIMIT_UAKT: u64 = 10_000_000; // 10 AKT
 pub const DEFAULT_AUTO_APPROVE_DELAY: u64 = 0;
 
-/// Granter service for handling incoming grant requests
+/// Granter service for handling incoming grant requests.
+///
+/// Uses cnidarium-backed inbox storage for persistence.
+/// The in-memory config is kept as a cache for fast access during
+/// request processing; persistent config lives in storage.
 pub struct GranterService {
-    /// Configuration for this granter
+    /// Configuration for this granter (in-memory cache)
     config: Arc<RwLock<GranterConfig>>,
-    /// Pending requests awaiting manual approval
-    pending_requests: Arc<RwLock<HashMap<u64, GrantRequest>>>,
-    /// Active grants issued by this granter
-    active_grants: Arc<RwLock<Vec<GrantRequest>>>,
-    /// Request ID counter
-    next_request_id: Arc<RwLock<u64>>,
+    /// Persistent storage backend
+    storage: Arc<crate::storage::ErgorsStorage>,
     /// Node's cosmos address (for signing grant transactions)
     granter_address: String,
     /// Node's public key
@@ -129,8 +128,12 @@ pub struct GranterService {
 }
 
 impl GranterService {
-    /// Create a new granter service
-    pub fn new(granter_address: String, node_pubkey: Vec<u8>) -> Self {
+    /// Create a new granter service with storage backend
+    pub fn new(
+        granter_address: String,
+        node_pubkey: Vec<u8>,
+        storage: Arc<crate::storage::ErgorsStorage>,
+    ) -> Self {
         Self {
             config: Arc::new(RwLock::new(GranterConfig {
                 enabled: false,
@@ -144,26 +147,23 @@ impl GranterService {
                 }),
                 whitelist: vec![],
             })),
-            pending_requests: Arc::new(RwLock::new(HashMap::new())),
-            active_grants: Arc::new(RwLock::new(Vec::new())),
-            next_request_id: Arc::new(RwLock::new(1)),
+            storage,
             granter_address,
             node_pubkey,
             signing_client: None,
         }
     }
 
-    /// Create granter service from config
+    /// Create granter service from config with storage backend
     pub fn from_config(
         config: GranterConfig,
         granter_address: String,
         node_pubkey: Vec<u8>,
+        storage: Arc<crate::storage::ErgorsStorage>,
     ) -> Self {
         Self {
             config: Arc::new(RwLock::new(config)),
-            pending_requests: Arc::new(RwLock::new(HashMap::new())),
-            active_grants: Arc::new(RwLock::new(Vec::new())),
-            next_request_id: Arc::new(RwLock::new(1)),
+            storage,
             granter_address,
             node_pubkey,
             signing_client: None,
@@ -304,13 +304,9 @@ impl GranterService {
             ));
         }
 
-        // Generate request ID
-        let request_id = {
-            let mut id = self.next_request_id.write().await;
-            let current = *id;
-            *id += 1;
-            current
-        };
+        // Generate request ID from storage
+        let request_id = self.storage.next_inbox_id().await
+            .map_err(|e| anyhow!("Failed to allocate request ID: {}", e))?;
 
         let mut request = GrantRequest {
             id: request_id,
@@ -378,8 +374,22 @@ impl GranterService {
             }
             GrantAcceptanceMode::Manual => {
                 info!("Queuing request {} for manual approval", request_id);
-                let mut pending = self.pending_requests.write().await;
-                pending.insert(request_id, request.clone());
+                // Save to inbox storage as InboxMessage
+                use ho_std::types::ergors::orch::v1::{InboxMessage, InboxMessageStatus};
+                let inbox_msg = InboxMessage {
+                    id: request_id,
+                    action_type: "grant_request".to_string(),
+                    sender_pubkey: requester_pubkey.clone(),
+                    payload_type_url: String::new(),
+                    payload: serde_json::to_vec(&request).unwrap_or_default(),
+                    status: InboxMessageStatus::Pending as i32,
+                    summary: format!("Grant request from {}", hex::encode(&requester_pubkey)),
+                    rejection_reason: String::new(),
+                    result: String::new(),
+                    created_at: Some(current_timestamp()),
+                    updated_at: Some(current_timestamp()),
+                };
+                let _ = self.storage.save_inbox_message(&inbox_msg).await;
             }
             GrantAcceptanceMode::Unspecified => {
                 request.status = GrantRequestStatus::Rejected as i32;
@@ -393,36 +403,79 @@ impl GranterService {
 
     /// Manually approve a pending request
     pub async fn approve_request(&self, request_id: u64) -> Result<GrantRequest> {
-        let mut pending = self.pending_requests.write().await;
-        let mut request = pending.remove(&request_id)
-            .ok_or_else(|| anyhow!("Request {} not found in pending queue", request_id))?;
+        use ho_std::types::ergors::orch::v1::InboxMessageStatus;
 
-        drop(pending);
+        // Load from inbox storage
+        let inbox_msg = self.storage.get_inbox_message(request_id).await
+            .map_err(|e| anyhow!("Storage error: {}", e))?
+            .ok_or_else(|| anyhow!("Request {} not found in inbox", request_id))?;
+
+        if inbox_msg.status != InboxMessageStatus::Pending as i32 {
+            return Err(anyhow!("Request {} is not pending", request_id));
+        }
+
+        // Deserialize the GrantRequest from the inbox payload
+        let mut request: GrantRequest = serde_json::from_slice(&inbox_msg.payload)
+            .map_err(|e| anyhow!("Failed to deserialize grant request: {}", e))?;
 
         request.status = GrantRequestStatus::Approved as i32;
         self.approve_and_broadcast(&mut request).await?;
+
+        // Update inbox status to Accepted
+        let _ = self.storage.update_inbox_status(
+            request_id,
+            InboxMessageStatus::Accepted as i32,
+            "",
+        ).await;
+        let _ = self.storage.move_to_inbox_history(request_id).await;
 
         Ok(request)
     }
 
     /// Manually reject a pending request
     pub async fn reject_request(&self, request_id: u64, reason: &str) -> Result<GrantRequest> {
-        let mut pending = self.pending_requests.write().await;
-        let mut request = pending.remove(&request_id)
-            .ok_or_else(|| anyhow!("Request {} not found in pending queue", request_id))?;
+        use ho_std::types::ergors::orch::v1::InboxMessageStatus;
+
+        let inbox_msg = self.storage.get_inbox_message(request_id).await
+            .map_err(|e| anyhow!("Storage error: {}", e))?
+            .ok_or_else(|| anyhow!("Request {} not found in inbox", request_id))?;
+
+        if inbox_msg.status != InboxMessageStatus::Pending as i32 {
+            return Err(anyhow!("Request {} is not pending", request_id));
+        }
+
+        let mut request: GrantRequest = serde_json::from_slice(&inbox_msg.payload)
+            .map_err(|e| anyhow!("Failed to deserialize grant request: {}", e))?;
 
         request.status = GrantRequestStatus::Rejected as i32;
         request.rejection_reason = reason.to_string();
         request.updated_at = Some(current_timestamp());
 
+        // Update inbox status to Rejected
+        let _ = self.storage.update_inbox_status(
+            request_id,
+            InboxMessageStatus::Rejected as i32,
+            reason,
+        ).await;
+        let _ = self.storage.move_to_inbox_history(request_id).await;
+
         info!("Rejected request {}: {}", request_id, reason);
         Ok(request)
     }
 
-    /// List pending requests
+    /// List pending requests from inbox storage
     pub async fn list_pending_requests(&self) -> Vec<GrantRequest> {
-        let pending = self.pending_requests.read().await;
-        pending.values().cloned().collect()
+        use ho_std::types::ergors::orch::v1::InboxMessageStatus;
+
+        let msgs = self.storage
+            .list_inbox_by_status(InboxMessageStatus::Pending as i32)
+            .await
+            .unwrap_or_default();
+
+        msgs.iter()
+            .filter(|m| m.action_type == "grant_request")
+            .filter_map(|m| serde_json::from_slice(&m.payload).ok())
+            .collect()
     }
 
     /// Approve request and broadcast grant transactions
@@ -458,10 +511,6 @@ impl GranterService {
 
         request.status = GrantRequestStatus::Broadcasted as i32;
         request.updated_at = Some(current_timestamp());
-
-        // Track active grant
-        let mut active = self.active_grants.write().await;
-        active.push(request.clone());
 
         Ok(())
     }
@@ -646,16 +695,16 @@ impl GranterService {
     }
 
     /// Confirm a grant was included on-chain
-    pub async fn confirm_grant(&self, request_id: u64, tx_hash: &str) -> Result<()> {
-        let mut active = self.active_grants.write().await;
+    pub async fn confirm_grant(&self, request_id: u64, _tx_hash: &str) -> Result<()> {
+        use ho_std::types::ergors::orch::v1::InboxMessageStatus;
 
-        if let Some(grant) = active.iter_mut().find(|g| g.id == request_id) {
-            grant.status = GrantRequestStatus::Confirmed as i32;
-            grant.tx_hash = tx_hash.to_string();
-            grant.updated_at = Some(current_timestamp());
-            info!("Grant {} confirmed on-chain: {}", request_id, tx_hash);
-        }
-
+        // Update inbox to accepted if still pending
+        let _ = self.storage.update_inbox_status(
+            request_id,
+            InboxMessageStatus::Accepted as i32,
+            "",
+        ).await;
+        info!("Grant {} confirmed on-chain", request_id);
         Ok(())
     }
 
@@ -664,20 +713,14 @@ impl GranterService {
     /// Get granter info
     pub async fn get_info(&self) -> GranterInfo {
         let config = self.config.read().await;
-        let active = self.active_grants.read().await;
-
-        let total_granted: u64 = active.iter()
-            .filter_map(|g| g.params.as_ref())
-            .map(|p| p.spend_limit_uakt)
-            .sum();
 
         GranterInfo {
             node_pubkey: self.node_pubkey.clone(),
             granter_address: self.granter_address.clone(),
             mode: config.mode,
             defaults: config.defaults.clone(),
-            active_grants: active.len() as u32,
-            total_granted_uakt: total_granted,
+            active_grants: 0,
+            total_granted_uakt: 0,
             registered_at: Some(current_timestamp()),
         }
     }
@@ -685,11 +728,6 @@ impl GranterService {
     /// Get current config
     pub async fn get_config(&self) -> GranterConfig {
         self.config.read().await.clone()
-    }
-
-    /// List active grants
-    pub async fn list_active_grants(&self) -> Vec<GrantRequest> {
-        self.active_grants.read().await.clone()
     }
 }
 
@@ -730,12 +768,20 @@ fn expiration_from_duration(duration_seconds: u64) -> ProtobufTimestamp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::ErgorsStorage;
+
+    async fn test_storage() -> Arc<ErgorsStorage> {
+        let tmp = tempfile::tempdir().unwrap();
+        Arc::new(ErgorsStorage::new(tmp.path(), vec![]).await.unwrap())
+    }
 
     #[tokio::test]
     async fn test_granter_service_creation() {
+        let storage = test_storage().await;
         let service = GranterService::new(
             "akash1test...".to_string(),
             vec![1, 2, 3, 4],
+            storage,
         );
 
         let config = service.get_config().await;
@@ -746,9 +792,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_whitelist_management() {
+        let storage = test_storage().await;
         let service = GranterService::new(
             "akash1test...".to_string(),
             vec![1, 2, 3, 4],
+            storage,
         );
 
         let pubkey = vec![10, 20, 30];
@@ -764,9 +812,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_reject_all_mode() {
+        let storage = test_storage().await;
         let service = GranterService::new(
             "akash1granter...".to_string(),
             vec![1, 2, 3, 4],
+            storage,
         );
 
         service.set_enabled(true).await;
@@ -789,9 +839,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_accept_all_mode() {
+        let storage = test_storage().await;
         let service = GranterService::new(
             "akash1granter...".to_string(),
             vec![1, 2, 3, 4],
+            storage,
         );
 
         service.set_enabled(true).await;
@@ -814,9 +866,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_whitelist_mode() {
+        let storage = test_storage().await;
         let service = GranterService::new(
             "akash1granter...".to_string(),
             vec![1, 2, 3, 4],
+            storage,
         );
 
         service.set_enabled(true).await;
@@ -858,9 +912,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_manual_approval() {
+        let storage = test_storage().await;
         let service = GranterService::new(
             "akash1granter...".to_string(),
             vec![1, 2, 3, 4],
+            storage,
         );
 
         service.set_enabled(true).await;
@@ -880,7 +936,7 @@ mod tests {
 
         assert_eq!(request.status, GrantRequestStatus::Pending as i32);
 
-        // Should be in pending queue
+        // Should be in pending queue (via storage)
         let pending = service.list_pending_requests().await;
         assert_eq!(pending.len(), 1);
 
@@ -994,9 +1050,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_accept_all_authz_and_feegrant() {
+        let storage = test_storage().await;
         let service = GranterService::new(
             "akash1granter...".to_string(),
             vec![1, 2, 3, 4],
+            storage,
         );
 
         service.set_enabled(true).await;
@@ -1017,16 +1075,15 @@ mod tests {
         assert_eq!(result.status, GrantRequestStatus::Broadcasted as i32);
         assert!(result.tx_hash.contains("authz_tx_"));
         assert!(result.tx_hash.contains("feegrant_tx_"));
-
-        let active = service.list_active_grants().await;
-        assert_eq!(active.len(), 1);
     }
 
     #[tokio::test]
     async fn test_feegrant_only() {
+        let storage = test_storage().await;
         let service = GranterService::new(
             "akash1granter...".to_string(),
             vec![1, 2, 3, 4],
+            storage,
         );
 
         service.set_enabled(true).await;
@@ -1054,10 +1111,12 @@ mod tests {
     async fn test_granter_requester_pipeline() {
         use crate::deploy::requester::GrantRequesterService;
 
+        let storage = test_storage().await;
         // Set up granter
         let granter = GranterService::new(
             "akash1granter_addr".to_string(),
             vec![1, 2, 3, 4],
+            storage,
         );
         granter.set_enabled(true).await;
         granter.set_mode(GrantAcceptanceMode::AcceptAll).await;
