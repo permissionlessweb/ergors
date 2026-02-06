@@ -249,11 +249,24 @@ ergors_start_network() {
     _ergors_generate_config "coordinator" "coordinator" "$coord_http" "$coord_p2p" "$coord_home"
     _ergors_import_keys_to_node "$coord_home" "coordinator"
 
+    # Configure LLM entities BEFORE starting coordinator (if API keys are available)
+    if [[ -n "${OPENAI_API_KEY:-}" ]] && [[ -n "${ANTHROPIC_API_KEY:-}" ]] && [[ -n "${OLLAMA_API_KEY:-}" ]]; then
+        log "Configuring LLM entities for coordinator..."
+        ergors_configure_llm_entities "$coord_home" "$OPENAI_API_KEY" "$ANTHROPIC_API_KEY" "$OLLAMA_API_KEY"
+    fi
+
     log "Starting coordinator..."
+
+    # Start coordinator with live logs (use tee to both display and save)
     ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
     NODE_DATA_PATH="${coord_home}" \
-    "$ERGORS_BIN" --home "$coord_home" start --grpc-port "$coord_grpc" \
-        > "$coord_home/node.log" 2>&1 &
+    OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+    ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+    OLLAMA_API_KEY="${OLLAMA_API_KEY:-}" \
+    MOCK_PROVIDER_URL="${MOCK_PROVIDER_URL:-}" \
+    RUST_LOG="${RUST_LOG:-info}" \
+    "$ERGORS_BIN" --home "$coord_home" start --grpc-port "$coord_grpc" 2>&1 | \
+        tee "$coord_home/node.log" &
     ERGORS_NODE_PIDS+=($!)
     register_pid $!
 
@@ -270,11 +283,24 @@ ergors_start_network() {
     _ergors_generate_config "executor_0" "executor" "$exec_http" "$exec_p2p" "$exec_home"
     _ergors_import_keys_to_node "$exec_home" "executor"
 
+    # Configure LLM entities BEFORE starting executor (if API keys are available)
+    if [[ -n "${OPENAI_API_KEY:-}" ]] && [[ -n "${ANTHROPIC_API_KEY:-}" ]] && [[ -n "${OLLAMA_API_KEY:-}" ]]; then
+        log "Configuring LLM entities for executor..."
+        ergors_configure_llm_entities "$exec_home" "$OPENAI_API_KEY" "$ANTHROPIC_API_KEY" "$OLLAMA_API_KEY"
+    fi
+
     log "Starting executor..."
+
+    # Start executor with live logs (use tee to both display and save)
     ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
     NODE_DATA_PATH="${exec_home}" \
-    "$ERGORS_BIN" --home "$exec_home" start --grpc-port "$exec_grpc" \
-        > "$exec_home/node.log" 2>&1 &
+    OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+    ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+    OLLAMA_API_KEY="${OLLAMA_API_KEY:-}" \
+    MOCK_PROVIDER_URL="${MOCK_PROVIDER_URL:-}" \
+    RUST_LOG="${RUST_LOG:-info}" \
+    "$ERGORS_BIN" --home "$exec_home" start --grpc-port "$exec_grpc" 2>&1 | \
+        tee "$exec_home/node.log" &
     ERGORS_NODE_PIDS+=($!)
     register_pid $!
 
@@ -1094,6 +1120,250 @@ ergors_config_list_chains() {
 
     ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
         "$ERGORS_BIN" --home "$coord_home" config list-chains 2>&1
+}
+
+# =============================================================================
+# Mock Inference Provider
+# =============================================================================
+
+MOCK_PROVIDER_PID=""
+MOCK_PROVIDER_URL=""
+MOCK_PROVIDER_BIN="${ROOT_DIR}/docker/mock-inference-provider/target/release/mock-inference-provider"
+MOCK_PROVIDER_SRC="${ROOT_DIR}/docker/mock-inference-provider"
+
+ergors_start_mock_provider() {
+    local provider_port="${1:-11434}"
+    local provider_host="127.0.0.1"
+
+    log "Starting mock inference provider..."
+
+    # Kill any existing mock provider on this port
+    kill_port "$provider_port" 2>/dev/null || true
+
+    # Always build fresh to pick up any code changes
+    log "Building mock inference provider..."
+    if ! cargo build --release --manifest-path "${MOCK_PROVIDER_SRC}/Cargo.toml" 2>&1 | tail -5; then
+        log_error "Failed to build mock inference provider"
+        return 1
+    fi
+
+    if [[ ! -f "$MOCK_PROVIDER_BIN" ]]; then
+        log_error "Mock provider binary not found after build: $MOCK_PROVIDER_BIN"
+        return 1
+    fi
+
+    # Ensure log directory exists
+    mkdir -p "${TEST_DIR}"
+
+    # Start as background process
+    log_verbose "Starting mock provider on port $provider_port..."
+    TESTDATA_MODE=true \
+    MIN_LATENCY_MS=0 \
+    MAX_LATENCY_MS=50 \
+    PORT="$provider_port" \
+    RUST_LOG=info \
+        "$MOCK_PROVIDER_BIN" > "${TEST_DIR}/mock-provider.log" 2>&1 &
+    MOCK_PROVIDER_PID=$!
+    register_pid $MOCK_PROVIDER_PID
+
+    # Wait for readiness
+    local max_wait=10
+    local wait_count=0
+    while ! curl -s "http://${provider_host}:${provider_port}/health" >/dev/null 2>&1; do
+        sleep 1
+        wait_count=$((wait_count + 1))
+        if [[ $wait_count -ge $max_wait ]]; then
+            log_error "Mock provider failed to start within ${max_wait}s"
+            if [[ -f "${TEST_DIR}/mock-provider.log" ]]; then
+                tail -20 "${TEST_DIR}/mock-provider.log"
+            fi
+            return 1
+        fi
+    done
+
+    MOCK_PROVIDER_URL="http://${provider_host}:${provider_port}"
+    export MOCK_PROVIDER_URL
+
+    log_success "Mock provider ready at $MOCK_PROVIDER_URL (PID $MOCK_PROVIDER_PID)"
+    return 0
+}
+
+ergors_stop_mock_provider() {
+    if [[ -n "${MOCK_PROVIDER_PID:-}" ]]; then
+        log_verbose "Stopping mock provider (PID $MOCK_PROVIDER_PID)..."
+        kill "$MOCK_PROVIDER_PID" 2>/dev/null || true
+        wait "$MOCK_PROVIDER_PID" 2>/dev/null || true
+        MOCK_PROVIDER_PID=""
+    fi
+}
+
+ergors_generate_mock_api_key() {
+    local provider="${1:-openai}"
+
+    local payload
+    payload=$(printf '{"provider":"%s","valid":true}' "$provider")
+
+    local response
+    response=$(curl -s "${MOCK_PROVIDER_URL}/api/keys/generate" \
+        -H "Content-Type: application/json" \
+        -d "$payload")
+
+    local api_key
+    api_key=$(echo "$response" | jq -r '.api_key')
+
+    if [[ "$api_key" == "null" ]] || [[ -z "$api_key" ]]; then
+        log_error "Failed to generate API key: $response"
+        return 1
+    fi
+
+    log_verbose "Generated ${provider} API key: ${api_key:0:20}..."
+    echo "$api_key"
+}
+
+ergors_configure_api_keys() {
+    local coord_home="${TEST_DIR}/coordinator"
+
+    log "Configuring API keys for inference..."
+
+    # Generate API keys for each provider
+    local openai_key anthropic_key ollama_key
+    openai_key=$(ergors_generate_mock_api_key "openai") || return 1
+    anthropic_key=$(ergors_generate_mock_api_key "anthropic") || return 1
+    ollama_key=$(ergors_generate_mock_api_key "ollama") || return 1
+
+    log_verbose "Generated keys:"
+    log_verbose "  OpenAI: ${openai_key:0:20}..."
+    log_verbose "  Anthropic: ${anthropic_key:0:20}..."
+    log_verbose "  Ollama: ${ollama_key:0:20}..."
+
+    # Export as environment variables for LLM router (fallback method)
+    export OPENAI_API_KEY="$openai_key"
+    export ANTHROPIC_API_KEY="$anthropic_key"
+    export OLLAMA_API_KEY="$ollama_key"
+    export MOCK_PROVIDER_URL
+
+    # Use CLI to add providers with encrypted storage
+    # This tests the production path of encrypted API key storage
+    log "Adding providers via CLI (encrypted storage)..."
+
+    # Add OpenAI provider
+    echo "$openai_key" | ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" provider add openai \
+        --api-key "$openai_key" --default 2>&1 | grep -v "password" || true
+
+    # Add Anthropic provider
+    echo "$anthropic_key" | ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" provider add anthropic \
+        --api-key "$anthropic_key" 2>&1 | grep -v "password" || true
+
+    # Add Ollama provider
+    echo "$ollama_key" | ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" provider add ollama \
+        --api-key "$ollama_key" 2>&1 | grep -v "password" || true
+
+    log_success "API keys configured via encrypted storage"
+
+    # Configure LLM entities for model-based routing
+    ergors_configure_llm_entities "$coord_home" "$openai_key" "$anthropic_key" "$ollama_key"
+
+    return 0
+}
+
+ergors_configure_llm_entities() {
+    local home_dir="$1"
+    local openai_key="$2"
+    local anthropic_key="$3"
+    local ollama_key="$4"
+    local config_file="${home_dir}/config.toml"
+
+    log_verbose "Configuring LLM entities for model-based routing..."
+    log_verbose "  Home: $home_dir"
+    log_verbose "  OpenAI key: ${openai_key:0:20}..."
+    log_verbose "  Anthropic key: ${anthropic_key:0:20}..."
+    log_verbose "  Ollama key: ${ollama_key:0:20}..."
+
+    # Create api_keys.json file with all provider keys
+    local api_keys_file="${home_dir}/api_keys.json"
+    cat > "$api_keys_file" <<EOF
+{
+  "openai": "$openai_key",
+  "anthropic": "$anthropic_key",
+  "ollama": "$ollama_key"
+}
+EOF
+
+    log_verbose "Created api_keys.json: $api_keys_file"
+
+    # Check if config.toml exists
+    if [[ ! -f "$config_file" ]]; then
+        log_error "Config file not found: $config_file"
+        return 1
+    fi
+
+    # Remove existing [llm] section to avoid duplicate key error
+    # Strips from [llm] line to next [section] or EOF
+    if grep -q '^\[llm\]' "$config_file"; then
+        log_verbose "Removing existing [llm] section from config..."
+        sed -i.bak '/^\[llm\]/,/^\[/{/^\[llm\]/d;/^\[/!d;}' "$config_file"
+        rm -f "${config_file}.bak"
+    fi
+
+    # Append LLM configuration to config.toml
+    # This configures all three providers to route to the same mock provider
+    cat >> "$config_file" <<'EOF'
+
+# LLM Router Configuration
+[llm]
+api_keys_file = "api_keys.json"
+default_strategy = 0
+timeout_seconds = 30
+max_retries = 3
+default_entity = 0
+
+# OpenAI Entity (gpt-*, chatgpt-*)
+[[llm.entities]]
+name = "openai"
+base_url = "http://127.0.0.1:11434/v1"
+models = ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo", "test-model"]
+default_model = "gpt-3.5-turbo"
+priority = 1
+enabled = true
+default_strategy = 0
+timeout_seconds = 30
+max_retries = 3
+
+# Anthropic Entity (claude-*)
+[[llm.entities]]
+name = "anthropic"
+base_url = "http://127.0.0.1:11434/v1"
+models = ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku", "claude-2"]
+default_model = "claude-3-sonnet"
+priority = 2
+enabled = true
+default_strategy = 0
+timeout_seconds = 30
+max_retries = 3
+
+# Ollama Entity (llama*, mistral*)
+[[llm.entities]]
+name = "ollama"
+base_url = "http://127.0.0.1:11434"
+models = ["llama2", "llama3", "mistral", "codellama"]
+default_model = "llama2"
+priority = 3
+enabled = true
+default_strategy = 0
+timeout_seconds = 30
+max_retries = 3
+EOF
+
+    log_verbose "LLM entities configured with model-based routing"
+    log_verbose "  OpenAI: gpt-*, chatgpt-* → ${MOCK_PROVIDER_URL:-http://127.0.0.1:11434}/v1"
+    log_verbose "  Anthropic: claude-* → ${MOCK_PROVIDER_URL:-http://127.0.0.1:11434}/v1"
+    log_verbose "  Ollama: llama*, mistral* → ${MOCK_PROVIDER_URL:-http://127.0.0.1:11434}"
+    log_verbose "Config file updated: $config_file"
+
+    return 0
 }
 
 # =============================================================================

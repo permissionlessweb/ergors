@@ -1328,6 +1328,21 @@ fn generate_response(prompt: &str, model: &str) -> String {
         );
     }
 
+    // Handle math questions with deterministic answers
+    if prompt_lower.contains("2+2") || prompt_lower.contains("2 + 2") {
+        return "The answer is 4. To show the calculation: 2 + 2 = 4".to_string();
+    }
+
+    if prompt_lower.contains("math") || prompt_lower.contains("calculate") ||
+       prompt_lower.contains("what is") && (prompt_lower.contains("+") || prompt_lower.contains("-") ||
+                                           prompt_lower.contains("*") || prompt_lower.contains("/")) {
+        return format!(
+            "I can help with math! I'm {} and I can perform calculations. \
+            For example, basic arithmetic operations like addition, subtraction, multiplication, and division.",
+            model
+        );
+    }
+
     if prompt_lower.contains("code") || prompt_lower.contains("function") || prompt_lower.contains("implement") {
         return r#"Here's a simple example:
 

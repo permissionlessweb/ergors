@@ -102,7 +102,7 @@ impl NodeSdlGenerator {
         let mut env_section = String::new();
         env_section.push_str(&format!("      - NODE_TYPE={}\n", config.node_type.as_str_name()));
         env_section.push_str(&format!("      - P2P_PORT={}\n", config.p2p_port));
-        env_section.push_str(&format!("      - API_PORT={}\n", config.api_port));
+        env_section.push_str(&format!("      - ERGORS_API_PORT={}\n", config.api_port));
 
         // Add bootstrap peers if any
         if !config.bootstrap_peers.is_empty() {
@@ -207,7 +207,7 @@ services:
     env:
       - ERGORS_ADMIN_PUBKEY={}
       - NODE_TYPE={}
-      - API_PORT={}
+      - ERGORS_API_PORT={}
       - P2P_PORT={}
 
 profiles:
@@ -315,7 +315,7 @@ mod tests {
         assert!(sdl.contains("ghcr.io/test/ergors:v1.0.0"));
         assert!(sdl.contains(&format!("ERGORS_ADMIN_PUBKEY={}", pubkey)));
         assert!(sdl.contains("NODE_TYPE="));
-        assert!(sdl.contains("API_PORT=8080"));
+        assert!(sdl.contains("ERGORS_API_PORT=8080"));
         assert!(sdl.contains("P2P_PORT=26969"));
         // Sentinel SDL should NOT contain secrets
         assert!(!sdl.contains("ERGORS_CUSTODY_PASSWORD"));

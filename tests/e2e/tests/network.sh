@@ -280,7 +280,13 @@ run_network_tests() {
     log_step "Running Network Tests"
 
     test_ergors_network
-    test_akash_network
+
+    if [[ "${SKIP_AKASH:-false}" != true ]]; then
+        test_akash_network
+    else
+        log_warn "Skipping Akash network tests (SKIP_AKASH=true)"
+    fi
+
     test_node_config
     test_contract_artifacts
 }

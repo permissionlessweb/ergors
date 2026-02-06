@@ -393,11 +393,29 @@ impl LlmRouter {
                 }
                 Arc::new(p)
             }
-            unknown => {
-                return Err(HoError::Cfg(format!(
-                    "Unknown provider type: {}. Available ps: openai, anthropic, grok, akashml, kimi, qwen, venice",
-                    unknown
-                )));
+            "ollama" => {
+                let mut p = OllamaProvider::new(None);
+                for m in &entity.models {
+                    if !OllamaProvider::MODELS.contains(&m.as_str()) {
+                        p.add_supported_model(m.clone());
+                    }
+                }
+                Arc::new(p)
+            }
+            // Generic/custom provider - supports any OpenAI-compatible API
+            // Default providers above are preferred for convenience, but any provider name is allowed
+            custom_name => {
+                info!(
+                    "Registering custom provider '{}' (OpenAI-compatible). Preferred providers: openai, anthropic, grok, akashml, kimi, qwen, venice, ollama",
+                    custom_name
+                );
+                // Use OpenAI provider as the base for custom providers (most APIs are OpenAI-compatible)
+                let mut p = OpenAiProvider::new(None);
+                // Add all configured models as supported
+                for m in &entity.models {
+                    p.add_supported_model(m.clone());
+                }
+                Arc::new(p)
             }
         };
 

@@ -19,6 +19,7 @@ use camino::Utf8PathBuf;
 use ho_std::{
     constants::{CONFIG_FILE_NAME, ENCRYPTED_API_KEYS_FILE},
     custody::PasswordEncryptedCustody,
+    keys::commonware::NodePrivKey,
     llm::EncryptedApiKeyManager,
     network::auth::validate_admin_signature,
     storage::identity::EncryptedIdentityBuilder,
@@ -67,6 +68,8 @@ struct AppState {
 #[derive(Deserialize)]
 struct InitRequest {
     custody_password: String,
+    #[serde(default)]
+    mnemonic: Option<String>,
     #[serde(default)]
     node_type: Option<String>,
     #[serde(default)]
@@ -192,8 +195,8 @@ impl SentinelServer {
             .route("/sentinel/activate", post(activate_handler))
             .with_state(shared);
 
-        // Read API_PORT from env or default to 8080
-        let port: u16 = std::env::var("API_PORT")
+        // Read ERGORS_API_PORT from env or default to 8080
+        let port: u16 = std::env::var("ERGORS_API_PORT")
             .ok()
             .and_then(|p| p.parse().ok())
             .unwrap_or(8080);
@@ -299,7 +302,24 @@ async fn init_handler(
             .node_type(config.identity().node_type.clone())
             .build();
 
-        if let Err(e) = custody.create_identity(&req.custody_password, Some(metadata)) {
+        let result = if let Some(ref phrase) = req.mnemonic {
+            // Derive deterministic key from mnemonic via SLIP-0010
+            match NodePrivKey::from_mnemonic(phrase) {
+                Some(key) => custody.import_identity(&key, &req.custody_password, Some(metadata)),
+                None => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(StatusResponse::err("invalid mnemonic phrase")),
+                    )
+                        .into_response();
+                }
+            }
+        } else {
+            // Generate a random keypair (existing behavior)
+            custody.create_identity(&req.custody_password, Some(metadata))
+        };
+
+        if let Err(e) = result {
             error!("Failed to create identity: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,

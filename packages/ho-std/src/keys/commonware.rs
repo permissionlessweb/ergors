@@ -8,10 +8,13 @@
 use crate::traits::NodeIdentityTrait;
 use crate::types::ergors::network::v1::*;
 use bech32::{self, FromBase32, ToBase32, Variant};
+use bip39::{Language, Mnemonic};
 use commonware_codec::{DecodeExt, Encode, FixedSize};
 use commonware_cryptography::{ed25519, PrivateKeyExt, Signer, Verifier};
+use hmac::{Hmac, Mac};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sha2::Sha512;
 
 /// Human-readable prefix for ergo node addresses (bech32 encoded pubkeys).
 pub const ERGO_HRP: &str = "ergo";
@@ -245,6 +248,21 @@ impl NodePrivKey {
         Self { private }
     }
 
+    /// Derive a deterministic Ed25519 key from a BIP-39 mnemonic phrase
+    /// using SLIP-0010 master key derivation (no child derivation path).
+    ///
+    /// The seed is produced with an empty passphrase (cosmos-sdk convention).
+    /// Returns `None` if the phrase is invalid or HMAC setup fails.
+    pub fn from_mnemonic(phrase: &str) -> Option<Self> {
+        let mnemonic = Mnemonic::parse_in_normalized(Language::English, phrase).ok()?;
+        let seed = mnemonic.to_seed("");
+        // SLIP-0010: master key derivation for Ed25519
+        let mut mac = Hmac::<Sha512>::new_from_slice(b"ed25519 seed").ok()?;
+        mac.update(&seed);
+        let result = mac.finalize().into_bytes();
+        Self::from_bytes(&result[..32])
+    }
+
     /// Return the public‑key view of this identity.
     #[inline]
     pub fn id(&self) -> NodePubkey {
@@ -433,5 +451,23 @@ mod tests {
         assert!(NodePubkey::from_bech32("not-a-bech32-string").is_none());
         assert!(NodePubkey::from_bech32("ergo1invalid").is_none());
         assert!(NodePubkey::from_bech32("").is_none());
+    }
+
+    #[test]
+    fn mnemonic_deterministic() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let a = NodePrivKey::from_mnemonic(phrase).expect("valid mnemonic");
+        let b = NodePrivKey::from_mnemonic(phrase).expect("valid mnemonic");
+        assert_eq!(a.id().0.to_vec(), b.id().0.to_vec(), "same mnemonic must produce same pubkey");
+
+        let sig_a = a.sign(Some(TEST_NS), b"payload");
+        let sig_b = b.sign(Some(TEST_NS), b"payload");
+        assert_eq!(sig_a, sig_b, "same mnemonic must produce same signatures");
+    }
+
+    #[test]
+    fn mnemonic_rejects_invalid() {
+        assert!(NodePrivKey::from_mnemonic("not a valid mnemonic phrase").is_none());
+        assert!(NodePrivKey::from_mnemonic("").is_none());
     }
 }

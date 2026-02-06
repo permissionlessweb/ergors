@@ -27,6 +27,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -41,17 +42,27 @@ RUN chown ergors:ergors /usr/local/bin/ergors
 # Switch to non-root user
 USER ergors
 
-# Create data directory
-RUN mkdir -p /home/ergors/.ergors
+# Data directory — must match ERGORS_HOME
+ENV ERGORS_HOME=/home/ergors/.ergors
+RUN mkdir -p "$ERGORS_HOME"
 
 WORKDIR /home/ergors
 
-# Expose ports
-# P2P port (commonware)
-EXPOSE 26969
-# HTTP API port
-EXPOSE 8080
+# Sentinel mode: set ERGORS_ADMIN_PUBKEY to activate
+# Full list of env vars:
+#   ERGORS_ADMIN_PUBKEY  - Ed25519 public key hex (triggers sentinel mode)
+#   ERGORS_HOME          - data directory (default: /home/ergors/.ergors)
+#   ERGORS_API_PORT      - HTTP API port (default: 8080)
+#   ERGORS_GRPC_PORT     - gRPC management port (default: 50051)
+#   NOTE: Mnemonic for identity recovery is provided via signed /sentinel/init
+#         API call only — never as an env var (visible to infrastructure providers)
 
-# Default command: start node
+EXPOSE 8080 26969 50051
+
+# Health check — works during both sentinel phase and full server
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
+    CMD curl -sf http://localhost:${ERGORS_API_PORT:-8080}/sentinel/health || \
+        curl -sf http://localhost:${ERGORS_API_PORT:-8080}/health || exit 1
+
 ENTRYPOINT ["ergors"]
 CMD ["start"]

@@ -138,9 +138,13 @@ e2e *args:
     @echo "🧪 Running E2E integration tests..."
     @bash tests/e2e/main.sh {{args}}
 
-# Run specific E2E test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|all)
-e2e-suite suite:
-    @bash tests/e2e/main.sh --test {{suite}}
+# Run specific E2E test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|sdl-storage|chain-config|sentinel|all)
+e2e-suite suite *args:
+    @bash tests/e2e/main.sh --test {{suite}} {{args}}
+
+# Run sentinel mode E2E tests (standalone, no infrastructure needed)
+e2e-sentinel *args:
+    @bash tests/e2e/main.sh --test sentinel --skip-network --skip-akash --skip-ethereum --skip-contracts {{args}}
 
 # Run E2E tests with verbose output
 e2e-verbose *args:
