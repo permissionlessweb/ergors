@@ -18,7 +18,7 @@ pub use ergors_rag::{
 ///
 /// # Example
 /// ```rust,no_run
-/// use ergors::rag;
+/// use ergors::proxy::rag;
 /// use ergors::storage::ErgorsStorage;
 /// use std::sync::Arc;
 ///

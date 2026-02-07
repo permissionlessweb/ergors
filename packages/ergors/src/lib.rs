@@ -8,7 +8,6 @@ pub mod contracts;
 pub mod daemon;
 pub mod deploy;
 pub mod gateway;
-pub mod git;
 pub mod headstash;
 pub mod keys;
 pub mod network;

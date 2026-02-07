@@ -90,6 +90,7 @@ We can update how we keep track of the following values to a dedicated layer in 
   - <https://github.com/shobrook/weightgain>: improve embeddings
 
 - define scripts with instructions to run for each step in agentic orchestration
+- prompt populating logic: prompt templates for specific actions filled in with session/agentic specific data (git worktree commands, agents/subagents to spawn)
 - <https://models.dev/>
 
 ### BOOTSTRAPPING

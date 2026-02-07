@@ -2824,10 +2824,6 @@ impl ::prost::Name for CosmosChainConfig {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProxyRouterConfig {
-    /// Override base URL for Ollama API requests
-    #[deprecated]
-    #[prost(string, tag = "3")]
-    pub ollama_base_url: ::prost::alloc::string::String,
     /// Model-specific routing rules (glob patterns -> provider IDs)
     /// e.g., "claude-*" -> "anthropic"
     /// e.g., "llama-*" -> "local-ollama"
@@ -2876,11 +2872,7 @@ pub struct InferenceProviderConfig {
     /// Base URL for API requests (e.g., "<https://api.openai.com",> "<http://localhost:11434">)
     #[prost(string, tag = "2")]
     pub base_url: ::prost::alloc::string::String,
-    /// API key for authentication (stored as plaintext reference or encrypted blob)
-    /// For custody-managed keys, use api_key_ref instead
-    #[prost(string, tag = "3")]
-    pub api_key: ::prost::alloc::string::String,
-    /// Reference to a custody-managed API key (alternative to api_key)
+    /// Reference to a custody-managed API key
     /// Format: "custody://{key_id}" or "env://{ENV_VAR_NAME}"
     #[prost(string, tag = "4")]
     pub api_key_ref: ::prost::alloc::string::String,

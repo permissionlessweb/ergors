@@ -140,15 +140,6 @@ pub enum DeployCmd {
     },
     /// Configure proxy routing to discovered services
     ConfigureProxy {
-        /// OpenAI-compatible API base URL
-        #[arg(long)]
-        openai_url: Option<String>,
-        /// Anthropic-compatible API base URL
-        #[arg(long)]
-        anthropic_url: Option<String>,
-        /// Ollama-compatible API base URL
-        #[arg(long)]
-        ollama_url: Option<String>,
         /// Model routing rules (glob=url pairs)
         #[arg(long, value_parser = parse_key_val)]
         route: Vec<(String, String)>,
@@ -966,23 +957,10 @@ impl DeployCmd {
                 }
                 Ok(())
             }
-            DeployCmd::ConfigureProxy {
-                openai_url,
-                anthropic_url,
-                ollama_url,
-                route,
-            } => {
+            DeployCmd::ConfigureProxy { route } => {
                 let model_routes: HashMap<String, String> = route.iter().cloned().collect();
-                let result = client
-                    .configure_proxy_routes(
-                        openai_url.as_deref().unwrap_or(""),
-                        anthropic_url.as_deref().unwrap_or(""),
-                        ollama_url.as_deref().unwrap_or(""),
-                        model_routes,
-                    )
-                    .await?;
-
-                if ctx.json {
+                let result = client.configure_proxy_routes(model_routes).await?;
+                if ctx.json || result.success {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -990,17 +968,6 @@ impl DeployCmd {
                             "message": result.message,
                         }))?
                     );
-                } else if result.success {
-                    println!("Proxy routes configured");
-                    if let Some(url) = openai_url {
-                        println!("  OpenAI:    {}", url);
-                    }
-                    if let Some(url) = anthropic_url {
-                        println!("  Anthropic: {}", url);
-                    }
-                    if let Some(url) = ollama_url {
-                        println!("  Ollama:    {}", url);
-                    }
                 } else {
                     eprintln!("Failed to configure proxy: {}", result.message);
                 }
@@ -1455,16 +1422,23 @@ impl DeployCmd {
             }
             DeployCmd::Cert { cmd } => {
                 match cmd {
-                    CertCmd::Create { key_name, account_index } => {
+                    CertCmd::Create {
+                        key_name,
+                        account_index,
+                    } => {
                         // Check if keys exist first
                         let keys = client.list_cosmos_keys().await?;
                         if keys.is_empty() {
-                            println!("No Cosmos keys found. A key is required to create certificates.");
+                            println!(
+                                "No Cosmos keys found. A key is required to create certificates."
+                            );
                             println!();
 
                             // Check if stdin is a terminal for interactive prompt
                             if !std::io::stdin().is_terminal() {
-                                eprintln!("Run 'ergors keys import-mnemonic' to import a key first.");
+                                eprintln!(
+                                    "Run 'ergors keys import-mnemonic' to import a key first."
+                                );
                                 std::process::exit(1);
                             }
 
@@ -1483,18 +1457,23 @@ impl DeployCmd {
                                 let mnemonic = crate::keys::get_mnemonic()?;
 
                                 // Import via gRPC (daemon uses custody password automatically)
-                                let import_resp = client.import_cosmos_key(
-                                    &mnemonic,
-                                    "Akash Deployment Key",  // label
-                                    "default",               // key_name
-                                    "akashnet-2",            // chain_id
-                                    "akash",                 // address_prefix
-                                    true,                    // make_default
-                                    "",                      // password (daemon uses custody)
-                                ).await?;
+                                let import_resp = client
+                                    .import_cosmos_key(
+                                        &mnemonic,
+                                        "Akash Deployment Key", // label
+                                        "default",              // key_name
+                                        "akashnet-2",           // chain_id
+                                        "akash",                // address_prefix
+                                        true,                   // make_default
+                                        "",                     // password (daemon uses custody)
+                                    )
+                                    .await?;
 
                                 if !import_resp.success {
-                                    eprintln!("Failed to import key: {}", import_resp.error_message);
+                                    eprintln!(
+                                        "Failed to import key: {}",
+                                        import_resp.error_message
+                                    );
                                     std::process::exit(1);
                                 }
 
@@ -1504,7 +1483,9 @@ impl DeployCmd {
                                     println!();
                                 }
                             } else {
-                                println!("Run 'ergors keys import-mnemonic' to import a key first.");
+                                println!(
+                                    "Run 'ergors keys import-mnemonic' to import a key first."
+                                );
                                 return Ok(());
                             }
                         }
@@ -1513,7 +1494,9 @@ impl DeployCmd {
                         println!("  Key:   {} (index {})", key_name, account_index);
                         println!();
 
-                        let response = client.create_akash_certificate(key_name, *account_index).await?;
+                        let response = client
+                            .create_akash_certificate(key_name, *account_index)
+                            .await?;
 
                         if response.success {
                             println!("Certificate created successfully!");
@@ -1521,7 +1504,9 @@ impl DeployCmd {
                             println!("  Serial:  {}", response.serial);
                             println!();
                             println!("The encrypted private key has been stored locally.");
-                            println!("You can now run automated deployments with mTLS authentication.");
+                            println!(
+                                "You can now run automated deployments with mTLS authentication."
+                            );
                         } else {
                             eprintln!("Failed to create certificate: {}", response.error_message);
                             eprintln!();
@@ -1531,7 +1516,11 @@ impl DeployCmd {
                         }
                         Ok(())
                     }
-                    CertCmd::Revoke { key_name, account_index, serial } => {
+                    CertCmd::Revoke {
+                        key_name,
+                        account_index,
+                        serial,
+                    } => {
                         println!("Revoking Akash certificate...");
                         println!("  Key:   {} (index {})", key_name, account_index);
                         if let Some(s) = serial {
@@ -1540,11 +1529,13 @@ impl DeployCmd {
                             println!("  Serial: (first valid certificate)");
                         }
 
-                        let result = client.revoke_akash_certificate(
-                            key_name,
-                            *account_index,
-                            serial.as_deref().unwrap_or(""),
-                        ).await?;
+                        let result = client
+                            .revoke_akash_certificate(
+                                key_name,
+                                *account_index,
+                                serial.as_deref().unwrap_or(""),
+                            )
+                            .await?;
 
                         if result.success {
                             println!();
@@ -1555,7 +1546,9 @@ impl DeployCmd {
                             }
                             println!();
                             println!("The local private key has been deleted.");
-                            println!("Run 'ergors deploy cert create' to create a new certificate.");
+                            println!(
+                                "Run 'ergors deploy cert create' to create a new certificate."
+                            );
                         } else {
                             eprintln!();
                             eprintln!("Failed to revoke certificate: {}", result.message);
@@ -1563,12 +1556,17 @@ impl DeployCmd {
                         }
                         Ok(())
                     }
-                    CertCmd::Show { key_name, account_index } => {
+                    CertCmd::Show {
+                        key_name,
+                        account_index,
+                    } => {
                         println!("Querying certificates from chain...");
                         println!("  Key: {} (index {})", key_name, account_index);
                         println!();
 
-                        let response = client.list_akash_certificates(key_name, *account_index, "").await?;
+                        let response = client
+                            .list_akash_certificates(key_name, *account_index, "")
+                            .await?;
 
                         println!("Address: {}", response.address);
                         println!();
@@ -1576,7 +1574,9 @@ impl DeployCmd {
                         if response.certificates.is_empty() {
                             println!("No certificates found for this address.");
                             println!();
-                            println!("Run 'ergors deploy cert create' to create a new certificate.");
+                            println!(
+                                "Run 'ergors deploy cert create' to create a new certificate."
+                            );
                         } else {
                             println!("Certificates:");
                             println!("╔════════════════════════════════╦══════════╦═════════════╗");
@@ -1584,7 +1584,8 @@ impl DeployCmd {
                             println!("╠════════════════════════════════╬══════════╬═════════════╣");
                             for cert in &response.certificates {
                                 let key_status = if cert.has_stored_key { "Yes" } else { "No" };
-                                println!("║ {:30} ║ {:8} ║ {:11} ║",
+                                println!(
+                                    "║ {:30} ║ {:8} ║ {:11} ║",
                                     truncate_str(&cert.serial, 30),
                                     cert.state,
                                     key_status
@@ -1593,12 +1594,15 @@ impl DeployCmd {
                             println!("╚════════════════════════════════╩══════════╩═════════════╝");
 
                             // Check if valid cert has stored key
-                            let valid_with_key = response.certificates.iter()
+                            let valid_with_key = response
+                                .certificates
+                                .iter()
                                 .any(|c| c.state == "valid" && c.has_stored_key);
 
                             if !valid_with_key {
                                 println!();
-                                let has_valid = response.certificates.iter().any(|c| c.state == "valid");
+                                let has_valid =
+                                    response.certificates.iter().any(|c| c.state == "valid");
                                 if has_valid {
                                     println!("⚠️  Warning: Valid certificate exists but private key is not stored locally.");
                                     println!("   mTLS authentication will fail. Consider revoking and creating a new certificate:");
@@ -1619,7 +1623,14 @@ impl DeployCmd {
                 println!("Provider info is automatically queried during bid selection.");
                 println!();
                 println!("Provider: {}", address);
-                println!("Refresh:  {}", if *refresh { "force chain query" } else { "use cache if available" });
+                println!(
+                    "Refresh:  {}",
+                    if *refresh {
+                        "force chain query"
+                    } else {
+                        "use cache if available"
+                    }
+                );
                 println!();
                 println!("Run 'ergors deploy create' to see provider info during deployment.");
                 Ok(())

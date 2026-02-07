@@ -2,65 +2,102 @@
 //!
 //! Provides the server-side implementation of the management gRPC service.
 
+use crate::deploy::cosmos_client::{CosmosClient, CosmosEndpoints};
+use crate::gateway::crypto::{encrypt_gateway_secret, GATEWAY_SECRET_ENCRYPTION_METHOD};
 use crate::session_manager::{SessionManager, SessionManagerConfig};
 use crate::ErgorsAppState;
 use async_stream::try_stream;
+use ho_std::keys::cosmos::cosmos_address_from_pubkey;
+use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityTrait};
 use ho_std::types::ergors::management::v1::{
     management_service_server::ManagementService,
+    AddDiscordAllowedGuildRequest,
     // Workspace types
     AddWorkspaceRequest,
     AddWorkspaceResponse,
     // Akash deployment types (advance_akash_deployment is deprecated but still in proto)
     AdvanceAkashDeploymentRequest,
     AdvanceAkashDeploymentResponse,
-    CancelAkashDeploymentRequest,
-    ConfigureProxyRoutesRequest,
-    CreateAkashDeploymentRequest,
-    CreateAkashDeploymentResponse,
-    GetAkashDeploymentRequest,
-    GetAkashDeploymentResponse,
-    ListAkashDeploymentsRequest,
-    ListAkashDeploymentsResponse,
-    QueryAkashBidsRequest,
-    QueryAkashBidsResponse,
-    SelectAkashProviderRequest,
-    SelectAkashProviderResponse,
-    SetWorkflowEndpointsRequest,
-    SetWorkflowEndpointsResponse,
     // Network routing types (for OpenCode tools)
     AnnounceNodeRequest,
     AnnounceNodeResponse,
+    // Grant management types
+    ApproveGrantRequest,
+    CancelAkashDeploymentRequest,
     CompleteSessionRequest,
     CompleteSessionResponse,
     CompleteTaskWorktreeRequest,
     CompleteTaskWorktreeResponse,
     ConfigData,
     ConfigUpdate,
+    ConfigureDiscordGatewayRequest,
+    ConfigureProxyRoutesRequest,
+    CosmosKeyInfo,
+    CreateAkashDeploymentRequest,
+    CreateAkashDeploymentResponse,
+    CreateFeeGrantRequest,
     // Session types
     CreateSessionRequest,
     CreateSessionResponse,
     CreateTaskWorktreeRequest,
     CreateTaskWorktreeResponse,
+    DeleteChainConfigRequest,
+    DeleteChainConfigResponse,
+    DeleteCosmosKeyRequest,
     DeleteSessionRequest,
+    DisableGatewayRequest,
     Empty,
+    EnableGatewayRequest,
     EngineState,
     EngineStatus,
     FailSessionRequest,
     FailTaskWorktreeRequest,
+    GatewayInfo,
+    GatewayStatusResponse,
+    GetAkashDeploymentRequest,
+    GetAkashDeploymentResponse,
+    GetChainConfigRequest,
+    GetChainConfigResponse,
+    GetDiscordConfigRequest,
+    GetDiscordConfigResponse,
+    GetGatewayStatusRequest,
     GetHierarchyRequest,
     GetHierarchyResponse,
+    // Key address query types
+    GetKeyAddressRequest,
+    GetKeyAddressResponse,
+    GetSdlDefaultsRequest,
+    GetSdlDefaultsResponse,
+    GetSdlTemplateRequest,
+    GetSdlTemplateResponse,
     GetSessionRequest,
     GetSessionResponse,
     GetWorkspaceRequest,
     GetWorkspaceResponse,
     HealthUpdate,
     IdentityResponse,
+    ImportCosmosKeyRequest,
+    ImportCosmosKeyResponse,
     ImportIdentityRequest,
+    ListAkashDeploymentsRequest,
+    ListAkashDeploymentsResponse,
     ListByNodeRequest,
     ListByNodeResponse,
     ListByRootRequest,
     ListByRootResponse,
+    ListChainConfigsRequest,
+    ListChainConfigsResponse,
+    // Cosmos key management types
+    ListCosmosKeysResponse,
+    // Gateway management types
+    ListGatewaysRequest,
+    ListGatewaysResponse,
+    ListGrantRequestsRequest,
+    ListGrantRequestsResponse,
+    // SDL template types
+    ListSdlTemplatesRequest,
+    ListSdlTemplatesResponse,
     ListTaskWorktreesRequest,
     ListTaskWorktreesResponse,
     ListWorkspacesRequest,
@@ -80,20 +117,41 @@ use ho_std::types::ergors::management::v1::{
     ProviderList,
     ProviderName,
     ProviderTestResult,
+    QueryAkashBidsRequest,
+    QueryAkashBidsResponse,
+    QueryBalanceRequest,
+    QueryBalanceResponse,
     QuerySessionsRequest,
     QuerySessionsResponse,
+    RegisterSdlTemplateRequest,
+    RegisterSdlTemplateResponse,
+    RemoveDiscordAllowedGuildRequest,
     RemoveWorkspaceRequest,
+    RenderSdlTemplateRequest,
+    RenderSdlTemplateResponse,
+    RequestGrantRequest,
+    RequestGrantResponse,
     ResolveConflictRequest,
     ResolveConflictResponse,
     ResumeSessionRequest,
     ResumeSessionResponse,
+    RevokeFeeGrantRequest,
+    RevokeGrantRequest,
     RollupRequest,
     RollupResponse,
     RouteMessageRequest,
     RouteMessageResponse,
+    SelectAkashProviderRequest,
+    SelectAkashProviderResponse,
     SessionHierarchyStats,
     SessionStatus,
     SessionUpdate,
+    // Chain config types
+    SetChainConfigRequest,
+    SetChainConfigResponse,
+    SetDefaultCosmosKeyRequest,
+    SetWorkflowEndpointsRequest,
+    SetWorkflowEndpointsResponse,
     ShutdownRequest,
     SpawnChildRequest,
     SpawnChildResponse,
@@ -109,83 +167,51 @@ use ho_std::types::ergors::management::v1::{
     TokenResponse,
     UpdateSessionRequest,
     UpdateSessionResponse,
-    // Grant management types
-    ApproveGrantRequest,
-    CreateFeeGrantRequest,
-    ListGrantRequestsRequest,
-    ListGrantRequestsResponse,
-    QueryBalanceRequest,
-    QueryBalanceResponse,
-    RequestGrantRequest,
-    RequestGrantResponse,
-    RevokeGrantRequest,
-    RevokeFeeGrantRequest,
-    // SDL template types
-    ListSdlTemplatesRequest,
-    ListSdlTemplatesResponse,
-    RegisterSdlTemplateRequest,
-    RegisterSdlTemplateResponse,
-    GetSdlTemplateRequest,
-    GetSdlTemplateResponse,
-    GetSdlDefaultsRequest,
-    GetSdlDefaultsResponse,
-    RenderSdlTemplateRequest,
-    RenderSdlTemplateResponse,
-    // Chain config types
-    SetChainConfigRequest,
-    SetChainConfigResponse,
-    GetChainConfigRequest,
-    GetChainConfigResponse,
-    ListChainConfigsRequest,
-    ListChainConfigsResponse,
-    DeleteChainConfigRequest,
-    DeleteChainConfigResponse,
-    // Key address query types
-    GetKeyAddressRequest,
-    GetKeyAddressResponse,
-    // Cosmos key management types
-    ListCosmosKeysResponse,
-    ImportCosmosKeyRequest,
-    ImportCosmosKeyResponse,
-    DeleteCosmosKeyRequest,
-    SetDefaultCosmosKeyRequest,
-    CosmosKeyInfo,
-    // Gateway management types
-    ListGatewaysRequest,
-    ListGatewaysResponse,
-    GatewayInfo,
-    GetGatewayStatusRequest,
-    GatewayStatusResponse,
-    EnableGatewayRequest,
-    DisableGatewayRequest,
-    ConfigureDiscordGatewayRequest,
-    AddDiscordAllowedGuildRequest,
-    RemoveDiscordAllowedGuildRequest,
-    GetDiscordConfigRequest,
-    GetDiscordConfigResponse,
-};
-use ho_std::types::ergors::orch::v1::{
-    AkashDeploymentWorkflow, AkashWorkflowStatus, AkashWorkflowStep, ConfiguredSdl,
-    // Automated workflow types
-    RunAkashDeploymentRequest, RunAkashDeploymentResponse,
-    CloseAkashLeaseRequest, CloseAkashDeploymentRequest, UpdateAkashDeploymentRequest, TopupAkashEscrowRequest,
-    GetLeaseStatusRequest, LeaseStatusResponse,
-    AddTrustedProviderRequest, RemoveTrustedProviderRequest,
-    ListTrustedProvidersRequest, ListTrustedProvidersResponse, AkashWorkflowOptions, AkashLeaseInfo, AkashLeaseState,
-    // Certificate management types (deprecated - JWT auth used instead, stubs for trait compliance)
-    CreateAkashCertificateRequest, CreateAkashCertificateResponse,
-    RevokeAkashCertificateRequest, ListAkashCertificatesRequest, ListAkashCertificatesResponse,
-    // RAG types
-    RagIngestRequest, RagIngestResponse, RagQueryRequest, RagQueryResponse,
-    RagStatusRequest, RagStatusResponse, RagDeleteRequest, RagOperationResult,
-    RagListSourcesRequest, RagListSourcesResponse, RagConfigureRequest, RagSearchResult, RagSourceInfo,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
+use ho_std::types::ergors::orch::v1::{
+    AddTrustedProviderRequest,
+    AkashDeploymentWorkflow,
+    AkashLeaseInfo,
+    AkashLeaseState,
+    AkashWorkflowOptions,
+    AkashWorkflowStatus,
+    AkashWorkflowStep,
+    CloseAkashDeploymentRequest,
+    CloseAkashLeaseRequest,
+    ConfiguredSdl,
+    // Certificate management types (deprecated - JWT auth used instead, stubs for trait compliance)
+    CreateAkashCertificateRequest,
+    CreateAkashCertificateResponse,
+    GetLeaseStatusRequest,
+    LeaseStatusResponse,
+    ListAkashCertificatesRequest,
+    ListAkashCertificatesResponse,
+    ListTrustedProvidersRequest,
+    ListTrustedProvidersResponse,
+    RagConfigureRequest,
+    RagDeleteRequest,
+    // RAG types
+    RagIngestRequest,
+    RagIngestResponse,
+    RagListSourcesRequest,
+    RagListSourcesResponse,
+    RagOperationResult,
+    RagQueryRequest,
+    RagQueryResponse,
+    RagSearchResult,
+    RagSourceInfo,
+    RagStatusRequest,
+    RagStatusResponse,
+    RemoveTrustedProviderRequest,
+    RevokeAkashCertificateRequest,
+    // Automated workflow types
+    RunAkashDeploymentRequest,
+    RunAkashDeploymentResponse,
+    TopupAkashEscrowRequest,
+    UpdateAkashDeploymentRequest,
+};
 use ho_std::types::ergors::storage::v1::EncryptedSecret;
-use ho_std::keys::cosmos::cosmos_address_from_pubkey;
-use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
-use crate::deploy::cosmos_client::{CosmosClient, CosmosEndpoints};
-use crate::gateway::crypto::{encrypt_gateway_secret, GATEWAY_SECRET_ENCRYPTION_METHOD};
 use pbjson_types;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -401,7 +427,9 @@ impl ManagementService for ManagementServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Failed to access key store: {}", e)))?
             .ok_or_else(|| {
-                Status::not_found("No key store found. Import a key with `ergors keys import-mnemonic`")
+                Status::not_found(
+                    "No key store found. Import a key with `ergors keys import-mnemonic`",
+                )
             })?;
 
         // Determine which key to use
@@ -419,19 +447,21 @@ impl ManagementService for ManagementServiceImpl {
 
         // Get custody password from environment
         let password = std::env::var("ERGORS_CUSTODY_PASSWORD").map_err(|_| {
-            Status::failed_precondition(
-                "ERGORS_CUSTODY_PASSWORD environment variable not set",
-            )
+            Status::failed_precondition("ERGORS_CUSTODY_PASSWORD environment variable not set")
         })?;
 
         // Create key manager from store and unlock
         let mut manager = EncryptedCosmosKeyManager::from_store(&key_store);
-        manager.unlock(&password).map_err(|e| {
-            Status::internal(format!("Failed to unlock key manager: {}", e))
-        })?;
+        manager
+            .unlock(&password)
+            .map_err(|e| Status::internal(format!("Failed to unlock key manager: {}", e)))?;
 
         // Determine coin type (default to 118 for cosmos)
-        let coin_type = if req.coin_type == 0 { 118 } else { req.coin_type };
+        let coin_type = if req.coin_type == 0 {
+            118
+        } else {
+            req.coin_type
+        };
 
         // Determine address prefix (default to original key's prefix)
         let address_prefix = if req.address_prefix.is_empty() {
@@ -471,7 +501,10 @@ impl ManagementService for ManagementServiceImpl {
                 return Ok(Response::new(ListCosmosKeysResponse { keys: vec![] }));
             }
             Err(e) => {
-                return Err(Status::internal(format!("Failed to access key store: {}", e)));
+                return Err(Status::internal(format!(
+                    "Failed to access key store: {}",
+                    e
+                )));
             }
         };
 
@@ -517,7 +550,7 @@ impl ManagementService for ManagementServiceImpl {
             if akash_ctx.custody_password.is_empty() {
                 if req.password.is_empty() {
                     return Err(Status::invalid_argument(
-                        "Password required (custody password not available)"
+                        "Password required (custody password not available)",
                     ));
                 }
                 req.password.clone()
@@ -610,7 +643,10 @@ impl ManagementService for ManagementServiceImpl {
 
         // Add to store and persist
         manager.add_key_to_store(&mut store, encrypted, account_info.clone());
-        tracing::info!("💾 Saving cosmos key store with {} keys...", store.keys.len());
+        tracing::info!(
+            "💾 Saving cosmos key store with {} keys...",
+            store.keys.len()
+        );
         if let Err(e) = self.state.s.put_cosmos_key_store(&store).await {
             tracing::error!("❌ Failed to save key store: {}", e);
             return Err(Status::internal(format!("Failed to save key store: {}", e)));
@@ -620,7 +656,10 @@ impl ManagementService for ManagementServiceImpl {
         // Verify the save by reading back
         match self.state.s.get_cosmos_key_store().await {
             Ok(Some(verified)) => {
-                tracing::info!("✅ Verified: key store has {} keys after save", verified.keys.len());
+                tracing::info!(
+                    "✅ Verified: key store has {} keys after save",
+                    verified.keys.len()
+                );
             }
             Ok(None) => {
                 tracing::error!("❌ Verification failed: key store is empty after save!");
@@ -817,7 +856,10 @@ impl ManagementService for ManagementServiceImpl {
 
         // Announce to network if running
         if nm.is_running().await {
-            if let Err(e) = nm.announce_node(req.capabilities.clone(), req.load_factor).await {
+            if let Err(e) = nm
+                .announce_node(req.capabilities.clone(), req.load_factor)
+                .await
+            {
                 tracing::warn!("Failed to announce node: {}", e);
                 return Ok(Response::new(AnnounceNodeResponse {
                     acknowledged: false,
@@ -875,18 +917,24 @@ impl ManagementService for ManagementServiceImpl {
             }
             "send_to_role" => {
                 // Send to nodes of a specific role
-                let target_role = req.target_role.map(|r| NodeType::try_from(r).unwrap_or(NodeType::Unspecified));
+                let target_role = req
+                    .target_role
+                    .map(|r| NodeType::try_from(r).unwrap_or(NodeType::Unspecified));
 
                 if target_role.is_none() {
                     return Ok(Response::new(RouteMessageResponse {
                         success: false,
                         nodes_reached: 0,
                         response_payload: None,
-                        error_message: "target_role is required for send_to_role action".to_string(),
+                        error_message: "target_role is required for send_to_role action"
+                            .to_string(),
                     }));
                 }
 
-                match nm.send_to_role_raw(target_role.unwrap(), &req.payload).await {
+                match nm
+                    .send_to_role_raw(target_role.unwrap(), &req.payload)
+                    .await
+                {
                     Ok(count) => Ok(Response::new(RouteMessageResponse {
                         success: true,
                         nodes_reached: count as u32,
@@ -915,7 +963,10 @@ impl ManagementService for ManagementServiceImpl {
                 }
 
                 let timeout = std::time::Duration::from_millis(req.timeout_ms as u64);
-                match nm.request_raw(&target_node_id.unwrap(), &req.payload, timeout).await {
+                match nm
+                    .request_raw(&target_node_id.unwrap(), &req.payload, timeout)
+                    .await
+                {
                     Ok(response) => Ok(Response::new(RouteMessageResponse {
                         success: true,
                         nodes_reached: 1,
@@ -934,7 +985,10 @@ impl ManagementService for ManagementServiceImpl {
                 success: false,
                 nodes_reached: 0,
                 response_payload: None,
-                error_message: format!("Unknown action: {}. Use 'broadcast', 'send_to_role', or 'request'", req.action),
+                error_message: format!(
+                    "Unknown action: {}. Use 'broadcast', 'send_to_role', or 'request'",
+                    req.action
+                ),
             })),
         }
     }
@@ -1641,644 +1695,7 @@ impl ManagementService for ManagementServiceImpl {
         Ok(Response::new(Box::pin(stream)))
     }
 
-    // ============ Workspace Management ============
-
-    async fn add_workspace(
-        &self,
-        request: Request<AddWorkspaceRequest>,
-    ) -> Result<Response<AddWorkspaceResponse>, Status> {
-        let req = request.into_inner();
-        tracing::info!("Add workspace requested: {}", req.name);
-
-        // Generate workspace ID
-        let workspace_id = uuid::Uuid::new_v4().to_string();
-
-        // Create workspace metadata
-        let workspace = ho_std::types::ergors::git::v1::WorkspaceMetadata {
-            workspace_id: workspace_id.clone(),
-            name: req.name.clone(),
-            remote_url: req.remote_url.clone(),
-            local_path: format!("~/.ergors/workspaces/{}", req.name),
-            head_commit: vec![],
-            default_branch: "main".to_string(),
-            created_at: Some(pbjson_types::Timestamp {
-                seconds: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs() as i64,
-                nanos: 0,
-            }),
-            last_synced: None,
-        };
-
-        // Store workspace
-        self.state
-            .s
-            .put_workspace(&workspace)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to store workspace: {}", e)))?;
-
-        Ok(Response::new(AddWorkspaceResponse {
-            success: true,
-            workspace: Some(workspace),
-            error_message: String::new(),
-        }))
-    }
-
-    async fn get_workspace(
-        &self,
-        request: Request<GetWorkspaceRequest>,
-    ) -> Result<Response<GetWorkspaceResponse>, Status> {
-        let req = request.into_inner();
-
-        let workspace = self
-            .state
-            .s
-            .get_workspace(&req.workspace_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to get workspace: {}", e)))?;
-
-        match workspace {
-            Some(ws) => {
-                // Get active worktrees for this workspace
-                let worktrees = self
-                    .state
-                    .s
-                    .list_task_worktrees_by_workspace(&req.workspace_id)
-                    .await
-                    .unwrap_or_default();
-                Ok(Response::new(GetWorkspaceResponse {
-                    workspace: Some(ws),
-                    active_worktrees: worktrees,
-                }))
-            }
-            None => Err(Status::not_found(format!(
-                "Workspace '{}' not found",
-                req.workspace_id
-            ))),
-        }
-    }
-
-    async fn list_workspaces(
-        &self,
-        _request: Request<ListWorkspacesRequest>,
-    ) -> Result<Response<ListWorkspacesResponse>, Status> {
-        let workspaces = self
-            .state
-            .s
-            .list_workspaces()
-            .await
-            .map_err(|e| Status::internal(format!("Failed to list workspaces: {}", e)))?;
-
-        let count = workspaces.len() as u32;
-        Ok(Response::new(ListWorkspacesResponse {
-            workspaces,
-            total_count: count,
-        }))
-    }
-
-    async fn remove_workspace(
-        &self,
-        request: Request<RemoveWorkspaceRequest>,
-    ) -> Result<Response<OperationResult>, Status> {
-        let req = request.into_inner();
-        tracing::info!(
-            "Remove workspace requested: {} (force: {})",
-            req.workspace_id,
-            req.force
-        );
-
-        // Check if workspace exists
-        let workspace = self
-            .state
-            .s
-            .get_workspace(&req.workspace_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to get workspace: {}", e)))?;
-
-        if workspace.is_none() {
-            return Err(Status::not_found(format!(
-                "Workspace '{}' not found",
-                req.workspace_id
-            )));
-        }
-
-        // Check for active worktrees if not force
-        if !req.force {
-            let active_count = self
-                .state
-                .s
-                .count_active_worktrees(&req.workspace_id)
-                .await
-                .map_err(|e| Status::internal(format!("Failed to count worktrees: {}", e)))?;
-
-            if active_count > 0 {
-                return Ok(Response::new(OperationResult {
-                    success: false,
-                    message: format!("Cannot remove workspace with {} active worktrees. Use --force to override.", active_count),
-                }));
-            }
-        }
-
-        // Delete workspace
-        self.state
-            .s
-            .delete_workspace(&req.workspace_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to delete workspace: {}", e)))?;
-
-        Ok(Response::new(OperationResult {
-            success: true,
-            message: format!("Workspace '{}' removed successfully", req.workspace_id),
-        }))
-    }
-
-    async fn sync_workspace(
-        &self,
-        request: Request<SyncWorkspaceRequest>,
-    ) -> Result<Response<SyncWorkspaceResponse>, Status> {
-        let req = request.into_inner();
-        tracing::info!(
-            "Sync workspace requested: {} (push: {}, fetch: {})",
-            req.workspace_id,
-            req.push,
-            req.fetch
-        );
-
-        // TODO: Implement actual git sync operations
-        Ok(Response::new(SyncWorkspaceResponse {
-            success: true,
-            message: "Sync operation not yet implemented".to_string(),
-            new_head_commit: vec![],
-        }))
-    }
-
-    async fn create_task_worktree(
-        &self,
-        request: Request<CreateTaskWorktreeRequest>,
-    ) -> Result<Response<CreateTaskWorktreeResponse>, Status> {
-        let req = request.into_inner();
-        tracing::info!(
-            "Create task worktree requested: workspace={}, task={}",
-            req.workspace_id,
-            req.task_id
-        );
-
-        // Check if workspace exists
-        let workspace = self
-            .state
-            .s
-            .get_workspace(&req.workspace_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to get workspace: {}", e)))?;
-
-        if workspace.is_none() {
-            return Err(Status::not_found(format!(
-                "Workspace '{}' not found",
-                req.workspace_id
-            )));
-        }
-
-        let workspace = workspace.unwrap();
-
-        // Create task worktree metadata
-        let worktree = ho_std::types::ergors::git::v1::TaskWorktree {
-            task_id: req.task_id.clone(),
-            workspace_id: req.workspace_id.clone(),
-            branch: format!("task/{}", req.task_id),
-            worktree_path: format!("{}/tasks/task-{}", workspace.local_path, req.task_id),
-            base_commit: workspace.head_commit.clone(),
-            status: ho_std::types::ergors::git::v1::TaskWorktreeStatus::Active as i32,
-            assigned_node_id: req.assigned_node_id.clone(),
-            created_at: Some(pbjson_types::Timestamp {
-                seconds: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs() as i64,
-                nanos: 0,
-            }),
-        };
-
-        // Store worktree
-        self.state
-            .s
-            .put_task_worktree(&worktree)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to store task worktree: {}", e)))?;
-
-        Ok(Response::new(CreateTaskWorktreeResponse {
-            success: true,
-            worktree: Some(worktree),
-            error_message: String::new(),
-        }))
-    }
-
-    async fn list_task_worktrees(
-        &self,
-        request: Request<ListTaskWorktreesRequest>,
-    ) -> Result<Response<ListTaskWorktreesResponse>, Status> {
-        let req = request.into_inner();
-
-        let worktrees = if !req.workspace_id.is_empty() {
-            self.state
-                .s
-                .list_task_worktrees_by_workspace(&req.workspace_id)
-                .await
-                .map_err(|e| Status::internal(format!("Failed to list worktrees: {}", e)))?
-        } else if !req.assigned_node_id.is_empty() {
-            self.state
-                .s
-                .list_task_worktrees_by_node(&req.assigned_node_id)
-                .await
-                .map_err(|e| Status::internal(format!("Failed to list worktrees: {}", e)))?
-        } else {
-            vec![]
-        };
-
-        Ok(Response::new(ListTaskWorktreesResponse { worktrees }))
-    }
-
-    async fn complete_task_worktree(
-        &self,
-        request: Request<CompleteTaskWorktreeRequest>,
-    ) -> Result<Response<CompleteTaskWorktreeResponse>, Status> {
-        let req = request.into_inner();
-        tracing::info!(
-            "Complete task worktree requested: task={} (merge: {})",
-            req.task_id,
-            req.merge_to_main
-        );
-
-        // Get the worktree
-        let worktree = self
-            .state
-            .s
-            .get_task_worktree(&req.task_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to get worktree: {}", e)))?;
-
-        match worktree {
-            Some(mut wt) => {
-                // Update status to committing
-                wt.status = ho_std::types::ergors::git::v1::TaskWorktreeStatus::Committing as i32;
-                self.state
-                    .s
-                    .put_task_worktree(&wt)
-                    .await
-                    .map_err(|e| Status::internal(format!("Failed to update worktree: {}", e)))?;
-
-                // Get the workspace to get paths
-                let workspace = self
-                    .state
-                    .s
-                    .get_workspace(&wt.workspace_id)
-                    .await
-                    .map_err(|e| Status::internal(format!("Failed to get workspace: {}", e)))?
-                    .ok_or_else(|| Status::not_found(format!("Workspace '{}' not found", wt.workspace_id)))?;
-
-                // Perform git operations
-                let worktree_path = std::path::PathBuf::from(&wt.worktree_path);
-                let workspace_path = std::path::PathBuf::from(&workspace.local_path);
-
-                // Check if paths exist
-                if !worktree_path.exists() {
-                    return Err(Status::failed_precondition(format!(
-                        "Worktree path does not exist: {:?}",
-                        worktree_path
-                    )));
-                }
-
-                // Open the worktree repository and commit changes
-                let mut worktree_repo = ho_std::git::GitRepository::open(&worktree_path)
-                    .map_err(|e| Status::internal(format!("Failed to open worktree: {}", e)))?;
-
-                // Get git identity from config
-                let identity = self.state.c.identity();
-                let node_id = identity
-                    .public_key
-                    .as_ref()
-                    .map(hex::encode)
-                    .unwrap_or_else(|| "local".to_string());
-                let git_identity = ho_std::git::GitIdentity::minimal(&node_id, &identity.node_type);
-                worktree_repo.set_identity(git_identity.clone());
-
-                // Stage and commit changes
-                worktree_repo
-                    .stage_all()
-                    .map_err(|e| Status::internal(format!("Failed to stage changes: {}", e)))?;
-
-                let commit_message = if req.commit_message.is_empty() {
-                    format!("Complete task {}", req.task_id)
-                } else {
-                    req.commit_message.clone()
-                };
-                let task_commit_hash = worktree_repo
-                    .commit(&commit_message)
-                    .map_err(|e| Status::internal(format!("Failed to commit: {}", e)))?;
-
-                tracing::info!(
-                    "Committed changes for task {} with hash {}",
-                    req.task_id,
-                    task_commit_hash
-                );
-
-                // If merge_to_main is requested, perform the merge
-                let (merged, final_hash) = if req.merge_to_main && workspace_path.exists() {
-                    wt.status = ho_std::types::ergors::git::v1::TaskWorktreeStatus::Merging as i32;
-                    self.state
-                        .s
-                        .put_task_worktree(&wt)
-                        .await
-                        .map_err(|e| Status::internal(format!("Failed to update worktree: {}", e)))?;
-
-                    // Open the main workspace repository
-                    let mut main_repo = ho_std::git::GitRepository::open(&workspace_path)
-                        .map_err(|e| Status::internal(format!("Failed to open workspace: {}", e)))?;
-                    main_repo.set_identity(git_identity);
-
-                    // Checkout main branch
-                    main_repo.checkout_branch("main").or_else(|_| {
-                        main_repo.checkout_branch("master")
-                    }).map_err(|e| Status::internal(format!("Failed to checkout main: {}", e)))?;
-
-                    // Merge the task branch
-                    match main_repo.merge_branch(&wt.branch) {
-                        Ok(ho_std::git::MergeResult::FastForward(hash)) => {
-                            tracing::info!("Fast-forward merged task {} to main: {}", req.task_id, hash);
-                            (true, hash)
-                        }
-                        Ok(ho_std::git::MergeResult::Merged(hash)) => {
-                            tracing::info!("Merged task {} to main with commit: {}", req.task_id, hash);
-                            (true, hash)
-                        }
-                        Ok(ho_std::git::MergeResult::UpToDate) => {
-                            tracing::info!("Task {} already up-to-date with main", req.task_id);
-                            (true, task_commit_hash.clone())
-                        }
-                        Ok(ho_std::git::MergeResult::Conflict(conflicts)) => {
-                            tracing::warn!(
-                                "Merge conflict for task {}: {} files",
-                                req.task_id,
-                                conflicts.len()
-                            );
-                            // Mark as conflict status
-                            const TASK_WORKTREE_STATUS_CONFLICT: i32 = 7;
-                            wt.status = TASK_WORKTREE_STATUS_CONFLICT;
-                            self.state.s.put_task_worktree(&wt).await.ok();
-
-                            return Ok(Response::new(CompleteTaskWorktreeResponse {
-                                success: false,
-                                merged: false,
-                                commit_hash: task_commit_hash,
-                                error_message: format!(
-                                    "Merge conflict in {} files: {}",
-                                    conflicts.len(),
-                                    conflicts.join(", ")
-                                ),
-                            }));
-                        }
-                        Err(e) => {
-                            tracing::error!("Merge failed for task {}: {}", req.task_id, e);
-                            wt.status = ho_std::types::ergors::git::v1::TaskWorktreeStatus::Failed as i32;
-                            self.state.s.put_task_worktree(&wt).await.ok();
-
-                            return Ok(Response::new(CompleteTaskWorktreeResponse {
-                                success: false,
-                                merged: false,
-                                commit_hash: task_commit_hash,
-                                error_message: format!("Merge failed: {}", e),
-                            }));
-                        }
-                    }
-                } else {
-                    (false, task_commit_hash.clone())
-                };
-
-                // Update worktree status to completed
-                wt.status = ho_std::types::ergors::git::v1::TaskWorktreeStatus::Completed as i32;
-                self.state
-                    .s
-                    .put_task_worktree(&wt)
-                    .await
-                    .map_err(|e| Status::internal(format!("Failed to update worktree: {}", e)))?;
-
-                // Update workspace head commit
-                let mut updated_workspace = workspace;
-                updated_workspace.head_commit = final_hash.as_bytes().to_vec();
-                updated_workspace.last_synced = Some(pbjson_types::Timestamp {
-                    seconds: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs() as i64,
-                    nanos: 0,
-                });
-                self.state.s.put_workspace(&updated_workspace).await.ok();
-
-                Ok(Response::new(CompleteTaskWorktreeResponse {
-                    success: true,
-                    merged,
-                    commit_hash: final_hash,
-                    error_message: String::new(),
-                }))
-            }
-            None => Err(Status::not_found(format!(
-                "Task worktree '{}' not found",
-                req.task_id
-            ))),
-        }
-    }
-
-    async fn fail_task_worktree(
-        &self,
-        request: Request<FailTaskWorktreeRequest>,
-    ) -> Result<Response<OperationResult>, Status> {
-        let req = request.into_inner();
-        tracing::info!(
-            "Fail task worktree requested: task={} (cleanup: {})",
-            req.task_id,
-            req.cleanup
-        );
-
-        // Get the worktree
-        let worktree = self
-            .state
-            .s
-            .get_task_worktree(&req.task_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to get worktree: {}", e)))?;
-
-        match worktree {
-            Some(mut wt) => {
-                if req.cleanup {
-                    // Delete the worktree record
-                    self.state
-                        .s
-                        .delete_task_worktree(&req.task_id)
-                        .await
-                        .map_err(|e| {
-                            Status::internal(format!("Failed to delete worktree: {}", e))
-                        })?;
-                } else {
-                    // Just mark as failed
-                    wt.status = ho_std::types::ergors::git::v1::TaskWorktreeStatus::Failed as i32;
-                    self.state.s.put_task_worktree(&wt).await.map_err(|e| {
-                        Status::internal(format!("Failed to update worktree: {}", e))
-                    })?;
-                }
-
-                Ok(Response::new(OperationResult {
-                    success: true,
-                    message: format!("Task '{}' marked as failed: {}", req.task_id, req.reason),
-                }))
-            }
-            None => Err(Status::not_found(format!(
-                "Task worktree '{}' not found",
-                req.task_id
-            ))),
-        }
-    }
-
-    async fn resolve_conflict(
-        &self,
-        request: Request<ResolveConflictRequest>,
-    ) -> Result<Response<ResolveConflictResponse>, Status> {
-        let req = request.into_inner();
-        tracing::info!(
-            "Resolve conflict requested: task={}, strategy={:?}",
-            req.task_id,
-            req.strategy
-        );
-
-        // Get the worktree
-        let worktree = self
-            .state
-            .s
-            .get_task_worktree(&req.task_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to get worktree: {}", e)))?;
-
-        match worktree {
-            Some(mut wt) => {
-                // Check if worktree is in conflict state
-                const TASK_WORKTREE_STATUS_CONFLICT: i32 = 7;
-                if wt.status != TASK_WORKTREE_STATUS_CONFLICT {
-                    return Err(Status::failed_precondition(format!(
-                        "Task '{}' is not in conflict state (status: {})",
-                        req.task_id, wt.status
-                    )));
-                }
-
-                // Get the workspace
-                let workspace = self
-                    .state
-                    .s
-                    .get_workspace(&wt.workspace_id)
-                    .await
-                    .map_err(|e| Status::internal(format!("Failed to get workspace: {}", e)))?
-                    .ok_or_else(|| Status::not_found(format!("Workspace '{}' not found", wt.workspace_id)))?;
-
-                let workspace_path = std::path::PathBuf::from(&workspace.local_path);
-
-                // Open the workspace repository
-                let mut repo = ho_std::git::GitRepository::open(&workspace_path)
-                    .map_err(|e| Status::internal(format!("Failed to open workspace: {}", e)))?;
-
-                // Get git identity
-                let identity = self.state.c.identity();
-                let node_id = identity
-                    .public_key
-                    .as_ref()
-                    .map(hex::encode)
-                    .unwrap_or_else(|| "local".to_string());
-                let git_identity = ho_std::git::GitIdentity::minimal(&node_id, &identity.node_type);
-                repo.set_identity(git_identity);
-
-                // Convert proto strategy to internal strategy
-                let strategy = match req.strategy {
-                    1 => ho_std::git::ConflictStrategy::Ours,   // OURS
-                    2 => ho_std::git::ConflictStrategy::Theirs, // THEIRS
-                    4 => ho_std::git::ConflictStrategy::Abort,  // ABORT
-                    3 => {
-                        // MANUAL - not yet implemented
-                        return Err(Status::unimplemented(
-                            "Manual conflict resolution not yet implemented",
-                        ));
-                    }
-                    _ => {
-                        return Err(Status::invalid_argument(format!(
-                            "Invalid conflict resolution strategy: {}",
-                            req.strategy
-                        )));
-                    }
-                };
-
-                // Check if repo has conflicts
-                if !repo.has_conflicts() {
-                    return Err(Status::failed_precondition(
-                        "Repository is not in a conflicted merge state",
-                    ));
-                }
-
-                // Resolve conflicts
-                match repo.resolve_conflicts_with_strategy(strategy) {
-                    Ok(Some(commit_hash)) => {
-                        tracing::info!(
-                            "Resolved conflicts for task {} with commit {}",
-                            req.task_id,
-                            commit_hash
-                        );
-
-                        // Update worktree status to completed
-                        wt.status = ho_std::types::ergors::git::v1::TaskWorktreeStatus::Completed as i32;
-                        self.state.s.put_task_worktree(&wt).await.ok();
-
-                        // Update workspace head commit
-                        let mut updated_workspace = workspace;
-                        updated_workspace.head_commit = commit_hash.as_bytes().to_vec();
-                        self.state.s.put_workspace(&updated_workspace).await.ok();
-
-                        Ok(Response::new(ResolveConflictResponse {
-                            success: true,
-                            commit_hash,
-                            remaining_conflicts: vec![],
-                            error_message: String::new(),
-                        }))
-                    }
-                    Ok(None) => {
-                        // Abort was requested
-                        tracing::info!("Aborted merge for task {}", req.task_id);
-
-                        // Update worktree status back to active
-                        wt.status = ho_std::types::ergors::git::v1::TaskWorktreeStatus::Active as i32;
-                        self.state.s.put_task_worktree(&wt).await.ok();
-
-                        Ok(Response::new(ResolveConflictResponse {
-                            success: true,
-                            commit_hash: String::new(),
-                            remaining_conflicts: vec![],
-                            error_message: "Merge aborted".to_string(),
-                        }))
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to resolve conflicts for task {}: {}", req.task_id, e);
-
-                        Ok(Response::new(ResolveConflictResponse {
-                            success: false,
-                            commit_hash: String::new(),
-                            remaining_conflicts: repo.get_conflicting_files().unwrap_or_default(),
-                            error_message: format!("Failed to resolve conflicts: {}", e),
-                        }))
-                    }
-                }
-            }
-            None => Err(Status::not_found(format!(
-                "Task worktree '{}' not found",
-                req.task_id
-            ))),
-        }
-    }
-
-    // ============ Akash Deployment Management ============
+    // Workspace and task worktree management removed - will simplify later
 
     async fn create_akash_deployment(
         &self,
@@ -2316,7 +1733,9 @@ impl ManagementService for ManagementServiceImpl {
                 return Ok(Response::new(CreateAkashDeploymentResponse {
                     success: false,
                     workflow: None,
-                    error_message: "No key store found. Import a key with `ergors keys import-mnemonic`".to_string(),
+                    error_message:
+                        "No key store found. Import a key with `ergors keys import-mnemonic`"
+                            .to_string(),
                 }));
             }
             Err(e) => {
@@ -2333,7 +1752,9 @@ impl ManagementService for ManagementServiceImpl {
             req.key_name.clone()
         } else {
             // Use default key
-            match ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager::get_default_key_name(&key_store) {
+            match ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager::get_default_key_name(
+                &key_store,
+            ) {
                 Some(name) => name.to_string(),
                 None => {
                     return Ok(Response::new(CreateAkashDeploymentResponse {
@@ -2346,9 +1767,11 @@ impl ManagementService for ManagementServiceImpl {
         };
 
         // Look up account address from key store
-        let account = match key_store.derived_accounts.iter().find(|a| {
-            a.key_name == key_name && a.account_index == req.hd_account_index
-        }) {
+        let account = match key_store
+            .derived_accounts
+            .iter()
+            .find(|a| a.key_name == key_name && a.account_index == req.hd_account_index)
+        {
             Some(acc) => acc,
             None => {
                 return Ok(Response::new(CreateAkashDeploymentResponse {
@@ -2497,7 +1920,11 @@ impl ManagementService for ManagementServiceImpl {
         let limited = filtered
             .into_iter()
             .skip(req.offset as usize)
-            .take(if req.limit > 0 { req.limit as usize } else { 50 })
+            .take(if req.limit > 0 {
+                req.limit as usize
+            } else {
+                50
+            })
             .collect();
 
         Ok(Response::new(ListAkashDeploymentsResponse {
@@ -2520,7 +1947,9 @@ impl ManagementService for ManagementServiceImpl {
             .await
         {
             Ok(wf) => Some(wf),
-            Err(ho_std::error::HoError::Storage(ref msg)) if msg.contains("No deployment found") => {
+            Err(ho_std::error::HoError::Storage(ref msg))
+                if msg.contains("No deployment found") =>
+            {
                 None
             }
             Err(e) => {
@@ -2643,7 +2072,12 @@ impl ManagementService for ManagementServiceImpl {
 
         // Deactivate label index so label can be reused
         if !workflow.label.is_empty() {
-            if let Err(e) = self.state.s.deactivate_deployment_label(&workflow.label).await {
+            if let Err(e) = self
+                .state
+                .s
+                .deactivate_deployment_label(&workflow.label)
+                .await
+            {
                 tracing::warn!("Failed to deactivate label '{}': {}", workflow.label, e);
             }
         }
@@ -2716,7 +2150,6 @@ impl ManagementService for ManagementServiceImpl {
 
         // Create new proto config with incremented version
         let proto_config = ho_std::types::ergors::orch::v1::ProxyRouterConfig {
-            ollama_base_url: req.ollama_base_url.clone(),
             model_routes: req.model_routes.clone(),
             providers: std::collections::HashMap::new(), // TODO: populate from request
             updated_at: Some(pbjson_types::Timestamp {
@@ -2773,14 +2206,12 @@ impl ManagementService for ManagementServiceImpl {
         let req = request.into_inner();
 
         // Check if Akash context is available
-        let akash_ctx = self
-            .state
-            .akash
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition(
+        let akash_ctx = self.state.akash.as_ref().ok_or_else(|| {
+            Status::failed_precondition(
                 "Akash deployment context not initialized. \
-                 Ensure Akash config is present and keys are imported."
-            ))?;
+                 Ensure Akash config is present and keys are imported.",
+            )
+        })?;
 
         // Get the workflow - support both session-id and label lookups
         let mut workflow = self
@@ -2796,9 +2227,9 @@ impl ManagementService for ManagementServiceImpl {
             bid_wait_blocks: 2,
             trusted_providers: vec![],
             max_retries: 3,
-            interactive_bid: false,          // Auto-select by default
+            interactive_bid: false,            // Auto-select by default
             request_grant_from: String::new(), // No grant request by default
-            grant_duration_seconds: 86400,   // 24 hours
+            grant_duration_seconds: 86400,     // 24 hours
             grant_spend_limit_uakt: 5_000_000, // 5 AKT
         });
 
@@ -2821,7 +2252,7 @@ impl ManagementService for ManagementServiceImpl {
             }
         } else if !akash_ctx.key_manager.read().await.is_unlocked() {
             return Err(Status::unauthenticated(
-                "Key manager is locked. Provide key_password to unlock for signing."
+                "Key manager is locked. Provide key_password to unlock for signing.",
             ));
         }
 
@@ -2925,7 +2356,10 @@ impl ManagementService for ManagementServiceImpl {
                         if let Err(e) = storage.deactivate_deployment_label(&label).await {
                             tracing::warn!("Failed to deactivate label '{}': {}", label, e);
                         } else {
-                            tracing::info!("Deactivated label '{}' from active deployments (workflow failed)", label);
+                            tracing::info!(
+                                "Deactivated label '{}' from active deployments (workflow failed)",
+                                label
+                            );
                         }
                     }
                 }
@@ -2938,10 +2372,7 @@ impl ManagementService for ManagementServiceImpl {
             "✅ Deployment workflow started successfully for session {}",
             session_id
         );
-        tracing::info!(
-            "   Use 'ergors deploy get {}' to check status",
-            session_id
-        );
+        tracing::info!("   Use 'ergors deploy get {}' to check status", session_id);
 
         Ok(Response::new(RunAkashDeploymentResponse {
             workflow: Some(response_workflow),
@@ -2958,13 +2389,9 @@ impl ManagementService for ManagementServiceImpl {
         let req = request.into_inner();
 
         // Check if Akash context is available
-        let akash_ctx = self
-            .state
-            .akash
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition(
-                "Akash deployment context not initialized"
-            ))?;
+        let akash_ctx = self.state.akash.as_ref().ok_or_else(|| {
+            Status::failed_precondition("Akash deployment context not initialized")
+        })?;
 
         // Support both session-id and label lookups
         let workflow = self
@@ -2999,11 +2426,21 @@ impl ManagementService for ManagementServiceImpl {
                         .as_secs() as i64,
                     nanos: 0,
                 });
-                self.state.s.put_akash_workflow(&updated_workflow).await.ok();
+                self.state
+                    .s
+                    .put_akash_workflow(&updated_workflow)
+                    .await
+                    .ok();
 
                 // Remove from inference cache
                 if !workflow.label.is_empty() {
-                    if let Err(e) = self.state.r.deployment_cache().remove_deployment(&workflow.label).await {
+                    if let Err(e) = self
+                        .state
+                        .r
+                        .deployment_cache()
+                        .remove_deployment(&workflow.label)
+                        .await
+                    {
                         tracing::warn!(
                             "Failed to remove deployment '{}' from inference cache: {}",
                             workflow.label,
@@ -3040,13 +2477,9 @@ impl ManagementService for ManagementServiceImpl {
         let req = request.into_inner();
 
         // Check if Akash context is available
-        let akash_ctx = self
-            .state
-            .akash
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition(
-                "Akash deployment context not initialized"
-            ))?;
+        let akash_ctx = self.state.akash.as_ref().ok_or_else(|| {
+            Status::failed_precondition("Akash deployment context not initialized")
+        })?;
 
         // Support both session-id and label lookups
         let workflow = self
@@ -3081,11 +2514,21 @@ impl ManagementService for ManagementServiceImpl {
                         .as_secs() as i64,
                     nanos: 0,
                 });
-                self.state.s.put_akash_workflow(&updated_workflow).await.ok();
+                self.state
+                    .s
+                    .put_akash_workflow(&updated_workflow)
+                    .await
+                    .ok();
 
                 // Remove from inference cache
                 if !workflow.label.is_empty() {
-                    if let Err(e) = self.state.r.deployment_cache().remove_deployment(&workflow.label).await {
+                    if let Err(e) = self
+                        .state
+                        .r
+                        .deployment_cache()
+                        .remove_deployment(&workflow.label)
+                        .await
+                    {
                         tracing::warn!(
                             "Failed to remove deployment '{}' from inference cache: {}",
                             workflow.label,
@@ -3101,7 +2544,10 @@ impl ManagementService for ManagementServiceImpl {
 
                 Ok(Response::new(OperationResult {
                     success: true,
-                    message: format!("Deployment closed successfully for session {}", req.session_id),
+                    message: format!(
+                        "Deployment closed successfully for session {}",
+                        req.session_id
+                    ),
                 }))
             }
             Err(e) => {
@@ -3122,13 +2568,9 @@ impl ManagementService for ManagementServiceImpl {
         let req = request.into_inner();
 
         // Check if Akash context is available
-        let akash_ctx = self
-            .state
-            .akash
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition(
-                "Akash deployment context not initialized"
-            ))?;
+        let akash_ctx = self.state.akash.as_ref().ok_or_else(|| {
+            Status::failed_precondition("Akash deployment context not initialized")
+        })?;
 
         // Support both session-id and label lookups
         let workflow = self
@@ -3158,13 +2600,17 @@ impl ManagementService for ManagementServiceImpl {
         // Create deployer and update the deployment
         let deployer = akash_ctx.create_deployer(self.state.s.clone());
 
-        match deployer.update_deployment(&workflow, &req.sdl_content).await {
-            Ok(()) => {
-                Ok(Response::new(OperationResult {
-                    success: true,
-                    message: format!("Deployment updated successfully for session {}", req.session_id),
-                }))
-            }
+        match deployer
+            .update_deployment(&workflow, &req.sdl_content)
+            .await
+        {
+            Ok(()) => Ok(Response::new(OperationResult {
+                success: true,
+                message: format!(
+                    "Deployment updated successfully for session {}",
+                    req.session_id
+                ),
+            })),
             Err(e) => {
                 tracing::error!("Failed to update deployment: {}", e);
                 Ok(Response::new(OperationResult {
@@ -3183,13 +2629,9 @@ impl ManagementService for ManagementServiceImpl {
         let req = request.into_inner();
 
         // Check if Akash context is available
-        let akash_ctx = self
-            .state
-            .akash
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition(
-                "Akash deployment context not initialized"
-            ))?;
+        let akash_ctx = self.state.akash.as_ref().ok_or_else(|| {
+            Status::failed_precondition("Akash deployment context not initialized")
+        })?;
 
         // Support both session-id and label lookups
         let workflow = self
@@ -3214,18 +2656,23 @@ impl ManagementService for ManagementServiceImpl {
             }));
         }
 
-        tracing::info!("Topping up escrow for session {} with {} uakt", req.session_id, req.amount_uakt);
+        tracing::info!(
+            "Topping up escrow for session {} with {} uakt",
+            req.session_id,
+            req.amount_uakt
+        );
 
         // Create deployer and top up escrow
         let deployer = akash_ctx.create_deployer(self.state.s.clone());
 
         match deployer.topup_escrow(&workflow, req.amount_uakt).await {
-            Ok(()) => {
-                Ok(Response::new(OperationResult {
-                    success: true,
-                    message: format!("Escrow topped up with {} uakt for session {}", req.amount_uakt, req.session_id),
-                }))
-            }
+            Ok(()) => Ok(Response::new(OperationResult {
+                success: true,
+                message: format!(
+                    "Escrow topped up with {} uakt for session {}",
+                    req.amount_uakt, req.session_id
+                ),
+            })),
             Err(e) => {
                 tracing::error!("Failed to top up escrow: {}", e);
                 Ok(Response::new(OperationResult {
@@ -3252,7 +2699,9 @@ impl ManagementService for ManagementServiceImpl {
             .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
 
         // Determine deployment status from workflow state
-        let deployment_status = match AkashWorkflowStatus::try_from(workflow.status).unwrap_or(AkashWorkflowStatus::Unspecified) {
+        let deployment_status = match AkashWorkflowStatus::try_from(workflow.status)
+            .unwrap_or(AkashWorkflowStatus::Unspecified)
+        {
             AkashWorkflowStatus::Pending => "pending",
             AkashWorkflowStatus::Running => "running",
             AkashWorkflowStatus::Completed => "active",
@@ -3276,9 +2725,17 @@ impl ManagementService for ManagementServiceImpl {
                 AkashLeaseState::Invalid as i32
             },
             price_denom: "uakt".to_string(),
-            price_amount: workflow.provider.as_ref().map(|p| p.bid_price_uakt.to_string()).unwrap_or_default(),
+            price_amount: workflow
+                .provider
+                .as_ref()
+                .map(|p| p.bid_price_uakt.to_string())
+                .unwrap_or_default(),
             created_at: workflow.created_at.as_ref().map(|t| t.seconds).unwrap_or(0),
-            closed_on: workflow.completed_at.as_ref().map(|t| t.seconds).unwrap_or(0),
+            closed_on: workflow
+                .completed_at
+                .as_ref()
+                .map(|t| t.seconds)
+                .unwrap_or(0),
         });
 
         Ok(Response::new(LeaseStatusResponse {
@@ -3311,7 +2768,12 @@ impl ManagementService for ManagementServiceImpl {
             }));
         }
 
-        match self.state.s.add_trusted_provider(&req.address, &req.label).await {
+        match self
+            .state
+            .s
+            .add_trusted_provider(&req.address, &req.label)
+            .await
+        {
             Ok(()) => {
                 tracing::info!("Added trusted provider: {} ({})", req.address, req.label);
                 Ok(Response::new(OperationResult {
@@ -3374,14 +2836,15 @@ impl ManagementService for ManagementServiceImpl {
         _request: Request<ListTrustedProvidersRequest>,
     ) -> Result<Response<ListTrustedProvidersResponse>, Status> {
         match self.state.s.get_trusted_providers().await {
-            Ok(list) => {
-                Ok(Response::new(ListTrustedProvidersResponse {
-                    providers: list.providers,
-                }))
-            }
+            Ok(list) => Ok(Response::new(ListTrustedProvidersResponse {
+                providers: list.providers,
+            })),
             Err(e) => {
                 tracing::error!("Failed to list trusted providers: {}", e);
-                Err(Status::internal(format!("Failed to list trusted providers: {}", e)))
+                Err(Status::internal(format!(
+                    "Failed to list trusted providers: {}",
+                    e
+                )))
             }
         }
     }
@@ -3442,7 +2905,8 @@ impl ManagementService for ManagementServiceImpl {
                     success: false,
                     chunk_count: 0,
                     chunk_ids: vec![],
-                    message: "Embedder not configured. Use 'ergors rag configure' first.".to_string(),
+                    message: "Embedder not configured. Use 'ergors rag configure' first."
+                        .to_string(),
                 }));
             }
             Err(e) => {
@@ -3465,28 +2929,26 @@ impl ManagementService for ManagementServiceImpl {
             &rag_config.model,
             rag_config.dimension as usize,
         ) {
-            Ok(rag) => {
-                match rag.ingest(doc, None).await {
-                    Ok(chunk_ids) => {
-                        let ids: Vec<String> = chunk_ids.iter().map(|id| id.to_string()).collect();
-                        Ok(Response::new(RagIngestResponse {
-                            success: true,
-                            chunk_count: ids.len() as u32,
-                            chunk_ids: ids,
-                            message: "Document ingested successfully".to_string(),
-                        }))
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to ingest document: {}", e);
-                        Ok(Response::new(RagIngestResponse {
-                            success: false,
-                            chunk_count: 0,
-                            chunk_ids: vec![],
-                            message: format!("Failed to ingest: {}", e),
-                        }))
-                    }
+            Ok(rag) => match rag.ingest(doc, None).await {
+                Ok(chunk_ids) => {
+                    let ids: Vec<String> = chunk_ids.iter().map(|id| id.to_string()).collect();
+                    Ok(Response::new(RagIngestResponse {
+                        success: true,
+                        chunk_count: ids.len() as u32,
+                        chunk_ids: ids,
+                        message: "Document ingested successfully".to_string(),
+                    }))
                 }
-            }
+                Err(e) => {
+                    tracing::error!("Failed to ingest document: {}", e);
+                    Ok(Response::new(RagIngestResponse {
+                        success: false,
+                        chunk_count: 0,
+                        chunk_ids: vec![],
+                        message: format!("Failed to ingest: {}", e),
+                    }))
+                }
+            },
             Err(e) => {
                 tracing::error!("Failed to create RAG instance: {}", e);
                 Ok(Response::new(RagIngestResponse {
@@ -3553,7 +3015,8 @@ impl ManagementService for ManagementServiceImpl {
                                     .map(|r| RagSearchResult {
                                         chunk_id: r.chunk_id.to_string(),
                                         similarity: r.similarity,
-                                        content_preview: r.content[..r.content.len().min(200)].to_string(),
+                                        content_preview: r.content[..r.content.len().min(200)]
+                                            .to_string(),
                                         source_uri: r.provenance.source_uri.clone(),
                                     })
                                     .collect();
@@ -3580,14 +3043,15 @@ impl ManagementService for ManagementServiceImpl {
         &self,
         _request: Request<RagStatusRequest>,
     ) -> Result<Response<RagStatusResponse>, Status> {
-        let (embedder_configured, endpoint, model, dimension) = match self.state.s.get_rag_config().await {
-            Ok(Some(config)) => (true, config.endpoint, config.model, config.dimension),
-            Ok(None) => (false, String::new(), String::new(), 0),
-            Err(e) => {
-                tracing::error!("Failed to get RAG config: {}", e);
-                (false, String::new(), String::new(), 0)
-            }
-        };
+        let (embedder_configured, endpoint, model, dimension) =
+            match self.state.s.get_rag_config().await {
+                Ok(Some(config)) => (true, config.endpoint, config.model, config.dimension),
+                Ok(None) => (false, String::new(), String::new(), 0),
+                Err(e) => {
+                    tracing::error!("Failed to get RAG config: {}", e);
+                    (false, String::new(), String::new(), 0)
+                }
+            };
 
         // Get chunk count from storage
         let (total_chunks, total_sources) = match self.state.s.get_rag_stats().await {
@@ -3613,12 +3077,10 @@ impl ManagementService for ManagementServiceImpl {
         let req = request.into_inner();
 
         match self.state.s.delete_rag_source(&req.source_uri).await {
-            Ok(count) => {
-                Ok(Response::new(RagOperationResult {
-                    success: true,
-                    message: format!("Deleted {} chunks from source '{}'", count, req.source_uri),
-                }))
-            }
+            Ok(count) => Ok(Response::new(RagOperationResult {
+                success: true,
+                message: format!("Deleted {} chunks from source '{}'", count, req.source_uri),
+            })),
             Err(e) => {
                 tracing::error!("Failed to delete RAG source: {}", e);
                 Ok(Response::new(RagOperationResult {
@@ -3675,13 +3137,19 @@ impl ManagementService for ManagementServiceImpl {
         }
 
         // Store configuration
-        match self.state.s.set_rag_config(&req.endpoint, &req.model, req.dimension).await {
-            Ok(()) => {
-                Ok(Response::new(RagOperationResult {
-                    success: true,
-                    message: format!("Embedder configured: {} ({}, {} dims)", req.endpoint, req.model, req.dimension),
-                }))
-            }
+        match self
+            .state
+            .s
+            .set_rag_config(&req.endpoint, &req.model, req.dimension)
+            .await
+        {
+            Ok(()) => Ok(Response::new(RagOperationResult {
+                success: true,
+                message: format!(
+                    "Embedder configured: {} ({}, {} dims)",
+                    req.endpoint, req.model, req.dimension
+                ),
+            })),
             Err(e) => {
                 tracing::error!("Failed to configure RAG: {}", e);
                 Ok(Response::new(RagOperationResult {
@@ -3919,19 +3387,21 @@ impl ManagementService for ManagementServiceImpl {
         request: Request<RegisterSdlTemplateRequest>,
     ) -> Result<Response<RegisterSdlTemplateResponse>, Status> {
         let req = request.into_inner();
-        tracing::info!("Registering SDL template contract: {}", req.contract_address);
+        tracing::info!(
+            "Registering SDL template contract: {}",
+            req.contract_address
+        );
 
-        match self.state.s.register_sdl_template_contract(
-            &req.contract_address,
-            req.label,
-            req.code_id,
-        ).await {
-            Ok(()) => {
-                Ok(Response::new(RegisterSdlTemplateResponse {
-                    success: true,
-                    message: format!("SDL template contract registered: {}", req.contract_address),
-                }))
-            }
+        match self
+            .state
+            .s
+            .register_sdl_template_contract(&req.contract_address, req.label, req.code_id)
+            .await
+        {
+            Ok(()) => Ok(Response::new(RegisterSdlTemplateResponse {
+                success: true,
+                message: format!("SDL template contract registered: {}", req.contract_address),
+            })),
             Err(e) => {
                 tracing::error!("Failed to register SDL template contract: {}", e);
                 Err(Status::internal(format!(
@@ -3948,7 +3418,10 @@ impl ManagementService for ManagementServiceImpl {
         request: Request<GetSdlTemplateRequest>,
     ) -> Result<Response<GetSdlTemplateResponse>, Status> {
         let req = request.into_inner();
-        tracing::info!("Getting SDL template from contract {}", req.contract_address);
+        tracing::info!(
+            "Getting SDL template from contract {}",
+            req.contract_address
+        );
 
         #[cfg(feature = "cw")]
         {
@@ -3966,10 +3439,13 @@ impl ManagementService for ManagementServiceImpl {
             {
                 Ok((sdl_template, template_json)) => {
                     // Convert serde_json::Value to prost_types::Struct
-                    let template_json_bytes = serde_json::to_vec(&template_json)
-                        .map_err(|e| Status::internal(format!("Failed to serialize template JSON: {}", e)))?;
-                    let template_json_struct: pbjson_types::Struct = serde_json::from_slice(&template_json_bytes)
-                        .map_err(|e| Status::internal(format!("Failed to convert template JSON: {}", e)))?;
+                    let template_json_bytes = serde_json::to_vec(&template_json).map_err(|e| {
+                        Status::internal(format!("Failed to serialize template JSON: {}", e))
+                    })?;
+                    let template_json_struct: pbjson_types::Struct =
+                        serde_json::from_slice(&template_json_bytes).map_err(|e| {
+                            Status::internal(format!("Failed to convert template JSON: {}", e))
+                        })?;
 
                     Ok(Response::new(GetSdlTemplateResponse {
                         sdl_template,
@@ -3978,7 +3454,10 @@ impl ManagementService for ManagementServiceImpl {
                 }
                 Err(e) => {
                     tracing::error!("Failed to query SDL template: {}", e);
-                    Err(Status::internal(format!("Failed to query SDL template: {}", e)))
+                    Err(Status::internal(format!(
+                        "Failed to query SDL template: {}",
+                        e
+                    )))
                 }
             }
         }
@@ -3995,7 +3474,10 @@ impl ManagementService for ManagementServiceImpl {
         request: Request<GetSdlDefaultsRequest>,
     ) -> Result<Response<GetSdlDefaultsResponse>, Status> {
         let req = request.into_inner();
-        tracing::info!("Getting SDL defaults from contract {}", req.contract_address);
+        tracing::info!(
+            "Getting SDL defaults from contract {}",
+            req.contract_address
+        );
 
         #[cfg(feature = "cw")]
         {
@@ -4014,7 +3496,10 @@ impl ManagementService for ManagementServiceImpl {
                 Ok(defaults) => Ok(Response::new(GetSdlDefaultsResponse { defaults })),
                 Err(e) => {
                     tracing::error!("Failed to query SDL defaults: {}", e);
-                    Err(Status::internal(format!("Failed to query SDL defaults: {}", e)))
+                    Err(Status::internal(format!(
+                        "Failed to query SDL defaults: {}",
+                        e
+                    )))
                 }
             }
         }
@@ -4031,7 +3516,10 @@ impl ManagementService for ManagementServiceImpl {
         request: Request<RenderSdlTemplateRequest>,
     ) -> Result<Response<RenderSdlTemplateResponse>, Status> {
         let req = request.into_inner();
-        tracing::info!("Rendering SDL template from contract {}", req.contract_address);
+        tracing::info!(
+            "Rendering SDL template from contract {}",
+            req.contract_address
+        );
 
         #[cfg(feature = "cw")]
         {
@@ -4054,13 +3542,18 @@ impl ManagementService for ManagementServiceImpl {
                 )
                 .await
             {
-                Ok((rendered_sdl, used_variables)) => Ok(Response::new(RenderSdlTemplateResponse {
-                    rendered_sdl,
-                    used_variables,
-                })),
+                Ok((rendered_sdl, used_variables)) => {
+                    Ok(Response::new(RenderSdlTemplateResponse {
+                        rendered_sdl,
+                        used_variables,
+                    }))
+                }
                 Err(e) => {
                     tracing::error!("Failed to render SDL template: {}", e);
-                    Err(Status::internal(format!("Failed to render SDL template: {}", e)))
+                    Err(Status::internal(format!(
+                        "Failed to render SDL template: {}",
+                        e
+                    )))
                 }
             }
         }
@@ -4082,15 +3575,19 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<SetChainConfigResponse>, Status> {
         let req = request.into_inner();
 
-        let config = req.config.ok_or_else(|| {
-            Status::invalid_argument("Chain config is required")
-        })?;
+        let config = req
+            .config
+            .ok_or_else(|| Status::invalid_argument("Chain config is required"))?;
 
         if config.chain_id.is_empty() {
             return Err(Status::invalid_argument("chain_id cannot be empty"));
         }
 
-        tracing::info!("Setting chain config for: {} ({})", config.chain_name, config.chain_id);
+        tracing::info!(
+            "Setting chain config for: {} ({})",
+            config.chain_name,
+            config.chain_id
+        );
 
         match self.state.s.put_chain_config(&config).await {
             Ok(()) => Ok(Response::new(SetChainConfigResponse {
@@ -4099,7 +3596,10 @@ impl ManagementService for ManagementServiceImpl {
             })),
             Err(e) => {
                 tracing::error!("Failed to store chain config: {}", e);
-                Err(Status::internal(format!("Failed to store chain config: {}", e)))
+                Err(Status::internal(format!(
+                    "Failed to store chain config: {}",
+                    e
+                )))
             }
         }
     }
@@ -4128,7 +3628,10 @@ impl ManagementService for ManagementServiceImpl {
             })),
             Err(e) => {
                 tracing::error!("Failed to get chain config: {}", e);
-                Err(Status::internal(format!("Failed to get chain config: {}", e)))
+                Err(Status::internal(format!(
+                    "Failed to get chain config: {}",
+                    e
+                )))
             }
         }
     }
@@ -4144,7 +3647,10 @@ impl ManagementService for ManagementServiceImpl {
             Ok(chains) => Ok(Response::new(ListChainConfigsResponse { chains })),
             Err(e) => {
                 tracing::error!("Failed to list chain configs: {}", e);
-                Err(Status::internal(format!("Failed to list chain configs: {}", e)))
+                Err(Status::internal(format!(
+                    "Failed to list chain configs: {}",
+                    e
+                )))
             }
         }
     }
@@ -4169,7 +3675,10 @@ impl ManagementService for ManagementServiceImpl {
             })),
             Err(e) => {
                 tracing::error!("Failed to delete chain config: {}", e);
-                Err(Status::internal(format!("Failed to delete chain config: {}", e)))
+                Err(Status::internal(format!(
+                    "Failed to delete chain config: {}",
+                    e
+                )))
             }
         }
     }
@@ -4190,7 +3699,9 @@ impl ManagementService for ManagementServiceImpl {
             let runtime_gateways = gm.list_gateways().await;
             for gw in runtime_gateways {
                 // Merge with config state
-                let enabled = self.state.s
+                let enabled = self
+                    .state
+                    .s
                     .get_gateway_config(&gw.gateway_id)
                     .await
                     .ok()
@@ -4327,7 +3838,12 @@ impl ManagementService for ManagementServiceImpl {
         tracing::info!("Configuring Discord gateway");
 
         // Get node pubkey for encryption
-        let node_pubkey = self.state.c.identity().public_key.clone()
+        let node_pubkey = self
+            .state
+            .c
+            .identity()
+            .public_key
+            .clone()
             .ok_or_else(|| Status::internal("Node public key not available for encryption"))?;
 
         // Get or create config
@@ -4346,8 +3862,8 @@ impl ManagementService for ManagementServiceImpl {
 
         // Encrypt and store bot token securely
         if !req.bot_token.is_empty() {
-            let (encrypted_value, nonce) = encrypt_gateway_secret(&req.bot_token, &node_pubkey)
-                .map_err(Status::internal)?;
+            let (encrypted_value, nonce) =
+                encrypt_gateway_secret(&req.bot_token, &node_pubkey).map_err(Status::internal)?;
 
             let secret = EncryptedSecret {
                 secret_id: "discord_bot_token".to_string(),
@@ -4374,7 +3890,9 @@ impl ManagementService for ManagementServiceImpl {
                 .map_err(|e| Status::internal(format!("Failed to store encrypted token: {}", e)))?;
 
             // Store marker in config that token is encrypted (not the actual token)
-            config.settings.insert("bot_token_encrypted".to_string(), "true".to_string());
+            config
+                .settings
+                .insert("bot_token_encrypted".to_string(), "true".to_string());
             config.settings.remove("bot_token"); // Remove any plaintext token
         }
 
@@ -4383,9 +3901,10 @@ impl ManagementService for ManagementServiceImpl {
         }
 
         if let Some(respond_mentions) = req.respond_to_mentions {
-            config
-                .settings
-                .insert("respond_to_mentions".to_string(), respond_mentions.to_string());
+            config.settings.insert(
+                "respond_to_mentions".to_string(),
+                respond_mentions.to_string(),
+            );
         }
 
         self.state
@@ -4412,18 +3931,27 @@ impl ManagementService for ManagementServiceImpl {
             let mut guilds: Vec<String> = config
                 .settings
                 .get("allowed_guild_ids")
-                .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+                .map(|s| {
+                    s.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
+                        .collect()
+                })
                 .unwrap_or_default();
 
             if !guilds.contains(&req.guild_id) {
                 guilds.push(req.guild_id.clone());
-                config.settings.insert("allowed_guild_ids".to_string(), guilds.join(","));
+                config
+                    .settings
+                    .insert("allowed_guild_ids".to_string(), guilds.join(","));
 
                 self.state
                     .s
                     .put_gateway_config(&config)
                     .await
-                    .map_err(|e| Status::internal(format!("Failed to save gateway config: {}", e)))?;
+                    .map_err(|e| {
+                        Status::internal(format!("Failed to save gateway config: {}", e))
+                    })?;
             }
 
             Ok(Response::new(OperationResult {
@@ -4455,7 +3983,9 @@ impl ManagementService for ManagementServiceImpl {
                 })
                 .unwrap_or_default();
 
-            config.settings.insert("allowed_guild_ids".to_string(), guilds.join(","));
+            config
+                .settings
+                .insert("allowed_guild_ids".to_string(), guilds.join(","));
 
             self.state
                 .s
@@ -4483,22 +4013,44 @@ impl ManagementService for ManagementServiceImpl {
             let allowed_guild_ids: Vec<String> = config
                 .settings
                 .get("allowed_guild_ids")
-                .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+                .map(|s| {
+                    s.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let allowed_channel_ids: Vec<String> = config
                 .settings
                 .get("allowed_channel_ids")
-                .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+                .map(|s| {
+                    s.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
+                        .collect()
+                })
                 .unwrap_or_default();
 
             Ok(Response::new(GetDiscordConfigResponse {
                 token_configured: config.settings.contains_key("bot_token"),
                 allowed_guild_ids,
                 allowed_channel_ids,
-                command_prefix: config.settings.get("command_prefix").cloned().unwrap_or_else(|| "!".to_string()),
-                respond_to_mentions: config.settings.get("respond_to_mentions").map(|s| s == "true").unwrap_or(true),
-                respond_to_dms: config.settings.get("respond_to_dms").map(|s| s == "true").unwrap_or(false),
+                command_prefix: config
+                    .settings
+                    .get("command_prefix")
+                    .cloned()
+                    .unwrap_or_else(|| "!".to_string()),
+                respond_to_mentions: config
+                    .settings
+                    .get("respond_to_mentions")
+                    .map(|s| s == "true")
+                    .unwrap_or(true),
+                respond_to_dms: config
+                    .settings
+                    .get("respond_to_dms")
+                    .map(|s| s == "true")
+                    .unwrap_or(false),
             }))
         } else {
             Ok(Response::new(GetDiscordConfigResponse {
@@ -4511,6 +4063,71 @@ impl ManagementService for ManagementServiceImpl {
             }))
         }
     }
+
+    // Task worktree management methods removed - use deploy/orchestrator instead
+
+    // async fn add_workspace(
+    //     &self,
+    //     _request: Request<AddWorkspaceRequest>,
+    // ) -> Result<Response<AddWorkspaceResponse>, Status> {
+    //     Err(Status::unimplemented("Workspace management moved to commands"))
+    // }
+
+    // async fn get_workspace(
+    //     &self,
+    //     _request: Request<GetWorkspaceRequest>,
+    // ) -> Result<Response<GetWorkspaceResponse>, Status> {
+    //     Err(Status::unimplemented("Workspace management moved to commands"))
+    // }
+
+    // async fn list_workspaces(
+    //     &self,
+    //     _request: Request<ListWorkspacesRequest>,
+    // ) -> Result<Response<ListWorkspacesResponse>, Status> {
+    //     Err(Status::unimplemented("Workspace management moved to commands"))
+    // }
+
+    // async fn remove_workspace(
+    //     &self,
+    //     _request: Request<RemoveWorkspaceRequest>,
+    // ) -> Result<Response<OperationResult>, Status> {
+    //     Err(Status::unimplemented("Workspace management moved to commands"))
+    // }
+
+    // async fn create_task_worktree(
+    //     &self,
+    //     _request: Request<CreateTaskWorktreeRequest>,
+    // ) -> Result<Response<CreateTaskWorktreeResponse>, Status> {
+    //     Err(Status::unimplemented("Task worktree management moved to deploy/orchestrator"))
+    // }
+
+    // async fn list_task_worktrees(
+    //     &self,
+    //     _request: Request<ListTaskWorktreesRequest>,
+    // ) -> Result<Response<ListTaskWorktreesResponse>, Status> {
+    //     Err(Status::unimplemented("Task worktree management moved to deploy/orchestrator"))
+    // }
+
+    // async fn complete_task_worktree(
+    //     &self,
+    //     _request: Request<CompleteTaskWorktreeRequest>,
+    // ) -> Result<Response<CompleteTaskWorktreeResponse>, Status> {
+    //     Err(Status::unimplemented("Task worktree management moved to deploy/orchestrator"))
+    // }
+
+    // async fn fail_task_worktree(
+    //     &self,
+    //     _request: Request<FailTaskWorktreeRequest>,
+    // ) -> Result<Response<OperationResult>, Status> {
+    //     Err(Status::unimplemented("Task worktree management moved to deploy/orchestrator"))
+    // }
+
+    // async fn resolve_conflict(
+    //     &self,
+    //     _request: Request<ResolveConflictRequest>,
+    // ) -> Result<Response<ResolveConflictResponse>, Status> {
+    //     Err(Status::unimplemented("Conflict resolution moved to deploy/orchestrator"))
+    // }
 }
 
 /// Start the gRPC management server
@@ -4523,8 +4140,8 @@ pub async fn start_grpc_server(
 
     tracing::info!("Starting gRPC management server on {}", addr);
 
-    let mut server = tonic::transport::Server::builder()
-        .add_service(ManagementServiceServer::new(service));
+    let mut server =
+        tonic::transport::Server::builder().add_service(ManagementServiceServer::new(service));
 
     // Add RLM document service if provided
     if let Some(rlm_svc) = rlm_service {

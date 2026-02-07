@@ -959,14 +959,3 @@ impl OrchestratorSessionHelper {
         &self.session_manager
     }
 }
-
-#[cfg(test)]
-mod tests {
-    
-
-    #[test]
-    fn test_helper_construction() {
-        // Just verify the struct compiles
-        // Full tests require storage infrastructure
-    }
-}

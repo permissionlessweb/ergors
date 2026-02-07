@@ -207,7 +207,7 @@ Now create a RAG instance and ingest the githem output.
 Create a file `ingest.rs`:
 
 ```rust
-use ergors::rag;
+ use ergors::proxy::rag;
 use ergors::storage::ErgorsStorage;
 use std::sync::Arc;
 
@@ -285,7 +285,7 @@ Once ingestion is complete, query your repository.
 ### Basic Query
 
 ```rust
-use ergors::rag;
+ use ergors::proxy::rag;
 use ergors::storage::ErgorsStorage;
 
 #[tokio::main]
@@ -377,7 +377,7 @@ Here's a complete script that does everything:
 //!   2. Deploy embedding service: ergors deploy create --sdl sdls/embeddings/qwen.yml
 //!   3. Run this script with the endpoint URL
 
-use ergors::rag;
+ use ergors::proxy::rag;
 use ergors::storage::ErgorsStorage;
 use std::io::{self, BufRead, Write};
 

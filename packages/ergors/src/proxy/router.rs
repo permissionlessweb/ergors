@@ -25,22 +25,26 @@ use bytes::Bytes;
 use commonware_cryptography::{blake3, Hasher};
 use ho_std::constants::{ANTHROPIC_BASE_URL, OPENAI_BASE_URL};
 use ho_std::error::{error_json, error_json_detailed};
+use ho_std::traits::ApiKeyMethod;
 use ho_std::types::ergors::orch::v1::*;
 use ho_std::types::ergors::orch::v1::{
     InferenceProviderConfig, InferenceProviderType, ProxyRouterConfig,
 };
 use reqwest::Client;
 use std::convert::Infallible;
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::ErgorsAppState;
 use crate::proxy::{
     error::OpenResponsesError,
-    open_responses::{filter_tools, parse_open_responses_request, prompt_response_to_open_responses},
+    open_responses::{
+        filter_tools, parse_open_responses_request, prompt_response_to_open_responses,
+    },
     streaming::OpenResponsesStreamTransformer,
     upstream::{forward_to_anthropic, forward_to_openai},
 };
+use crate::ErgorsAppState;
 
 pub async fn handle_prompt(
     State(state): State<ErgorsAppState>,
@@ -483,8 +487,6 @@ pub async fn handle_fractal_hoe_creation(// State(_state): State<ErgorsAppState>
     Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
 }
 
-
-
 /// Convenience alias for use in tests and external code.
 pub type ProviderType = InferenceProviderType;
 
@@ -497,26 +499,40 @@ pub struct RouteTarget {
 }
 
 /// Proxy router for request routing
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProxyRouter {
     config: ProxyRouterConfig,
     client: Client,
+    key_accessor: Option<Arc<dyn ApiKeyMethod>>,
+}
+
+impl std::fmt::Debug for ProxyRouter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProxyRouter")
+            .field("config", &self.config)
+            .field("key_accessor", &self.key_accessor.is_some())
+            .finish()
+    }
 }
 
 impl ProxyRouter {
-    /// Create a new proxy router with the given configuration
-    pub fn new(config: ProxyRouterConfig) -> Self {
+    /// Create a new proxy router with the given configuration and optional key accessor
+    pub fn new(config: ProxyRouterConfig, key_accessor: Option<Arc<dyn ApiKeyMethod>>) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(300))
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { config, client }
+        Self {
+            config,
+            client,
+            key_accessor,
+        }
     }
 
     /// Create a proxy router with default configuration
     pub fn default_router() -> Self {
-        Self::new(ProxyRouterConfig::default())
+        Self::new(ProxyRouterConfig::default(), None)
     }
 
     // ============= Generic Provider Access =============
@@ -531,27 +547,49 @@ impl ProxyRouter {
         self.get_provider(provider_id).filter(|p| p.enabled)
     }
 
-    /// Get route target from provider configuration
-    fn provider_to_route_target(&self, provider: &InferenceProviderConfig) -> Result<RouteTarget> {
+    /// Get route target from provider configuration.
+    /// Resolves API key via custody-backed accessor or env var fallback.
+    async fn provider_to_route_target(
+        &self,
+        provider: &InferenceProviderConfig,
+    ) -> Result<RouteTarget> {
         if !provider.enabled {
             return Err(anyhow!("Provider '{}' is disabled", provider.provider_id));
         }
 
-        // Resolve API key (support both direct key and key references)
-        let api_key = if !provider.api_key.is_empty() {
-            Some(provider.api_key.clone())
-        } else if !provider.api_key_ref.is_empty() {
-            // TODO: Implement custody key resolution
-            // For now, treat api_key_ref as env var reference
-            if let Some(env_ref) = provider.api_key_ref.strip_prefix("env://") {
-                std::env::var(env_ref).ok()
+        // Resolve API key: custody:// via accessor, env:// via env var
+        let api_key = if let Some(custody_id) = provider.api_key_ref.strip_prefix("custody://") {
+            // Custody-backed key resolution
+            if let Some(accessor) = &self.key_accessor {
+                accessor.get_key(custody_id).await.ok().flatten()
             } else {
                 warn!(
-                    "API key reference not yet supported: {}",
-                    provider.api_key_ref
+                    "Provider '{}' references custody://{} but no key accessor configured",
+                    provider.provider_id, custody_id
                 );
                 None
             }
+        } else if let Some(env_ref) = provider.api_key_ref.strip_prefix("env://") {
+            // Legacy env var fallback
+            std::env::var(env_ref).ok()
+        } else if !provider.api_key_ref.is_empty() {
+            // Bare provider_id — try accessor lookup by provider_id
+            if let Some(accessor) = &self.key_accessor {
+                accessor
+                    .get_key(&provider.provider_id)
+                    .await
+                    .ok()
+                    .flatten()
+            } else {
+                None
+            }
+        } else if let Some(accessor) = &self.key_accessor {
+            // No api_key_ref at all — still try accessor by provider_id
+            accessor
+                .get_key(&provider.provider_id)
+                .await
+                .ok()
+                .flatten()
         } else {
             None
         };
@@ -563,91 +601,64 @@ impl ProxyRouter {
         })
     }
 
-    // ============= Legacy API (for backward compatibility) =============
+    // ============= Routing Methods =============
 
     /// Get the route target for an Anthropic-format request
-    pub fn route_anthropic(&self, model: &str) -> RouteTarget {
-        // Check model-specific routes first (pattern -> provider_id)
-        if let Ok(route) = self.match_model_route(model) {
-            return route;
+    pub async fn route_anthropic(&self, model: &str) -> Result<RouteTarget> {
+        if let Ok(route) = self.match_model_route(model).await {
+            return Ok(route);
         }
 
-        // Fallback: look for "anthropic" provider
         if let Some(provider) = self.get_enabled_provider("anthropic") {
-            if let Ok(target) = self.provider_to_route_target(provider) {
-                return target;
-            }
+            return self.provider_to_route_target(provider).await;
         }
 
-        // Final fallback: use default Anthropic URL
-        warn!("No anthropic provider configured, using default URL");
-        RouteTarget {
+        // Default fallback
+        Ok(RouteTarget {
             base_url: ANTHROPIC_BASE_URL.to_string(),
             api_key: None,
             provider_type: InferenceProviderType::Anthropic as i32,
-        }
+        })
     }
 
     /// Get the route target for an OpenAI-format request
-    pub fn route_openai(&self, model: &str) -> RouteTarget {
-        // Check model-specific routes first (pattern -> provider_id)
-        if let Ok(route) = self.match_model_route(model) {
-            return route;
+    pub async fn route_openai(&self, model: &str) -> Result<RouteTarget> {
+        if let Ok(route) = self.match_model_route(model).await {
+            return Ok(route);
         }
 
-        // Fallback: look for "openai" provider
         if let Some(provider) = self.get_enabled_provider("openai") {
-            if let Ok(target) = self.provider_to_route_target(provider) {
-                return target;
-            }
+            return self.provider_to_route_target(provider).await;
         }
 
-        // Final fallback: use default OpenAI URL
-        warn!("No openai provider configured, using default URL");
-        RouteTarget {
+        // Default fallback
+        Ok(RouteTarget {
             base_url: OPENAI_BASE_URL.to_string(),
             api_key: None,
             provider_type: InferenceProviderType::Openai as i32,
-        }
+        })
     }
 
     /// Get the route target for an Ollama-format request
-    pub fn route_ollama(&self, model: &str) -> RouteTarget {
-        // Check model-specific routes first (pattern -> provider_id)
-        if let Ok(route) = self.match_model_route(model) {
-            return route;
+    pub async fn route_ollama(&self, model: &str) -> Result<RouteTarget> {
+        if let Ok(route) = self.match_model_route(model).await {
+            return Ok(route);
         }
 
-        // Fallback: look for "ollama" provider
         if let Some(provider) = self.get_enabled_provider("ollama") {
-            if let Ok(target) = self.provider_to_route_target(provider) {
-                return target;
-            }
+            return self.provider_to_route_target(provider).await;
         }
 
-        // Check deprecated ollama_base_url field for backward compatibility
-        #[allow(deprecated)]
-        if !self.config.ollama_base_url.is_empty() {
-            warn!("Using deprecated ollama_base_url field, please migrate to providers map");
-            return RouteTarget {
-                base_url: self.config.ollama_base_url.clone(),
-                api_key: None,
-                provider_type: InferenceProviderType::Ollama as i32,
-            };
-        }
-
-        // Final fallback: use localhost
-        warn!("No ollama provider configured, using localhost:11434");
-        RouteTarget {
+        // Default fallback
+        Ok(RouteTarget {
             base_url: "http://localhost:11434".to_string(),
             api_key: None,
             provider_type: InferenceProviderType::Ollama as i32,
-        }
+        })
     }
 
     /// Match a model name against configured routes
-    /// Returns RouteTarget by looking up provider from model_routes map
-    fn match_model_route(&self, model: &str) -> Result<RouteTarget> {
+    async fn match_model_route(&self, model: &str) -> Result<RouteTarget> {
         for (pattern, provider_id) in &self.config.model_routes {
             if glob_match(pattern, model) {
                 debug!(
@@ -655,9 +666,8 @@ impl ProxyRouter {
                     model, pattern, provider_id
                 );
 
-                // Look up provider configuration
                 if let Some(provider) = self.get_enabled_provider(provider_id) {
-                    return self.provider_to_route_target(provider);
+                    return self.provider_to_route_target(provider).await;
                 } else {
                     warn!(
                         "Model route points to unknown/disabled provider: {}",
@@ -680,7 +690,7 @@ impl ProxyRouter {
         anthropic_version: Option<&str>,
         anthropic_beta: Option<&str>,
     ) -> Result<reqwest::Response> {
-        let target = self.route_anthropic(model);
+        let target = self.route_anthropic(model).await?;
         let effective_key = target.api_key.as_deref().unwrap_or(api_key);
         let url = format!("{}/v1/messages", target.base_url);
 
@@ -713,7 +723,7 @@ impl ProxyRouter {
         model: &str,
         organization: Option<&str>,
     ) -> Result<reqwest::Response> {
-        let target = self.route_openai(model);
+        let target = self.route_openai(model).await?;
         let effective_key = target.api_key.as_deref().unwrap_or(api_key);
         let url = format!("{}/v1/chat/completions", target.base_url);
 
@@ -741,7 +751,7 @@ impl ProxyRouter {
         model: &str,
         endpoint: &str, // e.g., "/api/generate", "/api/chat"
     ) -> Result<reqwest::Response> {
-        let target = self.route_ollama(model);
+        let target = self.route_ollama(model).await?;
         let url = format!("{}{}", target.base_url, endpoint);
 
         debug!("Routing Ollama request for model '{}' to {}", model, url);
@@ -752,7 +762,6 @@ impl ProxyRouter {
             .header("content-type", "application/json")
             .body(body);
 
-        // Add API key header if configured (some Ollama deployments require it)
         if let Some(api_key) = target.api_key {
             request = request.header("authorization", format!("Bearer {}", api_key));
         }
@@ -825,35 +834,31 @@ mod tests {
 
     #[test]
     fn test_glob_match() {
-        // Basic wildcard
         assert!(glob_match("claude-*", "claude-3-opus"));
         assert!(glob_match("gpt-*", "gpt-4"));
         assert!(glob_match("gpt-*-turbo", "gpt-4-turbo"));
 
-        // No match
         assert!(!glob_match("claude-*", "gpt-4"));
         assert!(!glob_match("gpt-*", "claude-3"));
 
-        // Exact match
         assert!(glob_match("gpt-4", "gpt-4"));
         assert!(!glob_match("gpt-4", "gpt-4-turbo"));
 
-        // Universal wildcard
         assert!(glob_match("*", "anything"));
     }
 
-    #[test]
-    fn test_default_routing() {
+    #[tokio::test]
+    async fn test_default_routing() {
         let router = ProxyRouter::default_router();
 
-        let anthropic_target = router.route_anthropic("claude-3-opus");
+        let anthropic_target = router.route_anthropic("claude-3-opus").await.unwrap();
         assert_eq!(anthropic_target.base_url, ANTHROPIC_BASE_URL);
         assert_eq!(
             anthropic_target.provider_type,
             InferenceProviderType::Anthropic as i32
         );
 
-        let openai_target = router.route_openai("gpt-4");
+        let openai_target = router.route_openai("gpt-4").await.unwrap();
         assert_eq!(openai_target.base_url, OPENAI_BASE_URL);
         assert_eq!(
             openai_target.provider_type,

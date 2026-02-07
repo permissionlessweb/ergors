@@ -403,6 +403,11 @@ impl MockWorkflowEngine {
                 Self::sync_proto_from_state(workflow, &state);
                 workflow.current_step = AkashWorkflowStep::Complete as i32;
                 workflow.status = AkashWorkflowStatus::Completed as i32;
+                let now = chrono::Utc::now();
+                workflow.completed_at = Some(pbjson_types::Timestamp {
+                    seconds: now.timestamp(),
+                    nanos: now.timestamp_subsec_nanos() as i32,
+                });
             }
             Ok(StepResult::Failed(reason)) => {
                 workflow.current_step = AkashWorkflowStep::Failed as i32;

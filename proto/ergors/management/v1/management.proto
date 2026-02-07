@@ -95,18 +95,18 @@ service ManagementService {
   // ============================================
 
   // Workspace lifecycle
-  rpc AddWorkspace(AddWorkspaceRequest) returns (AddWorkspaceResponse);
-  rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
-  rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
-  rpc RemoveWorkspace(RemoveWorkspaceRequest) returns (OperationResult);
-  rpc SyncWorkspace(SyncWorkspaceRequest) returns (SyncWorkspaceResponse);
+  //rpc AddWorkspace(AddWorkspaceRequest) returns (AddWorkspaceResponse);
+  //rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
+  //rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  //rpc RemoveWorkspace(RemoveWorkspaceRequest) returns (OperationResult);
+  //rpc SyncWorkspace(SyncWorkspaceRequest) returns (SyncWorkspaceResponse);
 
   // Task worktree operations
-  rpc CreateTaskWorktree(CreateTaskWorktreeRequest) returns (CreateTaskWorktreeResponse);
-  rpc ListTaskWorktrees(ListTaskWorktreesRequest) returns (ListTaskWorktreesResponse);
-  rpc CompleteTaskWorktree(CompleteTaskWorktreeRequest) returns (CompleteTaskWorktreeResponse);
-  rpc FailTaskWorktree(FailTaskWorktreeRequest) returns (OperationResult);
-  rpc ResolveConflict(ResolveConflictRequest) returns (ResolveConflictResponse);
+  // rpc CreateTaskWorktree(CreateTaskWorktreeRequest) returns (CreateTaskWorktreeResponse);
+  // rpc ListTaskWorktrees(ListTaskWorktreesRequest) returns (ListTaskWorktreesResponse);
+  // rpc CompleteTaskWorktree(CompleteTaskWorktreeRequest) returns (CompleteTaskWorktreeResponse);
+  // rpc FailTaskWorktree(FailTaskWorktreeRequest) returns (OperationResult);
+  // rpc ResolveConflict(ResolveConflictRequest) returns (ResolveConflictResponse);
 
   // ============================================
   // Akash Deployment Management
@@ -1259,14 +1259,8 @@ message SetWorkflowEndpointsResponse {
 
 // Configure proxy routes request
 message ConfigureProxyRoutesRequest {
-  // Override base URL for OpenAI API requests
-  string openai_base_url = 1;
-  // Override base URL for Anthropic API requests
-  string anthropic_base_url = 2;
-  // Override base URL for Ollama API requests
-  string ollama_base_url = 3;
   // Model-specific routing rules (glob patterns -> URLs)
-  map<string, string> model_routes = 4;
+  map<string, string> model_routes = 1;
 }
 
 // ============================================

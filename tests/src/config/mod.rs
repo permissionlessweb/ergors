@@ -302,7 +302,6 @@ mod proxy_config {
     #[test]
     fn test_default_proxy_config() {
         let config = ProxyConfig::default();
-
         assert!(config.enabled);
         assert_eq!(config.bind_addr, "0.0.0.0:8080");
         assert!(config.capture.enabled);
@@ -311,33 +310,9 @@ mod proxy_config {
 
     #[test]
     fn test_proxy_config_from_toml() {
-        let toml = r#"
-enabled = true
-bind_addr = "127.0.0.1:9090"
-
-[router.model_routes]
-"llama-*" = "local-ollama"
-
-[router.providers.anthropic]
-provider_id = "anthropic"
-base_url = "https://custom.anthropic.com"
-enabled = true
-provider_type = 1
-
-[router.providers.local-ollama]
-provider_id = "local-ollama"
-base_url = "http://localhost:11434"
-enabled = true
-provider_type = 3
-
-[capture]
-enabled = true
-include_chunks = false
-max_sessions = 1000
-"#;
-
+        // Load template from fixture file
+        let toml = include_str!("../../fixtures/proxy_config_with_providers.toml");
         let config: ProxyConfig = toml::from_str(toml).expect("parse");
-
         assert_eq!(config.bind_addr, "127.0.0.1:9090");
         assert!(config.router.providers.contains_key("anthropic"));
         assert_eq!(
@@ -347,12 +322,12 @@ max_sessions = 1000
         assert!(config.router.model_routes.contains_key("llama-*"));
         assert!(!config.capture.include_chunks);
         assert_eq!(config.capture.max_sessions, 1000);
+        assert_eq!(config.router.version, 1);
     }
 
     #[test]
     fn test_capture_config_defaults() {
         let config = CaptureConfig::default();
-
         assert!(config.enabled);
         assert!(config.include_chunks);
         assert_eq!(config.max_sessions, 0); // Unlimited
@@ -399,7 +374,7 @@ mod env_overrides {
                 .router
                 .providers
                 .get("anthropic")
-                .map(|p| p.api_key == "test-api-key")
+                .map(|p| p.api_key_ref == "custody://anthropic")
                 .unwrap_or(false));
         });
     }

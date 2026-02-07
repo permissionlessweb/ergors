@@ -5,11 +5,11 @@ use camino::{Utf8Path, Utf8PathBuf};
 use ho_std::custody::PasswordEncryptedCustody;
 use ho_std::llm::{HoError, HoResult};
 use ho_std::traits::{NodeIdentityCustody, NodeIdentityCustodyBackend};
-use ho_std::types::ergors::{network::v1::*, orch::v1::*, storage::v1::*};
 pub use ho_std::types::ergors::orch::v1::{
     AkashDeployConfig, ContractConfig, ContractDeployment, ContractMigration, CosmwasmConfig,
     CosmwasmGasLimits,
 };
+use ho_std::types::ergors::{network::v1::*, orch::v1::*, storage::v1::*};
 
 use ho_std::traits::file_ops::ConfigLoaderTrait;
 use ho_std::traits::{HoConfigTrait, LLMRouterConfigTrait, NetworkConfigTrait, NodeIdentityTrait};
@@ -32,9 +32,9 @@ impl HoConfigTrait for ErgorsConfig {
             storage: Some(StorageConfig::new(home)),
             llm: Some(LlmRouterConfig::new(home)),
             home: home.as_str().into(),
-            custody: None,                              // Custody config is managed separately
-            cosmwasm: None,                             // CosmWasm config is optional
-            akash: Some(Self::default_akash_config()),  // Akash mainnet defaults
+            custody: None,  // Custody config is managed separately
+            cosmwasm: None, // CosmWasm config is optional
+            akash: Some(Self::default_akash_config()), // Akash mainnet defaults
         })
     }
 
@@ -187,7 +187,10 @@ impl ErgorsConfig {
 
     /// Get CosmWasm configuration (returns default if not configured)
     pub fn cosmwasm(&self) -> CosmwasmConfig {
-        self.0.cosmwasm.clone().unwrap_or_else(Self::default_cosmwasm_config)
+        self.0
+            .cosmwasm
+            .clone()
+            .unwrap_or_else(Self::default_cosmwasm_config)
     }
 
     /// Set CosmWasm configuration
@@ -199,7 +202,9 @@ impl ErgorsConfig {
     pub fn wasm_cache_dir(&self) -> Utf8PathBuf {
         let cosmwasm = self.cosmwasm();
         if cosmwasm.cache_dir.is_empty() {
-            Utf8PathBuf::from(&self.0.home).join("data").join("wasm_cache")
+            Utf8PathBuf::from(&self.0.home)
+                .join("data")
+                .join("wasm_cache")
         } else {
             Utf8PathBuf::from(&cosmwasm.cache_dir)
         }
@@ -212,7 +217,9 @@ impl ErgorsConfig {
 
     /// Get initial contracts to deploy
     pub fn initial_contracts(&self) -> Vec<ContractDeployment> {
-        self.0.cosmwasm.as_ref()
+        self.0
+            .cosmwasm
+            .as_ref()
             .map(|c| c.initial_contracts.clone())
             .unwrap_or_default()
     }
@@ -221,8 +228,8 @@ impl ErgorsConfig {
     pub fn default_cosmwasm_config() -> CosmwasmConfig {
         CosmwasmConfig {
             enabled: false,
-            cache_dir: String::new(),    // Will use default
-            memory_limit: 33_554_432,    // 32MB
+            cache_dir: String::new(), // Will use default
+            memory_limit: 33_554_432, // 32MB
             gas_limits: Some(Self::default_gas_limits()),
             initial_contracts: vec![],
         }
@@ -250,7 +257,10 @@ impl ErgorsConfig {
 
     /// Get Akash deploy configuration (returns default if not configured)
     pub fn akash(&self) -> AkashDeployConfig {
-        self.0.akash.clone().unwrap_or_else(Self::default_akash_config)
+        self.0
+            .akash
+            .clone()
+            .unwrap_or_else(Self::default_akash_config)
     }
 
     /// Set Akash deploy configuration
@@ -260,12 +270,12 @@ impl ErgorsConfig {
 
     /// Check if Akash deployment is configured
     pub fn akash_enabled(&self) -> bool {
-        self.0.akash.as_ref()
+        self.0
+            .akash
+            .as_ref()
             .map(|c| !c.rpc_endpoints.is_empty() && !c.chain_id.is_empty())
             .unwrap_or(false)
     }
-
-    
 
     /// Create default Akash deploy config for mainnet
     pub fn default_akash_config() -> AkashDeployConfig {
@@ -350,7 +360,9 @@ impl LLMRouterConfigTrait for CwHoLlmRouterConfig {
 // Proxy Configuration
 // ==============================================
 
-use ho_std::types::ergors::orch::v1::{InferenceProviderConfig, InferenceProviderType, ProxyRouterConfig};
+use ho_std::types::ergors::orch::v1::{
+    InferenceProviderConfig, InferenceProviderType, ProxyRouterConfig,
+};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the LLM proxy service
@@ -432,14 +444,12 @@ impl ProxyConfig {
     /// Load proxy configuration from environment variables
     pub fn from_env() -> Self {
         let mut config = Self::default();
-
+        //TODO: have default method for checking custody for antrhopic api_key_ref
         // Create Anthropic provider from env if specified
         if let Ok(url) = std::env::var("ANTHROPIC_API_BASE") {
-            let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
             let provider = InferenceProviderConfig {
                 provider_id: "anthropic".to_string(),
                 base_url: url,
-                api_key,
                 api_key_ref: String::new(),
                 provider_type: InferenceProviderType::Anthropic as i32,
                 enabled: true,
@@ -463,14 +473,16 @@ impl ProxyConfig {
                     nanos: 0,
                 }),
             };
-            config.router.providers.insert("anthropic".to_string(), provider);
-        } else if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            // Just key, use default URL
+            config
+                .router
+                .providers
+                .insert("anthropic".to_string(), provider);
+        } else if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+            // Just key, use default URL — custody resolves by provider_id
             let provider = InferenceProviderConfig {
                 provider_id: "anthropic".to_string(),
                 base_url: "https://api.anthropic.com".to_string(),
-                api_key: key,
-                api_key_ref: String::new(),
+                api_key_ref: "custody://anthropic".to_string(),
                 provider_type: InferenceProviderType::Anthropic as i32,
                 enabled: true,
                 display_name: "Anthropic".to_string(),
@@ -493,16 +505,17 @@ impl ProxyConfig {
                     nanos: 0,
                 }),
             };
-            config.router.providers.insert("anthropic".to_string(), provider);
+            config
+                .router
+                .providers
+                .insert("anthropic".to_string(), provider);
         }
 
         // Create OpenAI provider from env if specified
         if let Ok(url) = std::env::var("OPENAI_API_BASE") {
-            let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
             let provider = InferenceProviderConfig {
                 provider_id: "openai".to_string(),
                 base_url: url,
-                api_key,
                 api_key_ref: String::new(),
                 provider_type: InferenceProviderType::Openai as i32,
                 enabled: true,
@@ -526,14 +539,16 @@ impl ProxyConfig {
                     nanos: 0,
                 }),
             };
-            config.router.providers.insert("openai".to_string(), provider);
-        } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            // Just key, use default URL from constants
+            config
+                .router
+                .providers
+                .insert("openai".to_string(), provider);
+        } else if std::env::var("OPENAI_API_KEY").is_ok() {
+            // Just key, use default URL — custody resolves by provider_id
             let provider = InferenceProviderConfig {
                 provider_id: "openai".to_string(),
                 base_url: ho_std::constants::OPENAI_BASE_URL.to_string(),
-                api_key: key,
-                api_key_ref: String::new(),
+                api_key_ref: "custody://openai".to_string(),
                 provider_type: InferenceProviderType::Openai as i32,
                 enabled: true,
                 display_name: "OpenAI".to_string(),
@@ -556,7 +571,10 @@ impl ProxyConfig {
                     nanos: 0,
                 }),
             };
-            config.router.providers.insert("openai".to_string(), provider);
+            config
+                .router
+                .providers
+                .insert("openai".to_string(), provider);
         }
 
         config
@@ -568,12 +586,13 @@ impl ProxyConfig {
 
         // Anthropic provider
         if let Ok(url) = std::env::var("ANTHROPIC_API_BASE") {
-            let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
-            let provider = self.router.providers.entry("anthropic".to_string())
+            let provider = self
+                .router
+                .providers
+                .entry("anthropic".to_string())
                 .or_insert_with(|| InferenceProviderConfig {
                     provider_id: "anthropic".to_string(),
                     base_url: String::new(),
-                    api_key: String::new(),
                     api_key_ref: String::new(),
                     provider_type: InferenceProviderType::Anthropic as i32,
                     enabled: true,
@@ -598,16 +617,14 @@ impl ProxyConfig {
                     }),
                 });
             provider.base_url = url;
-            if !api_key.is_empty() {
-                provider.api_key = api_key;
-            }
-        } else if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            let provider = self.router.providers.entry("anthropic".to_string())
+        } else if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+            self.router
+                .providers
+                .entry("anthropic".to_string())
                 .or_insert_with(|| InferenceProviderConfig {
                     provider_id: "anthropic".to_string(),
                     base_url: "https://api.anthropic.com".to_string(),
-                    api_key: String::new(),
-                    api_key_ref: String::new(),
+                    api_key_ref: "custody://anthropic".to_string(),
                     provider_type: InferenceProviderType::Anthropic as i32,
                     enabled: true,
                     display_name: "Anthropic".to_string(),
@@ -630,17 +647,17 @@ impl ProxyConfig {
                         nanos: 0,
                     }),
                 });
-            provider.api_key = key;
         }
 
         // OpenAI provider
         if let Ok(url) = std::env::var("OPENAI_API_BASE") {
-            let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
-            let provider = self.router.providers.entry("openai".to_string())
+            let provider = self
+                .router
+                .providers
+                .entry("openai".to_string())
                 .or_insert_with(|| InferenceProviderConfig {
                     provider_id: "openai".to_string(),
                     base_url: String::new(),
-                    api_key: String::new(),
                     api_key_ref: String::new(),
                     provider_type: InferenceProviderType::Openai as i32,
                     enabled: true,
@@ -665,16 +682,14 @@ impl ProxyConfig {
                     }),
                 });
             provider.base_url = url;
-            if !api_key.is_empty() {
-                provider.api_key = api_key;
-            }
-        } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            let provider = self.router.providers.entry("openai".to_string())
+        } else if std::env::var("OPENAI_API_KEY").is_ok() {
+            self.router
+                .providers
+                .entry("openai".to_string())
                 .or_insert_with(|| InferenceProviderConfig {
                     provider_id: "openai".to_string(),
                     base_url: ho_std::constants::OPENAI_BASE_URL.to_string(),
-                    api_key: String::new(),
-                    api_key_ref: String::new(),
+                    api_key_ref: "custody://openai".to_string(),
                     provider_type: InferenceProviderType::Openai as i32,
                     enabled: true,
                     display_name: "OpenAI".to_string(),
@@ -697,7 +712,6 @@ impl ProxyConfig {
                         nanos: 0,
                     }),
                 });
-            provider.api_key = key;
         }
 
         self
@@ -718,23 +732,14 @@ mod proxy_config_tests {
 
     #[test]
     fn test_proxy_config_from_toml() {
-        let toml = r#"
-            enabled = true
-            bind_addr = "127.0.0.1:9090"
-
-            [router.model_routes]
-            "llama-*" = "http://localhost:11434"
-
-            [capture]
-            enabled = true
-            include_chunks = false
-            max_sessions = 1000
-        "#;
+        // Load template from fixture file
+        let toml = include_str!("../tests/fixtures/proxy_config_template.toml");
 
         let config: ProxyConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.bind_addr, "127.0.0.1:9090");
         assert!(config.router.model_routes.contains_key("llama-*"));
         assert!(!config.capture.include_chunks);
         assert_eq!(config.capture.max_sessions, 1000);
+        assert_eq!(config.router.version, 1);
     }
 }

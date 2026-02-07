@@ -15,7 +15,7 @@ use ho_std::keys::commonware::NodePrivKey;
 use ho_std::llm::{EncryptedApiKeyManager, HoError};
 use ho_std::network::AuthLayer;
 use ho_std::storage::identity::EncryptedIdentityBuilder;
-use ho_std::traits::NodeIdentityCustody;
+use ho_std::traits::{ApiKeyMethod, NodeIdentityCustody};
 use ho_std::{
     error::{error_json_detailed, HoResult},
     traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityCustodyBackend, NodeIdentityTrait},
@@ -245,10 +245,13 @@ impl Server {
         // Start network using custody-backed identity (returns password for API key decryption)
         let custody_password = Self::start_network_with_custody(&mut nm, &c).await?;
 
-        // Load encrypted API keys and import to Cnidarium storage
-        if let Some(password) = &custody_password {
-            Self::load_and_store_encrypted_api_keys(&c, &s, password).await?;
-        }
+        // Load encrypted API keys and build custody-backed accessor
+        let key_accessor: Option<Arc<dyn ApiKeyMethod>> =
+            if let Some(password) = &custody_password {
+                Self::load_and_store_encrypted_api_keys(&c, &s, password).await?
+            } else {
+                None
+            };
 
         // Load LLM entities from config into Cnidarium storage
         Self::load_and_store_llm_entities(&c, &s).await?;
@@ -335,9 +338,10 @@ impl Server {
                 Instant::now(),
                 // c == config
                 c.clone(),
-                // pr == proxy router (loaded from storage or default)
+                // pr == proxy router (loaded from storage or default, with custody key accessor)
                 Arc::new(tokio::sync::RwLock::new(crate::proxy::ProxyRouter::new(
                     proxy_router_config,
+                    key_accessor,
                 ))),
                 // akash == Akash deployment context (optional)
                 akash_context,
@@ -697,12 +701,12 @@ impl Server {
     /// 1. Checks if encrypted API keys already exist in Cnidarium storage
     /// 2. If not, loads from `api-keys.enc` file in the data directory
     /// 3. Imports the encrypted store into Cnidarium for network consensus
-    /// 4. Decrypts keys and sets them as environment variables for LLM router
+    /// 4. Decrypts keys and returns custody-backed ApiKeyMethod accessor
     async fn load_and_store_encrypted_api_keys(
         c: &ErgorsConfig,
         s: &ErgorsStorage,
         password: &str,
-    ) -> HoResult<()> {
+    ) -> HoResult<Option<Arc<dyn ApiKeyMethod>>> {
         use cnidarium::StateWrite as _;
         use ho_std::llm::state_ext::{state_key, StateReadExt};
         use ho_std::Message as _;
@@ -714,14 +718,20 @@ impl Server {
         let snapshot = s.cs.latest_snapshot();
         let existing_store = snapshot.get_encrypted_api_key_store().await?;
 
-        if existing_store.is_some() {
+        if let Some(store) = existing_store {
             info!("🔐 Encrypted API keys found in Cnidarium storage");
 
-            // Decrypt and set environment variables for LLM router
-            let decrypted_keys = snapshot.load_and_decrypt_api_keys(password).await?;
-            Self::set_api_keys_env(&decrypted_keys);
+            let mut manager = EncryptedApiKeyManager::from_store(&store);
+            manager.unlock(password).map_err(|e| {
+                HoError::Crypto(format!("Failed to unlock API key manager: {}", e))
+            })?;
+            manager.load_store(&store).map_err(|e| {
+                HoError::Crypto(format!("Failed to decrypt API keys: {}", e))
+            })?;
 
-            return Ok(());
+            let count = manager.available_providers_sync();
+            info!("🔑 Loaded {} API keys from custody", count);
+            return Ok(Some(Arc::new(manager)));
         }
 
         // No keys in Cnidarium - check for file
@@ -730,7 +740,7 @@ impl Server {
                 "📋 No encrypted API keys file at {} - skipping",
                 encrypted_file
             );
-            return Ok(());
+            return Ok(None);
         }
 
         // Load encrypted store from file
@@ -757,44 +767,19 @@ impl Server {
             store.keys.len()
         );
 
-        // Decrypt and set environment variables for LLM router
+        // Decrypt and return as accessor
         let mut manager = EncryptedApiKeyManager::from_store(&store);
         manager
             .unlock(password)
             .map_err(|e| HoError::Crypto(format!("Failed to unlock API key manager: {}", e)))?;
 
-        let decrypted_keys = manager
+        manager
             .load_store(&store)
             .map_err(|e| HoError::Crypto(format!("Failed to decrypt API keys: {}", e)))?;
 
-        Self::set_api_keys_env(&decrypted_keys);
-
-        Ok(())
-    }
-
-    /// Set decrypted API keys as environment variables for LLM router
-    fn set_api_keys_env(keys: &HashMap<String, String>) {
-        use ho_std::constants::*;
-
-        for (provider, api_key) in keys {
-            let env_var = match provider.as_str() {
-                "anthropic" => ANTHROPIC_API_KEY,
-                "openai" => OPENAI_API_KEY,
-                "grok" => GROK_API_KEY,
-                "akashml" => AKASHML_KEY,
-                "kimi" => KIMI_API_KEY,
-                _ => {
-                    // Use provider name uppercased with _API_KEY suffix
-                    let env_name = format!("{}_API_KEY", provider.to_uppercase());
-                    std::env::set_var(&env_name, api_key);
-                    info!("🔑 Set {} from encrypted storage", env_name);
-                    continue;
-                }
-            };
-
-            std::env::set_var(env_var, api_key);
-            info!("🔑 Set {} from encrypted storage", env_var);
-        }
+        let count = manager.available_providers_sync();
+        info!("🔑 Loaded {} API keys from custody", count);
+        Ok(Some(Arc::new(manager)))
     }
 
     /// Load LLM entities from config and store in Cnidarium storage
@@ -883,7 +868,6 @@ impl Server {
             let provider_config = InferenceProviderConfig {
                 provider_id: entity.name.clone(),
                 base_url: entity.base_url.clone(),
-                api_key: String::new(), // API keys loaded from encrypted storage separately
                 api_key_ref: String::new(),
                 enabled: entity.enabled,
                 provider_type: provider_type as i32,
