@@ -2992,7 +2992,7 @@ impl ErgorsStorage {
     pub async fn save_bootstrap_state(
         &self,
         session_id: &str,
-        state: &crate::bootstrap::BootstrapState,
+        state: &crate::deploy::BootstrapState,
     ) -> HoResult<()> {
         let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let key = storage_key(BOOTSTRAP_SESSION_PREFIX, session_id);
@@ -3008,7 +3008,7 @@ impl ErgorsStorage {
     pub async fn load_bootstrap_state(
         &self,
         session_id: &str,
-    ) -> HoResult<Option<crate::bootstrap::BootstrapState>> {
+    ) -> HoResult<Option<crate::deploy::BootstrapState>> {
         let snapshot = self.cs.latest_snapshot();
         let key = storage_key(BOOTSTRAP_SESSION_PREFIX, session_id);
 
@@ -3027,7 +3027,7 @@ impl ErgorsStorage {
     }
 
     /// List all bootstrap sessions
-    pub async fn list_bootstrap_sessions(&self) -> HoResult<Vec<crate::bootstrap::BootstrapState>> {
+    pub async fn list_bootstrap_sessions(&self) -> HoResult<Vec<crate::deploy::BootstrapState>> {
         let snapshot = self.cs.latest_snapshot();
         let mut sessions = Vec::new();
         let mut stream = snapshot.prefix_raw(BOOTSTRAP_SESSION_PREFIX);
@@ -3035,7 +3035,7 @@ impl ErgorsStorage {
         while let Some(entry_result) = stream.next().await {
             match entry_result {
                 Ok((_key, data)) => {
-                    match serde_json::from_slice::<crate::bootstrap::BootstrapState>(&data) {
+                    match serde_json::from_slice::<crate::deploy::BootstrapState>(&data) {
                         Ok(state) => sessions.push(state),
                         Err(e) => warn!("Failed to deserialize bootstrap session: {}", e),
                     }

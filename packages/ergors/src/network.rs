@@ -26,6 +26,22 @@ use crate::ErgorsNetworkManifold;
 use ho_std::types::ergors::git::v1::WorkspaceSync;
 use ho_std::types::ergors::network::v1::{network_event::*, network_message::*, *};
 
+// Network topology management
+// TODO: refactor into storage layer
+
+use serde::{Deserialize, Serialize};
+
+/// Statistics about the network topology
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopologyStats {
+    pub total_nodes: usize,
+    pub online_nodes: usize,
+    pub total_connections: usize,
+    pub is_complete: bool,
+    pub nodes_by_type: HashMap<String, usize>,
+}
+
+
 /// Peer information
 #[derive(Debug, Clone)]
 pub struct PeerInfo {

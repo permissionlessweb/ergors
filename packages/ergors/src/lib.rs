@@ -1,39 +1,26 @@
 pub mod auth;
-pub mod bootstrap;
-pub mod call;
 pub mod client;
 pub mod commands;
 pub mod config;
-pub mod config_cmd;
 pub mod consensus;
-pub mod keys;
 #[cfg(feature = "cw")]
 pub mod contracts;
 pub mod daemon;
 pub mod deploy;
-pub mod distribution;
 pub mod gateway;
 pub mod git;
-pub mod grpc;
 pub mod headstash;
-pub mod init;
-pub mod middleware;
+pub mod keys;
 pub mod network;
-pub mod open_responses;
-pub mod orchestrator;
 pub mod proxy;
-pub mod rag;
 pub mod sentinel;
-pub mod sentinel_cmd;
 pub mod server;
-pub mod session;
+pub mod session_manager;
 pub mod storage;
 pub mod traits;
 
 #[cfg(feature = "cw")]
 pub mod cosmwasm;
-#[cfg(feature = "cw")]
-pub mod wasm_events;
 #[cfg(feature = "cw")]
 use ho_std::wasm::WasmRuntime;
 
@@ -41,7 +28,7 @@ use ho_std::wasm::WasmRuntime;
 use crate::{
     config::ErgorsConfig,
     deploy::{automated::AutomatedDeployer, cosmos_client::CosmosClient},
-    network::manager::PeerInfo,
+    network::PeerInfo,
     proxy::ProxyRouter,
     storage::ErgorsStorage,
 };
@@ -49,6 +36,7 @@ use ho_std::types::ergors::orch::v1::AkashDeployConfig;
 use ho_std::{
     keys::encrypted_cosmos::EncryptedCosmosKeyManager,
     llm::LlmRouter,
+    traits::NodeIdentityTrait,
     types::ergors::{network::v1::*, orch::v1::CosmosKeyStore},
 };
 use std::{collections::HashMap, sync::Arc, time::Instant};

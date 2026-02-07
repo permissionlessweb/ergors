@@ -36,8 +36,11 @@ RUN useradd -m -u 1000 ergors
 # Copy binary from builder
 COPY --from=builder /build/target/release/ergors /usr/local/bin/ergors
 
+# Copy templates needed by `ergors init`
+COPY --from=builder /build/templates /home/ergors/templates
+
 # Set ownership
-RUN chown ergors:ergors /usr/local/bin/ergors
+RUN chown -R ergors:ergors /usr/local/bin/ergors /home/ergors/templates
 
 # Switch to non-root user
 USER ergors

@@ -2,7 +2,7 @@
 //!
 //! Integrates with FractalSession system to provide hierarchical session tracking.
 
-use crate::session::manager::SessionManager;
+use crate::session_manager::SessionManager;
 use crate::storage::ErgorsStorage;
 use chrono::Utc;
 use ho_std::types::ergors::management::v1::{CreateSessionRequest, SessionScope, SessionType};

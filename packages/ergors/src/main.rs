@@ -11,20 +11,18 @@ use commonware_runtime::{
 };
 use ergors::{
     auth::AuthCmd,
-    call::CallCmd,
     client::ManagementClient,
     commands::{
-        BootstrapCmd, CliContext, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd, RagCmd,
+        call::CallCmd, config::ConfigCmd, init::InitCmd, sentinel::SentinelCmd, BootstrapCmd,
+        CliContext, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd, RagCmd,
         RemoteConfigCmd, SdlCmd, WorkspaceCmd,
     },
     config::ErgorsConfig,
-    config_cmd::ConfigCmd,
     daemon::{Daemon, SignalHandler},
-    grpc::{management::{start_grpc_server, ManagementServiceImpl}, RlmDocService},
-    init::InitCmd,
     keys::KeysCmd,
+    client::grpc::{start_grpc_server, ManagementServiceImpl},
+    client::RlmDocService,
     sentinel::SentinelServer,
-    sentinel_cmd::SentinelCmd,
     server::Server as CwHoServer,
 };
 use ho_std::{
@@ -56,7 +54,8 @@ fn install_terminal_restore_hook() {
             use std::os::unix::io::AsRawFd;
             if let Ok(mut termios) = termios::Termios::from_fd(std::io::stdin().as_raw_fd()) {
                 termios.c_lflag |= termios::ECHO | termios::ICANON;
-                let _ = termios::tcsetattr(std::io::stdin().as_raw_fd(), termios::TCSANOW, &termios);
+                let _ =
+                    termios::tcsetattr(std::io::stdin().as_raw_fd(), termios::TCSANOW, &termios);
             }
         }
         eprintln!();
@@ -307,11 +306,7 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
                 .build()
                 .map_err(|e| ho_std::llm::HoError::Cfg(format!("tokio runtime: {}", e)))?;
             let sentinel_pw = rt
-                .block_on(async {
-                    SentinelServer::new(pubkey, cli.home.clone())
-                        .run()
-                        .await
-                })
+                .block_on(async { SentinelServer::new(pubkey, cli.home.clone()).run().await })
                 .map_err(|e| ho_std::llm::HoError::Cfg(format!("sentinel failed: {}", e)))?;
             // Sentinel done — config.toml, node_identity.enc, api-keys.enc now exist.
             // Set env var here while still single-threaded (before commonware Runner spawns threads).

@@ -1373,3 +1373,11 @@ pub fn format_uptime(seconds: u64) -> String {
 
 // Re-export for commands module
 pub use ho_std::types::ergors::network::v1::NodeType as NodeTypeProto;
+
+pub mod grpc;
+pub mod rlm;
+
+// Re-export key types and functions
+pub use crate::auth::grpc::{create_auth_interceptor, simple_auth_interceptor, TokenStore};
+pub use grpc::{start_grpc_server, ManagementServiceImpl};
+pub use rlm::{load_documents_by_prefix, RlmDocService};

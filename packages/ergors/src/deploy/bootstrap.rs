@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info};
 
-use crate::bootstrap::{BootstrapOrchestrator, NodeBootstrapParams};
+use crate::deploy::{BootstrapOrchestrator, NodeBootstrapParams};
 use crate::ErgorsAppState;
 
 /// HTTP handler for bootstrap requests

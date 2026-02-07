@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package ergors.apikeys.v1;
+
+// ApiKey represents a generated API key for accessing ERGORS endpoints
+message ApiKey {
+  string id = 1;                          // Unique identifier (e.g., "key_abc123")
+  string name = 2;                        // Human-readable name (e.g., "staging-access")
+  string secret_hash = 3;                 // SHA256(secret) in hex for validation
+  int64 created_at_unix = 4;              // Timestamp when key was created
+  optional int64 expires_at_unix = 5;     // Optional expiration timestamp
+  bool is_active = 6;                     // Whether key is currently valid
+  optional string endpoint_label = 7;     // Optional restriction to specific endpoint
+  optional ApiKeyMetadata metadata = 8;   // Administrative metadata
+}
+
+// ApiKeyMetadata contains admin-controlled information about key creation
+message ApiKeyMetadata {
+  string created_by_pubkey = 1;           // Ed25519 public key of creating admin
+  uint64 created_by_nonce = 2;            // Nonce used for creation (replay prevention)
+  repeated string tags = 3;               // Tags for categorization
+}
+
+// CreateApiKeyRequest for admin API key creation
+message CreateApiKeyRequest {
+  string name = 1;                        // Human-readable name
+  optional int64 expires_at_unix = 2;     // Optional expiration
+  optional string endpoint_label = 3;     // Optional endpoint restriction
+  repeated string tags = 4;               // Tags
+}
+
+// CreateApiKeyResponse contains the generated secret (only shown once)
+message CreateApiKeyResponse {
+  ApiKey api_key = 1;                     // The created key metadata
+  string secret = 2;                      // The actual secret (only shown once)
+}
+
+// ValidateApiKeyRequest for internal/contract validation
+message ValidateApiKeyRequest {
+  string api_key_id = 1;                  // The key ID being validated
+  string endpoint_label = 2;              // The endpoint being accessed
+}
+
+// ValidateApiKeyResponse indicates whether key is valid
+message ValidateApiKeyResponse {
+  bool is_valid = 1;
+  string reason = 2;                      // Error reason if invalid
+}

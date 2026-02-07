@@ -22,3 +22,10 @@ pub mod signer;
 pub mod transaction;
 pub mod tx_lifecycle;
 pub mod workflow;
+pub mod orchestrator;
+pub mod receiver;
+pub mod state_machine;
+
+pub use orchestrator::{BootstrapOrchestrator, NodeBootstrapParams};
+pub use receiver::BootstrapReceiver;
+pub use state_machine::{BootstrapState, BootstrapStep, StepResult};

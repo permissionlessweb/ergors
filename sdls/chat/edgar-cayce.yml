@@ -2,7 +2,7 @@
 version: "2.0"
 services:
   ergors:
-    image: ghcr.io/permissionlessweb/ergors:latest
+    image: permissionlessweb/ergors:v0.0.1
     expose:
       - port: 8080
         as: 80

@@ -602,7 +602,7 @@ async fn ingest(
     };
 
     // Create RAG instance with shared HTTP client for connection pooling
-    let rag = match crate::rag::new_remote_with_client(
+    let rag = match crate::proxy::rag::new_remote_with_client(
         &ctx.data().storage,
         ctx.data().rag_client.clone(),
         &rag_config.endpoint,
@@ -1415,7 +1415,7 @@ async fn query_rlm_service(
     let prefix = format!("discord:guild_{}/", guild_id);
 
     // Load documents using shared utility (with HTTP client reuse)
-    let proto_documents = match crate::grpc::load_documents_by_prefix(&data.storage, &prefix, 100, Some(data.rag_client.clone())).await {
+    let proto_documents = match crate::client::load_documents_by_prefix(&data.storage, &prefix, 100, Some(data.rag_client.clone())).await {
         Ok(docs) => docs,
         Err(e) => {
             warn!("Failed to load documents for RLM: {}", e);
@@ -1518,7 +1518,7 @@ async fn retrieve_guild_rag_context(
     };
 
     // Create RAG instance with shared HTTP client
-    let rag = match crate::rag::new_remote_with_client(
+    let rag = match crate::proxy::rag::new_remote_with_client(
         &data.storage,
         data.rag_client.clone(),
         &rag_config.endpoint,

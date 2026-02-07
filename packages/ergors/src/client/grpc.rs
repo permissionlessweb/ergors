@@ -2,7 +2,7 @@
 //!
 //! Provides the server-side implementation of the management gRPC service.
 
-use crate::session::{SessionManager, SessionManagerConfig};
+use crate::session_manager::{SessionManager, SessionManagerConfig};
 use crate::ErgorsAppState;
 use async_stream::try_stream;
 use ho_std::traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityTrait};
@@ -3459,7 +3459,7 @@ impl ManagementService for ManagementServiceImpl {
         };
 
         // Get storage and create RAG instance
-        match crate::rag::new_remote(
+        match crate::proxy::rag::new_remote(
             &self.state.s,
             &rag_config.endpoint,
             &rag_config.model,
@@ -3520,7 +3520,7 @@ impl ManagementService for ManagementServiceImpl {
             }
         };
 
-        match crate::rag::new_remote(
+        match crate::proxy::rag::new_remote(
             &self.state.s,
             &rag_config.endpoint,
             &rag_config.model,
@@ -4517,7 +4517,7 @@ impl ManagementService for ManagementServiceImpl {
 pub async fn start_grpc_server(
     addr: std::net::SocketAddr,
     service: ManagementServiceImpl,
-    rlm_service: Option<crate::grpc::RlmDocService>,
+    rlm_service: Option<crate::client::RlmDocService>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use ho_std::types::ergors::management::v1::management_service_server::ManagementServiceServer;
 

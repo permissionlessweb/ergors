@@ -5,11 +5,14 @@
 //! (e.g., config_cmd, keys, init).
 
 pub mod bootstrap;
+pub mod call;
+pub mod config;
 pub mod deploy;
 pub mod gateway;
+pub mod init;
 pub mod rag;
+pub mod sentinel;
 pub mod workspace;
-
 use anyhow::Result;
 use clap::Subcommand;
 use std::collections::HashMap;
@@ -247,7 +250,10 @@ pub enum NodeCmd {
 impl NodeCmd {
     pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
-            NodeCmd::Info { prefix, all_prefixes } => {
+            NodeCmd::Info {
+                prefix,
+                all_prefixes,
+            } => {
                 use ho_std::keys::cosmos::cosmos_address_from_ed25519_pubkey;
 
                 let identity = client.get_node_identity().await?;
@@ -256,7 +262,8 @@ impl NodeCmd {
                 let addresses = if *all_prefixes {
                     // Common Cosmos ecosystem prefixes
                     let prefixes = ["ergors", "akash", "cosmos", "osmo", "juno", "stars"];
-                    prefixes.iter()
+                    prefixes
+                        .iter()
                         .filter_map(|p| {
                             identity.public_key.as_ref().and_then(|pk| {
                                 cosmos_address_from_ed25519_pubkey(pk, p)
@@ -267,7 +274,9 @@ impl NodeCmd {
                         .collect::<Vec<_>>()
                 } else if prefix != "ergors" {
                     // Derive address with custom prefix
-                    identity.public_key.as_ref()
+                    identity
+                        .public_key
+                        .as_ref()
                         .and_then(|pk| {
                             cosmos_address_from_ed25519_pubkey(pk, prefix)
                                 .ok()
@@ -287,9 +296,10 @@ impl NodeCmd {
                         "bech32_address": identity.bech32_address,
                     });
                     if !addresses.is_empty() {
-                        json["addresses"] = serde_json::json!(addresses.iter().map(|(p, a)| {
-                            serde_json::json!({"prefix": p, "address": a})
-                        }).collect::<Vec<_>>());
+                        json["addresses"] = serde_json::json!(addresses
+                            .iter()
+                            .map(|(p, a)| { serde_json::json!({"prefix": p, "address": a}) })
+                            .collect::<Vec<_>>());
                     }
                     println!("{}", serde_json::to_string_pretty(&json)?);
                 } else {
@@ -717,14 +727,21 @@ impl SdlCmd {
                 let list = client.list_sdl_templates().await?;
 
                 if ctx.json {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                        "templates": list.templates,
-                    }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "templates": list.templates,
+                        }))?
+                    );
                 } else {
                     println!("SDL Template Contracts");
                     println!("======================");
                     for template in &list.templates {
-                        println!("  {} - {}", template.contract_address, template.label.as_ref().unwrap_or(&"(no label)".to_string()));
+                        println!(
+                            "  {} - {}",
+                            template.contract_address,
+                            template.label.as_ref().unwrap_or(&"(no label)".to_string())
+                        );
                     }
                 }
                 Ok(())
@@ -733,10 +750,13 @@ impl SdlCmd {
                 let template = client.get_sdl_template(contract_address).await?;
 
                 if ctx.json {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                        "sdl_template": template.sdl_template,
-                        "template_json": template.template_json,
-                    }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "sdl_template": template.sdl_template,
+                            "template_json": template.template_json,
+                        }))?
+                    );
                 } else {
                     println!("SDL Template from {}", contract_address);
                     println!("==========================================");
@@ -748,9 +768,12 @@ impl SdlCmd {
                 let defaults = client.get_sdl_defaults(contract_address).await?;
 
                 if ctx.json {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                        "defaults": defaults.defaults,
-                    }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "defaults": defaults.defaults,
+                        }))?
+                    );
                 } else {
                     println!("Variable Defaults from {}", contract_address);
                     println!("==========================================");
@@ -760,15 +783,23 @@ impl SdlCmd {
                 }
                 Ok(())
             }
-            SdlCmd::Render { contract_address, vars } => {
+            SdlCmd::Render {
+                contract_address,
+                vars,
+            } => {
                 let variables: HashMap<String, String> = vars.iter().cloned().collect();
-                let rendered = client.render_sdl_template(contract_address, variables).await?;
+                let rendered = client
+                    .render_sdl_template(contract_address, variables)
+                    .await?;
 
                 if ctx.json {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                        "rendered_sdl": rendered.rendered_sdl,
-                        "used_variables": rendered.used_variables,
-                    }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "rendered_sdl": rendered.rendered_sdl,
+                            "used_variables": rendered.used_variables,
+                        }))?
+                    );
                 } else {
                     println!("Rendered SDL from {}", contract_address);
                     println!("==========================================");
