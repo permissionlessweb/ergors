@@ -315,11 +315,20 @@ mod proxy_config {
 enabled = true
 bind_addr = "127.0.0.1:9090"
 
-[router]
-anthropic_base_url = "https://custom.anthropic.com"
-
 [router.model_routes]
-"llama-*" = "http://localhost:11434"
+"llama-*" = "local-ollama"
+
+[router.providers.anthropic]
+provider_id = "anthropic"
+base_url = "https://custom.anthropic.com"
+enabled = true
+provider_type = 1
+
+[router.providers.local-ollama]
+provider_id = "local-ollama"
+base_url = "http://localhost:11434"
+enabled = true
+provider_type = 3
 
 [capture]
 enabled = true
@@ -330,9 +339,10 @@ max_sessions = 1000
         let config: ProxyConfig = toml::from_str(toml).expect("parse");
 
         assert_eq!(config.bind_addr, "127.0.0.1:9090");
+        assert!(config.router.providers.contains_key("anthropic"));
         assert_eq!(
-            config.router.anthropic_base_url,
-            Some("https://custom.anthropic.com".to_string())
+            config.router.providers.get("anthropic").unwrap().base_url,
+            "https://custom.anthropic.com"
         );
         assert!(config.router.model_routes.contains_key("llama-*"));
         assert!(!config.capture.include_chunks);
@@ -387,9 +397,9 @@ mod env_overrides {
 
             assert!(config
                 .router
-                .provider_api_keys
+                .providers
                 .get("anthropic")
-                .map(|k| k == "test-api-key")
+                .map(|p| p.api_key == "test-api-key")
                 .unwrap_or(false));
         });
     }
@@ -402,8 +412,8 @@ mod env_overrides {
             let config = base_config.clone().with_env_overrides();
 
             assert_eq!(
-                config.router.anthropic_base_url,
-                Some("https://custom.api.com".to_string())
+                config.router.providers.get("anthropic").map(|p| p.base_url.as_str()),
+                Some("https://custom.api.com")
             );
         });
     }
@@ -415,8 +425,8 @@ mod env_overrides {
             with_env_var("OPENAI_API_KEY", "oai-key", || {
                 let config = ProxyConfig::from_env();
 
-                assert!(config.router.provider_api_keys.contains_key("anthropic"));
-                assert!(config.router.provider_api_keys.contains_key("openai"));
+                assert!(config.router.providers.contains_key("anthropic"));
+                assert!(config.router.providers.contains_key("openai"));
             });
         });
     }

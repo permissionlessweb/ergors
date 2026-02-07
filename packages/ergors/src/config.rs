@@ -528,10 +528,10 @@ impl ProxyConfig {
             };
             config.router.providers.insert("openai".to_string(), provider);
         } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            // Just key, use default URL
+            // Just key, use default URL from constants
             let provider = InferenceProviderConfig {
                 provider_id: "openai".to_string(),
-                base_url: "https://api.openai.com".to_string(),
+                base_url: ho_std::constants::OPENAI_BASE_URL.to_string(),
                 api_key: key,
                 api_key_ref: String::new(),
                 provider_type: InferenceProviderType::Openai as i32,
@@ -672,7 +672,7 @@ impl ProxyConfig {
             let provider = self.router.providers.entry("openai".to_string())
                 .or_insert_with(|| InferenceProviderConfig {
                     provider_id: "openai".to_string(),
-                    base_url: "https://api.openai.com".to_string(),
+                    base_url: ho_std::constants::OPENAI_BASE_URL.to_string(),
                     api_key: String::new(),
                     api_key_ref: String::new(),
                     provider_type: InferenceProviderType::Openai as i32,

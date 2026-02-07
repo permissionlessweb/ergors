@@ -16,6 +16,10 @@ use axum::{
     Json, Router,
 };
 use camino::Utf8PathBuf;
+use chacha20poly1305::{
+    aead::{Aead, NewAead},
+    ChaCha20Poly1305, Key, Nonce,
+};
 use ho_std::{
     constants::{CONFIG_FILE_NAME, ENCRYPTED_API_KEYS_FILE},
     custody::PasswordEncryptedCustody,
@@ -29,6 +33,7 @@ use http_body_util::BodyExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::sync::{oneshot, RwLock};
 use tracing::{error, info};
+use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519Secret};
 
 use crate::config::ErgorsConfig;
 
@@ -59,6 +64,10 @@ struct AppState {
     state: RwLock<SentinelState>,
     shutdown_tx: RwLock<Option<oneshot::Sender<()>>>,
     password_out: Arc<RwLock<Option<String>>>,
+    /// Ephemeral X25519 private key for encrypted transport (lives only in memory)
+    session_privkey: X25519Secret,
+    /// Corresponding X25519 public key (returned in /sentinel/health)
+    session_pubkey: X25519PublicKey,
 }
 
 // =============================================================================
@@ -89,6 +98,7 @@ struct ApiKeysRequest {
 struct HealthResponse {
     phase: SentinelPhase,
     version: &'static str,
+    session_pubkey: String,
 }
 
 #[derive(Serialize)]
@@ -96,6 +106,21 @@ struct StatusResponse {
     ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+/// Encrypted envelope for sentinel requests.
+///
+/// Client generates an ephemeral X25519 keypair, performs DH with the
+/// server's session pubkey, derives a ChaCha20Poly1305 key via blake3,
+/// and encrypts the JSON body. The provider sees only ciphertext.
+#[derive(Deserialize)]
+struct EncryptedEnvelope {
+    /// Client's ephemeral X25519 public key (hex-encoded, 32 bytes)
+    ephemeral_pubkey: String,
+    /// ChaCha20Poly1305 nonce (hex-encoded, 12 bytes)
+    nonce: String,
+    /// Encrypted JSON body (hex-encoded)
+    ciphertext: String,
 }
 
 impl StatusResponse {
@@ -114,13 +139,62 @@ impl StatusResponse {
 }
 
 // =============================================================================
+// Encryption helpers
+// =============================================================================
+
+/// Key derivation context for the sentinel encrypted transport.
+pub const SENTINEL_KDF_CONTEXT: &str = "ergors sentinel v1";
+
+/// Decrypt an `EncryptedEnvelope` using the server's X25519 private key.
+///
+/// 1. Parse the client's ephemeral X25519 public key from hex.
+/// 2. Compute shared secret via Diffie-Hellman.
+/// 3. Derive a 256-bit ChaCha20Poly1305 key using blake3 keyed derivation.
+/// 4. Decrypt ciphertext using the derived key + nonce.
+fn decrypt_envelope(
+    envelope: &EncryptedEnvelope,
+    server_privkey: &X25519Secret,
+) -> Result<Vec<u8>, String> {
+    // Parse client ephemeral pubkey
+    let client_pub_bytes: [u8; 32] = hex::decode(&envelope.ephemeral_pubkey)
+        .map_err(|_| "invalid ephemeral_pubkey hex")?
+        .try_into()
+        .map_err(|_| "ephemeral_pubkey must be 32 bytes")?;
+    let client_pubkey = X25519PublicKey::from(client_pub_bytes);
+
+    // X25519 Diffie-Hellman
+    let shared_secret = server_privkey.diffie_hellman(&client_pubkey);
+
+    // Derive encryption key via blake3
+    let derived = blake3::derive_key(SENTINEL_KDF_CONTEXT, shared_secret.as_bytes());
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(&derived));
+
+    // Parse nonce
+    let nonce_bytes: [u8; 12] = hex::decode(&envelope.nonce)
+        .map_err(|_| "invalid nonce hex")?
+        .try_into()
+        .map_err(|_| "nonce must be 12 bytes")?;
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    // Parse ciphertext
+    let ct = hex::decode(&envelope.ciphertext).map_err(|_| "invalid ciphertext hex")?;
+
+    // Decrypt
+    cipher
+        .decrypt(nonce, ct.as_ref())
+        .map_err(|_| "decryption failed — wrong key or tampered ciphertext".to_string())
+}
+
+// =============================================================================
 // Auth helper
 // =============================================================================
 
-/// Extract and validate a signed request body.
+/// Extract and validate a signed, encrypted request body.
 ///
-/// Clones headers, collects body bytes, validates the admin Ed25519 signature,
-/// and deserializes the JSON body into `T`.
+/// 1. Collects body bytes and validates the admin Ed25519 signature (over the
+///    outer encrypted envelope).
+/// 2. Deserializes the envelope, decrypts the inner JSON via X25519 + ChaCha20.
+/// 3. Deserializes the decrypted plaintext into `T`.
 async fn extract_signed_body<T: DeserializeOwned>(
     app: &AppState,
     request: axum::extract::Request,
@@ -139,13 +213,36 @@ async fn extract_signed_body<T: DeserializeOwned>(
                 .into_response()
         })?;
 
+    // Ed25519 signature covers the outer body (the encrypted envelope)
     validate_admin_signature(&headers, &body_bytes, &app.admin_pubkey_hex)
         .map_err(|e| e.into_response())?;
 
-    serde_json::from_slice(&body_bytes).map_err(|e| {
+    // Parse as EncryptedEnvelope — plaintext requests are rejected
+    let envelope: EncryptedEnvelope = serde_json::from_slice(&body_bytes).map_err(|_| {
         (
             StatusCode::BAD_REQUEST,
-            Json(StatusResponse::err(format!("invalid json: {}", e))),
+            Json(StatusResponse::err(
+                "request body must be an encrypted envelope \
+                 (fields: ephemeral_pubkey, nonce, ciphertext)",
+            )),
+        )
+            .into_response()
+    })?;
+
+    // Decrypt the inner JSON
+    let plaintext = decrypt_envelope(&envelope, &app.session_privkey).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(StatusResponse::err(format!("envelope decrypt failed: {}", e))),
+        )
+            .into_response()
+    })?;
+
+    // Deserialize decrypted plaintext as T
+    serde_json::from_slice(&plaintext).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(StatusResponse::err(format!("invalid inner json: {}", e))),
         )
             .into_response()
     })
@@ -177,6 +274,10 @@ impl SentinelServer {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let password_out = Arc::new(RwLock::new(None));
 
+        // Generate ephemeral X25519 keypair for encrypted transport
+        let session_privkey = X25519Secret::random_from_rng(rand::thread_rng());
+        let session_pubkey = X25519PublicKey::from(&session_privkey);
+
         let shared = Arc::new(AppState {
             admin_pubkey_hex: self.admin_pubkey_hex.clone(),
             home_dir: self.home_dir.clone(),
@@ -186,6 +287,8 @@ impl SentinelServer {
             }),
             shutdown_tx: RwLock::new(Some(shutdown_tx)),
             password_out: password_out.clone(),
+            session_privkey,
+            session_pubkey,
         });
 
         let app = Router::new()
@@ -233,6 +336,7 @@ async fn health_handler(State(app): State<Arc<AppState>>) -> Json<HealthResponse
     Json(HealthResponse {
         phase: state.phase,
         version: env!("CARGO_PKG_VERSION"),
+        session_pubkey: hex::encode(app.session_pubkey.as_bytes()),
     })
 }
 
@@ -495,4 +599,146 @@ async fn activate_handler(
     }
 
     (StatusCode::OK, Json(StatusResponse::ok())).into_response()
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::RngCore;
+
+    /// Build an encrypted envelope from the client side.
+    ///
+    /// Mirrors the client-side protocol: generate ephemeral X25519 keypair,
+    /// DH with server pubkey, blake3 KDF, ChaCha20Poly1305 encrypt.
+    fn encrypt_for_server(
+        plaintext: &[u8],
+        server_pubkey: &X25519PublicKey,
+    ) -> (String, String, String, X25519Secret) {
+        let client_secret = X25519Secret::random_from_rng(rand::thread_rng());
+        let client_pubkey = X25519PublicKey::from(&client_secret);
+
+        let shared = client_secret.diffie_hellman(server_pubkey);
+        let derived = blake3::derive_key(SENTINEL_KDF_CONTEXT, shared.as_bytes());
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(&derived));
+
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ct = cipher.encrypt(nonce, plaintext).expect("encrypt");
+
+        (
+            hex::encode(client_pubkey.as_bytes()),
+            hex::encode(nonce_bytes),
+            hex::encode(ct),
+            client_secret,
+        )
+    }
+
+    #[test]
+    fn roundtrip_encrypt_decrypt() {
+        let server_secret = X25519Secret::random_from_rng(rand::thread_rng());
+        let server_pubkey = X25519PublicKey::from(&server_secret);
+
+        let plaintext = br#"{"custody_password":"test12345678","host":"0.0.0.0"}"#;
+        let (epk, nonce, ct, _client_secret) = encrypt_for_server(plaintext, &server_pubkey);
+
+        let envelope = EncryptedEnvelope {
+            ephemeral_pubkey: epk,
+            nonce,
+            ciphertext: ct,
+        };
+
+        let decrypted = decrypt_envelope(&envelope, &server_secret).expect("decrypt should succeed");
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn wrong_server_key_fails() {
+        let server_secret = X25519Secret::random_from_rng(rand::thread_rng());
+        let server_pubkey = X25519PublicKey::from(&server_secret);
+
+        let plaintext = b"secret data";
+        let (epk, nonce, ct, _) = encrypt_for_server(plaintext, &server_pubkey);
+
+        let envelope = EncryptedEnvelope {
+            ephemeral_pubkey: epk,
+            nonce,
+            ciphertext: ct,
+        };
+
+        // Decrypt with a different server key — must fail
+        let wrong_secret = X25519Secret::random_from_rng(rand::thread_rng());
+        let result = decrypt_envelope(&envelope, &wrong_secret);
+        assert!(result.is_err(), "decryption with wrong key should fail");
+    }
+
+    #[test]
+    fn tampered_ciphertext_fails() {
+        let server_secret = X25519Secret::random_from_rng(rand::thread_rng());
+        let server_pubkey = X25519PublicKey::from(&server_secret);
+
+        let plaintext = b"secret data";
+        let (epk, nonce, mut ct, _) = encrypt_for_server(plaintext, &server_pubkey);
+
+        // Flip a byte in the ciphertext
+        let mut ct_bytes = hex::decode(&ct).unwrap();
+        ct_bytes[0] ^= 0xff;
+        ct = hex::encode(ct_bytes);
+
+        let envelope = EncryptedEnvelope {
+            ephemeral_pubkey: epk,
+            nonce,
+            ciphertext: ct,
+        };
+
+        let result = decrypt_envelope(&envelope, &server_secret);
+        assert!(result.is_err(), "tampered ciphertext should fail auth tag check");
+    }
+
+    #[test]
+    fn invalid_hex_fields_rejected() {
+        let server_secret = X25519Secret::random_from_rng(rand::thread_rng());
+
+        // Bad ephemeral pubkey hex
+        let envelope = EncryptedEnvelope {
+            ephemeral_pubkey: "not-hex".to_string(),
+            nonce: hex::encode([0u8; 12]),
+            ciphertext: hex::encode(b"data"),
+        };
+        assert!(decrypt_envelope(&envelope, &server_secret).is_err());
+
+        // Wrong-length pubkey (16 bytes instead of 32)
+        let envelope = EncryptedEnvelope {
+            ephemeral_pubkey: hex::encode([0u8; 16]),
+            nonce: hex::encode([0u8; 12]),
+            ciphertext: hex::encode(b"data"),
+        };
+        assert!(decrypt_envelope(&envelope, &server_secret).is_err());
+
+        // Wrong-length nonce (8 bytes instead of 12)
+        let server_pubkey = X25519PublicKey::from(&server_secret);
+        let (epk, _, ct, _) = encrypt_for_server(b"data", &server_pubkey);
+        let envelope = EncryptedEnvelope {
+            ephemeral_pubkey: epk,
+            nonce: hex::encode([0u8; 8]),
+            ciphertext: ct,
+        };
+        assert!(decrypt_envelope(&envelope, &server_secret).is_err());
+    }
+
+    #[test]
+    fn plaintext_body_not_parseable_as_envelope() {
+        // Verify that a raw JSON init request does NOT parse as EncryptedEnvelope
+        let plaintext_body = r#"{"custody_password":"test12345678","host":"0.0.0.0"}"#;
+        let result: Result<EncryptedEnvelope, _> = serde_json::from_str(plaintext_body);
+        assert!(
+            result.is_err(),
+            "plaintext init body must not parse as EncryptedEnvelope"
+        );
+    }
 }

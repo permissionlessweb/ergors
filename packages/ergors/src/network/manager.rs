@@ -139,6 +139,20 @@ impl ErgorsNetworkManifold {
         let (key_sharing_sender, key_sharing_receiver) =
             network.register(4, key_sharing_quota, channels.key_sharing_buffer.try_into().unwrap());
 
+        // Channels 5-7: Simplex consensus (pending votes, recovered votes, resolver)
+        let consensus_quota = Quota::per_second(NonZeroU32::new(128).unwrap());
+        let (pending_sender, pending_receiver) =
+            network.register(5, consensus_quota, 1024);
+        let (recovered_sender, recovered_receiver) =
+            network.register(6, consensus_quota, 1024);
+        let (resolver_sender, resolver_receiver) =
+            network.register(7, consensus_quota, 1024);
+
+        // Channel 10: Consensus Gossip (mempool commitments + block content relay)
+        let gossip_quota = Quota::per_second(NonZeroU32::new(256).unwrap());
+        let (gossip_sender, gossip_receiver) =
+            network.register(10, gossip_quota, 4096);
+
         // Start the network
         let network_handle = network.start();
 
@@ -151,12 +165,20 @@ impl ErgorsNetworkManifold {
         self.channel_senders.insert(2, state_sender);
         self.channel_senders.insert(3, health_sender);
         self.channel_senders.insert(4, key_sharing_sender);
+        self.channel_senders.insert(5, pending_sender);
+        self.channel_senders.insert(6, recovered_sender);
+        self.channel_senders.insert(7, resolver_sender);
+        self.channel_senders.insert(10, gossip_sender);
 
         self.channel_receivers.insert(0, discovery_receiver);
         self.channel_receivers.insert(1, task_receiver);
         self.channel_receivers.insert(2, state_receiver);
         self.channel_receivers.insert(3, health_receiver);
         self.channel_receivers.insert(4, key_sharing_receiver);
+        self.channel_receivers.insert(5, pending_receiver);
+        self.channel_receivers.insert(6, recovered_receiver);
+        self.channel_receivers.insert(7, resolver_receiver);
+        self.channel_receivers.insert(10, gossip_receiver);
 
         // TODO: Start background message processing tasks for each channel
 
@@ -271,6 +293,30 @@ impl ErgorsNetworkManifold {
         let (_key_sharing_sender, _key_sharing_receiver) =
             network.register(4, key_sharing_quota, channels.key_sharing_buffer.try_into().unwrap());
 
+        // Channels 5-7: Simplex consensus (pending votes, recovered votes, resolver)
+        let consensus_quota = governor::Quota::per_second(std::num::NonZeroU32::new(128).expect("128 > 0"));
+        let (pending_sender, pending_receiver) =
+            network.register(5, consensus_quota, 1024);
+        let (recovered_sender, recovered_receiver) =
+            network.register(6, consensus_quota, 1024);
+        let (resolver_sender, resolver_receiver) =
+            network.register(7, consensus_quota, 1024);
+
+        // Channel 10: Consensus Gossip (mempool commitments + block content relay)
+        let gossip_quota = governor::Quota::per_second(std::num::NonZeroU32::new(256).expect("256 > 0"));
+        let (gossip_sender, gossip_receiver) =
+            network.register(10, gossip_quota, 4096);
+
+        self.channel_senders.insert(5, pending_sender);
+        self.channel_senders.insert(6, recovered_sender);
+        self.channel_senders.insert(7, resolver_sender);
+        self.channel_senders.insert(10, gossip_sender);
+
+        self.channel_receivers.insert(5, pending_receiver);
+        self.channel_receivers.insert(6, recovered_receiver);
+        self.channel_receivers.insert(7, resolver_receiver);
+        self.channel_receivers.insert(10, gossip_receiver);
+
         // Start the network
         let network_handle = network.start();
         *self.up.write().await = true;
@@ -354,6 +400,30 @@ impl ErgorsNetworkManifold {
             network.register(2, rate_quota, channels.state_buffer.try_into().unwrap());
         let (_health_sender, _health_receiver) =
             network.register(3, rate_quota, channels.health_buffer.try_into().unwrap());
+
+        // Channels 5-7: Simplex consensus (pending votes, recovered votes, resolver)
+        let consensus_quota = governor::Quota::per_second(std::num::NonZeroU32::new(128).expect("128 > 0"));
+        let (pending_sender, pending_receiver) =
+            network.register(5, consensus_quota, 1024);
+        let (recovered_sender, recovered_receiver) =
+            network.register(6, consensus_quota, 1024);
+        let (resolver_sender, resolver_receiver) =
+            network.register(7, consensus_quota, 1024);
+
+        // Channel 10: Consensus Gossip (mempool commitments + block content relay)
+        let gossip_quota = governor::Quota::per_second(std::num::NonZeroU32::new(256).expect("256 > 0"));
+        let (gossip_sender, gossip_receiver) =
+            network.register(10, gossip_quota, 4096);
+
+        self.channel_senders.insert(5, pending_sender);
+        self.channel_senders.insert(6, recovered_sender);
+        self.channel_senders.insert(7, resolver_sender);
+        self.channel_senders.insert(10, gossip_sender);
+
+        self.channel_receivers.insert(5, pending_receiver);
+        self.channel_receivers.insert(6, recovered_receiver);
+        self.channel_receivers.insert(7, resolver_receiver);
+        self.channel_receivers.insert(10, gossip_receiver);
 
         let network_handle = network.start();
         *self.up.write().await = true;
@@ -642,6 +712,45 @@ impl ErgorsNetworkManifold {
             .get(&4)
             .ok_or_else(|| HoError::ChannelError("Channel 4 (key_sharing) not initialized".to_string()))?;
         Ok(ho_std::bootstrap::BootstrapTransport::new(sender.clone()))
+    }
+
+    /// Take the gossip channel (channel 10) sender and receiver.
+    ///
+    /// The sender is cloned (it's Clone), the receiver is removed (single consumer).
+    /// Returns None if channel 10 is not registered or the receiver was already taken.
+    pub fn take_gossip_channel(
+        &mut self,
+    ) -> Option<(
+        authenticated::lookup::Sender<ed25519::PublicKey>,
+        authenticated::lookup::Receiver<ed25519::PublicKey>,
+    )> {
+        let sender = self.channel_senders.get(&10)?.clone();
+        let receiver = self.channel_receivers.remove(&10)?;
+        Some((sender, receiver))
+    }
+
+    /// Take the Simplex consensus channels (5=pending, 6=recovered, 7=resolver).
+    ///
+    /// Senders are cloned (they're Clone), receivers are removed (single consumer).
+    /// Returns None if any channel is not registered or its receiver was already taken.
+    pub fn take_consensus_channels(
+        &mut self,
+    ) -> Option<(
+        (authenticated::lookup::Sender<ed25519::PublicKey>, authenticated::lookup::Receiver<ed25519::PublicKey>),
+        (authenticated::lookup::Sender<ed25519::PublicKey>, authenticated::lookup::Receiver<ed25519::PublicKey>),
+        (authenticated::lookup::Sender<ed25519::PublicKey>, authenticated::lookup::Receiver<ed25519::PublicKey>),
+    )> {
+        let pending_sender = self.channel_senders.get(&5)?.clone();
+        let recovered_sender = self.channel_senders.get(&6)?.clone();
+        let resolver_sender = self.channel_senders.get(&7)?.clone();
+        let pending_receiver = self.channel_receivers.remove(&5)?;
+        let recovered_receiver = self.channel_receivers.remove(&6)?;
+        let resolver_receiver = self.channel_receivers.remove(&7)?;
+        Some((
+            (pending_sender, pending_receiver),
+            (recovered_sender, recovered_receiver),
+            (resolver_sender, resolver_receiver),
+        ))
     }
 
     /// Broadcast raw bytes to all peers

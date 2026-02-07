@@ -245,6 +245,52 @@ impl MockInferenceProvider {
     }
 }
 
+    /// Generate a ProxyRouterConfig that routes all models to this mock server.
+    /// Useful for e2e tests that need proxy routing to hit a local mock.
+    pub fn to_proxy_config(&self) -> ho_std::types::ergors::orch::v1::ProxyRouterConfig {
+        use ho_std::types::ergors::orch::v1::{
+            InferenceProviderConfig, InferenceProviderType, ProxyRouterConfig,
+        };
+        use std::collections::HashMap;
+
+        let base_url = self.base_url().expect("MockInferenceProvider must be started before calling to_proxy_config");
+
+        let mut providers = HashMap::new();
+        providers.insert("openai".to_string(), InferenceProviderConfig {
+            provider_id: "openai".to_string(),
+            base_url: base_url.clone(),
+            enabled: true,
+            provider_type: InferenceProviderType::Openai as i32,
+            ..Default::default()
+        });
+        providers.insert("anthropic".to_string(), InferenceProviderConfig {
+            provider_id: "anthropic".to_string(),
+            base_url: base_url.clone(),
+            enabled: true,
+            provider_type: InferenceProviderType::Anthropic as i32,
+            ..Default::default()
+        });
+        providers.insert("ollama".to_string(), InferenceProviderConfig {
+            provider_id: "ollama".to_string(),
+            base_url: base_url.clone(),
+            enabled: true,
+            provider_type: InferenceProviderType::Ollama as i32,
+            ..Default::default()
+        });
+
+        let mut model_routes = HashMap::new();
+        model_routes.insert("gpt-*".to_string(), "openai".to_string());
+        model_routes.insert("claude-*".to_string(), "anthropic".to_string());
+        model_routes.insert("mistral*".to_string(), "ollama".to_string());
+
+        ProxyRouterConfig {
+            providers,
+            model_routes,
+            ..Default::default()
+        }
+    }
+}
+
 impl Default for MockInferenceProvider {
     fn default() -> Self {
         Self::new()

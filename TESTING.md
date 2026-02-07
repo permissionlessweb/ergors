@@ -30,19 +30,8 @@ Run the complete ERGORS deployment workflow test:
 ./scripts/e2e-test.sh --skip-akash     # Use existing Kind cluster
 ./scripts/e2e-test.sh --skip-cleanup   # Keep everything running
 ./scripts/e2e-test.sh --verbose        # Show detailed output
-```
-
 ## Spawn Test Network Only
-
-Start an ERGORS network for manual testing:
-
-```bash
 ./scripts/spawn-test-network.sh --keep-running
-```
-
-### Options
-
-```bash
 ./scripts/spawn-test-network.sh --executors 3     # Number of executor nodes
 ./scripts/spawn-test-network.sh --with-referee    # Include referee node
 ./scripts/spawn-test-network.sh --base-port 50200 # Starting port

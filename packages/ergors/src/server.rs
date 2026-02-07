@@ -251,6 +251,9 @@ impl Server {
             Self::load_and_store_encrypted_api_keys(&c, &s, password).await?;
         }
 
+        // Load LLM entities from config into Cnidarium storage
+        Self::load_and_store_llm_entities(&c, &s).await?;
+
         // Initialize CosmWasm VM runtime
         #[cfg(feature = "cw")]
         let wasm_runtime = {
@@ -282,18 +285,17 @@ impl Server {
             contract_manager.deploy_required_contracts(&c).await?;
         }
 
-        // Load proxy router config from storage (or use default if none stored)
-        let proxy_router_config = match storage_arc.get_proxy_router_config().await {
+        // Load proxy router config from storage and populate with LLM entities
+        let mut proxy_router_config = match storage_arc.get_proxy_router_config().await {
             Ok(Some(stored_config)) => {
                 tracing::info!(
                     "📍 Loaded proxy router config from storage (version {})",
                     stored_config.version
                 );
-                // Use stored config directly (proto type is now the in-memory type)
                 stored_config
             }
             Ok(None) => {
-                tracing::info!("📍 No stored proxy router config found, using defaults");
+                tracing::info!("📍 No stored proxy router config found, creating from LLM entities");
                 ho_std::types::ergors::orch::v1::ProxyRouterConfig::default()
             }
             Err(e) => {
@@ -304,6 +306,9 @@ impl Server {
                 crate::proxy::ProxyRouterConfig::default()
             }
         };
+
+        // Populate proxy router config with LLM entities
+        Self::populate_proxy_config_from_llm_entities(&storage_arc, &mut proxy_router_config).await?;
 
         // Initialize Akash deployment context if config present and keys available
         let akash_context =
@@ -796,6 +801,116 @@ impl Server {
             std::env::set_var(env_var, api_key);
             info!("🔑 Set {} from encrypted storage", env_var);
         }
+    }
+
+    /// Load LLM entities from config and store in Cnidarium storage
+    ///
+    /// This method:
+    /// 1. Checks if entities are already stored in Cnidarium
+    /// 2. If not, imports entities from config.toml
+    /// 3. Stores them in verifiable storage for consensus
+    async fn load_and_store_llm_entities(c: &ErgorsConfig, s: &ErgorsStorage) -> HoResult<()> {
+        
+        use ho_std::llm::state_ext::StateReadExt;
+        use ho_std::llm::state_ext::StateWriteExt;
+
+        let snapshot = s.cs.latest_snapshot();
+        let existing_providers = snapshot.get_llm_providers().await?;
+
+        if !existing_providers.is_empty() {
+            info!(
+                "📍 Found {} LLM entities in storage - skipping import",
+                existing_providers.len()
+            );
+            return Ok(());
+        }
+
+        // Get entities from config
+        let entities = &c.llm().entities;
+
+        if entities.is_empty() {
+            info!("📋 No LLM entities configured in config.toml");
+            return Ok(());
+        }
+
+        // Store entities in Cnidarium
+        let mut delta = cnidarium::StateDelta::new(s.cs.latest_snapshot());
+        delta.put_llm_providers(entities);
+        s.cs.commit(delta).await.map_err(|e| {
+            HoError::Storage(format!("Failed to commit LLM entities: {}", e))
+        })?;
+
+        info!(
+            "✅ Imported {} LLM entities to Cnidarium storage",
+            entities.len()
+        );
+
+        // Log each entity with details
+        for entity in entities {
+            info!(
+                "   - {} (base_url: {}, models: {})",
+                entity.name,
+                entity.base_url,
+                entity.models.join(", ")
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Populate proxy router config with LLM entities from storage
+    ///
+    /// Converts LlmEntity configs to InferenceProviderConfig for the proxy router
+    async fn populate_proxy_config_from_llm_entities(
+        s: &ErgorsStorage,
+        config: &mut ProxyRouterConfig,
+    ) -> HoResult<()> {
+        use ho_std::llm::state_ext::StateReadExt;
+        use ho_std::types::ergors::orch::v1::InferenceProviderType;
+
+        let snapshot = s.cs.latest_snapshot();
+        let entities = snapshot.get_llm_providers().await?;
+
+        if entities.is_empty() {
+            info!("⚠️  No LLM entities found in storage for proxy router");
+            return Ok(());
+        }
+
+        // Convert LlmEntity to InferenceProviderConfig
+        for entity in &entities {
+            let provider_type = match entity.name.to_lowercase().as_str() {
+                "openai" => InferenceProviderType::Openai,
+                "anthropic" => InferenceProviderType::Anthropic,
+                "ollama" => InferenceProviderType::Ollama,
+                "grok" => InferenceProviderType::Openai, // Grok uses OpenAI-compatible API
+                "akashml" | "akash" => InferenceProviderType::Openai, // Akash uses OpenAI-compatible API
+                _ => InferenceProviderType::Openai, // Default to OpenAI-compatible
+            };
+
+            let provider_config = InferenceProviderConfig {
+                provider_id: entity.name.clone(),
+                base_url: entity.base_url.clone(),
+                api_key: String::new(), // API keys loaded from encrypted storage separately
+                api_key_ref: String::new(),
+                enabled: entity.enabled,
+                provider_type: provider_type as i32,
+                ..Default::default()
+            };
+
+            config.providers.insert(entity.name.clone(), provider_config);
+
+            // Add model routes for this provider
+            for model in &entity.models {
+                config.model_routes.insert(model.clone(), entity.name.clone());
+            }
+        }
+
+        info!(
+            "✅ Populated proxy router with {} providers from LLM entities",
+            entities.len()
+        );
+
+        Ok(())
     }
 
     /// Validate that all enabled LLM providers have API keys configured

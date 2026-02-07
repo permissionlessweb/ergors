@@ -24,6 +24,7 @@ use ergors::{
     init::InitCmd,
     keys::KeysCmd,
     sentinel::SentinelServer,
+    sentinel_cmd::SentinelCmd,
     server::Server as CwHoServer,
 };
 use ho_std::{
@@ -120,6 +121,8 @@ pub enum Commands {
     Keys(KeysCmd),
     /// Manage authorization
     ManageAuth(AuthCmd),
+    /// Sentinel: bootstrap a remote sentinel node
+    Sentinel(SentinelCmd),
 
     // =========== gRPC Commands (need daemon running) ===========
     /// Node identity management
@@ -187,6 +190,7 @@ fn main() -> Result<()> {
         Commands::Config(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::Keys(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::ManageAuth(cmd) => cmd.exec(cli.home.as_path())?,
+        Commands::Sentinel(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::Call(_) => todo!(),
 
         // Daemon start (special case - runs the server)
@@ -255,6 +259,7 @@ async fn execute_grpc_command(cli: &Cli) -> Result<()> {
         | Commands::Config(_)
         | Commands::Keys(_)
         | Commands::ManageAuth(_)
+        | Commands::Sentinel(_)
         | Commands::Call(_) => {
             unreachable!("Local commands should be handled in main()")
         }

@@ -331,7 +331,7 @@ impl LlmRouter {
 
         let provider: Arc<dyn LlmProviderTrait> = match entity.name.to_lowercase().as_str() {
             "openai" => {
-                let mut p = OpenAiProvider::new(None);
+                let mut p = OpenAiProvider::new(None).with_base_url(entity.base_url.clone());
                 for m in &entity.models {
                     if !OpenAiProvider::MODELS.contains(&m.as_str()) {
                         p.add_supported_model(m.clone());
@@ -340,7 +340,7 @@ impl LlmRouter {
                 Arc::new(p)
             }
             "anthropic" => {
-                let mut p = AnthropicProvider::new(None);
+                let mut p = AnthropicProvider::new(None).with_base_url(entity.base_url.clone());
                 for m in &entity.models {
                     if !AnthropicProvider::MODELS.contains(&m.as_str()) {
                         p.add_supported_model(m.clone());
@@ -349,7 +349,7 @@ impl LlmRouter {
                 Arc::new(p)
             }
             "grok" => {
-                let mut p = GrokProvider::new(None);
+                let mut p = GrokProvider::new(None).with_base_url(entity.base_url.clone());
                 for m in &entity.models {
                     if !GrokProvider::MODELS.contains(&m.as_str()) {
                         p.add_supported_model(m.clone());
@@ -358,7 +358,7 @@ impl LlmRouter {
                 Arc::new(p)
             }
             "akashml" | "akash" => {
-                let mut p = AkashProvider::new(None);
+                let mut p = AkashProvider::new(None).with_base_url(entity.base_url.clone());
                 for m in &entity.models {
                     if !AkashProvider::MODELS.contains(&m.as_str()) {
                         p.add_supported_model(m.clone());
@@ -367,7 +367,7 @@ impl LlmRouter {
                 Arc::new(p)
             }
             "kimi" | "kimi_research" => {
-                let mut p = KimiProvider::new(None);
+                let mut p = KimiProvider::new(None).with_base_url(entity.base_url.clone());
                 for m in &entity.models {
                     if !KimiProvider::MODELS.contains(&m.as_str()) {
                         p.add_supported_model(m.clone());
@@ -376,7 +376,7 @@ impl LlmRouter {
                 Arc::new(p)
             }
             "qwen" => {
-                let mut p = QwenProvider::new(None);
+                let mut p = QwenProvider::new(None).with_base_url(entity.base_url.clone());
                 for m in &entity.models {
                     if !QwenProvider::MODELS.contains(&m.as_str()) {
                         p.add_supported_model(m.clone());
@@ -385,7 +385,7 @@ impl LlmRouter {
                 Arc::new(p)
             }
             "venice" => {
-                let mut p = VeniceProvider::new(None);
+                let mut p = VeniceProvider::new(None).with_base_url(entity.base_url.clone());
                 for m in &entity.models {
                     if !VeniceProvider::MODELS.contains(&m.as_str()) {
                         p.add_supported_model(m.clone());
@@ -394,7 +394,7 @@ impl LlmRouter {
                 Arc::new(p)
             }
             "ollama" => {
-                let mut p = OllamaProvider::new(None);
+                let mut p = OllamaProvider::new(None).with_base_url(entity.base_url.clone());
                 for m in &entity.models {
                     if !OllamaProvider::MODELS.contains(&m.as_str()) {
                         p.add_supported_model(m.clone());
@@ -406,11 +406,11 @@ impl LlmRouter {
             // Default providers above are preferred for convenience, but any provider name is allowed
             custom_name => {
                 info!(
-                    "Registering custom provider '{}' (OpenAI-compatible). Preferred providers: openai, anthropic, grok, akashml, kimi, qwen, venice, ollama",
-                    custom_name
+                    "Registering custom provider '{}' (OpenAI-compatible) at {}. Preferred providers: openai, anthropic, grok, akashml, kimi, qwen, venice, ollama",
+                    custom_name, entity.base_url
                 );
                 // Use OpenAI provider as the base for custom providers (most APIs are OpenAI-compatible)
-                let mut p = OpenAiProvider::new(None);
+                let mut p = OpenAiProvider::new(None).with_base_url(entity.base_url.clone());
                 // Add all configured models as supported
                 for m in &entity.models {
                     p.add_supported_model(m.clone());
@@ -451,7 +451,7 @@ impl LlmRouter {
     /// Initialize storage with default r configuration
     ///
     /// This writes the default r c to storage if none exists
-    pub async fn init_storage<S: StateRead + crate::traits::StateWrite>(
+    pub async fn init_storage<S: StateRead + cnidarium::StateWrite>(
         s: &mut S,
         c: &LlmRouterConfig,
     ) -> HoResult<()> {
@@ -467,7 +467,7 @@ impl LlmRouter {
     }
 
     /// Update r configuration in storage
-    pub async fn update_storage_config<S: StateRead + crate::traits::StateWrite>(
+    pub async fn update_storage_config<S: StateRead + cnidarium::StateWrite>(
         s: &mut S,
         c: &LlmRouterConfig,
     ) -> HoResult<()> {
@@ -478,7 +478,7 @@ impl LlmRouter {
     }
 
     /// Add a provider to storage
-    pub async fn add_provider_to_storage<S: StateRead + crate::traits::StateWrite>(
+    pub async fn add_provider_to_storage<S: StateRead + cnidarium::StateWrite>(
         s: &mut S,
         provider: &LlmEntity,
     ) -> HoResult<()> {
@@ -488,7 +488,7 @@ impl LlmRouter {
     }
 
     /// Remove a provider from storage
-    pub async fn remove_provider_from_storage<S: crate::traits::StateWrite>(
+    pub async fn remove_provider_from_storage<S: cnidarium::StateWrite>(
         s: &mut S,
         provider_name: &str,
     ) -> HoResult<()> {

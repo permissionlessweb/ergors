@@ -1,6 +1,5 @@
 .ho
 .env
-.opencode/plans
 .claude/skills
 .claude/mcp/*.lock
 .claude/settings.json

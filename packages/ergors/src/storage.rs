@@ -160,8 +160,54 @@ impl ErgorsStorage {
     }
 
     /// Commit a delta with write lock to prevent JMT race conditions.
+    /// Retries on version conflicts (optimistic concurrency control).
     async fn commit_delta(&self, delta: cnidarium::StateDelta<cnidarium::Snapshot>) -> HoResult<()> {
         let _guard = self.write_lock.lock().await;
+
+        match self.cs.commit(delta).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let err_str = e.to_string();
+                // Check if this is a version conflict error
+                if err_str.contains("forked from version") || err_str.contains("but the latest version is") {
+                    warn!("Version conflict detected, will be retried by caller: {}", err_str);
+                    Err(HoError::Storage(format!("Version conflict: {}", err_str)))
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
+    /// Lock-first commit: acquires write lock, creates a fresh delta from the
+    /// latest snapshot, applies mutations via the closure, then commits.
+    /// Eliminates TOCTOU version conflicts by ensuring the snapshot is obtained
+    /// while holding the lock.
+    async fn locked_commit<F>(&self, apply: F) -> HoResult<()>
+    where
+        F: FnOnce(&mut cnidarium::StateDelta<cnidarium::Snapshot>),
+    {
+        let _guard = self.write_lock.lock().await;
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        apply(&mut delta);
+        self.cs.commit(delta).await?;
+        Ok(())
+    }
+
+    /// Lock-first commit with a read phase: acquires write lock, runs an async
+    /// read from the latest snapshot, then applies mutations and commits.
+    /// Use when you need to read existing state before writing.
+    async fn locked_read_commit<R, F, Fut>(&self, read: R, apply: F) -> HoResult<()>
+    where
+        R: FnOnce(cnidarium::Snapshot) -> Fut,
+        Fut: std::future::Future<Output = HoResult<Vec<(String, Vec<u8>)>>>,
+        F: FnOnce(&mut cnidarium::StateDelta<cnidarium::Snapshot>, Vec<(String, Vec<u8>)>),
+    {
+        let _guard = self.write_lock.lock().await;
+        let snapshot = self.cs.latest_snapshot();
+        let read_results = read(snapshot).await?;
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        apply(&mut delta, read_results);
         self.cs.commit(delta).await?;
         Ok(())
     }
@@ -171,16 +217,11 @@ impl ErgorsStorage {
         prompt: &PromptResponse,
         original_request: Option<&PromptRequest>,
     ) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let id = hex::encode(prompt.id.clone());
-        // Serialize the prompt response
         let prompt_data = serde_json::to_vec(prompt)?;
         let prompt_key = storage_key(PROMPT_PREFIX, &id);
+        let prompt_id = prompt.id.clone();
 
-        // Store the main prompt record
-        delta.put_raw(prompt_key.clone(), prompt_data);
-
-        // Create indexes for efficient querying
         let timestamp_key = format!(
             "{}{:020}:{}",
             TIMESTAMP_INDEX_PREFIX,
@@ -190,46 +231,41 @@ impl ErgorsStorage {
                 .nanos,
             id
         );
-        delta.put_raw(timestamp_key, prompt.id.clone());
 
-        // Create context-based indexes if original request is provided
-        if let Some(request) = original_request {
+        // Pre-compute context indexes
+        let context_indexes: Vec<(String, Vec<u8>)> = if let Some(request) = original_request {
             if let Some(ref context) = request.context {
-                // Index by session_id
                 let sid = context.session_id.clone();
                 let uid = context.user_id.clone();
-
                 let session_key = storage_key2(SESSION_INDEX_PREFIX, &sid, &id);
-                delta.put_raw(session_key, prompt.id.clone());
-                debug!("Created session index for {}: {}", sid, id);
-
-                // Index by user_id
-
                 let user_key = storage_key2(USER_INDEX_PREFIX, &uid, &id);
-                delta.put_raw(user_key, prompt.id.clone());
+                debug!("Created session index for {}: {}", sid, id);
                 debug!("Created user index for {}: {}", uid, id);
+                vec![
+                    (session_key, prompt_id.clone()),
+                    (user_key, prompt_id.clone()),
+                ]
+            } else {
+                vec![]
             }
-        }
+        } else {
+            vec![]
+        };
 
         debug!("Storing prompt {} with timestamp index", id);
 
-        // Commit the changes
-        self.commit_delta(delta).await?;
+        self.locked_commit(|delta| {
+            delta.put_raw(prompt_key.clone(), prompt_data);
+            delta.put_raw(timestamp_key, prompt_id);
+            for (key, value) in context_indexes {
+                delta.put_raw(key, value);
+            }
+        }).await?;
 
         info!(
             "💾 Successfully stored prompt: {} with key: {}",
             id, prompt_key
         );
-
-        // Debug: Let's try to immediately read it back to verify storage
-        match self
-            .get_prompt(&Uuid::from_slice(&prompt.id).unwrap())
-            .await
-        {
-            Ok(Some(_)) => info!("✅ Verified prompt {} can be read back immediately", id),
-            Ok(None) => warn!("⚠️ Prompt {} not found immediately after storage", id),
-            Err(e) => warn!("❌ Error reading prompt {} back: {}", id, e),
-        }
 
         Ok(())
     }
@@ -348,9 +384,6 @@ impl ErgorsStorage {
         request: &PromptRequest,
         response_text: &[String],
     ) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-
-        // Store the conversation context: request messages + response
         let session_data = serde_json::json!({
             "request_messages": request.messages.iter().map(|m| {
                 serde_json::json!({
@@ -364,8 +397,11 @@ impl ErgorsStorage {
         });
 
         let key = storage_key(OPEN_RESPONSE_PREFIX, response_id);
-        delta.put_raw(key, serde_json::to_vec(&session_data)?);
-        self.commit_delta(delta).await?;
+        let data = serde_json::to_vec(&session_data)?;
+
+        self.locked_commit(|delta| {
+            delta.put_raw(key, data);
+        }).await?;
 
         debug!("Stored Open Response session: {}", response_id);
         Ok(())
@@ -531,7 +567,6 @@ impl ErgorsStorage {
         request_data: Vec<u8>,
         session_id: Option<String>,
     ) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let op_key = storage_key(OP_PREFIX, id);
         let operation = OperationRecord {
             id: op_key.to_string(),
@@ -549,18 +584,18 @@ impl ErgorsStorage {
         };
 
         let operation_data = serde_json::to_vec(&operation)?;
-        delta.put_raw(op_key.clone(), operation_data);
-
-        // Create timestamp index
         let timestamp_key = format!(
             "{}operations/{:020}:{}",
             TIMESTAMP_INDEX_PREFIX,
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
             id
         );
-        delta.put_raw(timestamp_key, id.as_bytes().to_vec());
+        let id_bytes = id.as_bytes().to_vec();
 
-        self.commit_delta(delta).await?;
+        self.locked_commit(|delta| {
+            delta.put_raw(op_key.clone(), operation_data);
+            delta.put_raw(timestamp_key, id_bytes);
+        }).await?;
 
         debug!("📝 Stored operation request: {} ({})", id, operation_type);
         Ok(())
@@ -568,29 +603,33 @@ impl ErgorsStorage {
 
     /// Update operation record with response
     pub async fn op_res(&self, id: &str, response_data: Vec<u8>) -> HoResult<()> {
-        let snapshot = self.cs.latest_snapshot();
         let key = storage_key(OP_PREFIX, id);
 
-        // Get existing operation
-        let existing_data = snapshot
-            .get_raw(&key)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Operation not found: {}", id))?;
-
-        let mut operation: OperationRecord = serde_json::from_slice(&existing_data)?;
-
-        // Update with response
-        operation.response = Some(response_data);
-        operation.completed_at = Some(pbjson_types::Timestamp {
-            seconds: chrono::Utc::now().timestamp(),
-            nanos: 0,
-        });
-
-        let mut delta = cnidarium::StateDelta::new(snapshot);
-        let operation_data = serde_json::to_vec(&operation)?;
-        delta.put_raw(key, operation_data);
-
-        self.commit_delta(delta).await?;
+        self.locked_read_commit(
+            |snapshot| {
+                let key = key.clone();
+                async move {
+                    let existing_data = snapshot
+                        .get_raw(&key)
+                        .await?
+                        .ok_or_else(|| anyhow::anyhow!("Operation not found: {}", key))?;
+                    Ok(vec![(key, existing_data)])
+                }
+            },
+            |delta, read_results| {
+                let (key, existing_data) = &read_results[0];
+                if let Ok(mut operation) = serde_json::from_slice::<OperationRecord>(existing_data) {
+                    operation.response = Some(response_data);
+                    operation.completed_at = Some(pbjson_types::Timestamp {
+                        seconds: chrono::Utc::now().timestamp(),
+                        nanos: 0,
+                    });
+                    if let Ok(operation_data) = serde_json::to_vec(&operation) {
+                        delta.put_raw(key.clone(), operation_data);
+                    }
+                }
+            },
+        ).await?;
 
         debug!("✅ Updated operation with response: {}", id);
         Ok(())
@@ -604,37 +643,43 @@ impl ErgorsStorage {
         error_code: &str,
         stack_trace: Option<String>,
     ) -> HoResult<()> {
-        let snapshot = self.cs.latest_snapshot();
         let op_key = storage_key(OP_PREFIX, id);
+        let error_msg_owned = error_msg.to_string();
+        let error_code = error_code.to_string();
 
-        // Get existing operation
-        let existing_data = snapshot
-            .get_raw(&op_key)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Operation not found: {}", id))?;
-
-        let mut operation: OperationRecord = serde_json::from_slice(&existing_data)?;
-
-        // Update with error
-        operation.error = Some(ErrorResponse {
-            error: error_msg.to_string(),
-            code: error_code.to_string(),
-            timestamp: Some(pbjson_types::Timestamp {
-                seconds: chrono::Utc::now().timestamp(),
-                nanos: 0,
-            }),
-            stack_trace,
-        });
-        operation.completed_at = Some(pbjson_types::Timestamp {
-            seconds: chrono::Utc::now().timestamp(),
-            nanos: 0,
-        });
-
-        let mut delta = cnidarium::StateDelta::new(snapshot);
-        let operation_data = serde_json::to_vec(&operation)?;
-        delta.put_raw(op_key, operation_data);
-
-        self.commit_delta(delta).await?;
+        self.locked_read_commit(
+            |snapshot| {
+                let op_key = op_key.clone();
+                async move {
+                    let existing_data = snapshot
+                        .get_raw(&op_key)
+                        .await?
+                        .ok_or_else(|| anyhow::anyhow!("Operation not found: {}", op_key))?;
+                    Ok(vec![(op_key, existing_data)])
+                }
+            },
+            |delta, read_results| {
+                let (key, existing_data) = &read_results[0];
+                if let Ok(mut operation) = serde_json::from_slice::<OperationRecord>(existing_data) {
+                    operation.error = Some(ErrorResponse {
+                        error: error_msg_owned,
+                        code: error_code,
+                        timestamp: Some(pbjson_types::Timestamp {
+                            seconds: chrono::Utc::now().timestamp(),
+                            nanos: 0,
+                        }),
+                        stack_trace,
+                    });
+                    operation.completed_at = Some(pbjson_types::Timestamp {
+                        seconds: chrono::Utc::now().timestamp(),
+                        nanos: 0,
+                    });
+                    if let Ok(operation_data) = serde_json::to_vec(&operation) {
+                        delta.put_raw(key.clone(), operation_data);
+                    }
+                }
+            },
+        ).await?;
 
         warn!("❌ Recorded operation error: {} - {}", id, error_msg);
         Ok(())
@@ -1440,14 +1485,9 @@ impl ErgorsStorage {
 
     /// Store a proxy session to persistent storage.
     pub async fn put_proxy_session(&self, session: &ProxySession) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
-
-        // Main session record
         let session_key = storage_key(PROXY_SESSION_PREFIX, &session.session_id);
         let session_data = serde_json::to_vec(session)?;
-        delta.put_raw(session_key.clone(), session_data);
 
-        // Index by client type
         let client_type_name = match session.client_type {
             0 => "unspecified",
             1 => "claude_code",
@@ -1457,18 +1497,22 @@ impl ErgorsStorage {
             _ => "unknown",
         };
         let client_index_key = storage_key2(PROXY_CLIENT_INDEX_PREFIX, client_type_name, &session.session_id);
-        delta.put_raw(client_index_key, session.session_id.as_bytes().to_vec());
+        let session_id_bytes = session.session_id.as_bytes().to_vec();
 
-        // Index by timestamp for efficient time-range queries
-        if let Some(ref ts) = session.started_at {
-            let ts_index_key = format!(
+        let ts_index = session.started_at.as_ref().map(|ts| {
+            format!(
                 "proxy_sessions_by_time/{:020}:{}",
                 ts.seconds, session.session_id
-            );
-            delta.put_raw(ts_index_key, session.session_id.as_bytes().to_vec());
-        }
+            )
+        });
 
-        self.commit_delta(delta).await?;
+        self.locked_commit(|delta| {
+            delta.put_raw(session_key.clone(), session_data);
+            delta.put_raw(client_index_key, session_id_bytes.clone());
+            if let Some(ts_key) = ts_index {
+                delta.put_raw(ts_key, session_id_bytes);
+            }
+        }).await?;
 
         info!(
             "💾 Stored proxy session: {} (client: {}, model: {})",

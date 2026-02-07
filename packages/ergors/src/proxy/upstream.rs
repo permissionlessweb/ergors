@@ -4,11 +4,14 @@ use anyhow::Result;
 use bytes::Bytes;
 use reqwest::Client;
 use tracing::{debug, error};
+use ho_std::constants::{ANTHROPIC_BASE_URL, OPENAI_BASE_URL};
 
-/// Anthropic API base URL
-pub const ANTHROPIC_API_URL: &str = "https://api.anthropic.com";
-/// OpenAI API base URL
-pub const OPENAI_API_URL: &str = "https://api.openai.com";
+/// Re-export constants for backwards compatibility (deprecated - use ho_std::constants)
+#[deprecated(note = "Use ho_std::constants::ANTHROPIC_BASE_URL instead")]
+pub const ANTHROPIC_API_URL: &str = ANTHROPIC_BASE_URL;
+/// Re-export constants for backwards compatibility (deprecated - use ho_std::constants)
+#[deprecated(note = "Use ho_std::constants::OPENAI_BASE_URL instead")]
+pub const OPENAI_API_URL: &str = OPENAI_BASE_URL;
 
 /// Forward a request to the Anthropic API.
 pub async fn forward_to_anthropic(

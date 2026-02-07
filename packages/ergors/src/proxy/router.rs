@@ -7,21 +7,22 @@
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use ho_std::types::ergors::orch::v1::{InferenceProviderConfig, InferenceProviderType, ProxyRouterConfig};
+use ho_std::constants::{ANTHROPIC_BASE_URL, OPENAI_BASE_URL};
+use ho_std::types::ergors::orch::v1::{
+    InferenceProviderConfig, InferenceProviderType, ProxyRouterConfig,
+};
+
+/// Convenience alias for use in tests and external code.
+pub type ProviderType = InferenceProviderType;
 use reqwest::Client;
 use tracing::{debug, warn};
-
-/// Default Anthropic API base URL
-pub const DEFAULT_ANTHROPIC_URL: &str = "https://api.anthropic.com";
-/// Default OpenAI API base URL
-pub const DEFAULT_OPENAI_URL: &str = "https://api.openai.com";
 
 /// Route target containing upstream URL and optional API key
 #[derive(Debug, Clone)]
 pub struct RouteTarget {
     pub base_url: String,
     pub api_key: Option<String>,
-    pub provider_type: i32,  // Use i32 for proto enum
+    pub provider_type: i32, // Use i32 for proto enum
 }
 
 /// Proxy router for request routing
@@ -56,8 +57,7 @@ impl ProxyRouter {
 
     /// Get enabled provider configuration by ID
     pub fn get_enabled_provider(&self, provider_id: &str) -> Option<&InferenceProviderConfig> {
-        self.get_provider(provider_id)
-            .filter(|p| p.enabled)
+        self.get_provider(provider_id).filter(|p| p.enabled)
     }
 
     /// Get route target from provider configuration
@@ -75,7 +75,10 @@ impl ProxyRouter {
             if let Some(env_ref) = provider.api_key_ref.strip_prefix("env://") {
                 std::env::var(env_ref).ok()
             } else {
-                warn!("API key reference not yet supported: {}", provider.api_key_ref);
+                warn!(
+                    "API key reference not yet supported: {}",
+                    provider.api_key_ref
+                );
                 None
             }
         } else {
@@ -108,7 +111,7 @@ impl ProxyRouter {
         // Final fallback: use default Anthropic URL
         warn!("No anthropic provider configured, using default URL");
         RouteTarget {
-            base_url: DEFAULT_ANTHROPIC_URL.to_string(),
+            base_url: ANTHROPIC_BASE_URL.to_string(),
             api_key: None,
             provider_type: InferenceProviderType::Anthropic as i32,
         }
@@ -131,7 +134,7 @@ impl ProxyRouter {
         // Final fallback: use default OpenAI URL
         warn!("No openai provider configured, using default URL");
         RouteTarget {
-            base_url: DEFAULT_OPENAI_URL.to_string(),
+            base_url: OPENAI_BASE_URL.to_string(),
             api_key: None,
             provider_type: InferenceProviderType::Openai as i32,
         }
@@ -176,13 +179,19 @@ impl ProxyRouter {
     fn match_model_route(&self, model: &str) -> Result<RouteTarget> {
         for (pattern, provider_id) in &self.config.model_routes {
             if glob_match(pattern, model) {
-                debug!("Model '{}' matched route pattern '{}' -> provider '{}'", model, pattern, provider_id);
+                debug!(
+                    "Model '{}' matched route pattern '{}' -> provider '{}'",
+                    model, pattern, provider_id
+                );
 
                 // Look up provider configuration
                 if let Some(provider) = self.get_enabled_provider(provider_id) {
                     return self.provider_to_route_target(provider);
                 } else {
-                    warn!("Model route points to unknown/disabled provider: {}", provider_id);
+                    warn!(
+                        "Model route points to unknown/disabled provider: {}",
+                        provider_id
+                    );
                 }
             }
         }
@@ -259,7 +268,7 @@ impl ProxyRouter {
         &self,
         body: Bytes,
         model: &str,
-        endpoint: &str,  // e.g., "/api/generate", "/api/chat"
+        endpoint: &str, // e.g., "/api/generate", "/api/chat"
     ) -> Result<reqwest::Response> {
         let target = self.route_ollama(model);
         let url = format!("{}{}", target.base_url, endpoint);
@@ -367,11 +376,17 @@ mod tests {
         let router = ProxyRouter::default_router();
 
         let anthropic_target = router.route_anthropic("claude-3-opus");
-        assert_eq!(anthropic_target.base_url, DEFAULT_ANTHROPIC_URL);
-        assert_eq!(anthropic_target.provider_type, InferenceProviderType::Anthropic as i32);
+        assert_eq!(anthropic_target.base_url, ANTHROPIC_BASE_URL);
+        assert_eq!(
+            anthropic_target.provider_type,
+            InferenceProviderType::Anthropic as i32
+        );
 
         let openai_target = router.route_openai("gpt-4");
-        assert_eq!(openai_target.base_url, DEFAULT_OPENAI_URL);
-        assert_eq!(openai_target.provider_type, InferenceProviderType::Openai as i32);
+        assert_eq!(openai_target.base_url, OPENAI_BASE_URL);
+        assert_eq!(
+            openai_target.provider_type,
+            InferenceProviderType::Openai as i32
+        );
     }
 }

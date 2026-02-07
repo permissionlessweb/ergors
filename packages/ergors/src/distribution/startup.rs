@@ -200,6 +200,7 @@ mod tests {
             ssh_port: 22,
             node_type: "executor".to_string(),
             public_key: None,
+            bech32_address: None,
         };
         let system = KeyDistributionSystem::new_node(privkey, identity);
 

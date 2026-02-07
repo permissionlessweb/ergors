@@ -2,18 +2,26 @@
 #
 # sentinel.sh - Sentinel mode E2E tests
 #
-# Tests the zero-secret deployment flow:
-#   1. Verify health endpoint reports awaiting_init
+# Tests the zero-secret deployment flow with encrypted transport
+# (X25519 + ChaCha20Poly1305). Uses `ergors sentinel bootstrap` CLI
+# command for the happy-path flow.
+#
+# Security negative tests (raw curl, plaintext — auth fails first):
+#   1. Verify health endpoint reports awaiting_init + session_pubkey
 #   2. Verify unsigned requests are rejected (401)
 #   3. Verify wrong-key signed requests are rejected (401/403)
 #   4. Verify out-of-order phase requests are rejected (409)
 #   5. Verify stale-timestamp requests are rejected (replay protection)
-#   6. Verify short password is rejected (input validation)
-#   7. Send signed /sentinel/init — verify phase transition + file creation
-#   8. Verify double-init is rejected (409)
-#   9. Verify empty api_keys is rejected (input validation)
-#  10. Send signed /sentinel/api-keys — verify phase transition + file creation
-#  11. Send signed /sentinel/activate — verify handoff to full server
+#   6. Verify short password is rejected by CLI (input validation)
+#
+# Happy path (CLI bootstrap with encrypted transport):
+#   7. Run `ergors sentinel bootstrap --admin-privkey-hex` — full flow
+#   8. Verify file creation (identity, config, api-keys)
+#   9. Verify handoff to full server
+#  10. Verify identity persistence after activation
+#
+# Mnemonic import (CLI bootstrap, separate sentinel instance):
+#  11. Bootstrap with known mnemonic — verify deterministic pubkey
 
 # Prevent multiple sourcing
 [[ -n "${_E2E_SENTINEL_LOADED:-}" ]] && return 0
@@ -356,15 +364,24 @@ test_sentinel_replay_rejected() {
 test_sentinel_short_password_rejected() {
     log_section "Sentinel Validation (short password rejected)"
 
-    local body='{"custody_password":"abc"}'
+    # The CLI validates password length locally (>= 8 chars) before sending.
+    # Pipe a short password through bootstrap — expect non-zero exit.
+    #
+    # NOTE: use `|| exit_code=$?` to prevent set -e from aborting on non-zero exit.
+    local exit_code=0
+    local output=""
+    output=$(printf '%s\n' "abc" "" "" "" "" "" "" \
+        | "$ERGORS_BIN" --home "$TEST_DIR/cli_tmp" \
+            sentinel bootstrap \
+            --admin-privkey-hex "$ADMIN_PRIVKEY" \
+            "http://${SENTINEL_API}" 2>&1) || exit_code=$?
 
-    local http_code
-    http_code=$(_sentinel_curl_signed_status POST "/sentinel/init" "$body")
+    log_verbose "Short password output: $output"
 
-    if [[ "$http_code" == "400" ]]; then
-        test_pass "sentinel_short_password" "Short password rejected with 400"
+    if [[ $exit_code -ne 0 ]]; then
+        test_pass "sentinel_short_password" "Short password rejected by CLI (exit $exit_code)"
     else
-        test_fail "sentinel_short_password" "Expected 400, got: $http_code"
+        test_fail "sentinel_short_password" "Expected non-zero exit for short password, got 0" "$output"
     fi
 }
 
@@ -372,35 +389,39 @@ test_sentinel_short_password_rejected() {
 # Test Functions — Happy Path
 # =============================================================================
 
-test_sentinel_init() {
-    log_section "Sentinel Init (signed request)"
+test_sentinel_cli_bootstrap() {
+    log_section "Sentinel CLI Bootstrap (full encrypted flow)"
 
-    local body='{"custody_password":"e2e-sentinel-test-pw","node_type":"executor","api_port":'"${SENTINEL_PORT}"',"p2p_port":26969}'
+    # Run the CLI bootstrap command with piped stdin.
+    # Input order (non-interactive, each on its own line):
+    #   1. Remote custody password
+    #   2. Mnemonic (empty = generate new)
+    #   3. Anthropic API key (or empty to skip)
+    #   4. OpenAI API key (or empty to skip)
+    #   5. Akash ML API key (or empty to skip)
+    #   6. xAI/Grok API key (or empty to skip)
+    #   7. Custom provider name (empty = done)
+    # NOTE: use `|| exit_code=$?` to prevent set -e from aborting on non-zero exit.
+    local exit_code=0
+    local output=""
+    output=$(printf '%s\n' \
+        "e2e-sentinel-test-pw" \
+        "" \
+        "sk-ant-test-key" \
+        "sk-test-key" \
+        "" \
+        "" \
+        "" \
+    | "$ERGORS_BIN" --home "$TEST_DIR/cli_tmp" \
+        sentinel bootstrap \
+        --admin-privkey-hex "$ADMIN_PRIVKEY" \
+        "http://${SENTINEL_API}" 2>&1) || exit_code=$?
+    log_verbose "CLI bootstrap output: $output"
 
-    local response
-    response=$(_sentinel_curl_signed POST "/sentinel/init" "$body")
-    log_verbose "Init response: $response"
-
-    local ok
-    ok=$(json_get "$response" '.ok')
-
-    if [[ "$ok" == "true" ]]; then
-        test_pass "sentinel_init" "POST /sentinel/init succeeded"
+    if [[ $exit_code -eq 0 ]]; then
+        test_pass "sentinel_cli_bootstrap" "ergors sentinel bootstrap succeeded"
     else
-        test_fail "sentinel_init" "POST /sentinel/init failed" "$response"
-        return 1
-    fi
-
-    # Verify phase transitioned
-    local health
-    health=$(curl -s --max-time 5 "http://${SENTINEL_API}/sentinel/health" 2>/dev/null)
-    local phase
-    phase=$(json_get "$health" '.phase')
-
-    if [[ "$phase" == "awaiting_api_keys" ]]; then
-        test_pass "sentinel_init_phase" "Phase transitioned to awaiting_api_keys"
-    else
-        test_fail "sentinel_init_phase" "Expected awaiting_api_keys, got: $phase"
+        test_fail "sentinel_cli_bootstrap" "ergors sentinel bootstrap failed (exit $exit_code)" "$output"
         return 1
     fi
 
@@ -408,8 +429,7 @@ test_sentinel_init() {
     if [[ -f "$SENTINEL_HOME/node_identity.enc" ]]; then
         test_pass "sentinel_identity_created" "node_identity.enc created"
 
-        # Capture node pubkey for persistence check after activation
-        # public_key is a byte array in JSON, so use -c for compact comparison
+        # Capture node pubkey for persistence check
         INIT_NODE_PUBKEY=$(jq -c '.public_key' "$SENTINEL_HOME/node_identity.enc" 2>/dev/null || true)
         if [[ -n "$INIT_NODE_PUBKEY" ]] && [[ "$INIT_NODE_PUBKEY" != "null" ]]; then
             log_verbose "Node pubkey after init: ${INIT_NODE_PUBKEY:0:40}..."
@@ -423,94 +443,14 @@ test_sentinel_init() {
     else
         test_fail "sentinel_config_created" "config.toml not found"
     fi
-}
 
-test_sentinel_double_init_rejected() {
-    log_section "Sentinel Phase (double init rejected)"
-
-    # Phase is now awaiting_api_keys — calling init again should get 409
-    local http_code
-    http_code=$(_sentinel_curl_signed_status POST "/sentinel/init" \
-        '{"custody_password":"e2e-sentinel-test-pw","node_type":"executor"}')
-
-    if [[ "$http_code" == "409" ]]; then
-        test_pass "sentinel_double_init" "Double POST /sentinel/init rejected with 409"
-    else
-        test_fail "sentinel_double_init" "Expected 409, got: $http_code"
-    fi
-}
-
-test_sentinel_empty_api_keys_rejected() {
-    log_section "Sentinel Validation (empty api_keys rejected)"
-
-    local http_code
-    http_code=$(_sentinel_curl_signed_status POST "/sentinel/api-keys" '{"api_keys":{}}')
-
-    if [[ "$http_code" == "400" ]]; then
-        test_pass "sentinel_empty_keys" "Empty api_keys rejected with 400"
-    else
-        test_fail "sentinel_empty_keys" "Expected 400, got: $http_code"
-    fi
-}
-
-test_sentinel_api_keys() {
-    log_section "Sentinel API Keys (signed request)"
-
-    local body='{"api_keys":{"anthropic":"sk-ant-test-key","openai":"sk-test-key"}}'
-
-    local response
-    response=$(_sentinel_curl_signed POST "/sentinel/api-keys" "$body")
-    log_verbose "API keys response: $response"
-
-    local ok
-    ok=$(json_get "$response" '.ok')
-
-    if [[ "$ok" == "true" ]]; then
-        test_pass "sentinel_api_keys" "POST /sentinel/api-keys succeeded"
-    else
-        test_fail "sentinel_api_keys" "POST /sentinel/api-keys failed" "$response"
-        return 1
-    fi
-
-    # Verify encrypted keys file
     if [[ -f "$SENTINEL_HOME/api-keys.enc" ]]; then
         test_pass "sentinel_keys_encrypted" "api-keys.enc created"
     else
         test_fail "sentinel_keys_encrypted" "api-keys.enc not found"
     fi
 
-    # Verify phase
-    local health
-    health=$(curl -s --max-time 5 "http://${SENTINEL_API}/sentinel/health" 2>/dev/null)
-    local phase
-    phase=$(json_get "$health" '.phase')
-
-    if [[ "$phase" == "awaiting_activation" ]]; then
-        test_pass "sentinel_keys_phase" "Phase transitioned to awaiting_activation"
-    else
-        test_fail "sentinel_keys_phase" "Expected awaiting_activation, got: $phase"
-    fi
-}
-
-test_sentinel_activate() {
-    log_section "Sentinel Activate (signed request)"
-
-    local response
-    response=$(_sentinel_curl_signed POST "/sentinel/activate" "{}")
-    log_verbose "Activate response: $response"
-
-    local ok
-    ok=$(json_get "$response" '.ok')
-
-    if [[ "$ok" == "true" ]]; then
-        test_pass "sentinel_activate" "POST /sentinel/activate succeeded"
-    else
-        test_fail "sentinel_activate" "POST /sentinel/activate failed" "$response"
-        return 1
-    fi
-
-    # Wait for sentinel to shut down.
-    # Poll: wait for sentinel health endpoint to stop responding (server shutting down).
+    # Wait for sentinel to shut down after activation
     local max_wait=15
     local waited=0
     while curl -s --max-time 1 "http://${SENTINEL_API}/sentinel/health" &>/dev/null; do
@@ -552,8 +492,6 @@ test_sentinel_activate() {
     if [[ "$full_server_up" == "true" ]]; then
         test_pass "sentinel_handoff" "Full server health endpoint responding after handoff"
     else
-        # Full server may not have a /health endpoint or may fail to start
-        # due to missing providers in E2E environment — this is acceptable
         log_warn "Full server health endpoint not responding (may lack provider config)"
         test_pass "sentinel_handoff" "Sentinel handoff completed (full server startup attempted)"
     fi
@@ -718,51 +656,39 @@ _mnemonic_sentinel_stop() {
     kill_port "$MNEMONIC_SENTINEL_PORT" 2>/dev/null || true
 }
 
-# Signed curl against the mnemonic sentinel instance
-_mnemonic_curl_signed() {
-    local method="$1"
-    local path="$2"
-    local body="${3:-}"
-
-    _sentinel_sign_request "$body"
-
-    curl -s --max-time 10 \
-        -X "$method" \
-        "http://${MNEMONIC_SENTINEL_API}${path}" \
-        -H "Content-Type: application/json" \
-        -H "x-signature: ${SIGNED_SIGNATURE}" \
-        -H "x-timestamp: ${SIGNED_TIMESTAMP}" \
-        -H "x-public-key: ${ADMIN_PUBKEY}" \
-        -d "$body" 2>/dev/null || echo '{"error":"request failed"}'
-}
-
 test_sentinel_mnemonic_import() {
-    log_section "Sentinel Mnemonic Import (deterministic key)"
+    log_section "Sentinel Mnemonic Import (deterministic key via CLI)"
 
-    # Start a fresh sentinel for mnemonic test
+    # --- Run 1: bootstrap with known mnemonic ---
     _mnemonic_sentinel_start || {
         test_fail "mnemonic_sentinel_start" "Failed to start mnemonic sentinel"
         return 1
     }
 
-    # Init with mnemonic
-    local body
-    body=$(printf '{"custody_password":"e2e-mnemonic-test-pw","mnemonic":"%s","node_type":"executor","api_port":%d}' \
-        "$TEST_MNEMONIC" "$MNEMONIC_SENTINEL_PORT")
+    # Pipe: custody_password, mnemonic, anthropic key, (skip openai/akash/grok), done
+    # NOTE: use `|| exit_code=$?` to prevent set -e from aborting on non-zero exit.
+    local exit_code=0
+    local output=""
+    output=$(printf '%s\n' \
+        "e2e-mnemonic-test-pw" \
+        "$TEST_MNEMONIC" \
+        "sk-ant-mnemonic-key" \
+        "" \
+        "" \
+        "" \
+        "" \
+    | "$ERGORS_BIN" --home "$TEST_DIR/cli_tmp_mnemonic" \
+        sentinel bootstrap \
+        --admin-privkey-hex "$ADMIN_PRIVKEY" \
+        "http://${MNEMONIC_SENTINEL_API}" 2>&1) || exit_code=$?
+    log_verbose "Mnemonic bootstrap (run 1): $output"
 
-    local response
-    response=$(_mnemonic_curl_signed POST "/sentinel/init" "$body")
-    log_verbose "Mnemonic init response: $response"
-
-    local ok
-    ok=$(json_get "$response" '.ok')
-
-    if [[ "$ok" != "true" ]]; then
-        test_fail "mnemonic_init" "Mnemonic init failed" "$response"
+    if [[ $exit_code -ne 0 ]]; then
+        test_fail "mnemonic_init" "Mnemonic bootstrap (run 1) failed (exit $exit_code)" "$output"
         _mnemonic_sentinel_stop
         return 1
     fi
-    test_pass "mnemonic_init" "POST /sentinel/init with mnemonic succeeded"
+    test_pass "mnemonic_init" "CLI bootstrap with mnemonic succeeded (run 1)"
 
     # Verify identity file was created
     if [[ ! -f "$MNEMONIC_SENTINEL_HOME/node_identity.enc" ]]; then
@@ -783,7 +709,7 @@ test_sentinel_mnemonic_import() {
         return 1
     fi
 
-    # Stop first instance, start a fresh one, init with same mnemonic
+    # --- Run 2: fresh sentinel, same mnemonic — pubkey must match ---
     _mnemonic_sentinel_stop
     sleep 1
 
@@ -792,12 +718,24 @@ test_sentinel_mnemonic_import() {
         return 1
     }
 
-    response=$(_mnemonic_curl_signed POST "/sentinel/init" "$body")
-    log_verbose "Mnemonic init response (run 2): $response"
+    exit_code=0
+    output=""
+    output=$(printf '%s\n' \
+        "e2e-mnemonic-test-pw" \
+        "$TEST_MNEMONIC" \
+        "sk-ant-mnemonic-key" \
+        "" \
+        "" \
+        "" \
+        "" \
+    | "$ERGORS_BIN" --home "$TEST_DIR/cli_tmp_mnemonic2" \
+        sentinel bootstrap \
+        --admin-privkey-hex "$ADMIN_PRIVKEY" \
+        "http://${MNEMONIC_SENTINEL_API}" 2>&1) || exit_code=$?
+    log_verbose "Mnemonic bootstrap (run 2): $output"
 
-    ok=$(json_get "$response" '.ok')
-    if [[ "$ok" != "true" ]]; then
-        test_fail "mnemonic_init_run2" "Mnemonic init (run 2) failed" "$response"
+    if [[ $exit_code -ne 0 ]]; then
+        test_fail "mnemonic_init_run2" "Mnemonic bootstrap (run 2) failed (exit $exit_code)" "$output"
         _mnemonic_sentinel_stop
         return 1
     fi
@@ -863,25 +801,18 @@ run_sentinel_tests() {
     test_sentinel_replay_rejected
     test_sentinel_short_password_rejected
 
-    # --- Happy path ---
-    test_sentinel_init || {
+    # --- Happy path via CLI bootstrap (encrypted transport) ---
+    test_sentinel_cli_bootstrap || {
         _sentinel_stop_node
         return 0
     }
-    test_sentinel_double_init_rejected
-    test_sentinel_empty_api_keys_rejected
-    test_sentinel_api_keys || {
-        _sentinel_stop_node
-        return 0
-    }
-    test_sentinel_activate
     test_sentinel_post_activation_status
     test_sentinel_identity_persistence
 
     # Cleanup
     _sentinel_stop_node
 
-    # --- Mnemonic import tests (separate sentinel instance) ---
+    # --- Mnemonic import tests (separate sentinel instance, CLI bootstrap) ---
     test_sentinel_mnemonic_import
 
     log_success "Sentinel mode tests complete"

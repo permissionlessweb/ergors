@@ -74,6 +74,7 @@ cnidarium  = { version = "0.84.0" }
 commonware-broadcast  = "0.0.63"
 commonware-codec = { version = "0.0.63" }
 commonware-collector  = "0.0.63"
+commonware-consensus = { version = "0.0.63" }
 commonware-cryptography = { version = "0.0.63" }
 commonware-p2p = { version = "0.0.63" }
 commonware-runtime  = { version = "0.0.63" }
@@ -169,6 +170,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 walkdir = "2"
 ethers = { version = "2", default-features = false, features = ["legacy", "rustls"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
 ## zk-headstash = { path = "../TERPNETWORK/airdrop/zk-crates/zk-headstash" }
 
 # The profile that 'cargo dist' will build with

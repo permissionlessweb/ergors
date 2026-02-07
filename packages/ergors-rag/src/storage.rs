@@ -33,7 +33,7 @@ impl RagStorage {
     ///
     /// For ingesting multiple chunks, use `put_chunks_batch` instead (much faster).
     pub async fn put_chunk(&self, chunk: &VerifiableChunk) -> Result<()> {
-        self.put_chunks_batch(&[chunk.clone()]).await
+        self.put_chunks_batch(std::slice::from_ref(chunk)).await
     }
 
     /// Store multiple verifiable chunks in a single atomic commit.
@@ -56,8 +56,8 @@ impl RagStorage {
 
         for chunk in chunks {
             // Serialize and store chunk
-            let chunk_bytes = bincode::serialize(chunk)
-                .context("Failed to serialize VerifiableChunk")?;
+            let chunk_bytes =
+                bincode::serialize(chunk).context("Failed to serialize VerifiableChunk")?;
             let key = format!("{}/{}", CHUNK_PREFIX, chunk.chunk_id);
             delta.put_raw(key, chunk_bytes);
 
@@ -72,8 +72,9 @@ impl RagStorage {
         for (source_uri, chunk_ids) in chunks_by_source {
             let source_key = format!("{}/{}", SOURCE_INDEX_PREFIX, source_uri);
             let mut existing_ids: Vec<Uuid> = match delta.get_raw(&source_key).await? {
-                Some(bytes) => bincode::deserialize(&bytes)
-                    .context("Failed to deserialize source index")?,
+                Some(bytes) => {
+                    bincode::deserialize(&bytes).context("Failed to deserialize source index")?
+                }
                 None => Vec::new(),
             };
 
@@ -84,8 +85,8 @@ impl RagStorage {
                 }
             }
 
-            let index_bytes = bincode::serialize(&existing_ids)
-                .context("Failed to serialize source index")?;
+            let index_bytes =
+                bincode::serialize(&existing_ids).context("Failed to serialize source index")?;
             delta.put_raw(source_key, index_bytes);
         }
 
@@ -124,8 +125,8 @@ impl RagStorage {
             None => return Ok(()), // Already deleted
         };
 
-        let chunk: VerifiableChunk = bincode::deserialize(&chunk_bytes)
-            .context("Failed to deserialize chunk")?;
+        let chunk: VerifiableChunk =
+            bincode::deserialize(&chunk_bytes).context("Failed to deserialize chunk")?;
 
         // Remove from chunk store
         delta.delete(key);
@@ -133,8 +134,7 @@ impl RagStorage {
         // Remove from source index
         let source_key = format!("{}/{}", SOURCE_INDEX_PREFIX, chunk.source_uri);
         if let Some(bytes) = delta.get_raw(&source_key).await? {
-            let mut chunk_ids: Vec<Uuid> = bincode::deserialize(&bytes)
-                .unwrap_or_default();
+            let mut chunk_ids: Vec<Uuid> = bincode::deserialize(&bytes).unwrap_or_default();
             chunk_ids.retain(|&id| id != chunk_id);
 
             if chunk_ids.is_empty() {
@@ -157,8 +157,9 @@ impl RagStorage {
         let source_key = format!("{}/{}", SOURCE_INDEX_PREFIX, source_uri);
 
         let chunk_ids: Vec<Uuid> = match snapshot.get_raw(&source_key).await? {
-            Some(bytes) => bincode::deserialize(&bytes)
-                .context("Failed to deserialize source index")?,
+            Some(bytes) => {
+                bincode::deserialize(&bytes).context("Failed to deserialize source index")?
+            }
             None => return Ok(Vec::new()),
         };
 
@@ -206,10 +207,7 @@ mod tests {
         let storage_path = temp_dir.path().join("storage");
         std::fs::create_dir_all(&storage_path).unwrap();
 
-        let prefixes = vec![
-            CHUNK_PREFIX.to_string(),
-            SOURCE_INDEX_PREFIX.to_string(),
-        ];
+        let prefixes = vec![CHUNK_PREFIX.to_string(), SOURCE_INDEX_PREFIX.to_string()];
 
         let storage = Storage::load(storage_path, prefixes)
             .await
@@ -229,7 +227,10 @@ mod tests {
             content_hash: [0u8; 32],
             embedding_hash: [1u8; 32],
             version: 0,
-            ingested_at: pbjson_types::Timestamp { seconds: 0, nanos: 0 },
+            ingested_at: pbjson_types::Timestamp {
+                seconds: 0,
+                nanos: 0,
+            },
             source_uri: "test://doc".to_string(),
             uploader_id: None,
             access_policy: None,
@@ -266,7 +267,10 @@ mod tests {
                 content_hash: [i as u8; 32],
                 embedding_hash: [i as u8; 32],
                 version: 0,
-                ingested_at: pbjson_types::Timestamp { seconds: 0, nanos: 0 },
+                ingested_at: pbjson_types::Timestamp {
+                    seconds: 0,
+                    nanos: 0,
+                },
                 source_uri: source_uri.to_string(),
                 uploader_id: None,
                 access_policy: None,

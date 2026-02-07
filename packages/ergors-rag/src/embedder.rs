@@ -517,7 +517,9 @@ pub mod openai {
         }
 
         async fn call_api(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-            let url = "https://api.openai.com/v1/embeddings";
+            // TODO REMOVE AND PASS API FROM FUNCTION
+            const OPENAI_API_BASE: &str = "https://api.openai.com/v1";
+            let url = format!("{}/embeddings", OPENAI_API_BASE);
             let request = EmbedRequest {
                 input: texts.iter().map(|&s| s.to_string()).collect(),
                 model: self.model.clone(),

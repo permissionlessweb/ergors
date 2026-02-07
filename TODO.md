@@ -26,6 +26,9 @@
 **Issues**: [#4 Network Identity & Consensus](https://github.com/permissionlessweb/ergors/issues/4)
 
 - implement bft between nodes (state-sync application-state root hashes, bft-consensus of per-node state commitments)
+<!-- - designate supreme leader: allow consensus nodes to drop/not participate in conseunsus, as long as 1 node (supreme-leader) is still active we dont prohobit incrementing blocks.if supreme-leader drops, halt everything until they are back on. -->
+- register pper to participate to expect provision in commitment
+- nepoitc order: allow supreme leader to invite/expect other nodes to particiapte in simplex ordering, parameters for if liveness for node does not exist to continue without them
 - implement network topology data and access (alot of TODO's currently)
 - ensure api endpionts access/use are standardize thorughout logic (cosmos grpc,api/rpc)
 
@@ -75,6 +78,8 @@ We can update how we keep track of the following values to a dedicated layer in 
 
 **Issues**: [#5 Configuration System Hardening](https://github.com/permissionlessweb/ergors/issues/5)
 
+- merge config and runtime-config into one command config
+
 ## ORCHESTRATOR SERVICE
 
 **Issues**: [#11 Agentic Workflow Enhancements](https://github.com/permissionlessweb/ergors/issues/11) | [#8 Testing Infrastructure](https://github.com/permissionlessweb/ergors/issues/8)
@@ -85,6 +90,7 @@ We can update how we keep track of the following values to a dedicated layer in 
   - <https://github.com/shobrook/weightgain>: improve embeddings
 
 - define scripts with instructions to run for each step in agentic orchestration
+- <https://models.dev/>
 
 ### BOOTSTRAPPING
 

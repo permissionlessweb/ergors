@@ -5,6 +5,7 @@ pub mod client;
 pub mod commands;
 pub mod config;
 pub mod config_cmd;
+pub mod consensus;
 pub mod keys;
 #[cfg(feature = "cw")]
 pub mod contracts;
@@ -23,6 +24,7 @@ pub mod orchestrator;
 pub mod proxy;
 pub mod rag;
 pub mod sentinel;
+pub mod sentinel_cmd;
 pub mod server;
 pub mod session;
 pub mod storage;
