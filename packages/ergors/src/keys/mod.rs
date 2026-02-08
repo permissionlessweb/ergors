@@ -3,6 +3,10 @@
 //! Provides `ergors keys` subcommands for importing mnemonic seed phrases,
 //! listing keys, setting defaults, and deleting keys.
 //!
+//! Keys are chain-agnostic — they store raw secp256k1 keypairs with a label.
+//! Chain-specific addresses (bech32) are derived at usage time based on the
+//! target chain's prefix.
+//!
 //! When the engine daemon is running (holding the storage lock), commands
 //! are routed through gRPC. Otherwise, direct storage access is used.
 //!
@@ -15,10 +19,14 @@ use ho_std::constants::DATA_FOLDER_NAME;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 
 use crate::client::ManagementClient;
+use crate::commands::responses::{KeyEntry, KeyImportResponse, KeyListResponse};
 use crate::storage::ErgorsStorage;
 
 /// Default gRPC address for the engine
 const DEFAULT_GRPC_ADDR: &str = "http://localhost:50051";
+
+/// Default bech32 prefix for stored keys (chain-agnostic)
+const DEFAULT_ADDRESS_PREFIX: &str = "ergo";
 
 /// CLI command for cosmos key management
 #[derive(Debug, clap::Parser)]
@@ -37,60 +45,50 @@ pub enum KeysSubCmd {
     ///
     /// The mnemonic is entered interactively (hidden input) for security.
     /// It is never stored in shell history or visible in process listings.
+    /// Keys are stored chain-agnostic — use `ergors node address` to derive
+    /// chain-specific addresses at usage time.
     #[clap(display_order = 100)]
     ImportMnemonic {
-        /// Human-readable label for this key
+        /// Human-readable label for this key (used as identifier)
         #[arg(long)]
         label: String,
 
-        /// Key name (internal identifier)
-        #[arg(long, default_value = "default")]
-        key_name: String,
-
-        /// Chain ID (e.g. "akashnet-2")
-        #[arg(long, default_value = "akashnet-2")]
-        chain_id: String,
-
-        /// Bech32 address prefix (e.g. "akash", "cosmos")
-        #[arg(long, default_value = "akash")]
-        address_prefix: String,
-
         /// Mark this key as the default for deployments
         #[arg(long)]
-        make_default: bool,
+        default: bool,
     },
 
     /// List all stored keys (shows labels, addresses, default status)
     #[clap(display_order = 200)]
     List {},
 
-    /// Delete a key by name
+    /// Delete a key by label
     #[clap(display_order = 300)]
     Delete {
-        /// The key name to delete
+        /// The key label to delete
         #[arg(long)]
-        key_name: String,
+        label: String,
     },
 
     /// Set a key as the default for deployments
     #[clap(display_order = 400)]
     SetDefault {
-        /// The key name to make default
+        /// The key label to make default
         #[arg(long)]
-        key_name: String,
+        label: String,
     },
 }
 
 impl KeysCmd {
-    pub fn exec(&self, home_dir: &Utf8Path) -> Result<()> {
+    pub fn exec(&self, home_dir: &Utf8Path, json: bool) -> Result<()> {
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(self.exec_async(home_dir))
+        rt.block_on(self.exec_async(home_dir, json))
     }
 
-    async fn exec_async(&self, home_dir: &Utf8Path) -> Result<()> {
+    async fn exec_async(&self, home_dir: &Utf8Path, json: bool) -> Result<()> {
         // Try gRPC first (daemon might be running with storage lock)
-        if let Ok(mut client) = ManagementClient::connect(&self.grpc_addr).await {
-            return self.exec_via_grpc(&mut client).await;
+        if let Ok(mut client) = ManagementClient::connect(&self.grpc_addr, None).await {
+            return self.exec_via_grpc(&mut client, json).await;
         }
 
         // Fallback to direct storage access
@@ -111,48 +109,52 @@ impl KeysCmd {
                 }
             })?;
 
-        self.exec_via_storage(&storage).await
+        self.exec_via_storage(&storage, json).await
     }
 
     // ============ gRPC execution (daemon running) ============
 
-    async fn exec_via_grpc(&self, client: &mut ManagementClient) -> Result<()> {
+    async fn exec_via_grpc(&self, client: &mut ManagementClient, json: bool) -> Result<()> {
         match &self.subcmd {
             KeysSubCmd::ImportMnemonic {
                 label,
-                key_name,
-                chain_id,
-                address_prefix,
-                make_default,
+                default,
             } => {
                 // Prompt for mnemonic (hidden input - never stored in history)
                 let phrase = get_mnemonic()?;
 
                 // When daemon is running, it uses its custody password for key encryption.
                 // We pass empty string and the daemon handles it.
-                // This ensures consistency between key import and cert operations.
                 let password = String::new();
 
+                // Keys are chain-agnostic: use label as key_name, no chain_id, default prefix
                 let resp = client
                     .import_cosmos_key(
                         &phrase,
                         label,
-                        key_name,
-                        chain_id,
-                        address_prefix,
-                        *make_default,
+                        label, // use label as key_name
+                        "",    // chain-agnostic
+                        DEFAULT_ADDRESS_PREFIX,
+                        *default,
                         &password,
                     )
                     .await?;
 
                 if resp.success {
                     if let Some(key) = resp.key {
-                        println!("Key imported successfully:");
-                        println!("  Name:    {}", key.key_name);
-                        println!("  Label:   {}", key.label);
-                        println!("  Address: {}", key.address);
-                        println!("  Chain:   {}", key.chain_id);
-                        println!("  Default: {}", if key.is_default { "yes" } else { "no" });
+                        if json {
+                            let resp = KeyImportResponse {
+                                label: key.label.clone(),
+                                address: key.address.clone(),
+                                is_default: key.is_default,
+                            };
+                            println!("{}", serde_json::to_string_pretty(&resp)?);
+                        } else {
+                            println!("Key imported successfully:");
+                            println!("  Label:   {}", key.label);
+                            println!("  Address: {}", key.address);
+                            println!("  Default: {}", if key.is_default { "yes" } else { "no" });
+                        }
                     }
                 } else {
                     return Err(anyhow!("Import failed: {}", resp.error_message));
@@ -162,39 +164,55 @@ impl KeysCmd {
                 let keys = client.list_cosmos_keys().await?;
 
                 if keys.is_empty() {
-                    println!("No keys stored.");
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&KeyListResponse { keys: vec![] })?);
+                    } else {
+                        println!("No keys stored.");
+                    }
                     return Ok(());
                 }
 
-                println!(
-                    "{:<15} {:<20} {:<45} {:<12} DEFAULT",
-                    "NAME", "LABEL", "ADDRESS", "CHAIN"
-                );
-                println!("{}", "-".repeat(100));
-
-                for key in keys {
+                if json {
+                    let resp = KeyListResponse {
+                        keys: keys
+                            .iter()
+                            .map(|k| KeyEntry {
+                                label: k.label.clone(),
+                                address: k.address.clone(),
+                                is_default: k.is_default,
+                            })
+                            .collect(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
+                } else {
                     println!(
-                        "{:<15} {:<20} {:<45} {:<12} {}",
-                        key.key_name,
-                        if key.label.is_empty() { "-" } else { &key.label },
-                        key.address,
-                        if key.chain_id.is_empty() { "-" } else { &key.chain_id },
-                        if key.is_default { "*" } else { "" },
+                        "{:<20} {:<45} DEFAULT",
+                        "LABEL", "ADDRESS"
                     );
+                    println!("{}", "-".repeat(70));
+
+                    for key in keys {
+                        println!(
+                            "{:<20} {:<45} {}",
+                            if key.label.is_empty() { &key.key_name } else { &key.label },
+                            key.address,
+                            if key.is_default { "*" } else { "" },
+                        );
+                    }
                 }
             }
-            KeysSubCmd::Delete { key_name } => {
-                let resp = client.delete_cosmos_key(key_name).await?;
+            KeysSubCmd::Delete { label } => {
+                let resp = client.delete_cosmos_key(label).await?;
                 if resp.success {
-                    println!("Key '{}' deleted.", key_name);
+                    println!("Key '{}' deleted.", label);
                 } else {
                     return Err(anyhow!("{}", resp.message));
                 }
             }
-            KeysSubCmd::SetDefault { key_name } => {
-                let resp = client.set_default_cosmos_key(key_name).await?;
+            KeysSubCmd::SetDefault { label } => {
+                let resp = client.set_default_cosmos_key(label).await?;
                 if resp.success {
-                    println!("Key '{}' set as default.", key_name);
+                    println!("Key '{}' set as default.", label);
                 } else {
                     return Err(anyhow!("{}", resp.message));
                 }
@@ -205,14 +223,11 @@ impl KeysCmd {
 
     // ============ Direct storage execution (daemon not running) ============
 
-    async fn exec_via_storage(&self, storage: &ErgorsStorage) -> Result<()> {
+    async fn exec_via_storage(&self, storage: &ErgorsStorage, json: bool) -> Result<()> {
         match &self.subcmd {
             KeysSubCmd::ImportMnemonic {
                 label,
-                key_name,
-                chain_id,
-                address_prefix,
-                make_default,
+                default,
             } => {
                 // Prompt for mnemonic (hidden input - never stored in history)
                 let phrase = get_mnemonic()?;
@@ -221,16 +236,14 @@ impl KeysCmd {
                     storage,
                     &phrase,
                     label,
-                    key_name,
-                    chain_id,
-                    address_prefix,
-                    *make_default,
+                    *default,
+                    json,
                 )
                 .await
             }
-            KeysSubCmd::List {} => self.list_keys_direct(storage).await,
-            KeysSubCmd::Delete { key_name } => self.delete_key_direct(storage, key_name).await,
-            KeysSubCmd::SetDefault { key_name } => self.set_default_direct(storage, key_name).await,
+            KeysSubCmd::List {} => self.list_keys_direct(storage, json).await,
+            KeysSubCmd::Delete { label } => self.delete_key_direct(storage, label).await,
+            KeysSubCmd::SetDefault { label } => self.set_default_direct(storage, label).await,
         }
     }
 
@@ -239,10 +252,8 @@ impl KeysCmd {
         storage: &ErgorsStorage,
         phrase: &str,
         label: &str,
-        key_name: &str,
-        chain_id: &str,
-        address_prefix: &str,
         make_default: bool,
+        json: bool,
     ) -> Result<()> {
         let password = get_password(true)?;
 
@@ -263,20 +274,23 @@ impl KeysCmd {
         // Unlock with password
         manager.unlock(&password)?;
 
+        // Use label as key_name (chain-agnostic)
+        let key_name = label;
+
         // Check for duplicate key name
         if store.keys.iter().any(|k| k.key_name == key_name) {
             return Err(anyhow!(
-                "Key with name '{}' already exists. Use a different --key-name.",
+                "Key with label '{}' already exists. Use a different --label.",
                 key_name
             ));
         }
 
-        // Import and encrypt the mnemonic
+        // Import and encrypt the mnemonic (chain-agnostic, default prefix)
         let (encrypted, account_info) = manager.import_mnemonic_with_label(
             key_name,
             phrase,
-            chain_id,
-            address_prefix,
+            "",  // chain-agnostic
+            DEFAULT_ADDRESS_PREFIX,
             label,
             make_default,
         )?;
@@ -296,58 +310,99 @@ impl KeysCmd {
             .await
             .map_err(|e| anyhow!("Failed to save key store: {}", e))?;
 
-        println!("Key imported successfully:");
-        println!("  Name:    {}", key_name);
-        println!("  Label:   {}", label);
-        println!("  Address: {}", account_info.address);
-        println!("  Chain:   {}", chain_id);
-        println!("  Default: {}", if make_default { "yes" } else { "no" });
+        if json {
+            let resp = KeyImportResponse {
+                label: label.to_string(),
+                address: account_info.address.clone(),
+                is_default: make_default,
+            };
+            println!("{}", serde_json::to_string_pretty(&resp)?);
+        } else {
+            println!("Key imported successfully:");
+            println!("  Label:   {}", label);
+            println!("  Address: {}", account_info.address);
+            println!("  Default: {}", if make_default { "yes" } else { "no" });
+        }
 
         Ok(())
     }
 
-    async fn list_keys_direct(&self, storage: &ErgorsStorage) -> Result<()> {
+    async fn list_keys_direct(&self, storage: &ErgorsStorage, json: bool) -> Result<()> {
         let store = match storage.get_cosmos_key_store().await {
             Ok(Some(s)) => s,
             Ok(None) => {
-                println!("No keys stored.");
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&KeyListResponse { keys: vec![] })?);
+                } else {
+                    println!("No keys stored.");
+                }
                 return Ok(());
             }
             Err(e) => return Err(anyhow!("Failed to load key store: {}", e)),
         };
 
         if store.keys.is_empty() {
-            println!("No keys stored.");
+            if json {
+                println!("{}", serde_json::to_string_pretty(&KeyListResponse { keys: vec![] })?);
+            } else {
+                println!("No keys stored.");
+            }
             return Ok(());
         }
 
         let default_name = EncryptedCosmosKeyManager::get_default_key_name(&store);
 
-        println!(
-            "{:<15} {:<20} {:<45} {:<12} DEFAULT",
-            "NAME", "LABEL", "ADDRESS", "CHAIN"
-        );
-        println!("{}", "-".repeat(100));
+        if json {
+            let resp = KeyListResponse {
+                keys: store
+                    .keys
+                    .iter()
+                    .map(|key| {
+                        let address = store
+                            .derived_accounts
+                            .iter()
+                            .find(|a| a.key_name == key.key_name)
+                            .map(|a| a.address.clone())
+                            .unwrap_or_default();
 
-        for key in &store.keys {
-            let address = store
-                .derived_accounts
-                .iter()
-                .find(|a| a.key_name == key.key_name)
-                .map(|a| a.address.as_str())
-                .unwrap_or("(unknown)");
-
-            let is_default = default_name == Some(key.key_name.as_str());
-            let default_marker = if is_default { "*" } else { "" };
-
+                        KeyEntry {
+                            label: if key.label.is_empty() {
+                                key.key_name.clone()
+                            } else {
+                                key.label.clone()
+                            },
+                            address,
+                            is_default: default_name == Some(key.key_name.as_str()),
+                        }
+                    })
+                    .collect(),
+            };
+            println!("{}", serde_json::to_string_pretty(&resp)?);
+        } else {
             println!(
-                "{:<15} {:<20} {:<45} {:<12} {}",
-                key.key_name,
-                if key.label.is_empty() { "-" } else { &key.label },
-                address,
-                if key.chain_id.is_empty() { "-" } else { &key.chain_id },
-                default_marker,
+                "{:<20} {:<45} DEFAULT",
+                "LABEL", "ADDRESS"
             );
+            println!("{}", "-".repeat(70));
+
+            for key in &store.keys {
+                let address = store
+                    .derived_accounts
+                    .iter()
+                    .find(|a| a.key_name == key.key_name)
+                    .map(|a| a.address.as_str())
+                    .unwrap_or("(unknown)");
+
+                let is_default = default_name == Some(key.key_name.as_str());
+                let default_marker = if is_default { "*" } else { "" };
+
+                println!(
+                    "{:<20} {:<45} {}",
+                    if key.label.is_empty() { &key.key_name } else { &key.label },
+                    address,
+                    default_marker,
+                );
+            }
         }
 
         Ok(())
@@ -434,7 +489,7 @@ pub fn get_mnemonic() -> Result<String> {
 }
 
 /// Get password from environment or prompt.
-fn get_password(confirm: bool) -> Result<String> {
+pub fn get_password(confirm: bool) -> Result<String> {
     // Check environment variable first
     if let Ok(env_password) = std::env::var("ERGORS_CUSTODY_PASSWORD") {
         if env_password.is_empty() {

@@ -3,7 +3,8 @@
 **Issues**: [#7 Privacy Primitives](https://github.com/permissionlessweb/ergors/issues/7) | [#13 Embedding & RAG](https://github.com/permissionlessweb/ergors/issues/13) | [#3 Storage Architecture](https://github.com/permissionlessweb/ergors/issues/3) | [#14 Cosmos Query Macro](https://github.com/permissionlessweb/ergors/issues/14) | [#1 Akash Deployment](https://github.com/permissionlessweb/ergors/issues/1)
 
 - toad support: <https://github.com/batrachianai/toad>
-- claw-machine support:
+- claw-machine support: <https://github.com/noahsaso/claw-machine>
+  - configure mpc-like support mimicing: <https://github.com/7836246/claude-team-mcp>
 
 ## OPTIMIZATIONS
 

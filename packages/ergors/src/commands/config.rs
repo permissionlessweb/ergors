@@ -11,7 +11,8 @@ use ho_std::traits::HoConfigTrait;
 use ho_std::types::ergors::{
     management::v1::{
         management_service_client::ManagementServiceClient, DeleteChainConfigRequest,
-        GetChainConfigRequest, ListChainConfigsRequest, SetChainConfigRequest,
+        GetChainConfigRequest, ListChainConfigsRequest, ListCliKeysRequest,
+        RegisterCliKeyRequest, RevokeCliKeyRequest, SetChainConfigRequest,
     },
     network::v1::{ChannelConfig, NetworkConfig, NodeIdentity},
     orch::v1::{
@@ -140,14 +141,35 @@ pub enum ConfigSubCmd {
         /// Chain ID to delete
         chain_id: String,
     },
+
+    /// Register an Ed25519 public key for authenticated remote CLI access
+    #[clap(display_order = 900)]
+    RegisterCliKey {
+        /// Ed25519 public key (64 hex chars)
+        pubkey_hex: String,
+        /// Human-readable label for this key
+        #[clap(long, default_value = "cli")]
+        label: String,
+    },
+
+    /// Revoke an authorized CLI key
+    #[clap(display_order = 1000)]
+    RevokeCliKey {
+        /// Ed25519 public key to revoke (64 hex chars)
+        pubkey_hex: String,
+    },
+
+    /// List all authorized CLI keys
+    #[clap(display_order = 1100)]
+    ListCliKeys {},
 }
 
 impl ConfigCmd {
-    pub fn exec(&self, home_dir: &Utf8Path) -> Result<()> {
+    pub fn exec(&self, home_dir: &Utf8Path, json: bool) -> Result<()> {
         match &self.subcmd {
             ConfigSubCmd::Set { key, value } => self.set_config(home_dir, key, value),
             ConfigSubCmd::Get { key } => self.get_config(home_dir, key),
-            ConfigSubCmd::List {} => self.list_config(),
+            ConfigSubCmd::List {} => self.list_config(home_dir, json),
             ConfigSubCmd::Init {
                 node_type,
                 api_port,
@@ -194,10 +216,22 @@ impl ConfigCmd {
                 tokio::runtime::Runtime::new()?.block_on(self.get_chain(home_dir, chain_id))
             }
             ConfigSubCmd::ListChains {} => {
-                tokio::runtime::Runtime::new()?.block_on(self.list_chains(home_dir))
+                tokio::runtime::Runtime::new()?.block_on(self.list_chains(home_dir, json))
             }
             ConfigSubCmd::DeleteChain { chain_id } => {
-                tokio::runtime::Runtime::new()?.block_on(self.delete_chain(home_dir, chain_id))
+                tokio::runtime::Runtime::new()?.block_on(self.delete_chain(home_dir, chain_id, json))
+            }
+            ConfigSubCmd::RegisterCliKey { pubkey_hex, label } => {
+                tokio::runtime::Runtime::new()?
+                    .block_on(self.register_cli_key(home_dir, pubkey_hex, label, json))
+            }
+            ConfigSubCmd::RevokeCliKey { pubkey_hex } => {
+                tokio::runtime::Runtime::new()?
+                    .block_on(self.revoke_cli_key(home_dir, pubkey_hex, json))
+            }
+            ConfigSubCmd::ListCliKeys {} => {
+                tokio::runtime::Runtime::new()?
+                    .block_on(self.list_cli_keys(home_dir, json))
             }
         }
     }
@@ -746,64 +780,94 @@ impl ConfigCmd {
         }
     }
 
-    /// List all available configuration keys
-    fn list_config(&self) -> Result<()> {
-        println!("Available configuration keys:");
-        println!();
-        println!("home                           (string)  - Home directory path");
-        println!();
-        println!("[identity]");
-        println!("  identity.host                (string)  - Node hostname/IP");
-        println!("  identity.p2p_port            (u32)     - P2P listening port");
-        println!("  identity.api_port            (u32)     - API/gRPC port");
-        println!("  identity.user                (string)  - Username");
-        println!("  identity.os                  (i32)     - OS type (1=Linux, 2=MacOS, 3=Windows)");
-        println!("  identity.ssh_port            (u32)     - SSH port");
-        println!(
-            "  identity.node_type           (string)  - Coordinator, Executor, Referee, Development"
-        );
-        println!();
-        println!("[network]");
-        println!(
-            "  network.node_type            (i32)     - 1=Coordinator, 2=Executor, 3=Referee, 4=Development"
-        );
-        println!("  network.listen_port          (u32)     - P2P listening port");
-        println!("  network.listen_address       (string)  - Bind address (e.g., 0.0.0.0)");
-        println!("  network.connection_timeout_ms (u32)    - Connection timeout in ms");
-        println!("  network.enable_discovery     (bool)    - Enable peer discovery");
-        println!();
-        println!("[storage]");
-        println!("  storage.data_dir             (string)  - Data directory path");
-        println!("  storage.max_size_mb          (u32)     - Maximum storage size in MB");
-        println!("  storage.enable_compression   (bool)    - Enable data compression");
-        println!();
-        println!("[llm]");
-        println!("  llm.api_keys_file            (string)  - Path to API keys file");
-        println!("  llm.timeout_seconds          (u64)     - Request timeout");
-        println!("  llm.max_retries              (u32)     - Maximum retry attempts");
-        println!("  llm.default_strategy         (i32)     - Model selection strategy");
-        println!();
-        println!("[cosmwasm]");
-        println!("  cosmwasm.enabled             (bool)    - Enable CosmWasm VM");
-        println!("  cosmwasm.cache_dir           (string)  - WASM cache directory");
-        println!("  cosmwasm.memory_limit        (u64)     - Memory limit in bytes");
-        println!();
-        println!("[akash]");
-        println!("  akash.chain_id               (string)  - Chain ID (e.g., 'akashnet-2', 'local')");
-        println!("  akash.gas_prices             (string)  - Gas prices (e.g., '0.025uakt')");
-        println!("  akash.gas_adjustment         (f64)     - Gas adjustment multiplier");
-        println!("  akash.keyring_backend        (string)  - Keyring backend ('os', 'file', 'test')");
-        println!("  akash.default_key_name       (string)  - Default key name for deployments");
-        println!("  akash.rpc_endpoints          (csv)     - RPC endpoints (comma-separated)");
-        println!("  akash.grpc_endpoints         (csv)     - gRPC endpoints (comma-separated)");
-        println!("  akash.rest_endpoints         (csv)     - REST/LCD endpoints (comma-separated)");
-        println!();
-        println!("Usage:");
-        println!("  ergors config init --node-type executor --api-port 50051 --p2p-port 26656");
-        println!("  ergors config set network.listen_port 9090");
-        println!("  ergors config set akash.chain_id 'local'");
-        println!("  ergors config set akash.rpc_endpoints 'http://localhost:26657'");
-        println!("  ergors config get identity.node_type");
+    /// List configuration — loads and displays the actual config file
+    fn list_config(&self, home_dir: &Utf8Path, json: bool) -> Result<()> {
+        let config_path = home_dir.join(CONFIG_FILE_NAME);
+
+        if !config_path.as_std_path().exists() {
+            if json {
+                println!("{{}}");
+            } else {
+                println!("No configuration file found at {}", config_path);
+                println!("Run 'ergors config init' to create one.");
+            }
+            return Ok(());
+        }
+
+        let config = ErgorsConfig::load(&config_path)?;
+
+        if json {
+            // ErgorsConfig derives Serialize (via toml), convert via TOML intermediary
+            let toml_str = toml::to_string_pretty(&config)?;
+            let table: toml::Table = toml_str.parse()?;
+            println!("{}", serde_json::to_string_pretty(&table)?);
+        } else {
+            println!("ERGORS Configuration ({})", config_path);
+            println!("==========================================");
+            println!();
+
+            println!("home = \"{}\"", config.0.home);
+
+            if let Some(id) = &config.0.identity {
+                println!();
+                println!("[identity]");
+                println!("  host       = \"{}\"", id.host);
+                println!("  p2p_port   = {}", id.p2p_port);
+                println!("  api_port   = {}", id.api_port);
+                println!("  node_type  = \"{}\"", id.node_type);
+                println!("  user       = \"{}\"", id.user);
+            }
+
+            if let Some(net) = &config.0.network {
+                println!();
+                println!("[network]");
+                println!("  node_type         = {}", net.node_type);
+                println!("  listen_address    = \"{}\"", net.listen_address);
+                println!("  listen_port       = {}", net.listen_port);
+                println!("  enable_discovery  = {}", net.enable_discovery);
+                println!("  timeout_ms        = {}", net.connection_timeout_ms);
+            }
+
+            if let Some(st) = &config.0.storage {
+                println!();
+                println!("[storage]");
+                println!("  data_dir          = \"{}\"", st.data_dir);
+                println!("  max_size_mb       = {}", st.max_size_mb);
+                println!("  compression       = {}", st.enable_compression);
+            }
+
+            if let Some(llm) = &config.0.llm {
+                println!();
+                println!("[llm]");
+                println!("  timeout_seconds   = {}", llm.timeout_seconds);
+                println!("  max_retries       = {}", llm.max_retries);
+                println!("  default_strategy  = {}", llm.default_strategy);
+            }
+
+            if let Some(cw) = &config.0.cosmwasm {
+                println!();
+                println!("[cosmwasm]");
+                println!("  enabled           = {}", cw.enabled);
+                println!("  cache_dir         = \"{}\"", cw.cache_dir);
+                println!("  memory_limit      = {}", cw.memory_limit);
+            }
+
+            if let Some(ak) = &config.0.akash {
+                println!();
+                println!("[akash]");
+                println!("  chain_id          = \"{}\"", ak.chain_id);
+                println!("  gas_prices        = \"{}\"", ak.gas_prices);
+                println!("  gas_adjustment    = {}", ak.gas_adjustment);
+                println!("  keyring_backend   = \"{}\"", ak.keyring_backend);
+                println!("  default_key_name  = \"{}\"", ak.default_key_name);
+                if !ak.rpc_endpoints.is_empty() {
+                    println!("  rpc_endpoints     = {}", ak.rpc_endpoints.join(", "));
+                }
+                if !ak.grpc_endpoints.is_empty() {
+                    println!("  grpc_endpoints    = {}", ak.grpc_endpoints.join(", "));
+                }
+            }
+        }
 
         Ok(())
     }
@@ -822,12 +886,17 @@ impl ConfigCmd {
             .map(|i| i.host.as_str())
             .unwrap_or("127.0.0.1");
 
-        let port = config
-            .0
-            .identity
-            .as_ref()
-            .map(|i| i.api_port)
-            .unwrap_or(50051);
+        // Check for gRPC port environment variable first
+        let port = std::env::var("ERGORS_GRPC_PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+            .or_else(|| {
+                // Fall back to api_port + 1 (gRPC port convention)
+                config.0.identity.as_ref().and_then(|i| {
+                    u16::try_from(i.api_port + 1).ok()
+                })
+            })
+            .unwrap_or(50051); // Default gRPC port
 
         Ok(format!("http://{}:{}", host, port))
     }
@@ -944,7 +1013,7 @@ impl ConfigCmd {
     }
 
     /// List all configured Cosmos chains
-    async fn list_chains(&self, home_dir: &Utf8Path) -> Result<()> {
+    async fn list_chains(&self, home_dir: &Utf8Path, json: bool) -> Result<()> {
         let endpoint = self.get_grpc_endpoint(home_dir)?;
         let mut client = ManagementServiceClient::connect(endpoint).await?;
 
@@ -953,7 +1022,23 @@ impl ConfigCmd {
         let response = client.list_chain_configs(request).await?;
         let result = response.into_inner();
 
-        if result.chains.is_empty() {
+        if json {
+            use super::responses::{ChainListResponse, ChainSummary};
+            let resp = ChainListResponse {
+                chains: result
+                    .chains
+                    .iter()
+                    .map(|c| ChainSummary {
+                        chain_id: c.chain_id.clone(),
+                        chain_name: c.chain_name.clone(),
+                        bech32_prefix: c.bech32_prefix.clone(),
+                        denom: c.denom.clone(),
+                        rpc_endpoint: c.rpc_endpoints.first().cloned().unwrap_or_default(),
+                    })
+                    .collect(),
+            };
+            println!("{}", serde_json::to_string_pretty(&resp)?);
+        } else if result.chains.is_empty() {
             println!("No chains configured.");
             println!();
             println!("Use 'ergors config set-chain' to configure a chain:");
@@ -976,8 +1061,11 @@ impl ConfigCmd {
         Ok(())
     }
 
-    /// Delete a Cosmos chain configuration
-    async fn delete_chain(&self, home_dir: &Utf8Path, chain_id: &str) -> Result<()> {
+    /// Delete a Cosmos chain configuration (password-protected)
+    async fn delete_chain(&self, home_dir: &Utf8Path, chain_id: &str, json: bool) -> Result<()> {
+        // Require password confirmation before deletion
+        let _password = crate::keys::get_password(false)?;
+
         let endpoint = self.get_grpc_endpoint(home_dir)?;
         let mut client = ManagementServiceClient::connect(endpoint).await?;
 
@@ -989,9 +1077,125 @@ impl ConfigCmd {
         let result = response.into_inner();
 
         if result.success {
-            println!("{}", result.message);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "deleted": chain_id,
+                        "message": result.message,
+                    }))?
+                );
+            } else {
+                println!("{}", result.message);
+            }
         } else {
             return Err(anyhow!("Failed to delete chain config: {}", result.message));
+        }
+
+        Ok(())
+    }
+
+    // ============ CLI Key Management ============
+
+    async fn register_cli_key(
+        &self,
+        home_dir: &Utf8Path,
+        pubkey_hex: &str,
+        label: &str,
+        json: bool,
+    ) -> Result<()> {
+        let endpoint = self.get_grpc_endpoint(home_dir)?;
+        let mut client = ManagementServiceClient::connect(endpoint).await?;
+
+        let request = tonic::Request::new(RegisterCliKeyRequest {
+            public_key_hex: pubkey_hex.to_string(),
+            label: label.to_string(),
+        });
+
+        let response = client.register_cli_key(request).await?;
+        let result = response.into_inner();
+
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&super::responses::OperationResponse {
+                    success: result.success,
+                    message: result.message,
+                })?
+            );
+        } else if result.success {
+            println!("{}", result.message);
+        } else {
+            return Err(anyhow!("Failed to register CLI key: {}", result.message));
+        }
+
+        Ok(())
+    }
+
+    async fn revoke_cli_key(
+        &self,
+        home_dir: &Utf8Path,
+        pubkey_hex: &str,
+        json: bool,
+    ) -> Result<()> {
+        let endpoint = self.get_grpc_endpoint(home_dir)?;
+        let mut client = ManagementServiceClient::connect(endpoint).await?;
+
+        let request = tonic::Request::new(RevokeCliKeyRequest {
+            public_key_hex: pubkey_hex.to_string(),
+        });
+
+        let response = client.revoke_cli_key(request).await?;
+        let result = response.into_inner();
+
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&super::responses::OperationResponse {
+                    success: result.success,
+                    message: result.message,
+                })?
+            );
+        } else if result.success {
+            println!("{}", result.message);
+        } else {
+            return Err(anyhow!("Failed to revoke CLI key: {}", result.message));
+        }
+
+        Ok(())
+    }
+
+    async fn list_cli_keys(&self, home_dir: &Utf8Path, json: bool) -> Result<()> {
+        let endpoint = self.get_grpc_endpoint(home_dir)?;
+        let mut client = ManagementServiceClient::connect(endpoint).await?;
+
+        let request = tonic::Request::new(ListCliKeysRequest {});
+
+        let response = client.list_cli_keys(request).await?;
+        let result = response.into_inner();
+
+        if json {
+            let keys: Vec<super::responses::CliKeyEntryJson> = result
+                .keys
+                .iter()
+                .map(|k| super::responses::CliKeyEntryJson {
+                    public_key_hex: k.public_key_hex.clone(),
+                    label: k.label.clone(),
+                })
+                .collect();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&super::responses::CliKeyListJsonResponse { keys })?
+            );
+        } else if result.keys.is_empty() {
+            println!("No authorized CLI keys registered.");
+        } else {
+            println!("Authorized CLI Keys:");
+            println!("{:<66} {}", "PUBLIC KEY", "LABEL");
+            println!("{}", "-".repeat(80));
+            for key in &result.keys {
+                println!("{:<66} {}", key.public_key_hex, key.label);
+            }
         }
 
         Ok(())

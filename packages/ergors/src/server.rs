@@ -246,9 +246,10 @@ impl Server {
         let custody_password = Self::start_network_with_custody(&mut nm, &c).await?;
 
         // Load encrypted API keys and build custody-backed accessor
-        let key_accessor: Option<Arc<dyn ApiKeyMethod>> =
+        let key_accessor: Option<Arc<tokio::sync::RwLock<dyn ApiKeyMethod>>> =
             if let Some(password) = &custody_password {
                 Self::load_and_store_encrypted_api_keys(&c, &s, password).await?
+                    .map(|mgr| Arc::new(tokio::sync::RwLock::new(mgr)) as Arc<tokio::sync::RwLock<dyn ApiKeyMethod>>)
             } else {
                 None
             };
@@ -706,7 +707,7 @@ impl Server {
         c: &ErgorsConfig,
         s: &ErgorsStorage,
         password: &str,
-    ) -> HoResult<Option<Arc<dyn ApiKeyMethod>>> {
+    ) -> HoResult<Option<EncryptedApiKeyManager>> {
         use cnidarium::StateWrite as _;
         use ho_std::llm::state_ext::{state_key, StateReadExt};
         use ho_std::Message as _;
@@ -731,7 +732,7 @@ impl Server {
 
             let count = manager.available_providers_sync();
             info!("🔑 Loaded {} API keys from custody", count);
-            return Ok(Some(Arc::new(manager)));
+            return Ok(Some(manager));
         }
 
         // No keys in Cnidarium - check for file
@@ -779,7 +780,7 @@ impl Server {
 
         let count = manager.available_providers_sync();
         info!("🔑 Loaded {} API keys from custody", count);
-        Ok(Some(Arc::new(manager)))
+        Ok(Some(manager))
     }
 
     /// Load LLM entities from config and store in Cnidarium storage

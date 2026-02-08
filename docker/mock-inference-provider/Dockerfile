@@ -12,11 +12,13 @@ RUN apt-get update && apt-get install -y \
 # Copy Cargo files first for dependency caching
 COPY Cargo.toml ./
 
-# Create a dummy main.rs to build dependencies
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+# Create dummy sources to build dependencies
+RUN mkdir -p src/handlers && \
+    echo "fn main() {}" > src/main.rs && \
+    touch src/types.rs src/state.rs src/handlers/mod.rs
 
 # Build dependencies only (this layer will be cached)
-RUN cargo build --release && rm -rf src target/release/mock-inference-provider*
+RUN cargo build --release && rm -rf src target/release/mock-inference-provider* target/release/deps/mock_inference*
 
 # Copy actual source code
 COPY src ./src

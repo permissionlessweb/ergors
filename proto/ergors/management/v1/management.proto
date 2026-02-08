@@ -232,6 +232,17 @@ service ManagementService {
   // Render SDL template with variables
   rpc RenderSdlTemplate(RenderSdlTemplateRequest) returns (RenderSdlTemplateResponse);
 
+  // ============================================
+  // CLI Key Management (gRPC Authentication)
+  // ============================================
+
+  // Register an Ed25519 public key for authenticated remote CLI access
+  rpc RegisterCliKey(RegisterCliKeyRequest) returns (OperationResult);
+  // Revoke an authorized CLI key
+  rpc RevokeCliKey(RevokeCliKeyRequest) returns (OperationResult);
+  // List all authorized CLI keys
+  rpc ListCliKeys(ListCliKeysRequest) returns (ListCliKeysResponse);
+
   // Cosmos Chain Configuration (Cnidarium-backed)
   // Set or update chain configuration
   rpc SetChainConfig(SetChainConfigRequest) returns (SetChainConfigResponse);
@@ -441,8 +452,9 @@ message ProviderInfo {
 
 message ProviderConfig {
   string name = 1;
-  string api_key = 2;
+  string api_key_ref = 2;
   bool set_as_default = 3;
+  string base_url = 4; 
 }
 
 message ProviderName {
@@ -1525,4 +1537,29 @@ message DeleteChainConfigRequest {
 message DeleteChainConfigResponse {
   bool success = 1;
   string message = 2;
+}
+
+// ============================================
+// CLI Key Management Messages
+// ============================================
+
+message RegisterCliKeyRequest {
+  string public_key_hex = 1;  // Ed25519 pubkey (64 hex chars)
+  string label = 2;           // Human-readable label
+}
+
+message RevokeCliKeyRequest {
+  string public_key_hex = 1;
+}
+
+message ListCliKeysRequest {}
+
+message ListCliKeysResponse {
+  repeated CliKeyEntry keys = 1;
+}
+
+message CliKeyEntry {
+  string public_key_hex = 1;
+  string label = 2;
+  google.protobuf.Timestamp added_at = 3;
 }

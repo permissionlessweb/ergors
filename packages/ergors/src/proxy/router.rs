@@ -503,7 +503,7 @@ pub struct RouteTarget {
 pub struct ProxyRouter {
     config: ProxyRouterConfig,
     client: Client,
-    key_accessor: Option<Arc<dyn ApiKeyMethod>>,
+    key_accessor: Option<Arc<tokio::sync::RwLock<dyn ApiKeyMethod>>>,
 }
 
 impl std::fmt::Debug for ProxyRouter {
@@ -517,7 +517,7 @@ impl std::fmt::Debug for ProxyRouter {
 
 impl ProxyRouter {
     /// Create a new proxy router with the given configuration and optional key accessor
-    pub fn new(config: ProxyRouterConfig, key_accessor: Option<Arc<dyn ApiKeyMethod>>) -> Self {
+    pub fn new(config: ProxyRouterConfig, key_accessor: Option<Arc<tokio::sync::RwLock<dyn ApiKeyMethod>>>) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(300))
             .build()
@@ -533,6 +533,11 @@ impl ProxyRouter {
     /// Create a proxy router with default configuration
     pub fn default_router() -> Self {
         Self::new(ProxyRouterConfig::default(), None)
+    }
+
+    /// Get a reference to the key accessor (for live updates from gRPC handlers)
+    pub fn key_accessor(&self) -> Option<&Arc<tokio::sync::RwLock<dyn ApiKeyMethod>>> {
+        self.key_accessor.as_ref()
     }
 
     // ============= Generic Provider Access =============
@@ -561,7 +566,7 @@ impl ProxyRouter {
         let api_key = if let Some(custody_id) = provider.api_key_ref.strip_prefix("custody://") {
             // Custody-backed key resolution
             if let Some(accessor) = &self.key_accessor {
-                accessor.get_key(custody_id).await.ok().flatten()
+                accessor.read().await.get_key(custody_id).await.ok().flatten()
             } else {
                 warn!(
                     "Provider '{}' references custody://{} but no key accessor configured",
@@ -576,6 +581,7 @@ impl ProxyRouter {
             // Bare provider_id — try accessor lookup by provider_id
             if let Some(accessor) = &self.key_accessor {
                 accessor
+                    .read().await
                     .get_key(&provider.provider_id)
                     .await
                     .ok()
@@ -586,6 +592,7 @@ impl ProxyRouter {
         } else if let Some(accessor) = &self.key_accessor {
             // No api_key_ref at all — still try accessor by provider_id
             accessor
+                .read().await
                 .get_key(&provider.provider_id)
                 .await
                 .ok()

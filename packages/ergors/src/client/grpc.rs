@@ -88,6 +88,11 @@ use ho_std::types::ergors::management::v1::{
     ListByRootResponse,
     ListChainConfigsRequest,
     ListChainConfigsResponse,
+    // CLI key management types
+    ListCliKeysRequest,
+    ListCliKeysResponse,
+    RegisterCliKeyRequest,
+    RevokeCliKeyRequest,
     // Cosmos key management types
     ListCosmosKeysResponse,
     // Gateway management types
@@ -226,11 +231,16 @@ pub struct ManagementServiceImpl {
     started_at: Instant,
     shutdown_tx: broadcast::Sender<()>,
     session_manager: Arc<SessionManager>,
+    authorized_keys: crate::auth::grpc::AuthorizedCliKeys,
 }
 
 impl ManagementServiceImpl {
     /// Create a new management service implementation
-    pub fn new(state: ErgorsAppState, shutdown_tx: broadcast::Sender<()>) -> Self {
+    pub fn new(
+        state: ErgorsAppState,
+        shutdown_tx: broadcast::Sender<()>,
+        authorized_keys: crate::auth::grpc::AuthorizedCliKeys,
+    ) -> Self {
         // Extract node identity for SessionManager
         let identity = state.c.identity();
         let node_type = match identity.node_type.as_str() {
@@ -260,6 +270,7 @@ impl ManagementServiceImpl {
             started_at: Instant::now(),
             shutdown_tx,
             session_manager,
+            authorized_keys,
         }
     }
 
@@ -268,6 +279,7 @@ impl ManagementServiceImpl {
         state: ErgorsAppState,
         shutdown_tx: broadcast::Sender<()>,
         session_config: SessionManagerConfig,
+        authorized_keys: crate::auth::grpc::AuthorizedCliKeys,
     ) -> Self {
         let identity = state.c.identity();
         let node_type = match identity.node_type.as_str() {
@@ -296,6 +308,7 @@ impl ManagementServiceImpl {
             started_at: Instant::now(),
             shutdown_tx,
             session_manager,
+            authorized_keys,
         }
     }
 
@@ -999,20 +1012,33 @@ impl ManagementService for ManagementServiceImpl {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<ProviderList>, Status> {
-        // Return configured providers from LLM config
-        let llm_config = self.state.c.llm();
+        // Read from ProxyRouter config (source of truth for dynamically configured providers)
+        let pr = self.state.pr.read().await;
+        let config = pr.config();
 
-        let providers: Vec<ProviderInfo> = llm_config
-            .entities
+        let mut providers: Vec<ProviderInfo> = config
+            .providers
             .iter()
-            .map(|entity| ProviderInfo {
-                name: entity.name.clone(),
-                configured: true,
-                enabled: entity.enabled,
+            .map(|(name, provider)| ProviderInfo {
+                name: name.clone(),
+                configured: !provider.base_url.is_empty(),
+                enabled: provider.enabled,
             })
             .collect();
 
-        // Get default provider name from index
+        // Also include providers from LLM config that aren't in the proxy router
+        let llm_config = self.state.c.llm();
+        for entity in &llm_config.entities {
+            if !providers.iter().any(|p| p.name == entity.name) {
+                providers.push(ProviderInfo {
+                    name: entity.name.clone(),
+                    configured: true,
+                    enabled: entity.enabled,
+                });
+            }
+        }
+
+        // Get default provider
         let default_provider = llm_config
             .entities
             .get(llm_config.default_entity as usize)
@@ -1029,16 +1055,193 @@ impl ManagementService for ManagementServiceImpl {
         &self,
         request: Request<ProviderConfig>,
     ) -> Result<Response<OperationResult>, Status> {
-        let req = request.into_inner();
+        let mut req = request.into_inner();
+
+        // Normalize provider name to lowercase for consistency
+        req.name = req.name.to_lowercase();
+
         tracing::info!(
             "Configure provider requested: {} (default: {})",
             req.name,
             req.set_as_default
         );
 
+        if req.name.is_empty() || req.api_key_ref.is_empty() {
+            return Err(Status::invalid_argument(
+                "Provider name and API key are required",
+            ));
+        }
+
+        // Get custody password from akash context
+        let custody_password = match &self.state.akash {
+            Some(ctx) if !ctx.custody_password.is_empty() => ctx.custody_password.clone(),
+            _ => {
+                return Err(Status::failed_precondition(
+                    "Custody not initialized — run sentinel bootstrap first",
+                ));
+            }
+        };
+
+        // Load existing store from Cnidarium (or create fresh)
+        use cnidarium::StateRead as _;
+        use ho_std::llm::state_ext::{StateReadExt as _, StateWriteExt as _};
+        use ho_std::llm::EncryptedApiKeyManager;
+
+        let snapshot = self.state.s.cs.latest_snapshot();
+        let existing_store = snapshot
+            .get_encrypted_api_key_store()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to load key store: {}", e)))?;
+
+        let (mut manager, mut store) = if let Some(store) = existing_store {
+            let mgr = EncryptedApiKeyManager::from_store(&store);
+            (mgr, store)
+        } else {
+            let mgr = EncryptedApiKeyManager::new();
+            let now = {
+                use std::time::SystemTime;
+                let d = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap();
+                pbjson_types::Timestamp {
+                    seconds: d.as_secs() as i64,
+                    nanos: d.subsec_nanos() as i32,
+                }
+            };
+            let store = ho_std::types::ergors::storage::v1::EncryptedApiKeyStore {
+                version: 1,
+                keys: vec![],
+                created_at: Some(now),
+                updated_at: None,
+                kdf_salt: mgr.salt().to_vec(),
+                kdf_params: String::new(),
+            };
+            (mgr, store)
+        };
+
+        // Unlock and add key
+        manager
+            .unlock(&custody_password)
+            .map_err(|e| Status::internal(format!("Failed to unlock key manager: {}", e)))?;
+
+        manager
+            .add_key_to_store(&mut store, &req.name, &req.api_key_ref)
+            .map_err(|e| Status::internal(format!("Failed to encrypt key: {}", e)))?;
+
+        // Persist to Cnidarium
+        let mut delta = cnidarium::StateDelta::new(self.state.s.cs.latest_snapshot());
+        delta.put_encrypted_api_key_store(&store);
+        self.state
+            .s
+            .cs
+            .commit(delta)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to commit key store: {}", e)))?;
+
+        // Update live key accessor (so proxy resolves immediately without restart)
+        {
+            let pr = self.state.pr.read().await;
+            if let Some(accessor) = pr.key_accessor() {
+                let mut guard = accessor.write().await;
+                if let Err(e) = guard.set_key(&req.name, req.api_key_ref.clone()).await {
+                    tracing::warn!("Failed to update live key accessor: {}", e);
+                }
+            }
+        }
+
+        // If base_url is provided, update or create the LLM entity
+        if !req.base_url.is_empty() {
+            use ho_std::llm::state_ext::{StateReadExt, StateWriteExt};
+            use ho_std::types::ergors::orch::v1::{InferenceProviderConfig, InferenceProviderType, LlmEntity};
+
+            let snapshot = self.state.s.cs.latest_snapshot();
+            let mut entities = snapshot.get_llm_providers().await
+                .map_err(|e| Status::internal(format!("Failed to load LLM entities: {}", e)))?;
+
+            // Determine provider type
+            let provider_type = match req.name.to_lowercase().as_str() {
+                "openai" => InferenceProviderType::Openai,
+                "anthropic" => InferenceProviderType::Anthropic,
+                "ollama" => InferenceProviderType::Ollama,
+                "grok" => InferenceProviderType::Openai,
+                "akashml" | "akash" => InferenceProviderType::Openai,
+                _ => InferenceProviderType::Openai,
+            };
+
+            // Default model patterns based on provider type (using glob patterns for flexibility)
+            let default_models = match provider_type {
+                InferenceProviderType::Openai => vec!["gpt-*".to_string(), "chatgpt-*".to_string(), "o1-*".to_string()],
+                InferenceProviderType::Anthropic => vec!["claude-*".to_string()],
+                InferenceProviderType::Ollama => vec!["llama*".to_string(), "mistral*".to_string(), "*".to_string()],
+                _ => vec![],
+            };
+
+            // Find existing entity or create new one
+            let entity_idx = entities.iter().position(|e| e.name == req.name);
+
+            if let Some(idx) = entity_idx {
+                // Update existing entity
+                entities[idx].base_url = req.base_url.clone();
+                tracing::info!("Updated LLM entity '{}' with base_url: {}", req.name, req.base_url);
+            } else {
+                // Create new entity
+                let entity = LlmEntity {
+                    name: req.name.clone(),
+                    base_url: req.base_url.clone(),
+                    models: default_models.clone(),
+                    default_model: default_models.first().cloned().unwrap_or_default(),
+                    priority: entities.len() as u32 + 1,
+                    enabled: true,
+                    default_strategy: 0,
+                    timeout_seconds: 30,
+                    max_retries: 3,
+                };
+                entities.push(entity);
+                tracing::info!("Created LLM entity '{}' with base_url: {}", req.name, req.base_url);
+            }
+
+            // Store updated entities in Cnidarium
+            let mut delta = cnidarium::StateDelta::new(self.state.s.cs.latest_snapshot());
+            delta.put_llm_providers(&entities);
+            self.state.s.cs.commit(delta).await
+                .map_err(|e| Status::internal(format!("Failed to commit LLM entities: {}", e)))?;
+
+            // Update proxy router config directly
+            let mut pr = self.state.pr.write().await;
+            let mut config = pr.config().clone();
+
+            // Clear existing providers and routes for this provider (to avoid duplicates)
+            config.providers.remove(&req.name);
+            config.model_routes.retain(|_, provider| provider != &req.name);
+
+            // Add updated provider config
+            let provider_config = InferenceProviderConfig {
+                provider_id: req.name.clone(),
+                base_url: req.base_url.clone(),
+                api_key_ref: format!("custody://{}", req.name),
+                enabled: true,
+                provider_type: provider_type as i32,
+                ..Default::default()
+            };
+
+            config.providers.insert(req.name.clone(), provider_config);
+
+            // Add model routes
+            for model in &default_models {
+                config.model_routes.insert(model.clone(), req.name.clone());
+            }
+
+            // Update the router with the new config
+            pr.update_config(config);
+
+            tracing::info!("✅ Updated proxy router with provider '{}' → {}", req.name, req.base_url);
+        }
+
+        tracing::info!("Provider '{}' configured (custody://{})", req.name, req.name);
+
         Ok(Response::new(OperationResult {
-            success: false,
-            message: "Provider configuration via gRPC not yet implemented".to_string(),
+            success: true,
+            message: format!("custody://{}", req.name),
         }))
     }
 
@@ -4128,20 +4331,131 @@ impl ManagementService for ManagementServiceImpl {
     // ) -> Result<Response<ResolveConflictResponse>, Status> {
     //     Err(Status::unimplemented("Conflict resolution moved to deploy/orchestrator"))
     // }
+
+    // ============ CLI Key Management ============
+
+    async fn register_cli_key(
+        &self,
+        request: Request<RegisterCliKeyRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        if req.public_key_hex.is_empty() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "Public key hex is required".to_string(),
+            }));
+        }
+
+        // Validate hex is valid (should be 64 hex chars = 32 bytes for Ed25519)
+        if hex::decode(&req.public_key_hex).is_err() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "Invalid hex encoding for public key".to_string(),
+            }));
+        }
+
+        match self
+            .state
+            .s
+            .add_authorized_cli_key(&req.public_key_hex, &req.label)
+            .await
+        {
+            Ok(()) => {
+                // Update runtime set
+                self.authorized_keys.add(&req.public_key_hex);
+                tracing::info!("Registered CLI key: {} ({})", req.public_key_hex, req.label);
+                Ok(Response::new(OperationResult {
+                    success: true,
+                    message: format!("CLI key {} registered", req.public_key_hex),
+                }))
+            }
+            Err(e) => {
+                tracing::error!("Failed to register CLI key: {}", e);
+                Ok(Response::new(OperationResult {
+                    success: false,
+                    message: format!("Failed to register CLI key: {}", e),
+                }))
+            }
+        }
+    }
+
+    async fn revoke_cli_key(
+        &self,
+        request: Request<RevokeCliKeyRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+
+        if req.public_key_hex.is_empty() {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: "Public key hex is required".to_string(),
+            }));
+        }
+
+        match self
+            .state
+            .s
+            .remove_authorized_cli_key(&req.public_key_hex)
+            .await
+        {
+            Ok(removed) => {
+                if removed {
+                    self.authorized_keys.remove(&req.public_key_hex);
+                    tracing::info!("Revoked CLI key: {}", req.public_key_hex);
+                    Ok(Response::new(OperationResult {
+                        success: true,
+                        message: format!("CLI key {} revoked", req.public_key_hex),
+                    }))
+                } else {
+                    Ok(Response::new(OperationResult {
+                        success: false,
+                        message: format!("CLI key {} not found", req.public_key_hex),
+                    }))
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to revoke CLI key: {}", e);
+                Ok(Response::new(OperationResult {
+                    success: false,
+                    message: format!("Failed to revoke CLI key: {}", e),
+                }))
+            }
+        }
+    }
+
+    async fn list_cli_keys(
+        &self,
+        _request: Request<ListCliKeysRequest>,
+    ) -> Result<Response<ListCliKeysResponse>, Status> {
+        match self.state.s.get_authorized_cli_keys().await {
+            Ok(list) => Ok(Response::new(list)),
+            Err(e) => {
+                tracing::error!("Failed to list CLI keys: {}", e);
+                Err(Status::internal(format!(
+                    "Failed to list CLI keys: {}",
+                    e
+                )))
+            }
+        }
+    }
 }
 
-/// Start the gRPC management server
+/// Start the gRPC management server with Ed25519 auth interceptor
 pub async fn start_grpc_server(
     addr: std::net::SocketAddr,
     service: ManagementServiceImpl,
     rlm_service: Option<crate::client::RlmDocService>,
+    authorized_keys: crate::auth::grpc::AuthorizedCliKeys,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use ho_std::types::ergors::management::v1::management_service_server::ManagementServiceServer;
 
     tracing::info!("Starting gRPC management server on {}", addr);
 
-    let mut server =
-        tonic::transport::Server::builder().add_service(ManagementServiceServer::new(service));
+    let interceptor = crate::auth::grpc::create_grpc_auth_interceptor(authorized_keys);
+
+    let mut server = tonic::transport::Server::builder()
+        .add_service(ManagementServiceServer::with_interceptor(service, interceptor));
 
     // Add RLM document service if provided
     if let Some(rlm_svc) = rlm_service {

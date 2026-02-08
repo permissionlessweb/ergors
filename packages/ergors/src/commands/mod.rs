@@ -11,6 +11,7 @@ pub mod deploy;
 pub mod gateway;
 pub mod init;
 pub mod rag;
+pub mod responses;
 pub mod sentinel;
 pub mod workspace;
 use anyhow::Result;
@@ -26,6 +27,7 @@ pub struct CliContext {
     pub home: camino::Utf8PathBuf,
     pub grpc_addr: String,
     pub json: bool,
+    pub signing_key: Option<ho_std::keys::commonware::NodePrivKey>,
 }
 
 pub use bootstrap::BootstrapCmd;
@@ -72,7 +74,7 @@ impl EngineCmd {
                 grpc_port,
             } => {
                 // Check if engine is already running
-                if let Ok(mut c) = ManagementClient::connect(&ctx.grpc_addr).await {
+                if let Ok(mut c) = ManagementClient::connect(&ctx.grpc_addr, ctx.signing_key.clone()).await {
                     if c.get_status().await.is_ok() {
                         println!("Engine is already running at {}", ctx.grpc_addr);
                         return Ok(());
@@ -117,7 +119,7 @@ impl EngineCmd {
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
                     // Verify it's running
-                    match ManagementClient::connect(&ctx.grpc_addr).await {
+                    match ManagementClient::connect(&ctx.grpc_addr, ctx.signing_key.clone()).await {
                         Ok(mut c) => {
                             if c.get_status().await.is_ok() {
                                 println!("Engine is running. Use 'ergors status' for details.");
@@ -149,18 +151,16 @@ impl EngineCmd {
                         let status = c.get_status().await?;
 
                         if ctx.json {
-                            println!(
-                                "{}",
-                                serde_json::to_string_pretty(&serde_json::json!({
-                                    "version": status.version,
-                                    "state": format_engine_state(status.state),
-                                    "uptime_seconds": status.uptime_seconds,
-                                    "storage_status": status.storage_status,
-                                    "network_status": status.network_status,
-                                    "connected_peers": status.connected_peers,
-                                    "total_requests": status.total_requests_handled,
-                                }))?
-                            );
+                            let resp = responses::StatusResponse {
+                                version: status.version.clone(),
+                                state: format_engine_state(status.state).to_string(),
+                                uptime_seconds: status.uptime_seconds,
+                                storage_status: status.storage_status.clone(),
+                                network_status: status.network_status.clone(),
+                                connected_peers: status.connected_peers,
+                                total_requests: status.total_requests_handled,
+                            };
+                            println!("{}", serde_json::to_string_pretty(&resp)?);
                         } else {
                             println!("ERGORS Engine Status");
                             println!("====================");
@@ -175,13 +175,11 @@ impl EngineCmd {
                     }
                     Err(_) => {
                         if ctx.json {
-                            println!(
-                                "{}",
-                                serde_json::to_string_pretty(&serde_json::json!({
-                                    "state": "stopped",
-                                    "error": "Cannot connect to engine"
-                                }))?
-                            );
+                            let resp = responses::StatusStoppedResponse {
+                                state: "stopped",
+                                error: "Cannot connect to engine".to_string(),
+                            };
+                            println!("{}", serde_json::to_string_pretty(&resp)?);
                         } else {
                             println!("Engine Status: NOT RUNNING");
                             println!("Cannot connect to engine at {}", ctx.grpc_addr);
@@ -565,6 +563,8 @@ pub enum ProviderCmd {
         /// API key (will prompt if not provided)
         #[arg(long)]
         api_key: Option<String>,
+        #[arg(long)]
+        base_url: Option<String>,  
         /// Set as default provider
         #[arg(long)]
         default: bool,
@@ -619,37 +619,51 @@ impl ProviderCmd {
             ProviderCmd::Add {
                 name,
                 api_key,
+                base_url,
                 default,
             } => {
+                // Normalize provider name to lowercase for consistency
+                let name_lower = name.to_lowercase();
+
                 let key = match api_key {
                     Some(k) => k.clone(),
                     None => {
-                        // Prompt for API key
-                        print!("Enter API key for {}: ", name);
-                        use std::io::{self, Write};
-                        io::stdout().flush()?;
-                        let mut input = String::new();
-                        io::stdin().read_line(&mut input)?;
-                        input.trim().to_string()
+                        use std::io::IsTerminal;
+                        if std::io::stdin().is_terminal() {
+                            rpassword::prompt_password(format!(
+                                "Enter API key for {}: ",
+                                name_lower
+                            ))?
+                        } else {
+                            let mut input = String::new();
+                            std::io::stdin().read_line(&mut input)?;
+                            input.trim().to_string()
+                        }
                     }
                 };
+                if key.is_empty() {
+                    anyhow::bail!("API key cannot be empty");
+                }
 
-                let result = client.configure_provider(name, &key, *default).await?;
+                let result = client.configure_provider(&name_lower, &key, base_url.as_deref(), *default).await?;
 
                 if result.success {
-                    println!("Provider {} configured", name);
+                    println!("Provider '{}' configured ({})", name_lower, result.message);
                     if *default {
                         println!("Set as default provider");
                     }
                 } else {
-                    println!("Failed to configure provider: {}", result.message);
+                    eprintln!("Error: {}", result.message);
+                    std::process::exit(1);
                 }
                 Ok(())
             }
             ProviderCmd::Test { name } => {
-                match name {
+                // Normalize provider name to lowercase
+                let name_lower = name.as_ref().map(|n| n.to_lowercase());
+                match name_lower {
                     Some(n) => {
-                        let result = client.test_provider(n).await?;
+                        let result = client.test_provider(&n).await?;
 
                         if result.success {
                             println!("{}: OK ({}ms)", n, result.latency_ms);
@@ -680,10 +694,12 @@ impl ProviderCmd {
                 Ok(())
             }
             ProviderCmd::Default { name } => {
-                let result = client.configure_provider(name, "", true).await?;
+                // Normalize provider name to lowercase
+                let name_lower = name.to_lowercase();
+                let result = client.configure_provider(&name_lower, "", None, true).await?;
 
                 if result.success {
-                    println!("Default provider set to: {}", name);
+                    println!("Default provider set to: {}", name_lower);
                 } else {
                     println!("Failed to set default: {}", result.message);
                 }

@@ -66,6 +66,7 @@ const AKASH_ENDPOINTS_PREFIX: &str = "akash_endpoints";
 const AKASH_LABEL_INDEX_PREFIX: &str = "akash_labels";
 const AKASH_ACTIVE_LABELS_PREFIX: &str = "akash_active_labels";
 const TRUSTED_PROVIDERS_KEY: &str = "config/trusted_providers";
+const AUTHORIZED_CLI_KEYS_KEY: &str = "config/authorized_cli_keys";
 const AKASH_PROVIDER_INFO_PREFIX: &str = "akash_provider_info";
 // const HEADSTASH: &str = "headstash";
 const PROXY_SESSION_PREFIX: &str = "proxy_sessions";
@@ -3337,6 +3338,100 @@ impl ErgorsStorage {
                 Err(ho_std::error::HoError::Anyhow(e))
             }
         }
+    }
+
+    // ========================================
+    // Authorized CLI Keys Storage
+    // ========================================
+
+    /// Get list of authorized CLI keys
+    pub async fn get_authorized_cli_keys(
+        &self,
+    ) -> HoResult<ho_std::types::ergors::management::v1::ListCliKeysResponse> {
+        use ho_std::types::ergors::management::v1::ListCliKeysResponse;
+
+        let snapshot = self.cs.latest_snapshot();
+        match snapshot.get_raw(AUTHORIZED_CLI_KEYS_KEY).await {
+            Ok(Some(data)) => {
+                let list: ListCliKeysResponse = serde_json::from_slice(&data)?;
+                Ok(list)
+            }
+            Ok(None) => Ok(ListCliKeysResponse { keys: vec![] }),
+            Err(e) => {
+                warn!("Failed to get authorized CLI keys: {}", e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
+    }
+
+    /// Store authorized CLI keys list
+    pub async fn put_authorized_cli_keys(
+        &self,
+        list: &ho_std::types::ergors::management::v1::ListCliKeysResponse,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let data = serde_json::to_vec(list)?;
+        delta.put_raw(AUTHORIZED_CLI_KEYS_KEY.to_string(), data);
+        self.commit_delta(delta).await?;
+        debug!("Stored {} authorized CLI keys", list.keys.len());
+        Ok(())
+    }
+
+    /// Add an authorized CLI key (dedup by public_key_hex)
+    pub async fn add_authorized_cli_key(
+        &self,
+        pubkey_hex: &str,
+        label: &str,
+    ) -> HoResult<()> {
+        use ho_std::types::ergors::management::v1::CliKeyEntry;
+
+        let mut list = self.get_authorized_cli_keys().await?;
+
+        if list.keys.iter().any(|k| k.public_key_hex == pubkey_hex) {
+            info!("CLI key {} already authorized", pubkey_hex);
+            return Ok(());
+        }
+
+        let now = pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+            nanos: 0,
+        };
+
+        list.keys.push(CliKeyEntry {
+            public_key_hex: pubkey_hex.to_string(),
+            label: label.to_string(),
+            added_at: Some(now),
+        });
+
+        self.put_authorized_cli_keys(&list).await?;
+        info!("Added authorized CLI key: {} ({})", pubkey_hex, label);
+        Ok(())
+    }
+
+    /// Remove an authorized CLI key
+    pub async fn remove_authorized_cli_key(&self, pubkey_hex: &str) -> HoResult<bool> {
+        let mut list = self.get_authorized_cli_keys().await?;
+        let original_len = list.keys.len();
+
+        list.keys.retain(|k| k.public_key_hex != pubkey_hex);
+
+        if list.keys.len() == original_len {
+            info!("CLI key {} not found in authorized list", pubkey_hex);
+            return Ok(false);
+        }
+
+        self.put_authorized_cli_keys(&list).await?;
+        info!("Removed authorized CLI key: {}", pubkey_hex);
+        Ok(true)
+    }
+
+    /// Check if a CLI key is authorized
+    pub async fn is_authorized_cli_key(&self, pubkey_hex: &str) -> HoResult<bool> {
+        let list = self.get_authorized_cli_keys().await?;
+        Ok(list.keys.iter().any(|k| k.public_key_hex == pubkey_hex))
     }
 }
 

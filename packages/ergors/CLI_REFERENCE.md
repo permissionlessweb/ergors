@@ -11,7 +11,10 @@ ergors [OPTIONS] <COMMAND>
 | Flag | Description | Default | Env Var |
 | ------ | ------------- | --------- | --------- |
 | `--home <PATH>` | Home directory for configuration and data | `~/.ergors` | `NODE_DATA_PATH` |
+| `--grpc-addr <URL>` | Engine gRPC address | `http://localhost:50051` | `ERGORS_GRPC_ADDR` |
 | `--log-level <LEVEL>` | Log level (trace, debug, info, warn, error) | `info` | - |
+| `--json` | Output in JSON format for scripting | `false` | - |
+| `--signing-key-hex <HEX>` | Ed25519 signing key for authenticated remote access (64 hex chars) | - | `ERGORS_SIGNING_KEY_HEX` |
 
 ## Command Groups
 
@@ -19,7 +22,7 @@ ergors [OPTIONS] <COMMAND>
 | ------- | ------------- | ---------- |
 | `start` | Start the engine daemon | - |
 | `init` | Initialize configuration and setup | new, llms, providers, unsafe-wipe, migrate |
-| `config` | Manage configuration values | set, get, list, init |
+| `config` | Manage configuration values | set, get, list, init, register-cli-key, revoke-cli-key, list-cli-keys |
 | `manage-auth` | User authentication management | register, revoke |
 | `keys` | Manage Cosmos funding keys | import-mnemonic, list, delete, set-default |
 | `bootstrap` | Bootstrap new nodes via Akash or SSH | node, list, status, delete |
@@ -71,6 +74,24 @@ ergors [OPTIONS] <COMMAND>
 
 ---
 
+## Provider Commands
+
+| Command | Description | Options/Arguments | Example |
+| --------- | ------------- | ------------------- | --------- |
+| `provider list` | List configured LLM providers | Shows name and status (configured/disabled) for each provider. Use `--json` for machine-readable output. | `ergors provider list` |
+| `provider add <NAME>` | Register an API key for a provider | `<NAME>` - Provider name (openai, anthropic, etc.) `--api-key <KEY>` - API key (prompts with hidden input if omitted) `--default` - Set as default provider | `ergors provider add openai` |
+| `provider test [NAME]` | Test provider connectivity | `[NAME]` - Provider name (tests all if omitted). Reports latency in ms. | `ergors provider test openai` |
+| `provider default <NAME>` | Set the default provider | `<NAME>` - Provider name | `ergors provider default anthropic` |
+
+**Provider Add Details:**
+
+- API key input is hidden (rpassword) in interactive terminals; reads from stdin when piped
+- Key is encrypted with the custody password and stored in Cnidarium as `custody://<name>`
+- Requires custody to be initialized (via `ergors sentinel bootstrap` or `ergors init new`)
+- The proxy resolves `custody://<name>` references immediately without restart
+
+---
+
 ## Config Commands
 
 | Command | Description | Options/Arguments | Example |
@@ -78,7 +99,23 @@ ergors [OPTIONS] <COMMAND>
 | `config init` | Initialize minimal valid configuration | `--node-type <TYPE>` - coordinator, executor, referee, development (default: `development`) `--api-port <PORT>` - gRPC/API port (default: `50051`) `--p2p-port <PORT>` - P2P port (default: `26656`) `--with-sdl-contract` - Deploy SDL template contract on startup `--sdl-wasm-path <PATH>` - Path to SDL WASM file (required if --with-sdl-contract) | `ergors config init --node-type executor --api-port 50051 --p2p-port 26656` |
 | `config set <KEY> <VALUE>` | Set configuration value | `<KEY>` - Dot-separated path (e.g., `network.listen_port`) `<VALUE>` - Value (type validated) | `ergors config set network.listen_port 9090` |
 | `config get <KEY>` | Get configuration value | `<KEY>` - Dot-separated path | `ergors config get identity.node_type` |
-| `config list` | List all configuration keys and types | - | `ergors config list` |
+| `config list` | Show actual configuration values (loads config file) | `--json` - Output as JSON | `ergors config list --json` |
+| `config list-chains` | List all configured Cosmos chains (requires daemon) | `--json` - Output as JSON | `ergors config list-chains --json` |
+| `config delete-chain <CHAIN_ID>` | Delete a Cosmos chain configuration (password-protected, requires daemon) | `<CHAIN_ID>` - Chain ID to delete. `--json` - Output as JSON | `ergors config delete-chain local` |
+| `config register-cli-key <PUBKEY_HEX>` | Register Ed25519 public key for remote CLI auth (requires daemon) | `--label <LABEL>` - Human-readable label (default: `cli`) | `ergors config register-cli-key abc123...def` |
+| `config revoke-cli-key <PUBKEY_HEX>` | Revoke an authorized CLI key (requires daemon) | - | `ergors config revoke-cli-key abc123...def` |
+| `config list-cli-keys` | List all authorized CLI keys (requires daemon) | `--json` - Output as JSON | `ergors config list-cli-keys` |
+
+### Remote Authentication Workflow
+
+To access a remote engine from a CLI:
+
+1. **Generate an Ed25519 keypair** (any standard tool, or use the node's existing key)
+2. **Register the public key on the engine** (from local access): `ergors config register-cli-key <pubkey_hex> --label "my-laptop"`
+3. **Use from remote**: `ergors --grpc-addr http://remote:50051 --signing-key-hex <privkey_hex> status`
+4. **Or set env var**: `export ERGORS_SIGNING_KEY_HEX=<privkey_hex>` then `ergors --grpc-addr http://remote:50051 status`
+
+Local connections (localhost/127.0.0.1) bypass authentication entirely.
 
 **Available Config Keys:**
 
@@ -131,10 +168,10 @@ Manage Cosmos blockchain funding keys (Akash, Cosmos Hub, etc.) for deployment o
 
 | Command | Description | Options/Arguments | Example |
 | --------- | ------------- | ------------------- | --------- |
-| `keys import-mnemonic` | Import BIP-39 mnemonic seed phrase | `--label <LABEL>` - Human-readable label (required) `--key-name <NAME>` - Internal identifier (default: `default`) `--chain-id <ID>` - Chain ID (default: `akashnet-2`) `--address-prefix <PREFIX>` - Bech32 prefix (default: `akash`) `--make-default` - Set as default key | `ergors keys import-mnemonic --label "My Akash Key" --make-default` |
-| `keys list` | List all stored keys | Shows: name, label, address, chain ID, default marker | `ergors keys list` |
-| `keys delete` | Delete a key by name | `--key-name <NAME>` - Key name to delete (required) | `ergors keys delete --key-name old-key` |
-| `keys set-default` | Set a key as the default | `--key-name <NAME>` - Key name to make default (required) | `ergors keys set-default --key-name prod` |
+| `keys import-mnemonic` | Import BIP-39 mnemonic seed phrase (chain-agnostic) | `--label <LABEL>` - Human-readable label, used as key identifier (required) `--default` - Set as default key for deployments | `ergors keys import-mnemonic --label "My Key" --default` |
+| `keys list` | List all stored keys | `--json` - Output as JSON. Shows: label, address, default marker | `ergors keys list --json` |
+| `keys delete` | Delete a key by label | `--label <LABEL>` - Key label to delete (required) | `ergors keys delete --label old-key` |
+| `keys set-default` | Set a key as the default | `--label <LABEL>` - Key label to make default (required) | `ergors keys set-default --label prod` |
 
 **Security:**
 
@@ -147,13 +184,28 @@ Manage Cosmos blockchain funding keys (Akash, Cosmos Hub, etc.) for deployment o
 - File permissions set to 0600 (owner read/write only) on Unix
 - For automation: use `ERGORS_MNEMONIC` env var (cleared after reading)
 
+**Chain-Agnostic Keys:**
+
+Keys are stored without chain binding. The address uses the `ergo` prefix by default. To derive a chain-specific address (e.g., for Akash), use `ergors node address --prefix akash`.
+
 **Example Output:**
 
 ```
-NAME            LABEL                ADDRESS                                       CHAIN        DEFAULT
---------------------------------------------------------------------------------
-prod            My Akash Key         akash1abc123...                                akashnet-2   *
-test            Test Key             akash1xyz789...                                akashnet-2
+LABEL                ADDRESS                                       DEFAULT
+----------------------------------------------------------------------
+My Key               ergo1abc123...                                 *
+Test Key             ergo1xyz789...
+```
+
+**JSON Output (`--json`):**
+
+```json
+{
+  "keys": [
+    { "label": "My Key", "address": "ergo1abc123...", "is_default": true },
+    { "label": "Test Key", "address": "ergo1xyz789...", "is_default": false }
+  ]
+}
 ```
 
 ---
@@ -1433,8 +1485,7 @@ ergors init new
 # Mnemonic is entered interactively (hidden input, never in shell history)
 ergors keys import-mnemonic \
   --label "Akash Main" \
-  --chain-id akashnet-2 \
-  --make-default
+  --default
 
 # 3. Start the engine
 ergors start

@@ -3,6 +3,9 @@
 //! Provides a wrapper around the tonic-generated client.
 
 use anyhow::{Context, Result};
+use commonware_codec::Encode;
+use commonware_cryptography::{blake3::Blake3, Hasher, Signer};
+use ho_std::keys::commonware::NodePrivKey;
 use ho_std::types::ergors::management::v1::{
     management_service_client::ManagementServiceClient as ProtoClient,
     AddDiscordAllowedGuildRequest,
@@ -92,6 +95,11 @@ use ho_std::types::ergors::management::v1::{
     TokenLabel,
     TokenList,
     TokenResponse,
+    // CLI key management types
+    ListCliKeysRequest,
+    ListCliKeysResponse,
+    RegisterCliKeyRequest,
+    RevokeCliKeyRequest,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
 use ho_std::types::ergors::orch::v1::{
@@ -129,19 +137,56 @@ use ho_std::types::ergors::orch::v1::{
     UpdateAkashDeploymentRequest,
 };
 use tonic::transport::Channel;
+use tonic::service::interceptor::InterceptedService;
 
-/// Management client wrapping the generated tonic client
+/// Client-side interceptor that signs gRPC requests with an Ed25519 key.
+/// When `signing_key` is `None`, no auth headers are added (local connections).
+#[derive(Clone)]
+pub struct ClientAuthInterceptor {
+    signing_key: Option<NodePrivKey>,
+}
+
+impl tonic::service::Interceptor for ClientAuthInterceptor {
+    fn call(&mut self, mut req: tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> {
+        if let Some(key) = &self.signing_key {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .to_string();
+
+            let message = Blake3::hash(timestamp.as_bytes());
+            let signature = key.sign(None, &message);
+            let pubkey_hex = hex::encode(&key.id().0.encode());
+            let sig_hex = hex::encode(&signature.encode());
+
+            req.metadata_mut()
+                .insert("x-timestamp", timestamp.parse().unwrap());
+            req.metadata_mut()
+                .insert("x-signature", sig_hex.parse().unwrap());
+            req.metadata_mut()
+                .insert("x-public-key", pubkey_hex.parse().unwrap());
+        }
+        Ok(req)
+    }
+}
+
+/// Management client wrapping the generated tonic client with auth interceptor
 pub struct ManagementClient {
-    inner: ProtoClient<Channel>,
+    inner: ProtoClient<InterceptedService<Channel, ClientAuthInterceptor>>,
 }
 
 impl ManagementClient {
-    /// Connect to the engine gRPC server
-    pub async fn connect(addr: &str) -> Result<Self> {
-        let inner = ProtoClient::connect(addr.to_string())
+    /// Connect to the engine gRPC server with optional signing key for remote auth
+    pub async fn connect(addr: &str, signing_key: Option<NodePrivKey>) -> Result<Self> {
+        let channel = Channel::from_shared(addr.to_string())
+            .context("Invalid gRPC address")?
+            .connect()
             .await
             .context("Failed to connect to engine. Is it running?")?;
 
+        let interceptor = ClientAuthInterceptor { signing_key };
+        let inner = ProtoClient::with_interceptor(channel, interceptor);
         Ok(Self { inner })
     }
 
@@ -372,14 +417,16 @@ impl ManagementClient {
         &mut self,
         name: &str,
         api_key: &str,
+        base_url: Option<&str>,
         set_as_default: bool,
     ) -> Result<OperationResult> {
         let response = self
             .inner
             .configure_provider(ProviderConfig {
                 name: name.to_string(),
-                api_key: api_key.to_string(),
+                api_key_ref: api_key.to_string(),
                 set_as_default,
+                base_url: base_url.unwrap_or("").to_string(),
             })
             .await
             .context("Failed to configure provider")?;
@@ -1179,6 +1226,47 @@ impl ManagementClient {
 
         Ok(response.into_inner())
     }
+
+    // ============ CLI Key Management ============
+
+    pub async fn register_cli_key(
+        &mut self,
+        pubkey_hex: &str,
+        label: &str,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .register_cli_key(RegisterCliKeyRequest {
+                public_key_hex: pubkey_hex.to_string(),
+                label: label.to_string(),
+            })
+            .await
+            .context("Failed to register CLI key")?;
+
+        Ok(response.into_inner())
+    }
+
+    pub async fn revoke_cli_key(&mut self, pubkey_hex: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .revoke_cli_key(RevokeCliKeyRequest {
+                public_key_hex: pubkey_hex.to_string(),
+            })
+            .await
+            .context("Failed to revoke CLI key")?;
+
+        Ok(response.into_inner())
+    }
+
+    pub async fn list_cli_keys(&mut self) -> Result<ListCliKeysResponse> {
+        let response = self
+            .inner
+            .list_cli_keys(ListCliKeysRequest {})
+            .await
+            .context("Failed to list CLI keys")?;
+
+        Ok(response.into_inner())
+    }
 }
 
 /// Helper to format engine state for display
@@ -1216,6 +1304,6 @@ pub mod grpc;
 pub mod rlm;
 
 // Re-export key types and functions
-pub use crate::auth::grpc::{create_auth_interceptor, simple_auth_interceptor, TokenStore};
+pub use crate::auth::grpc::{create_grpc_auth_interceptor, AuthorizedCliKeys};
 pub use grpc::{start_grpc_server, ManagementServiceImpl};
 pub use rlm::{load_documents_by_prefix, RlmDocService};

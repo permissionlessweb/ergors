@@ -1,125 +1,134 @@
-//! Bearer Token Authentication Interceptor for gRPC
+//! Ed25519 Authentication Interceptor for gRPC
 //!
 //! Provides authentication middleware for the ManagementService gRPC server.
-//! Validates Bearer tokens from the `authorization` metadata header.
+//! Remote (non-loopback) connections must present a valid Ed25519 signature
+//! over the current timestamp. Local connections bypass auth entirely.
 
 use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tonic::{Request, Status};
 
-/// Token store for managing valid authentication tokens
-#[derive(Debug, Clone, Default)]
-pub struct TokenStore {
-    /// Set of valid tokens
-    tokens: Arc<RwLock<HashSet<String>>>,
-    /// Whether authentication is enabled
-    enabled: bool,
+use commonware_codec::{DecodeExt, Encode};
+use commonware_cryptography::{
+    blake3::Blake3,
+    ed25519::{PublicKey, Signature},
+    Hasher, Verifier,
+};
+
+/// Thread-safe set of authorized Ed25519 public key hex strings.
+/// Uses std::sync::RwLock (not tokio) so it works in sync tonic interceptors.
+#[derive(Debug, Clone)]
+pub struct AuthorizedCliKeys {
+    keys: Arc<std::sync::RwLock<HashSet<String>>>,
 }
 
-impl TokenStore {
-    /// Create a new token store
-    pub fn new(enabled: bool) -> Self {
+impl AuthorizedCliKeys {
+    pub fn new() -> Self {
         Self {
-            tokens: Arc::new(RwLock::new(HashSet::new())),
-            enabled,
+            keys: Arc::new(std::sync::RwLock::new(HashSet::new())),
         }
     }
 
-    /// Create a disabled token store (all requests allowed)
-    pub fn disabled() -> Self {
-        Self::new(false)
-    }
-
-    /// Add a token to the store
-    pub async fn add_token(&self, token: String) {
-        self.tokens.write().await.insert(token);
-    }
-
-    /// Remove a token from the store
-    pub async fn remove_token(&self, token: &str) {
-        self.tokens.write().await.remove(token);
-    }
-
-    /// Check if a token is valid
-    pub async fn is_valid(&self, token: &str) -> bool {
-        if !self.enabled {
-            return true;
+    /// Load keys from stored entries
+    pub fn load_from(
+        &self,
+        entries: &[ho_std::types::ergors::management::v1::CliKeyEntry],
+    ) {
+        let mut keys = self.keys.write().unwrap();
+        keys.clear();
+        for entry in entries {
+            keys.insert(entry.public_key_hex.clone());
         }
-        self.tokens.read().await.contains(token)
     }
 
-    /// Get the number of tokens in the store
-    pub async fn token_count(&self) -> usize {
-        self.tokens.read().await.len()
+    pub fn add(&self, hex: &str) {
+        self.keys.write().unwrap().insert(hex.to_string());
+    }
+
+    pub fn remove(&self, hex: &str) {
+        self.keys.write().unwrap().remove(hex);
+    }
+
+    pub fn contains(&self, hex: &str) -> bool {
+        self.keys.read().unwrap().contains(hex)
     }
 }
 
-/// Authentication interceptor for gRPC requests
+/// Maximum age of a signed timestamp (5 minutes)
+const MAX_AGE_SECONDS: u64 = 300;
+
+/// Create a gRPC auth interceptor that validates Ed25519 signatures on remote connections.
 ///
-/// Extracts the Bearer token from the `authorization` metadata header
-/// and validates it against the token store.
-pub fn create_auth_interceptor(
-    token_store: TokenStore,
+/// Loopback connections (127.0.0.1, ::1) are allowed without authentication.
+/// Remote connections must include `x-signature`, `x-timestamp`, and `x-public-key` metadata.
+pub fn create_grpc_auth_interceptor(
+    authorized_keys: AuthorizedCliKeys,
 ) -> impl Fn(Request<()>) -> Result<Request<()>, Status> + Clone {
     move |req: Request<()>| {
-        // If auth is disabled, allow all requests
-        if !token_store.enabled {
-            return Ok(req);
-        }
-
-        // Extract authorization header
-        let token = req
-            .metadata()
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer ")));
-
-        match token {
-            Some(t) => {
-                // For synchronous interceptor, we can't use async validation
-                // In production, you'd want to use a sync-safe validation method
-                // or use tower layers instead
-                if t.is_empty() {
-                    Err(Status::unauthenticated("Empty token"))
-                } else {
-                    // TODO: Implement proper sync validation
-                    // For now, accept any non-empty token when auth is enabled
-                    Ok(req)
-                }
+        // Check if connection is from loopback — allow without auth
+        if let Some(addr) = req.remote_addr() {
+            if addr.ip().is_loopback() {
+                return Ok(req);
             }
-            None => Err(Status::unauthenticated("Missing authorization header")),
-        }
-    }
-}
-
-/// Simple synchronous token validator
-/// For production use, consider using tower::Layer for async validation
-pub fn validate_token_sync(token: &str, valid_tokens: &[String]) -> bool {
-    valid_tokens.contains(&token.to_string())
-}
-
-/// Create a simple auth interceptor with a list of valid tokens
-pub fn simple_auth_interceptor(
-    valid_tokens: Vec<String>,
-) -> impl Fn(Request<()>) -> Result<Request<()>, Status> + Clone {
-    move |req: Request<()>| {
-        if valid_tokens.is_empty() {
-            // No tokens configured, allow all requests
-            return Ok(req);
         }
 
-        let token = req
-            .metadata()
-            .get("authorization")
+        // Extract required metadata headers
+        let metadata = req.metadata();
+
+        let timestamp = metadata
+            .get("x-timestamp")
             .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer ")));
+            .ok_or_else(|| Status::unauthenticated("Missing x-timestamp header"))?
+            .to_string();
 
-        match token {
-            Some(t) if validate_token_sync(t, &valid_tokens) => Ok(req),
-            Some(_) => Err(Status::unauthenticated("Invalid token")),
-            None => Err(Status::unauthenticated("Missing authorization header")),
+        let signature_hex = metadata
+            .get("x-signature")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| Status::unauthenticated("Missing x-signature header"))?
+            .to_string();
+
+        let public_key_hex = metadata
+            .get("x-public-key")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| Status::unauthenticated("Missing x-public-key header"))?
+            .to_string();
+
+        // Validate timestamp window (5 min)
+        let ts: u64 = timestamp
+            .parse()
+            .map_err(|_| Status::unauthenticated("Invalid timestamp format"))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if now.abs_diff(ts) > MAX_AGE_SECONDS {
+            return Err(Status::unauthenticated("Timestamp expired or too far in future"));
         }
+
+        // Check if key is authorized
+        if !authorized_keys.contains(&public_key_hex) {
+            return Err(Status::permission_denied("Public key not authorized"));
+        }
+
+        // Parse public key
+        let pk_bytes = hex::decode(&public_key_hex)
+            .map_err(|_| Status::unauthenticated("Invalid public key hex"))?;
+        let public_key = PublicKey::decode(&*pk_bytes)
+            .map_err(|_| Status::unauthenticated("Invalid Ed25519 public key"))?;
+
+        // Parse signature
+        let sig_bytes = hex::decode(&signature_hex)
+            .map_err(|_| Status::unauthenticated("Invalid signature hex"))?;
+        let signature = Signature::decode(&*sig_bytes)
+            .map_err(|_| Status::unauthenticated("Invalid Ed25519 signature"))?;
+
+        // Verify: sign(blake3(timestamp))
+        let message = Blake3::hash(timestamp.as_bytes());
+        if !public_key.verify(None, &message, &signature) {
+            return Err(Status::unauthenticated("Signature verification failed"));
+        }
+
+        Ok(req)
     }
 }
 
@@ -127,41 +136,40 @@ pub fn simple_auth_interceptor(
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_token_store() {
-        let store = TokenStore::new(true);
+    #[test]
+    fn test_authorized_cli_keys() {
+        let store = AuthorizedCliKeys::new();
 
-        // Initially empty
-        assert_eq!(store.token_count().await, 0);
-        assert!(!store.is_valid("test-token").await);
+        assert!(!store.contains("abc123"));
 
-        // Add token
-        store.add_token("test-token".to_string()).await;
-        assert_eq!(store.token_count().await, 1);
-        assert!(store.is_valid("test-token").await);
+        store.add("abc123");
+        assert!(store.contains("abc123"));
 
-        // Remove token
-        store.remove_token("test-token").await;
-        assert_eq!(store.token_count().await, 0);
-        assert!(!store.is_valid("test-token").await);
-    }
-
-    #[tokio::test]
-    async fn test_disabled_store() {
-        let store = TokenStore::disabled();
-
-        // Disabled store accepts any token
-        assert!(store.is_valid("any-token").await);
-        assert!(store.is_valid("").await);
+        store.remove("abc123");
+        assert!(!store.contains("abc123"));
     }
 
     #[test]
-    fn test_validate_token_sync() {
-        let tokens = vec!["token1".to_string(), "token2".to_string()];
+    fn test_load_from_entries() {
+        use ho_std::types::ergors::management::v1::CliKeyEntry;
 
-        assert!(validate_token_sync("token1", &tokens));
-        assert!(validate_token_sync("token2", &tokens));
-        assert!(!validate_token_sync("token3", &tokens));
-        assert!(!validate_token_sync("", &tokens));
+        let store = AuthorizedCliKeys::new();
+        let entries = vec![
+            CliKeyEntry {
+                public_key_hex: "key1".to_string(),
+                label: "test".to_string(),
+                added_at: None,
+            },
+            CliKeyEntry {
+                public_key_hex: "key2".to_string(),
+                label: "test2".to_string(),
+                added_at: None,
+            },
+        ];
+
+        store.load_from(&entries);
+        assert!(store.contains("key1"));
+        assert!(store.contains("key2"));
+        assert!(!store.contains("key3"));
     }
 }

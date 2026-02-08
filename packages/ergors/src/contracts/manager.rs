@@ -8,6 +8,7 @@ use crate::config::{ContractDeployment, ErgorsConfig};
 use crate::storage::ErgorsStorage;
 use ho_std::error::HoResult;
 use ho_std::traits::HoConfigTrait;
+use ho_std::types::ergors::management::v1::ProviderConfig;
 use ho_std::wasm::WasmRuntime;
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
@@ -543,18 +544,6 @@ pub struct IdentityRegistryInstantiateMsg {
     pub providers: Vec<ProviderConfig>,
 }
 
-/// Provider configuration for the identity registry
-#[derive(Debug, Clone, Serialize)]
-pub struct ProviderConfig {
-    /// Provider name (e.g., "anthropic", "openai")
-    pub name: String,
-    /// Ownership type: "shared" or "local"
-    pub ownership: String,
-    /// For shared providers: threshold for Shamir reconstruction
-    pub threshold: Option<u32>,
-    /// For shared providers: total shares to generate
-    pub total_shares: Option<u32>,
-}
 
 /// Instantiation message for the auth_registry_updater contract
 #[derive(Debug, Clone, Serialize)]

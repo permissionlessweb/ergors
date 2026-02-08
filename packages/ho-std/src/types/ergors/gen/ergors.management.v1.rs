@@ -546,9 +546,11 @@ pub struct ProviderConfig {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub api_key: ::prost::alloc::string::String,
+    pub api_key_ref: ::prost::alloc::string::String,
     #[prost(bool, tag = "3")]
     pub set_as_default: bool,
+    #[prost(string, tag = "4")]
+    pub base_url: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ProviderConfig {
     const NAME: &'static str = "ProviderConfig";
@@ -3529,6 +3531,91 @@ impl ::prost::Name for DeleteChainConfigResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.management.v1.DeleteChainConfigResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterCliKeyRequest {
+    /// Ed25519 pubkey (64 hex chars)
+    #[prost(string, tag = "1")]
+    pub public_key_hex: ::prost::alloc::string::String,
+    /// Human-readable label
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RegisterCliKeyRequest {
+    const NAME: &'static str = "RegisterCliKeyRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RegisterCliKeyRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RegisterCliKeyRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RevokeCliKeyRequest {
+    #[prost(string, tag = "1")]
+    pub public_key_hex: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RevokeCliKeyRequest {
+    const NAME: &'static str = "RevokeCliKeyRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RevokeCliKeyRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RevokeCliKeyRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListCliKeysRequest {}
+impl ::prost::Name for ListCliKeysRequest {
+    const NAME: &'static str = "ListCliKeysRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListCliKeysRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListCliKeysRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCliKeysResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub keys: ::prost::alloc::vec::Vec<CliKeyEntry>,
+}
+impl ::prost::Name for ListCliKeysResponse {
+    const NAME: &'static str = "ListCliKeysResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListCliKeysResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListCliKeysResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CliKeyEntry {
+    #[prost(string, tag = "1")]
+    pub public_key_hex: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub added_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for CliKeyEntry {
+    const NAME: &'static str = "CliKeyEntry";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.CliKeyEntry".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.CliKeyEntry".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -6684,6 +6771,96 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Register an Ed25519 public key for authenticated remote CLI access
+        pub async fn register_cli_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RegisterCliKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RegisterCliKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RegisterCliKey",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Revoke an authorized CLI key
+        pub async fn revoke_cli_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RevokeCliKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RevokeCliKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RevokeCliKey",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List all authorized CLI keys
+        pub async fn list_cli_keys(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListCliKeysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListCliKeysResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListCliKeys",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListCliKeys",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Cosmos Chain Configuration (Cnidarium-backed)
         /// Set or update chain configuration
         pub async fn set_chain_config(
@@ -7442,6 +7619,24 @@ pub mod management_service_server {
             request: tonic::Request<super::RenderSdlTemplateRequest>,
         ) -> std::result::Result<
             tonic::Response<super::RenderSdlTemplateResponse>,
+            tonic::Status,
+        >;
+        /// Register an Ed25519 public key for authenticated remote CLI access
+        async fn register_cli_key(
+            &self,
+            request: tonic::Request<super::RegisterCliKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Revoke an authorized CLI key
+        async fn revoke_cli_key(
+            &self,
+            request: tonic::Request<super::RevokeCliKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// List all authorized CLI keys
+        async fn list_cli_keys(
+            &self,
+            request: tonic::Request<super::ListCliKeysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListCliKeysResponse>,
             tonic::Status,
         >;
         /// Cosmos Chain Configuration (Cnidarium-backed)
@@ -11790,6 +11985,144 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RenderSdlTemplateSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RegisterCliKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct RegisterCliKeySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RegisterCliKeyRequest>
+                    for RegisterCliKeySvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RegisterCliKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::register_cli_key(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RegisterCliKeySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RevokeCliKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct RevokeCliKeySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RevokeCliKeyRequest>
+                    for RevokeCliKeySvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RevokeCliKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::revoke_cli_key(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RevokeCliKeySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListCliKeys" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListCliKeysSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ListCliKeysRequest>
+                    for ListCliKeysSvc<T> {
+                        type Response = super::ListCliKeysResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListCliKeysRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_cli_keys(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListCliKeysSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

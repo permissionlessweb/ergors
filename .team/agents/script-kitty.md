@@ -1,6 +1,6 @@
 ---
 description: Perform actions with scripts and compiled binaries for dev-ops related task
-mode: subagent
+mode: primary
 ---
 
 

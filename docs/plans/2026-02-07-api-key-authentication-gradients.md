@@ -5,6 +5,7 @@
 **Goal:** Enable granular, hierarchical API key-based authentication for the inference proxy engine with programmable CosmWasm contract validation, allowing admins to curate access gradients without friction on client message formation.
 
 **Architecture:**
+
 - API key generation managed at engine runtime, with optional per-endpoint CosmWasm contract validation
 - Admin operations protected by Ed25519 signature + nonce-based replay prevention
 - Middleware layer validates API keys before routing to handlers
@@ -12,6 +13,7 @@
 - Storage: API keys encrypted at rest, metadata accessible for validation
 
 **Tech Stack:**
+
 - Protobuf (proto3) for type definitions
 - Cnidarium storage (existing StateRead/StateWrite)
 - CosmWasm VM (existing integration)
@@ -23,6 +25,7 @@
 ## Task 1: Define API Key Proto Types
 
 **Files:**
+
 - Create: `proto/ergors/ergors/apikeys/v1/apikeys.proto`
 - Modify: `proto/ergors/api/v1/api.proto` (new message references)
 - Modify: `packages/ho-proto-rs/src/prelude.rs` (export new types)
@@ -141,6 +144,7 @@ for runtime-programmable access control to inference proxy engine."
 ## Task 2: Implement API Key Storage (Cnidarium State)
 
 **Files:**
+
 - Create: `packages/ho-std/src/storage/apikeys.rs`
 - Modify: `packages/ho-std/src/storage/mod.rs` (module export)
 - Modify: `packages/ergors/tests/apikey_storage.rs` (new tests)
@@ -333,6 +337,7 @@ Supports put, get, list, delete operations with indexing for efficient retrieval
 ## Task 3: Implement Admin API Key Creation (with Nonce Protection)
 
 **Files:**
+
 - Create: `packages/ergors/src/auth/apikey.rs`
 - Create: `packages/ergors/src/auth/mod.rs` (new module)
 - Modify: `packages/ergors/src/lib.rs` (module declaration)
@@ -571,6 +576,7 @@ Secrets hashed with Blake3 for secure storage."
 ## Task 4: Implement API Key Validation Middleware
 
 **Files:**
+
 - Create: `packages/ergors/src/auth/middleware.rs`
 - Create: `packages/ho-std/src/network/apikey_layer.rs`
 - Modify: `packages/ho-std/src/network/mod.rs` (export)
@@ -825,6 +831,7 @@ Integrates with endpoint restriction validation."
 ## Task 5: Implement CosmWasm Contract Validation (Optional Per-Endpoint)
 
 **Files:**
+
 - Create: `packages/ergors/src/auth/cosmwasm_validator.rs`
 - Modify: `packages/ergors/src/auth/middleware.rs` (create for CosmWasm integration)
 - Modify: `packages/ergors/src/auth/mod.rs` (export)
@@ -998,6 +1005,7 @@ access control without requiring engine restart."
 ## Task 6: Add HTTP Endpoints for Admin API Key Management
 
 **Files:**
+
 - Create: `packages/ergors/src/handlers/apikey_handlers.rs`
 - Modify: `packages/ergors/src/server.rs` (new routes + handler imports)
 - Modify: `packages/ergors/CLI_REFERENCE.md` (document new endpoints)
@@ -1177,6 +1185,7 @@ X-Admin-Nonce: <nonce>
 ```
 
 ### List API Keys (Admin Only)
+
 ```bash
 GET /auth/apikeys
 X-Signature: <hex_sig>
@@ -1187,6 +1196,7 @@ X-Public-Key: <admin_pubkey_hex>
 ```
 
 ### Revoke API Key (Admin Only)
+
 ```bash
 DELETE /auth/apikeys/{key_id}
 X-Signature: <hex_sig>
@@ -1195,12 +1205,14 @@ X-Public-Key: <admin_pubkey_hex>
 ```
 
 ### Use API Key to Access Protected Endpoints
+
 ```bash
 POST /v1/responses
 X-API-Key: key_abc123:base64_secret_here
 
 # Body contains normal request
 ```
+
 ```
 
 **Step 6: Run tests (placeholder)**
@@ -1232,6 +1244,7 @@ All endpoints require Ed25519 admin signature + nonce."
 ## Task 7: Integrate API Key Validation into Route Handler
 
 **Files:**
+
 - Modify: `packages/ergors/src/server.rs` (apply ApiKeyLayer to routes)
 - Modify: `packages/ho-std/src/network/mod.rs` (export any needed helpers)
 - Create: `packages/ergors/tests/apikey_integration.rs` (integration test)
@@ -1370,6 +1383,7 @@ Endpoint restrictions enforced at middleware level."
 ## Task 8: Documentation & E2E Test
 
 **Files:**
+
 - Create: `docs/specs/api-key-authentication.md` (new spec)
 - Modify: `docs/spec.md` (add link to new spec)
 - Create: `tests/e2e/scripts/apikey.sh` (E2E test script)
@@ -1488,6 +1502,7 @@ ERGORS supports granular, hierarchical API key-based authentication for accessin
 ### Flow
 
 ```
+
 Client Request
     ↓
 [API Key Middleware]
@@ -1500,6 +1515,7 @@ Client Request
     └─→ Pass request to handler (if all checks pass)
         ↓
       [Handler]
+
 ```
 
 ## API Key Lifecycle
@@ -1753,6 +1769,7 @@ pub fn query_validate(
 ## Testing
 
 See `tests/e2e/scripts/apikey.sh` for full E2E test suite.
+
 ```
 
 **Step 3: Update docs/spec.md**
@@ -1786,26 +1803,31 @@ Includes full E2E test script demonstrating all operations."
 ## Rollout Strategy
 
 ### Phase 1: Foundation (Tasks 1-4)
+
 - Proto types, storage, admin manager, middleware
 - Internal testing only
 - No public endpoint yet
 
 ### Phase 2: Admin Interface (Tasks 5-6)
+
 - HTTP endpoints for admin operations
 - CLI reference documentation
 - Authorized admins can create/revoke keys
 
 ### Phase 3: Route Integration (Task 7)
+
 - Apply middleware to protected routes
 - API key validation live
 - Clients can start using keys
 
 ### Phase 4: CosmWasm Integration (Task 5 - Phase 4)
+
 - Optional per-endpoint contract assignment
 - Runtime-programmable validation
 - Advanced use cases enabled
 
 ### Phase 5: E2E & Docs (Task 8)
+
 - Full specification document
 - E2E test suite
 - Production readiness
@@ -1836,3 +1858,90 @@ The current middleware implementation uses synchronous validators due to Tower m
 3. **Contract caching** - Cache CosmWasm validation results for X seconds
 
 This trade-off accepts some synchronicity for middleware simplicity, with the understanding that hot keys will be cached.
+
+# Plan: Custody-backed API Key Resolution in ProxyRouter
+
+## Context
+
+The `ProxyRouter::provider_to_route_target()` method is the keystone for resolving API keys during inference request routing. Currently it only supports `env://` prefixed references (env vars) and has a TODO for custody resolution. We're moving away from plaintext env var API keys toward encrypted custody-backed keys via `EncryptedApiKeyManager`. The encrypted key infrastructure already exists — keys are encrypted at rest via ChaCha20Poly1305+Argon2id, and decrypted at server startup via `load_store()`. The missing link is wiring the decrypted keys into the ProxyRouter.
+
+## Approach
+
+Use the existing `ApiKeyMethod` trait (`ho_std::traits`) as the bridge. Implement it on `EncryptedApiKeyManager`, then inject it into `ProxyRouter` as `Arc<dyn ApiKeyMethod>`.
+
+## Steps
+
+### 1. Implement `ApiKeyMethod` for `EncryptedApiKeyManager`
+
+**File**: `packages/ho-std/src/llm/encrypted_keys.rs`
+
+- `get_key(&self, provider)` → reads from `self.cache` (populated by `load_store()`)
+- `set_key(&mut self, provider, key)` → inserts into cache (runtime updates)
+- `has_key(&self, provider)` → default impl works
+- `available_providers(&self)` → returns `cache.keys()`
+- Import `ApiKeyMethod` trait from `crate::traits`
+
+### 2. Add key accessor to `ProxyRouter`
+
+**File**: `packages/ergors/src/proxy/router.rs`
+
+- Add field: `key_accessor: Option<Arc<dyn ApiKeyMethod>>`
+- `ProxyRouter` currently derives `Debug, Clone`. `Arc<dyn ApiKeyMethod>` isn't `Debug` — manually impl `Debug` or use a wrapper. Simplest: remove `Debug` derive, add manual impl that skips the field.
+- Update `ProxyRouter::new(config, key_accessor: Option<Arc<dyn ApiKeyMethod>>)`
+- Update `ProxyRouter::default_router()` to pass `None`
+
+### 3. Make routing methods async
+
+**File**: `packages/ergors/src/proxy/router.rs`
+
+- `provider_to_route_target(&self, provider) -> Result<RouteTarget>` → `async`
+  - Resolution: `self.key_accessor.get_key(&provider.provider_id).await`
+  - Remove `env://` fallback and plaintext `api_key` field access
+  - If no accessor or key not found → return `api_key: None` (let caller handle auth)
+- `route_anthropic/openai/ollama(&self, model)` → `async` (they call `provider_to_route_target`)
+- `match_model_route(&self, model)` → `async`
+- Update `forward_anthropic/openai/ollama` calls to `.await` the routing
+
+### 4. Wire accessor at server startup
+
+**File**: `packages/ergors/src/server.rs`
+
+- After `load_and_store_encrypted_api_keys()` decrypts keys, wrap the `EncryptedApiKeyManager` as `Arc<dyn ApiKeyMethod>`
+- Pass to `ProxyRouter::new(proxy_router_config, Some(key_accessor))`
+- Remove `set_api_keys_env()` function and its call entirely — no env var fallback
+- All API key access goes exclusively through custody `ApiKeyMethod`
+
+### 5. Fix test TOML templates
+
+**Files**:
+
+- `packages/ergors/tests/fixtures/proxy_config_template.toml` — already created, needs all `InferenceProviderConfig` fields
+- `tests/fixtures/proxy_config_with_providers.toml` — same
+- Update both config test files to use `include_str!` (already partially done)
+
+### 6. Update router tests
+
+**File**: `packages/ergors/src/proxy/router.rs` (test module)
+
+- Update `ProxyRouter::new()` calls to include `None` for key_accessor
+- Update any sync routing calls to use `#[tokio::test]` + `.await`
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `packages/ho-std/src/llm/encrypted_keys.rs` | Implement `ApiKeyMethod` |
+| `packages/ergors/src/proxy/router.rs` | Add accessor, async routing |
+| `packages/ergors/src/server.rs` | Wire accessor to ProxyRouter |
+| `packages/ergors/tests/fixtures/proxy_config_template.toml` | Complete fixture |
+| `tests/fixtures/proxy_config_with_providers.toml` | Complete fixture |
+| `packages/ergors/src/config.rs` | Test uses `include_str!` (already done) |
+| `tests/src/config/mod.rs` | Test uses `include_str!` (already done) |
+
+## Verification
+
+1. `cargo chec` — no compilation errors
+2. `cargo tes --package ho-std --lib llm::encrypted_keys` — ApiKeyMethod impl tests
+3. `cargo tes --package ergors --lib proxy` — router tests pass
+4. `cargo tes --package ergors --lib config::proxy_config_tests` — TOML template tests pass
+5. `cargo tes --package tests --lib config::proxy_config` — integration config tests pass

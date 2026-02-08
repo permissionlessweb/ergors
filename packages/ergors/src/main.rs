@@ -11,6 +11,7 @@ use commonware_runtime::{
 };
 use ergors::{
     auth::AuthCmd,
+    auth::grpc::AuthorizedCliKeys,
     client::ManagementClient,
     commands::{
         call::CallCmd, config::ConfigCmd, init::InitCmd, sentinel::SentinelCmd, BootstrapCmd,
@@ -85,6 +86,10 @@ pub struct Cli {
     /// Output in JSON format (for scripting)
     #[arg(long)]
     pub json: bool,
+
+    /// Ed25519 signing key for authenticated remote access (64 hex chars)
+    #[arg(long, env = "ERGORS_SIGNING_KEY_HEX")]
+    pub signing_key_hex: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -186,8 +191,8 @@ fn main() -> Result<()> {
     match &cli.command {
         // Local commands (synchronous, no daemon needed)
         Commands::Init(cmd) => cmd.init(cli.home.as_path())?,
-        Commands::Config(cmd) => cmd.exec(cli.home.as_path())?,
-        Commands::Keys(cmd) => cmd.exec(cli.home.as_path())?,
+        Commands::Config(cmd) => cmd.exec(cli.home.as_path(), cli.json)?,
+        Commands::Keys(cmd) => cmd.exec(cli.home.as_path(), cli.json)?,
         Commands::ManageAuth(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::Sentinel(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::Call(_) => todo!(),
@@ -210,16 +215,57 @@ fn run_async_command(cli: Cli) -> Result<()> {
         .block_on(async move { execute_grpc_command(&cli).await })
 }
 
+/// Resolve signing key for remote gRPC connections.
+/// Local connections don't need a key; remote connections require one.
+fn resolve_signing_key(
+    addr: &str,
+    key_hex: Option<&str>,
+) -> Result<Option<ho_std::keys::commonware::NodePrivKey>> {
+    let is_local = is_loopback_addr(addr);
+
+    match (is_local, key_hex) {
+        (true, _) => Ok(None),
+        (false, Some(hex)) => {
+            let key = ho_std::keys::commonware::NodePrivKey::from_hex(hex)
+                .ok_or_else(|| anyhow::anyhow!("Invalid --signing-key-hex (expected 64 hex chars)"))?;
+            Ok(Some(key))
+        }
+        (false, None) => {
+            anyhow::bail!(
+                "Remote gRPC target requires --signing-key-hex or ERGORS_SIGNING_KEY_HEX.\n\
+                 Register your public key on the engine with: ergors config register-cli-key <pubkey_hex>"
+            );
+        }
+    }
+}
+
+fn is_loopback_addr(addr: &str) -> bool {
+    // Strip scheme (http://, https://) and port to extract host
+    let stripped = addr
+        .strip_prefix("http://")
+        .or_else(|| addr.strip_prefix("https://"))
+        .unwrap_or(addr);
+    let host = stripped.split(':').next().unwrap_or(stripped);
+
+    matches!(
+        host,
+        "localhost" | "127.0.0.1" | "::1" | "0.0.0.0" | "[::1]"
+    )
+}
+
 /// Execute a gRPC command against the daemon
 async fn execute_grpc_command(cli: &Cli) -> Result<()> {
+    let signing_key = resolve_signing_key(&cli.grpc_addr, cli.signing_key_hex.as_deref())?;
+
     let ctx = CliContext {
         home: cli.home.clone(),
         grpc_addr: cli.grpc_addr.clone(),
         json: cli.json,
+        signing_key: signing_key.clone(),
     };
 
     // Create gRPC client (lazy - some commands check if daemon is running first)
-    let client = ManagementClient::connect(&cli.grpc_addr).await;
+    let client = ManagementClient::connect(&cli.grpc_addr, signing_key).await;
 
     match &cli.command {
         // Daemon control commands
@@ -345,9 +391,21 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
         // Get app state for gRPC service
         let app_state = s.state();
 
+        // Load authorized CLI keys from storage into runtime set
+        let authorized_keys = AuthorizedCliKeys::new();
+        if let Ok(stored) = app_state.s.get_authorized_cli_keys().await {
+            authorized_keys.load_from(&stored.keys);
+            if !stored.keys.is_empty() {
+                info!("Loaded {} authorized CLI keys from storage", stored.keys.len());
+            }
+        }
+
         // Create gRPC management service
-        let grpc_service =
-            ManagementServiceImpl::new(app_state.clone(), tokio::sync::broadcast::channel(1).0);
+        let grpc_service = ManagementServiceImpl::new(
+            app_state.clone(),
+            tokio::sync::broadcast::channel(1).0,
+            authorized_keys.clone(),
+        );
 
         // Create RLM document service
         let rlm_service = Some(RlmDocService::new(app_state.s.clone()));
@@ -358,7 +416,7 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
             .expect("Invalid gRPC address");
 
         let grpc_handle = tokio::spawn(async move {
-            if let Err(e) = start_grpc_server(grpc_addr, grpc_service, rlm_service).await {
+            if let Err(e) = start_grpc_server(grpc_addr, grpc_service, rlm_service, authorized_keys).await {
                 error!("gRPC server error: {}", e);
             }
         });
