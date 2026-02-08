@@ -209,15 +209,12 @@ _ergors_import_keys_to_node() {
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
         --label "E2E Faucet Key" \
-        --key-name "faucet" \
-        --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
-        --address-prefix "akash" \
-        --make-default 2>&1) || true
+        --default 2>&1) || true
 
-    # Check if import succeeded
-    if echo "$import_output" | grep -q "akash1"; then
+    # Check if import succeeded (keys are chain-agnostic with ergo prefix)
+    if echo "$import_output" | grep -q "ergo1"; then
         local addr
-        addr=$(echo "$import_output" | grep -o "akash1[a-z0-9]*" | head -1)
+        addr=$(echo "$import_output" | grep -o "ergo1[a-z0-9]*" | head -1)
         log_verbose "$node_name key imported: $addr"
     else
         log_verbose "$node_name key import output: $import_output"
@@ -243,17 +240,20 @@ ergors_start_network() {
     local coord_p2p=$((port + 2))
     COORDINATOR_GRPC="127.0.0.1:${coord_grpc}"
     COORDINATOR_API="127.0.0.1:${coord_http}"
+
+    # Export gRPC address for CLI commands (CLI uses ERGORS_GRPC_ADDR, not ERGORS_GRPC_PORT)
+    export ERGORS_GRPC_ADDR="http://127.0.0.1:${coord_grpc}"
+    # Also export port for compatibility with other scripts
+    export ERGORS_GRPC_PORT="$coord_grpc"
+
     port=$((port + 10))
 
     _ergors_init_node "$coord_home" "coordinator"
     _ergors_generate_config "coordinator" "coordinator" "$coord_http" "$coord_p2p" "$coord_home"
     _ergors_import_keys_to_node "$coord_home" "coordinator"
 
-    # Configure LLM entities BEFORE starting coordinator (if API keys are available)
-    if [[ -n "${OPENAI_API_KEY:-}" ]] && [[ -n "${ANTHROPIC_API_KEY:-}" ]] && [[ -n "${OLLAMA_API_KEY:-}" ]]; then
-        log "Configuring LLM entities for coordinator..."
-        ergors_configure_llm_entities "$coord_home" "$OPENAI_API_KEY" "$ANTHROPIC_API_KEY" "$OLLAMA_API_KEY"
-    fi
+    # Note: LLM provider configuration will happen AFTER nodes start
+    # via ergors_configure_providers_via_grpc() using gRPC commands
 
     log "Starting coordinator..."
 
@@ -283,11 +283,8 @@ ergors_start_network() {
     _ergors_generate_config "executor_0" "executor" "$exec_http" "$exec_p2p" "$exec_home"
     _ergors_import_keys_to_node "$exec_home" "executor"
 
-    # Configure LLM entities BEFORE starting executor (if API keys are available)
-    if [[ -n "${OPENAI_API_KEY:-}" ]] && [[ -n "${ANTHROPIC_API_KEY:-}" ]] && [[ -n "${OLLAMA_API_KEY:-}" ]]; then
-        log "Configuring LLM entities for executor..."
-        ergors_configure_llm_entities "$exec_home" "$OPENAI_API_KEY" "$ANTHROPIC_API_KEY" "$OLLAMA_API_KEY"
-    fi
+    # Note: LLM provider configuration will happen AFTER nodes start
+    # via ergors_configure_providers_via_grpc() using gRPC commands
 
     log "Starting executor..."
 
@@ -741,11 +738,8 @@ ergors_import_faucet_key() {
     import_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
-        --label "E2E Faucet Key" \
-        --key-name "$key_name" \
-        --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
-        --address-prefix "akash" \
-        --make-default 2>&1) || true
+        --label "$key_name" \
+        --default 2>&1) || true
 
     log_verbose "Import output: $import_output"
 
@@ -1269,7 +1263,102 @@ ergors_configure_api_keys() {
     return 0
 }
 
-ergors_configure_llm_entities() {
+ergors_configure_providers_via_grpc() {
+    local openai_key="${1:-}"
+    local anthropic_key="${2:-}"
+    local ollama_key="${3:-}"
+
+    if [[ -z "$openai_key" ]] || [[ -z "$anthropic_key" ]] || [[ -z "$ollama_key" ]]; then
+        log_error "API keys are required for provider configuration"
+        return 1
+    fi
+
+    local mock_url="${MOCK_PROVIDER_URL:-http://127.0.0.1:11434}"
+
+    log "Configuring inference providers via gRPC..."
+    log_verbose "  OpenAI: $openai_key → ${mock_url}/v1"
+    log_verbose "  Anthropic: $anthropic_key → ${mock_url}/v1"
+    log_verbose "  Ollama: $ollama_key → $mock_url"
+
+    # Wait for gRPC server to be fully ready (port open != server ready)
+    log_verbose "Waiting for gRPC server initialization..."
+    sleep 3
+
+    # Helper function to retry provider add with exponential backoff
+    _add_provider_with_retry() {
+        local name="$1"
+        local key="$2"
+        local url="$3"
+        local max_attempts=8
+        local attempt=1
+        local wait_time=1
+
+        while [[ $attempt -le $max_attempts ]]; do
+            log_verbose "Adding $name provider (attempt $attempt/$max_attempts)..."
+            log_verbose "Command: $ERGORS_BIN --home $TEST_DIR/coordinator provider add $name --api-key [REDACTED] --base-url $url"
+
+            local output
+            # Use timeout to prevent hanging and redirect stdin from /dev/null
+            if output=$(timeout 10 "$ERGORS_BIN" --home "$TEST_DIR/coordinator" provider add "$name" \
+                --api-key "$key" \
+                --base-url "$url" </dev/null 2>&1); then
+                echo "$output" | tee -a "$TEST_DIR/coordinator/provider_config.log"
+                log_verbose "$name provider configured successfully"
+                return 0
+            fi
+
+            local exit_code=$?
+            if [[ $exit_code -eq 124 ]]; then
+                log_error "Command timed out after 10s - may be waiting for stdin"
+                return 1
+            fi
+
+            # Check if it's a connection error (retry) or other error (fail fast)
+            if echo "$output" | grep -q "Connection refused\|transport error\|Failed to connect"; then
+                if [[ $attempt -lt $max_attempts ]]; then
+                    log_warn "$name provider connection failed, retrying in ${wait_time}s..."
+                    sleep "$wait_time"
+                    wait_time=$((wait_time * 2))  # Exponential backoff
+                    attempt=$((attempt + 1))
+                else
+                    log_error "Failed to configure $name provider after $max_attempts attempts"
+                    echo "$output" | tee -a "$TEST_DIR/coordinator/provider_config.log"
+                    return 1
+                fi
+            else
+                # Non-connection error, fail immediately
+                log_error "Failed to configure $name provider: $output"
+                echo "$output" | tee -a "$TEST_DIR/coordinator/provider_config.log"
+                return 1
+            fi
+        done
+
+        return 1
+    }
+
+    # Configure OpenAI provider with retry
+    # NOTE: Do NOT append /v1 - the proxy forward methods already add the full path
+    # e.g., forward_openai() builds "{base_url}/v1/chat/completions"
+    if ! _add_provider_with_retry "openai" "$openai_key" "$mock_url"; then
+        return 1
+    fi
+
+    # Configure Anthropic provider with retry
+    if ! _add_provider_with_retry "anthropic" "$anthropic_key" "$mock_url"; then
+        return 1
+    fi
+
+    # Configure Ollama provider with retry
+    if ! _add_provider_with_retry "ollama" "$ollama_key" "$mock_url"; then
+        return 1
+    fi
+
+    log_success "Providers configured successfully"
+    return 0
+}
+
+# DEPRECATED: Old config.toml-based configuration (kept for reference)
+ergors_configure_llm_entities_deprecated() {
     local home_dir="$1"
     local openai_key="$2"
     local anthropic_key="$3"
@@ -1425,14 +1514,11 @@ ergors_import_keys_post_startup() {
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$coord_home" keys import-mnemonic \
         --label "E2E Faucet Key" \
-        --key-name "faucet" \
-        --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
-        --address-prefix "akash" \
-        --make-default 2>&1) || true
-    
-    if echo "$coord_import" | grep -q "akash1"; then
+        --default 2>&1) || true
+
+    if echo "$coord_import" | grep -q "ergo1"; then
         local addr
-        addr=$(echo "$coord_import" | grep -o "akash1[a-z0-9]*" | head -1)
+        addr=$(echo "$coord_import" | grep -o "ergo1[a-z0-9]*" | head -1)
         log_success "Coordinator key imported: $addr"
         export COORDINATOR_ADDRESS="$addr"
     else
@@ -1446,14 +1532,11 @@ ergors_import_keys_post_startup() {
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$exec_home" keys import-mnemonic \
         --label "E2E Faucet Key" \
-        --key-name "faucet" \
-        --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
-        --address-prefix "akash" \
-        --make-default 2>&1) || true
-    
-    if echo "$exec_import" | grep -q "akash1"; then
+        --default 2>&1) || true
+
+    if echo "$exec_import" | grep -q "ergo1"; then
         local addr
-        addr=$(echo "$exec_import" | grep -o "akash1[a-z0-9]*" | head -1)
+        addr=$(echo "$exec_import" | grep -o "ergo1[a-z0-9]*" | head -1)
         log_success "Executor key imported: $addr"
         export EXECUTOR_ADDRESS="$addr"
     else

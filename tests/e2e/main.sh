@@ -329,7 +329,7 @@ run_infrastructure_phase() {
         log_verbose "  Ollama: ${OLLAMA_KEY:0:20}..."
     fi
 
-    # Start ERGORS network (will configure LLM entities with generated keys)
+    # Start ERGORS network
     if [[ "$SKIP_NETWORK" == true ]]; then
         log_warn "Skipping ERGORS network setup"
     else
@@ -337,6 +337,17 @@ run_infrastructure_phase() {
             log_error "ERGORS network setup failed"
             exit 1
         }
+
+        # Configure inference providers via gRPC (after nodes are running)
+        if [[ "$SKIP_INFERENCE" != true ]] && [[ -n "${OPENAI_KEY:-}" ]]; then
+            log "Configuring inference providers via ergors provider add..."
+            if ergors_configure_providers_via_grpc "$OPENAI_KEY" "$ANTHROPIC_KEY" "$OLLAMA_KEY"; then
+                log_success "Providers configured via gRPC"
+            else
+                log_error "Failed to configure providers"
+                exit 1
+            fi
+        fi
     fi
 
     # Setup Akash infrastructure

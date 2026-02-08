@@ -23,3 +23,11 @@ review
 coverage
 
 contracts/artifacts/*.wasm
+# Team shared resources (tracked)
+# .team/ is our single source of truth
+
+# Exclude backup folders
+*.backup/
+.opencode/*.backup/
+.claude/*.backup/
+.agents.backup/
