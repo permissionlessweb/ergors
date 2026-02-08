@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     ca-certificates \
     clang \
-    libclang \
+    libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -17,6 +17,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY packages ./packages
 COPY proto ./proto
 COPY tests ./tests
+COPY templates ./templates
 
 # Build release binary
 # Use --locked to ensure reproducible builds
