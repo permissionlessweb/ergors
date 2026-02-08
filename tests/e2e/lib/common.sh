@@ -136,42 +136,68 @@ test_skip() {
 
 print_test_summary() {
     local duration="${1:-0}"
+    local total=$((TESTS_PASSED + TESTS_FAILED))
+
+    # Count skipped
+    local tests_skipped=0
+    for result in "${TEST_RESULTS[@]}"; do
+        [[ "$result" == SKIP:* ]] && tests_skipped=$((tests_skipped + 1))
+    done
 
     echo ""
-    echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
-    echo -e "${BOLD}  Test Summary${NC}"
-    echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "  Duration:      ${duration}s"
-    echo -e "  Tests Passed:  ${GREEN}${TESTS_PASSED}${NC}"
-    echo -e "  Tests Failed:  ${RED}${TESTS_FAILED}${NC}"
-    echo ""
 
+    # --- Failures section (detailed, like cargo test) ---
     if [[ $TESTS_FAILED -gt 0 ]]; then
-        echo -e "  ${RED}${BOLD}Failed Tests:${NC}"
+        echo -e "${RED}${BOLD}failures:${NC}"
+        echo ""
+
+        # Print each failure with details
         for result in "${TEST_RESULTS[@]}"; do
             if [[ "$result" == FAIL:* ]]; then
-                local name=$(echo "$result" | cut -d: -f2)
-                local desc=$(echo "$result" | cut -d: -f3)
-                echo -e "    ${RED}✗${NC} $name: $desc"
+                local name desc details
+                name=$(echo "$result" | cut -d: -f2)
+                desc=$(echo "$result" | cut -d: -f3)
+                details=$(echo "$result" | cut -d: -f4-)
+                echo -e "---- ${BOLD}$name${NC} ----"
+                echo -e "  $desc"
+                if [[ -n "$details" ]]; then
+                    echo -e "  ${RED}$details${NC}"
+                fi
+                echo ""
+            fi
+        done
+
+        echo -e "${RED}${BOLD}failures:${NC}"
+        for result in "${TEST_RESULTS[@]}"; do
+            if [[ "$result" == FAIL:* ]]; then
+                local name
+                name=$(echo "$result" | cut -d: -f2)
+                echo -e "    ${name}"
             fi
         done
         echo ""
+    fi
 
-        # Display engine logs on failure (helps debug crashes)
+    # --- Result line (like: test result: FAILED. 23 passed; 2 failed; 1 skipped) ---
+    if [[ $TESTS_FAILED -gt 0 ]]; then
+        echo -ne "test result: ${RED}${BOLD}FAILED${NC}. "
+    else
+        echo -ne "test result: ${GREEN}${BOLD}ok${NC}. "
+    fi
+    echo -e "${TESTS_PASSED} passed; ${TESTS_FAILED} failed; ${tests_skipped} skipped; finished in ${duration}s"
+    echo ""
+
+    # Engine log hint on failure
+    if [[ $TESTS_FAILED -gt 0 ]]; then
         if [[ "${VERBOSE:-false}" == "true" ]] && type display_engine_logs &>/dev/null; then
             display_engine_logs 100
         else
             echo -e "  ${YELLOW}Tip: Run with --verbose to see engine logs on failure${NC}"
             echo ""
         fi
-
         return 1
-    else
-        echo -e "${GREEN}${BOLD}  All tests passed!${NC}"
-        echo ""
-        return 0
     fi
+    return 0
 }
 
 # =============================================================================

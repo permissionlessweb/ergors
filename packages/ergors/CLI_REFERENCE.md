@@ -28,6 +28,63 @@ ergors [OPTIONS] <COMMAND>
 | `bootstrap` | Bootstrap new nodes via Akash or SSH | node, list, status, delete |
 | `gateway` | Communication gateway management | list, status, enable, disable, discord |
 | `sentinel` | Sentinel node bootstrap (encrypted) | bootstrap |
+| `call` | Make inference calls through the node | - |
+
+---
+
+## Call Command
+
+Send inference requests through the node's HTTP proxy. Detects API format (Anthropic vs OpenAI) from the model name and routes accordingly. Streaming is enabled by default.
+
+```bash
+ergors call [PROMPT] [OPTIONS]
+```
+
+| Option | Description | Default | Env Var |
+| ------ | ----------- | ------- | ------- |
+| `[PROMPT]` | Prompt text (positional). Reads from stdin if omitted. | - | - |
+| `-m, --model <NAME>` | Model name (drives format detection and routing) | `claude-sonnet-4-5-20250929` | - |
+| `-s, --system <TEXT>` | System prompt | - | - |
+| `--max-tokens <N>` | Maximum tokens to generate | `4096` | - |
+| `--no-stream` | Disable streaming (wait for full response) | `false` | - |
+| `--temperature <FLOAT>` | Sampling temperature | - | - |
+| `--api-addr <URL>` | HTTP API address override | Derived from `--grpc-addr` host + port 8080 | `ERGORS_API_ADDR` |
+
+**Format Detection:**
+
+| Model pattern | Format | Endpoint |
+| ------------- | ------ | -------- |
+| claude, haiku, sonnet, opus, anthropic | Anthropic | `POST /v1/messages` |
+| Everything else (gpt, o1, o3, llama, etc.) | OpenAI | `POST /v1/chat/completions` |
+
+**Examples:**
+
+```bash
+# Basic prompt (default model: claude-sonnet-4-5-20250929)
+ergors call "What is life?"
+
+# Specify model
+ergors call "Hello" --model gpt-4o
+
+# Pipe from stdin
+echo "Explain this" | ergors call --model gpt-4o
+
+# With system prompt and no streaming
+ergors call "Hello" -s "You are a poet" --no-stream --model llama3
+
+# Full JSON response (--json global flag + --no-stream)
+ergors --json call "Hello" --no-stream
+
+# Custom API address
+ergors call "Hello" --api-addr http://remote-node:8080
+```
+
+**Notes:**
+
+- The command never calls upstream providers directly — it always goes through the node's HTTP proxy
+- The node handles API key resolution from custody, request capture, and model routing
+- Streaming prints tokens to stdout as they arrive; pipe to a file for full capture
+- Use `--json` (global flag) with `--no-stream` to get the full API response as pretty-printed JSON
 
 ---
 

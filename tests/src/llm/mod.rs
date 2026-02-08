@@ -180,8 +180,8 @@ mod router_with_custody_accessor {
         let store = manager.create_store(&keys).unwrap();
         manager.load_store(&store).unwrap();
 
-        // Wrap as Arc<dyn ApiKeyMethod>
-        let accessor: Arc<dyn ApiKeyMethod> = Arc::new(manager);
+        // Wrap as Arc<RwLock<dyn ApiKeyMethod>>
+        let accessor: Arc<tokio::sync::RwLock<dyn ApiKeyMethod>> = Arc::new(tokio::sync::RwLock::new(manager));
 
         // Build ProxyRouterConfig with providers referencing custody
         let mut providers = HashMap::new();
@@ -258,7 +258,7 @@ mod router_with_custody_accessor {
             .unwrap();
         manager.load_store(&store).unwrap();
 
-        let accessor: Arc<dyn ApiKeyMethod> = Arc::new(manager);
+        let accessor: Arc<tokio::sync::RwLock<dyn ApiKeyMethod>> = Arc::new(tokio::sync::RwLock::new(manager));
 
         let mut providers = HashMap::new();
         providers.insert(
@@ -338,7 +338,7 @@ mod router_with_custody_accessor {
             ]))
             .unwrap();
         manager.load_store(&store).unwrap();
-        let accessor: Arc<dyn ApiKeyMethod> = Arc::new(manager);
+        let accessor: Arc<tokio::sync::RwLock<dyn ApiKeyMethod>> = Arc::new(tokio::sync::RwLock::new(manager));
 
         let mut providers = HashMap::new();
         providers.insert(
@@ -378,7 +378,7 @@ mod router_with_custody_accessor {
             ]))
             .unwrap();
         manager.load_store(&store).unwrap();
-        let accessor: Arc<dyn ApiKeyMethod> = Arc::new(manager);
+        let accessor: Arc<tokio::sync::RwLock<dyn ApiKeyMethod>> = Arc::new(tokio::sync::RwLock::new(manager));
 
         let mut providers = HashMap::new();
         providers.insert(

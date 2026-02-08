@@ -38,7 +38,9 @@
 - use label||session id for all cli commands
 - do not poll for workflow in cache if its closed (currently still polls for deployments closed on error during inital deplyoment workflow)
 - ensure all requests made to endpoing are saved in storage layer
-- display known response from api for helping/debugging when incorrect api defintion is called (generic fallback page)
+
+- display known response from api for helping/debugging when incorrect api defintion is called (generic fallback page/api/cli)
+  - okapi
 
 ## SECURITY
 

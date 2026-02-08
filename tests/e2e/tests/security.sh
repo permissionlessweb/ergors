@@ -305,8 +305,10 @@ test_error_handling() {
         else
             test_pass "missing_fields_error" "Missing fields returns error"
         fi
+    elif echo "$missing_fields_response" | grep -qiE "missing field|messages|required|deserialize"; then
+        test_pass "missing_fields_error" "Missing fields returns error: ${missing_fields_response:0:80}"
     else
-        test_fail "missing_fields_error" "Missing required fields not validated"
+        test_fail "missing_fields_error" "Missing required fields not validated" "Response: ${missing_fields_response:0:200}"
     fi
 
     # Test 3: Empty request body

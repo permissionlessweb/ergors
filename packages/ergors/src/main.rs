@@ -157,7 +157,7 @@ pub enum Commands {
     #[command(subcommand)]
     RuntimeConfig(RemoteConfigCmd),
 
-    /// Execute a call (TODO)
+    /// Make inference calls through the node's HTTP proxy
     Call(CallCmd),
 }
 
@@ -195,7 +195,7 @@ fn main() -> Result<()> {
         Commands::Keys(cmd) => cmd.exec(cli.home.as_path(), cli.json)?,
         Commands::ManageAuth(cmd) => cmd.exec(cli.home.as_path())?,
         Commands::Sentinel(cmd) => cmd.exec(cli.home.as_path())?,
-        Commands::Call(_) => todo!(),
+        Commands::Call(cmd) => cmd.exec(cli.home.as_path(), &cli.grpc_addr, cli.json)?,
 
         // Daemon start (special case - runs the server)
         Commands::Start { grpc_port } => start(&cli, *grpc_port)?,

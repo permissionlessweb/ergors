@@ -89,6 +89,10 @@ start:
 watch:
     cargo watch -x "build -p {{engine}}"
 
+# Sync .team/agents/ to .claude/skills/ structure
+sync-agents:
+    @./scripts/sync-claude-agents.sh
+
 # ════════════════════════════════════════════════════════════════════════════
 # Proto generation
 # ════════════════════════════════════════════════════════════════════════════
