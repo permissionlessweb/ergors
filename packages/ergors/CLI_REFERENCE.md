@@ -28,6 +28,7 @@ ergors [OPTIONS] <COMMAND>
 | `bootstrap` | Bootstrap new nodes via Akash or SSH | node, list, status, delete |
 | `gateway` | Communication gateway management | list, status, enable, disable, discord |
 | `sentinel` | Sentinel node bootstrap (encrypted) | bootstrap |
+| `ask` | Document ingestion and querying (RAG + RLM) | ingest-file, rag, rlm, status, list, delete |
 | `call` | Make inference calls through the node | - |
 
 ---
@@ -1643,3 +1644,78 @@ RUST_LOG=ergors=debug,cnidarium=info ergors start
 - `info` - Normal operations (startup, shutdown, key events)
 - `warn` - Warning conditions (retries, degraded state)
 - `error` - Error conditions (failures, exceptions)
+
+---
+
+## Ask Commands
+
+Document ingestion and querying interface supporting RAG (vector search) and RLM (agentic code execution).
+
+### Simple File Ingestion
+
+```bash
+# Ingest a file (chunked storage, no embedder required)
+ergors ask ingest-file <FILE> [--uri <URI>]
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `<FILE>` | Path to file to ingest | Required |
+| `--uri <URI>` | Document URI for identification | `file://<FILE>` |
+
+### RAG Commands
+
+```bash
+# Ingest with embeddings (requires configured embedder)
+ergors ask rag ingest <FILE> [--uri <URI>] [--doc-type <TYPE>] [--tags <TAGS>]
+
+# Query vector database
+ergors ask rag query <QUERY> [-k <TOP_K>] [--verify]
+
+# Configure embedder endpoint
+ergors ask rag configure --endpoint <URL> [--model <MODEL>] [--dimension <DIM>]
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--doc-type <TYPE>` | Document type classification | `text` |
+| `--tags <TAGS>` | Comma-separated tags for filtering | - |
+| `-k, --top-k <N>` | Number of results to return | `5` |
+| `--verify` | Enable provenance verification | `false` |
+| `--endpoint <URL>` | Embedder HTTP endpoint | Required |
+| `--model <MODEL>` | Embedding model name | `all-MiniLM-L6-v2` |
+| `--dimension <DIM>` | Embedding vector dimension | `384` |
+
+### RLM Commands
+
+Requires the `rlm` feature flag at build time.
+
+```bash
+# Query documents using agentic code execution
+ergors ask rlm query <QUERY> [--source-prefix <PREFIX>] [--limit <N>]
+
+# Configure RLM provider selection
+ergors ask rlm configure --primary <LABEL> [--secondary <LABEL>] [--max-iterations <N>] [--max-sub-calls <N>]
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--source-prefix <PREFIX>` | Filter documents by URI prefix | `""` (all) |
+| `--limit <N>` | Max documents to load | `10` |
+| `--primary <LABEL>` | Primary provider label | Required |
+| `--secondary <LABEL>` | Fallback provider label | - |
+| `--max-iterations <N>` | Max RLM iterations | `10` |
+| `--max-sub-calls <N>` | Max sub-LLM calls | `50` |
+
+### Status & Management
+
+```bash
+# Show combined RAG + RLM status
+ergors ask status
+
+# List all ingested sources
+ergors ask list [--limit <N>]
+
+# Delete source by URI
+ergors ask delete <SOURCE_URI>
+```

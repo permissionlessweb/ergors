@@ -178,6 +178,16 @@ service ManagementService {
   rpc RagConfigure(ergors.orch.v1.RagConfigureRequest) returns (ergors.orch.v1.RagOperationResult);
 
   // ============================================
+  // RLM (Recursive Language Model) Management
+  // ============================================
+  // Execute RLM query with agentic code execution
+  rpc RlmQuery(ergors.orch.v1.RlmQueryRequest) returns (ergors.orch.v1.RlmQueryResponse);
+  // Configure RLM provider selection
+  rpc RlmConfigure(ergors.orch.v1.RlmConfigureRequest) returns (ergors.orch.v1.RagOperationResult);
+  // Get current RLM configuration
+  rpc RlmGetConfig(RlmGetConfigRequest) returns (RlmGetConfigResponse);
+
+  // ============================================
   // Communication Gateway Management
   // ============================================
 
@@ -1563,4 +1573,12 @@ message CliKeyEntry {
   string public_key_hex = 1;
   string label = 2;
   google.protobuf.Timestamp added_at = 3;
+}
+
+// RLM configuration status
+message RlmGetConfigRequest {}
+
+message RlmGetConfigResponse {
+  bool configured = 1;
+  ergors.orch.v1.RlmConfig config = 2;
 }

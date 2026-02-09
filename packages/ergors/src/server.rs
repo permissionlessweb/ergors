@@ -327,6 +327,22 @@ impl Server {
         // Initialize gateway manager (for Discord, Nostr, etc.)
         let gateway_manager = Self::init_gateway_manager(&llm_router, &storage_arc, &c).await;
 
+        // Initialize RLM service (for agentic document queries)
+        // Pool size: number of Python REPL workers for concurrent RLM queries
+        #[cfg(feature = "rlm")]
+        const RLM_WORKER_POOL_SIZE: usize = 2;
+        #[cfg(feature = "rlm")]
+        let rlm_service = match ergors_rlm::RlmService::new(RLM_WORKER_POOL_SIZE, llm_router.clone()).await {
+            Ok(svc) => {
+                tracing::info!("RLM service initialized");
+                Some(Arc::new(svc))
+            }
+            Err(e) => {
+                tracing::warn!("RLM init failed: {}", e);
+                None
+            }
+        };
+
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
@@ -348,6 +364,9 @@ impl Server {
                 akash_context,
                 // gm == gateway manager (optional)
                 gateway_manager,
+                // rlm == RLM service (optional)
+                #[cfg(feature = "rlm")]
+                rlm_service,
                 // wasm == WASM runtime
                 #[cfg(feature = "cw")]
                 wasm_runtime,

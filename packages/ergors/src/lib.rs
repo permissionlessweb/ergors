@@ -128,6 +128,9 @@ pub struct ErgorsAppState {
     pub akash: Option<AkashDeploymentContext>,
     /// gm = gateway manager (when discord or other gateway features enabled)
     pub gm: Option<Arc<gateway::GatewayManager>>,
+    /// rlm = RLM service (when rlm feature is enabled)
+    #[cfg(feature = "rlm")]
+    pub rlm: Option<Arc<ergors_rlm::RlmService>>,
     /// wasm = WASM runtime (when cw feature is enabled)
     #[cfg(feature = "cw")]
     pub wasm: Arc<WasmRuntime>,
@@ -143,6 +146,7 @@ impl ErgorsAppState {
         pr: Arc<RwLock<ProxyRouter>>,
         akash: Option<AkashDeploymentContext>,
         gm: Option<Arc<gateway::GatewayManager>>,
+        #[cfg(feature = "rlm")] rlm: Option<Arc<ergors_rlm::RlmService>>,
         #[cfg(feature = "cw")] wasm: Arc<WasmRuntime>,
     ) -> Self {
         Self {
@@ -154,6 +158,8 @@ impl ErgorsAppState {
             pr,
             akash,
             gm,
+            #[cfg(feature = "rlm")]
+            rlm,
             #[cfg(feature = "cw")]
             wasm,
         }

@@ -3462,7 +3462,7 @@ dependencies = [
  "futures",
  "hf-hub",
  "hnsw_rs",
- "pbjson-types 0.7.0",
+ "pbjson-types 0.8.0",
  "reqwest 0.13.1",
  "serde",
  "serde_json",

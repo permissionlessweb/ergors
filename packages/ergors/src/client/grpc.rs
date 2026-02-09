@@ -93,6 +93,9 @@ use ho_std::types::ergors::management::v1::{
     ListCliKeysResponse,
     RegisterCliKeyRequest,
     RevokeCliKeyRequest,
+    // RLM config types
+    RlmGetConfigRequest,
+    RlmGetConfigResponse,
     // Cosmos key management types
     ListCosmosKeysResponse,
     // Gateway management types
@@ -208,6 +211,11 @@ use ho_std::types::ergors::orch::v1::{
     RagSourceInfo,
     RagStatusRequest,
     RagStatusResponse,
+    // RLM types
+    RlmConfig,
+    RlmConfigureRequest,
+    RlmQueryRequest,
+    RlmQueryResponse,
     RemoveTrustedProviderRequest,
     RevokeAkashCertificateRequest,
     // Automated workflow types
@@ -320,6 +328,82 @@ impl ManagementServiceImpl {
     /// Get the session manager for external use
     pub fn session_manager(&self) -> Arc<SessionManager> {
         self.session_manager.clone()
+    }
+
+    /// Simple document ingestion: chunk and store without embeddings.
+    /// Used by `ergors ask ingest-file` for document storage without an embedder.
+    async fn rag_ingest_simple(
+        &self,
+        content: String,
+        uri: String,
+        doc_type: String,
+        tags: Vec<String>,
+    ) -> Result<Response<RagIngestResponse>, Status> {
+        use ergors_rag::ingest::chunk_text;
+        use ergors_rag::types::VerifiableChunk;
+        use ergors_rag::storage::RagStorage;
+        use uuid::Uuid;
+
+        let chunks_text = chunk_text(&content, 1000);
+        if chunks_text.is_empty() {
+            return Ok(Response::new(RagIngestResponse {
+                success: true,
+                chunk_count: 0,
+                chunk_ids: vec![],
+                message: "No content to ingest".to_string(),
+            }));
+        }
+
+        let now = pbjson_types::Timestamp {
+            seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+            nanos: 0,
+        };
+
+        let rag_storage = RagStorage::new(Arc::new(self.state.s.cs.clone()));
+
+        let verifiable_chunks: Vec<VerifiableChunk> = chunks_text
+            .iter()
+            .map(|text| {
+                let content_hash = ::blake3::hash(text.as_bytes());
+                VerifiableChunk {
+                    chunk_id: Uuid::new_v4(),
+                    content: text.clone(),
+                    content_hash: *content_hash.as_bytes(),
+                    embedding_hash: [0u8; 32], // No embedding
+                    version: 0,
+                    ingested_at: now.clone(),
+                    source_uri: uri.clone(),
+                    uploader_id: None,
+                    access_policy: None,
+                    commit_ref: None,
+                    previous_version: None,
+                }
+            })
+            .collect();
+
+        let ids: Vec<String> = verifiable_chunks.iter().map(|c| c.chunk_id.to_string()).collect();
+        let count = verifiable_chunks.len() as u32;
+
+        match rag_storage.put_chunks_batch(&verifiable_chunks).await {
+            Ok(()) => Ok(Response::new(RagIngestResponse {
+                success: true,
+                chunk_count: count,
+                chunk_ids: ids,
+                message: format!("Ingested {} chunks (no embeddings)", count),
+            })),
+            Err(e) => {
+                tracing::error!("Failed to store chunks: {}", e);
+                Ok(Response::new(RagIngestResponse {
+                    success: false,
+                    chunk_count: 0,
+                    chunk_ids: vec![],
+                    message: format!("Failed to store: {}", e),
+                }))
+            }
+        }
     }
 }
 
@@ -3117,6 +3201,11 @@ impl ManagementService for ManagementServiceImpl {
     ) -> Result<Response<RagIngestResponse>, Status> {
         let req = request.into_inner();
 
+        // Simple ingestion path: chunk and store without embeddings
+        if req.skip_embeddings {
+            return self.rag_ingest_simple(req.content, req.uri, req.doc_type, req.tags).await;
+        }
+
         // Check if embedder is configured
         let rag_config = match self.state.s.get_rag_config().await {
             Ok(Some(config)) => config,
@@ -3376,6 +3465,204 @@ impl ManagementService for ManagementServiceImpl {
                     success: false,
                     message: format!("Failed to configure: {}", e),
                 }))
+            }
+        }
+    }
+
+    // ============ RLM Methods ============
+
+    /// Execute RLM query with agentic code execution
+    async fn rlm_query(
+        &self,
+        request: Request<RlmQueryRequest>,
+    ) -> Result<Response<RlmQueryResponse>, Status> {
+        let req = request.into_inner();
+
+        // Load RLM config
+        let rlm_config = self
+            .state
+            .s
+            .get_rlm_config()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to load RLM config: {}", e)))?
+            .ok_or_else(|| {
+                Status::failed_precondition("RLM not configured. Use 'ergors ask rlm configure'")
+            })?;
+
+        // Load documents by prefix
+        let documents = crate::client::load_documents_by_prefix(
+            &self.state.s,
+            &req.source_uri_prefix,
+            req.limit as usize,
+            None,
+        )
+        .await
+        .map_err(|e| Status::internal(format!("Failed to load documents: {}", e)))?;
+
+        if documents.is_empty() {
+            return Err(Status::not_found(format!(
+                "No documents found with prefix: {}",
+                req.source_uri_prefix
+            )));
+        }
+
+        // Get RLM service from ErgorsAppState
+        #[cfg(not(feature = "rlm"))]
+        return Err(Status::unimplemented(
+            "RLM feature not enabled. Rebuild with --features rlm"
+        ));
+
+        #[cfg(feature = "rlm")]
+        {
+            let rlm_service = self.state.rlm.as_ref().ok_or_else(|| {
+                Status::unavailable("RLM service not initialized. Check startup logs.")
+            })?;
+
+            let start = std::time::Instant::now();
+
+            let rlm_query = ergors_rlm::RlmQuery {
+                query: req.query,
+                guild_id: String::new(),
+                max_iterations: if rlm_config.max_iterations > 0 {
+                    rlm_config.max_iterations
+                } else {
+                    10
+                },
+                max_sub_calls: if rlm_config.max_sub_calls > 0 {
+                    rlm_config.max_sub_calls
+                } else {
+                    50
+                },
+            };
+
+            // Convert proto documents to RLM documents
+            let rlm_docs: Vec<ergors_rlm::Document> = documents
+                .into_iter()
+                .map(|d| ergors_rlm::Document {
+                    source_uri: d.source_uri,
+                    content: d.content,
+                    doc_type: d.doc_type,
+                    tags: d.tags,
+                    ingested_at: d.ingested_at,
+                })
+                .collect();
+
+            match rlm_service.query(rlm_query, rlm_docs).await {
+                Ok(response) => Ok(Response::new(RlmQueryResponse {
+                    answer: response.answer,
+                    source_uris: response.source_uris,
+                    iterations: response.iterations,
+                    sub_llm_calls: response.sub_llm_calls,
+                    cost_usd: response.cost_usd,
+                    latency_ms: start.elapsed().as_millis() as u64,
+                })),
+                Err(e) => {
+                    tracing::error!("RLM query failed: {}", e);
+                    Err(Status::internal(format!("RLM query failed: {}", e)))
+                }
+            }
+        }
+    }
+
+    /// Configure RLM provider selection
+    async fn rlm_configure(
+        &self,
+        request: Request<RlmConfigureRequest>,
+    ) -> Result<Response<RagOperationResult>, Status> {
+        let req = request.into_inner();
+
+        // Validate primary provider exists by checking ProxyRouter config
+        let router_config = self.state.s.get_proxy_router_config().await
+            .map_err(|e| Status::internal(format!("Failed to load router config: {}", e)))?;
+
+        if let Some(config) = router_config {
+            // Check if primary provider exists
+            if !config.providers.contains_key(&req.primary_provider_label) {
+                return Ok(Response::new(RagOperationResult {
+                    success: false,
+                    message: format!(
+                        "Primary provider '{}' not found. Available providers: {}",
+                        req.primary_provider_label,
+                        config.providers.keys().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                    ),
+                }));
+            }
+
+            // Check secondary provider if specified
+            if !req.secondary_provider_label.is_empty()
+                && !config.providers.contains_key(&req.secondary_provider_label) {
+                return Ok(Response::new(RagOperationResult {
+                    success: false,
+                    message: format!(
+                        "Secondary provider '{}' not found. Available providers: {}",
+                        req.secondary_provider_label,
+                        config.providers.keys().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                    ),
+                }));
+            }
+        } else {
+            return Ok(Response::new(RagOperationResult {
+                success: false,
+                message: "No providers configured. Use 'ergors provider add' first.".to_string(),
+            }));
+        }
+
+        // Build config
+        let config = ho_std::types::ergors::orch::v1::RlmConfig {
+            primary_provider_label: req.primary_provider_label.clone(),
+            secondary_provider_label: req.secondary_provider_label.clone(),
+            max_iterations: req.max_iterations.unwrap_or(10),
+            max_sub_calls: req.max_sub_calls.unwrap_or(50),
+            updated_at: Some(pbjson_types::Timestamp {
+                seconds: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64,
+                nanos: 0,
+            }),
+        };
+
+        // Store configuration
+        match self.state.s.set_rlm_config(&config).await {
+            Ok(()) => Ok(Response::new(RagOperationResult {
+                success: true,
+                message: format!(
+                    "RLM configured: primary={}, secondary={}",
+                    config.primary_provider_label,
+                    if config.secondary_provider_label.is_empty() {
+                        "none"
+                    } else {
+                        &config.secondary_provider_label
+                    }
+                ),
+            })),
+            Err(e) => {
+                tracing::error!("Failed to configure RLM: {}", e);
+                Ok(Response::new(RagOperationResult {
+                    success: false,
+                    message: format!("Failed to configure: {}", e),
+                }))
+            }
+        }
+    }
+
+    /// Get current RLM configuration
+    async fn rlm_get_config(
+        &self,
+        _request: Request<RlmGetConfigRequest>,
+    ) -> Result<Response<RlmGetConfigResponse>, Status> {
+        match self.state.s.get_rlm_config().await {
+            Ok(Some(config)) => Ok(Response::new(RlmGetConfigResponse {
+                configured: true,
+                config: Some(config),
+            })),
+            Ok(None) => Ok(Response::new(RlmGetConfigResponse {
+                configured: false,
+                config: None,
+            })),
+            Err(e) => {
+                tracing::error!("Failed to get RLM config: {}", e);
+                Err(Status::internal(format!("Failed to get RLM config: {}", e)))
             }
         }
     }

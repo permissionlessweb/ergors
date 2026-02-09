@@ -4394,6 +4394,9 @@ pub struct RagIngestRequest {
     pub doc_type: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "4")]
     pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Simple chunking without embeddings
+    #[prost(bool, tag = "5")]
+    pub skip_embeddings: bool,
 }
 impl ::prost::Name for RagIngestRequest {
     const NAME: &'static str = "RagIngestRequest";
@@ -4716,13 +4719,20 @@ impl ::prost::Name for GetDocumentsResponse {
 pub struct RlmQueryRequest {
     #[prost(string, tag = "1")]
     pub query: ::prost::alloc::string::String,
+    /// Filter documents by prefix (e.g., "file://", "github:")
     #[prost(string, tag = "2")]
-    pub guild_id: ::prost::alloc::string::String,
+    pub source_uri_prefix: ::prost::alloc::string::String,
+    /// Max documents to load (default: 10)
     #[prost(uint32, tag = "3")]
+    pub limit: u32,
+    /// Deprecated fields kept for Discord compatibility
+    #[prost(string, tag = "4")]
+    pub guild_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "5")]
     pub max_iterations: u32,
-    #[prost(uint32, tag = "4")]
+    #[prost(uint32, tag = "6")]
     pub max_sub_calls: u32,
-    #[prost(string, repeated, tag = "5")]
+    #[prost(string, repeated, tag = "7")]
     pub allowed_models: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 impl ::prost::Name for RlmQueryRequest {
@@ -4760,6 +4770,58 @@ impl ::prost::Name for RlmQueryResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.orch.v1.RlmQueryResponse".into()
+    }
+}
+/// RLM provider configuration
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RlmConfig {
+    /// Primary provider label (e.g., "qwen-coder")
+    #[prost(string, tag = "1")]
+    pub primary_provider_label: ::prost::alloc::string::String,
+    /// Fallback provider label
+    #[prost(string, tag = "2")]
+    pub secondary_provider_label: ::prost::alloc::string::String,
+    /// Default: 10
+    #[prost(uint32, tag = "3")]
+    pub max_iterations: u32,
+    /// Default: 50
+    #[prost(uint32, tag = "4")]
+    pub max_sub_calls: u32,
+    #[prost(message, optional, tag = "5")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for RlmConfig {
+    const NAME: &'static str = "RlmConfig";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RlmConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RlmConfig".into()
+    }
+}
+/// Request to configure RLM
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RlmConfigureRequest {
+    #[prost(string, tag = "1")]
+    pub primary_provider_label: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub secondary_provider_label: ::prost::alloc::string::String,
+    #[prost(uint32, optional, tag = "3")]
+    pub max_iterations: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "4")]
+    pub max_sub_calls: ::core::option::Option<u32>,
+}
+impl ::prost::Name for RlmConfigureRequest {
+    const NAME: &'static str = "RlmConfigureRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RlmConfigureRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RlmConfigureRequest".into()
     }
 }
 /// A generic inbox message representing an action request between nodes
