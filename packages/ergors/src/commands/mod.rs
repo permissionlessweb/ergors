@@ -564,10 +564,13 @@ pub enum ProviderCmd {
         #[arg(long)]
         api_key: Option<String>,
         #[arg(long)]
-        base_url: Option<String>,  
+        base_url: Option<String>,
         /// Set as default provider
         #[arg(long)]
         default: bool,
+        /// Register without an API key (for local/co-deployed inference)
+        #[arg(long)]
+        no_key: bool,
     },
     /// Test provider connectivity
     Test {
@@ -621,31 +624,39 @@ impl ProviderCmd {
                 api_key,
                 base_url,
                 default,
+                no_key,
             } => {
                 // Normalize provider name to lowercase for consistency
                 let name_lower = name.to_lowercase();
 
-                let key = match api_key {
-                    Some(k) => k.clone(),
-                    None => {
-                        use std::io::IsTerminal;
-                        if std::io::stdin().is_terminal() {
-                            rpassword::prompt_password(format!(
-                                "Enter API key for {}: ",
-                                name_lower
-                            ))?
-                        } else {
-                            let mut input = String::new();
-                            std::io::stdin().read_line(&mut input)?;
-                            input.trim().to_string()
+                let key = if *no_key {
+                    if base_url.is_none() {
+                        anyhow::bail!("--base-url is required when using --no-key");
+                    }
+                    String::new()
+                } else {
+                    match api_key {
+                        Some(k) => k.clone(),
+                        None => {
+                            use std::io::IsTerminal;
+                            if std::io::stdin().is_terminal() {
+                                rpassword::prompt_password(format!(
+                                    "Enter API key for {}: ",
+                                    name_lower
+                                ))?
+                            } else {
+                                let mut input = String::new();
+                                std::io::stdin().read_line(&mut input)?;
+                                input.trim().to_string()
+                            }
                         }
                     }
                 };
-                if key.is_empty() {
+                if !*no_key && key.is_empty() {
                     anyhow::bail!("API key cannot be empty");
                 }
 
-                let result = client.configure_provider(&name_lower, &key, base_url.as_deref(), *default).await?;
+                let result = client.configure_provider(&name_lower, &key, base_url.as_deref(), *default, *no_key).await?;
 
                 if result.success {
                     println!("Provider '{}' configured ({})", name_lower, result.message);
@@ -696,7 +707,7 @@ impl ProviderCmd {
             ProviderCmd::Default { name } => {
                 // Normalize provider name to lowercase
                 let name_lower = name.to_lowercase();
-                let result = client.configure_provider(&name_lower, "", None, true).await?;
+                let result = client.configure_provider(&name_lower, "", None, true, false).await?;
 
                 if result.success {
                     println!("Default provider set to: {}", name_lower);

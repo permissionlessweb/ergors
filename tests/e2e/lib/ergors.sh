@@ -191,9 +191,11 @@ _ergors_init_node() {
 }
 
 # Import faucet key into a node (internal helper)
+# Usage: _ergors_import_keys_to_node <home_dir> <node_name> [prefix]
 _ergors_import_keys_to_node() {
     local home_dir="$1"
     local node_name="$2"
+    local prefix="${3:-akash}"  # Default to akash for Akash faucet keys
 
     # Get faucet mnemonic
     local mnemonic
@@ -209,15 +211,22 @@ _ergors_import_keys_to_node() {
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
         --label "E2E Faucet Key" \
+        --prefix "$prefix" \
         --default 2>&1) || true
 
-    # Check if import succeeded (keys are chain-agnostic with ergo prefix)
-    if echo "$import_output" | grep -q "ergo1"; then
+    # Check if import succeeded
+    if echo "$import_output" | grep -Eq "${prefix}1[a-z0-9]+"; then
         local addr
-        addr=$(echo "$import_output" | grep -o "ergo1[a-z0-9]*" | head -1)
-        log_verbose "$node_name key imported: $addr"
+        addr=$(echo "$import_output" | grep -oE "${prefix}1[a-z0-9]*" | head -1)
+        log_verbose "$node_name: Imported faucet key: $addr"
+        return 0
+    elif echo "$import_output" | grep -qi "already exists"; then
+        log_verbose "$node_name: Faucet key already imported (skipping)"
+        return 0
     else
-        log_verbose "$node_name key import output: $import_output"
+        log_warn "$node_name: Key import may have issues"
+        log_debug "$import_output"
+        return 0  # Non-fatal
     fi
 }
 
@@ -717,11 +726,43 @@ ergors_get_addresses() {
 
 # Import the Akash faucet mnemonic into the coordinator node
 # This gives the coordinator a pre-funded key (10B AKT from genesis)
-# Uses: ergors keys import-mnemonic
+# Uses: ergors keys import-mnemonic --prefix akash
+# If a faucet key already exists (e.g., "E2E Faucet Key"), use that instead of importing again
 ergors_import_faucet_key() {
     local key_name="${1:-faucet}"
     local home_dir="${2:-$TEST_DIR/coordinator}"
 
+    # Check if a faucet key already exists (may have been imported during node startup)
+    local keys_output
+    keys_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$home_dir" keys list 2>&1) || true
+
+    log_verbose "Checking existing keys..."
+    log_verbose "Keys list: $keys_output"
+
+    # Check if the requested key already exists
+    if echo "$keys_output" | grep -q "$key_name"; then
+        local addr
+        addr=$(echo "$keys_output" | grep "$key_name" | grep -oE "(akash1|ergo1)[a-z0-9]{38,}" | head -1)
+        if [[ -n "$addr" ]]; then
+            log_success "Faucet key already exists: $addr (label: $key_name)"
+            export FAUCET_ADDRESS="$addr"
+            return 0
+        fi
+    fi
+
+    # Check if "E2E Faucet Key" exists (imported during node startup)
+    if echo "$keys_output" | grep -q "E2E Faucet Key"; then
+        local addr
+        addr=$(echo "$keys_output" | grep "E2E Faucet Key" | grep -oE "(akash1|ergo1)[a-z0-9]{38,}" | head -1)
+        if [[ -n "$addr" ]]; then
+            log_success "Using existing E2E Faucet Key: $addr"
+            export FAUCET_ADDRESS="$addr"
+            return 0
+        fi
+    fi
+
+    # No existing key found, import the mnemonic
     log "Importing faucet mnemonic into coordinator..."
 
     local mnemonic
@@ -732,41 +773,39 @@ ergors_import_faucet_key() {
 
     log_verbose "Mnemonic word count: $(echo "$mnemonic" | wc -w | tr -d ' ')"
 
-    # Import mnemonic using ergors engine binary
-    # Requires ERGORS_CUSTODY_PASSWORD for key encryption
+    # Import mnemonic with Akash prefix (coin type 118 is default)
     local import_output
     import_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
         --label "$key_name" \
+        --prefix akash \
         --default 2>&1) || true
 
     log_verbose "Import output: $import_output"
 
-    # Verify key was imported by listing keys
-    local keys_output
+    # Verify key was imported by listing keys again
     keys_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
         "$ERGORS_BIN" --home "$home_dir" keys list 2>&1) || true
 
-    log_verbose "Keys list: $keys_output"
+    log_verbose "Keys list after import: $keys_output"
 
     # Extract faucet address from keys list output
     if echo "$keys_output" | grep -q "$key_name"; then
-        # Parse address from keys list (format: NAME  LABEL  ADDRESS  CHAIN  DEFAULT)
         local addr
-        addr=$(echo "$keys_output" | grep "$key_name" | awk '{print $3}')
+        addr=$(echo "$keys_output" | grep "$key_name" | grep -oE "(akash1|ergo1)[a-z0-9]{38,}" | head -1)
 
-        if [[ -n "$addr" ]] && [[ "$addr" == akash* ]]; then
+        if [[ -n "$addr" ]]; then
             log_success "Faucet key imported: $addr"
             export FAUCET_ADDRESS="$addr"
             return 0
         fi
     fi
 
-    # Fallback: check if import message contains address
-    if echo "$import_output" | grep -q "akash1"; then
+    # Fallback: check if import message contains address with either prefix
+    if echo "$import_output" | grep -Eq "akash1|ergo1"; then
         local addr
-        addr=$(echo "$import_output" | grep -o "akash1[a-z0-9]*" | head -1)
+        addr=$(echo "$import_output" | grep -oE "(akash1|ergo1)[a-z0-9]*" | head -1)
         if [[ -n "$addr" ]]; then
             log_success "Faucet key imported: $addr"
             export FAUCET_ADDRESS="$addr"
@@ -1212,6 +1251,36 @@ ergors_generate_mock_api_key() {
 
     log_verbose "Generated ${provider} API key: ${api_key:0:20}..."
     echo "$api_key"
+}
+
+# Register a keyless provider (for co-deployed/local inference with no auth)
+# Usage: ergors_add_keyless_provider <name> <base_url> [--default]
+ergors_add_keyless_provider() {
+    local name="$1"
+    local base_url="$2"
+    local set_default="${3:-}"
+
+    local default_flag=""
+    if [[ "$set_default" == "--default" ]]; then
+        default_flag="--default"
+    fi
+
+    local exit_code=0
+    local output
+    # shellcheck disable=SC2086
+    output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$TEST_DIR/coordinator" provider add "$name" \
+        --base-url "$base_url" --no-key $default_flag </dev/null 2>&1) || exit_code=$?
+
+    log_verbose "Keyless provider add ($name): exit=$exit_code output=$output"
+
+    if [[ $exit_code -ne 0 ]]; then
+        log_error "Failed to add keyless provider '$name': $output"
+        return 1
+    fi
+
+    log_success "Keyless provider '$name' registered → $base_url"
+    return 0
 }
 
 ergors_configure_api_keys() {

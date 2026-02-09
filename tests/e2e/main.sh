@@ -6,7 +6,7 @@
 #   ./scripts/e2e/main.sh [options]
 #
 # Options:
-#   --skip-build       Skip building ergors binary
+#   --skip-build       (deprecated — cargo is incremental, always rebuilds safely)
 #   --skip-contracts   Skip building CosmWasm contracts
 #   --skip-network     Skip ERGORS network setup (use existing)
 #   --skip-akash       Skip Akash/Kind setup (use existing)
@@ -94,7 +94,7 @@ print_help() {
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --skip-build) SKIP_BUILD=true; shift ;;
+        --skip-build) log_warn "--skip-build is deprecated (cargo is incremental, always rebuilds safely)"; shift ;;
         --skip-contracts) SKIP_CONTRACTS=true; shift ;;
         --skip-network) SKIP_NETWORK=true; shift ;;
         --skip-akash) SKIP_AKASH=true; shift ;;
@@ -113,12 +113,12 @@ export VERBOSE
 
 # Auto-skip heavy infrastructure for suites that only need the ERGORS network
 case "$TEST_SUITE" in
-    chain-config|network|contracts|security|api|sdl-storage)
+    chain-config|network|contracts|api|sdl-storage)
         SKIP_AKASH=true
         SKIP_ETHEREUM=true
         SKIP_INFERENCE=true
         ;;
-    inference)
+    security|inference)
         SKIP_AKASH=true
         SKIP_ETHEREUM=true
         ;;
@@ -258,15 +258,11 @@ run_build_phase() {
         }
     fi
 
-    # Build ERGORS
-    if [[ "$SKIP_BUILD" == true ]]; then
-        log_warn "Skipping ERGORS build"
-    else
-        ergors_build || {
-            log_error "ERGORS build failed"
-            exit 1
-        }
-    fi
+    # Build ERGORS (always rebuild — cargo is incremental, skipping risks stale binaries)
+    ergors_build || {
+        log_error "ERGORS build failed"
+        exit 1
+    }
 
     log_success "Build phase complete"
 }

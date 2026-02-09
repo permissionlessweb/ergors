@@ -1190,32 +1190,15 @@ async fn check_guild_owner_or_admin(ctx: &Context<'_>) -> Result<(), anyhow::Err
         return Ok(());
     }
 
-    // Check if user has ADMINISTRATOR permission
-    let member = ctx
-        .author_member()
-        .await
-        .ok_or_else(|| anyhow::anyhow!("Could not get member info"))?;
-
-    // Try cache first, but handle cache miss explicitly
-    let permissions = match member.permissions(ctx.cache()) {
-        Ok(perms) => perms,
-        Err(_) => {
-            // Cache miss - fetch permissions from API
-            // Get member's roles and compute permissions manually
-            debug!("Cache miss for member permissions, fetching from API");
+    // Check if user has ADMINISTRATOR permission via Guild::member_permissions
+    // (considers role hierarchy, not channel-level overwrites)
+    let permissions = match ctx.author_member().await {
+        Some(member) => guild.member_permissions(&member),
+        None => {
+            // Member not in cache - fetch from API and check roles directly
+            debug!("Member not cached, fetching from API");
             match guild_id.member(ctx.http(), ctx.author().id).await {
-                Ok(fetched_member) => {
-                    // Check role permissions
-                    for role_id in &fetched_member.roles {
-                        if let Some(role) = guild.roles.get(role_id) {
-                            if role.permissions.administrator() {
-                                return Ok(());
-                            }
-                        }
-                    }
-                    // No admin role found
-                    serenity::Permissions::empty()
-                }
+                Ok(fetched_member) => guild.member_permissions(&fetched_member),
                 Err(e) => {
                     warn!("Failed to fetch member permissions: {}", e);
                     // Conservative: deny if we can't verify

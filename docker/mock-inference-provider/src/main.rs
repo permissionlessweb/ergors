@@ -19,6 +19,7 @@ use axum::{
     Router,
 };
 use clap::Parser;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -119,6 +120,7 @@ async fn main() {
         config: Arc::new(config),
         request_count: Arc::new(AtomicU64::new(0)),
         api_keys: handlers::api_keys::new_store(),
+        last_request_headers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
     };
 
     let app = Router::new()
@@ -161,6 +163,8 @@ async fn main() {
         .route("/generate", post(handlers::tgi::generate_handler))
         .route("/generate_stream", post(handlers::tgi::stream_handler))
         .route("/info", get(handlers::tgi::info_handler))
+        // Debug (test introspection)
+        .route("/debug/last-headers", get(handlers::debug::last_headers_handler))
         .layer(CorsLayer::permissive())
         .with_state(state);
 

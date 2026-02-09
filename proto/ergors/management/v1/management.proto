@@ -454,7 +454,8 @@ message ProviderConfig {
   string name = 1;
   string api_key_ref = 2;
   bool set_as_default = 3;
-  string base_url = 4; 
+  string base_url = 4;
+  bool no_key = 5;
 }
 
 message ProviderName {

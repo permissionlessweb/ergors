@@ -1066,85 +1066,92 @@ impl ManagementService for ManagementServiceImpl {
             req.set_as_default
         );
 
-        if req.name.is_empty() || req.api_key_ref.is_empty() {
+        if req.name.is_empty() {
+            return Err(Status::invalid_argument("Provider name is required"));
+        }
+
+        if !req.no_key && req.api_key_ref.is_empty() {
             return Err(Status::invalid_argument(
-                "Provider name and API key are required",
+                "API key is required (use no_key=true for keyless providers)",
             ));
         }
 
-        // Get custody password from akash context
-        let custody_password = match &self.state.akash {
-            Some(ctx) if !ctx.custody_password.is_empty() => ctx.custody_password.clone(),
-            _ => {
-                return Err(Status::failed_precondition(
-                    "Custody not initialized — run sentinel bootstrap first",
-                ));
-            }
-        };
-
-        // Load existing store from Cnidarium (or create fresh)
-        use cnidarium::StateRead as _;
-        use ho_std::llm::state_ext::{StateReadExt as _, StateWriteExt as _};
-        use ho_std::llm::EncryptedApiKeyManager;
-
-        let snapshot = self.state.s.cs.latest_snapshot();
-        let existing_store = snapshot
-            .get_encrypted_api_key_store()
-            .await
-            .map_err(|e| Status::internal(format!("Failed to load key store: {}", e)))?;
-
-        let (mut manager, mut store) = if let Some(store) = existing_store {
-            let mgr = EncryptedApiKeyManager::from_store(&store);
-            (mgr, store)
-        } else {
-            let mgr = EncryptedApiKeyManager::new();
-            let now = {
-                use std::time::SystemTime;
-                let d = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap();
-                pbjson_types::Timestamp {
-                    seconds: d.as_secs() as i64,
-                    nanos: d.subsec_nanos() as i32,
+        // Skip key encryption for keyless providers
+        if !req.no_key {
+            // Get custody password from akash context
+            let custody_password = match &self.state.akash {
+                Some(ctx) if !ctx.custody_password.is_empty() => ctx.custody_password.clone(),
+                _ => {
+                    return Err(Status::failed_precondition(
+                        "Custody not initialized — run sentinel bootstrap first",
+                    ));
                 }
             };
-            let store = ho_std::types::ergors::storage::v1::EncryptedApiKeyStore {
-                version: 1,
-                keys: vec![],
-                created_at: Some(now),
-                updated_at: None,
-                kdf_salt: mgr.salt().to_vec(),
-                kdf_params: String::new(),
+
+            // Load existing store from Cnidarium (or create fresh)
+            use cnidarium::StateRead as _;
+            use ho_std::llm::state_ext::{StateReadExt as _, StateWriteExt as _};
+            use ho_std::llm::EncryptedApiKeyManager;
+
+            let snapshot = self.state.s.cs.latest_snapshot();
+            let existing_store = snapshot
+                .get_encrypted_api_key_store()
+                .await
+                .map_err(|e| Status::internal(format!("Failed to load key store: {}", e)))?;
+
+            let (mut manager, mut store) = if let Some(store) = existing_store {
+                let mgr = EncryptedApiKeyManager::from_store(&store);
+                (mgr, store)
+            } else {
+                let mgr = EncryptedApiKeyManager::new();
+                let now = {
+                    use std::time::SystemTime;
+                    let d = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap();
+                    pbjson_types::Timestamp {
+                        seconds: d.as_secs() as i64,
+                        nanos: d.subsec_nanos() as i32,
+                    }
+                };
+                let store = ho_std::types::ergors::storage::v1::EncryptedApiKeyStore {
+                    version: 1,
+                    keys: vec![],
+                    created_at: Some(now),
+                    updated_at: None,
+                    kdf_salt: mgr.salt().to_vec(),
+                    kdf_params: String::new(),
+                };
+                (mgr, store)
             };
-            (mgr, store)
-        };
 
-        // Unlock and add key
-        manager
-            .unlock(&custody_password)
-            .map_err(|e| Status::internal(format!("Failed to unlock key manager: {}", e)))?;
+            // Unlock and add key
+            manager
+                .unlock(&custody_password)
+                .map_err(|e| Status::internal(format!("Failed to unlock key manager: {}", e)))?;
 
-        manager
-            .add_key_to_store(&mut store, &req.name, &req.api_key_ref)
-            .map_err(|e| Status::internal(format!("Failed to encrypt key: {}", e)))?;
+            manager
+                .add_key_to_store(&mut store, &req.name, &req.api_key_ref)
+                .map_err(|e| Status::internal(format!("Failed to encrypt key: {}", e)))?;
 
-        // Persist to Cnidarium
-        let mut delta = cnidarium::StateDelta::new(self.state.s.cs.latest_snapshot());
-        delta.put_encrypted_api_key_store(&store);
-        self.state
-            .s
-            .cs
-            .commit(delta)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to commit key store: {}", e)))?;
+            // Persist to Cnidarium
+            let mut delta = cnidarium::StateDelta::new(self.state.s.cs.latest_snapshot());
+            delta.put_encrypted_api_key_store(&store);
+            self.state
+                .s
+                .cs
+                .commit(delta)
+                .await
+                .map_err(|e| Status::internal(format!("Failed to commit key store: {}", e)))?;
 
-        // Update live key accessor (so proxy resolves immediately without restart)
-        {
-            let pr = self.state.pr.read().await;
-            if let Some(accessor) = pr.key_accessor() {
-                let mut guard = accessor.write().await;
-                if let Err(e) = guard.set_key(&req.name, req.api_key_ref.clone()).await {
-                    tracing::warn!("Failed to update live key accessor: {}", e);
+            // Update live key accessor (so proxy resolves immediately without restart)
+            {
+                let pr = self.state.pr.read().await;
+                if let Some(accessor) = pr.key_accessor() {
+                    let mut guard = accessor.write().await;
+                    if let Err(e) = guard.set_key(&req.name, req.api_key_ref.clone()).await {
+                        tracing::warn!("Failed to update live key accessor: {}", e);
+                    }
                 }
             }
         }
@@ -1215,10 +1222,15 @@ impl ManagementService for ManagementServiceImpl {
             config.model_routes.retain(|_, provider| provider != &req.name);
 
             // Add updated provider config
+            let api_key_ref = if req.no_key {
+                String::new()
+            } else {
+                format!("custody://{}", req.name)
+            };
             let provider_config = InferenceProviderConfig {
                 provider_id: req.name.clone(),
                 base_url: req.base_url.clone(),
-                api_key_ref: format!("custody://{}", req.name),
+                api_key_ref,
                 enabled: true,
                 provider_type: provider_type as i32,
                 ..Default::default()
@@ -1237,11 +1249,16 @@ impl ManagementService for ManagementServiceImpl {
             tracing::info!("✅ Updated proxy router with provider '{}' → {}", req.name, req.base_url);
         }
 
-        tracing::info!("Provider '{}' configured (custody://{})", req.name, req.name);
+        let ref_label = if req.no_key {
+            format!("keyless ({})", req.base_url)
+        } else {
+            format!("custody://{}", req.name)
+        };
+        tracing::info!("Provider '{}' configured ({})", req.name, ref_label);
 
         Ok(Response::new(OperationResult {
             success: true,
-            message: format!("custody://{}", req.name),
+            message: ref_label,
         }))
     }
 

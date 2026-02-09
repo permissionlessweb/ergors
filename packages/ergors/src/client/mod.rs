@@ -419,6 +419,7 @@ impl ManagementClient {
         api_key: &str,
         base_url: Option<&str>,
         set_as_default: bool,
+        no_key: bool,
     ) -> Result<OperationResult> {
         let response = self
             .inner
@@ -427,6 +428,7 @@ impl ManagementClient {
                 api_key_ref: api_key.to_string(),
                 set_as_default,
                 base_url: base_url.unwrap_or("").to_string(),
+                no_key,
             })
             .await
             .context("Failed to configure provider")?;

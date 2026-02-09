@@ -225,8 +225,8 @@ Manage Cosmos blockchain funding keys (Akash, Cosmos Hub, etc.) for deployment o
 
 | Command | Description | Options/Arguments | Example |
 | --------- | ------------- | ------------------- | --------- |
-| `keys import-mnemonic` | Import BIP-39 mnemonic seed phrase (chain-agnostic) | `--label <LABEL>` - Human-readable label, used as key identifier (required) `--default` - Set as default key for deployments | `ergors keys import-mnemonic --label "My Key" --default` |
-| `keys list` | List all stored keys | `--json` - Output as JSON. Shows: label, address, default marker | `ergors keys list --json` |
+| `keys import-mnemonic` | Import BIP-39 mnemonic seed phrase | `--label <LABEL>` - Human-readable label (required), `--default` - Set as default, `--prefix <PREFIX>` - Bech32 prefix (default: "ergo"), `--coin-type <N>` - BIP-44 coin type (default: 118) | `ergors keys import-mnemonic --label "Akash Faucet" --prefix akash --default` |
+| `keys list` | List all stored keys | `--json` - Output as JSON, `--prefix <PREFIX>` - Re-derive addresses with different bech32 prefix, `--label <LABEL>` - Filter by key label, `-a`/`--address` - Output address only (for scripting) | `ergors keys list --label faucet -a --prefix akash` |
 | `keys delete` | Delete a key by label | `--label <LABEL>` - Key label to delete (required) | `ergors keys delete --label old-key` |
 | `keys set-default` | Set a key as the default | `--label <LABEL>` - Key label to make default (required) | `ergors keys set-default --label prod` |
 
@@ -1540,8 +1540,11 @@ ergors init new
 
 # 2. (Optional) Import Akash funding key for deployments
 # Mnemonic is entered interactively (hidden input, never in shell history)
+# --prefix determines bech32 address format (akash1, cosmos1, ergo1)
+# --coin-type determines BIP-44 derivation path (118=Cosmos/Akash, 60=EVM)
 ergors keys import-mnemonic \
   --label "Akash Main" \
+  --prefix akash \
   --default
 
 # 3. Start the engine

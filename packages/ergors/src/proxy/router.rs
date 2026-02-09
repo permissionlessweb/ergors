@@ -231,7 +231,7 @@ async fn handle_open_responses_non_streaming(
 
 /// Streaming Open Responses handler - forwards to upstream and transforms events
 async fn handle_open_responses_streaming(
-    _state: ErgorsAppState,
+    state: ErgorsAppState,
     headers: HeaderMap,
     prompt_req: PromptRequest,
     response_id: String,
@@ -239,6 +239,24 @@ async fn handle_open_responses_streaming(
 ) -> Response {
     // Determine provider type from model name
     let is_anthropic = is_anthropic_model(&model);
+
+    // Resolve provider base URL from router config (falls back to default constants)
+    let base_url = {
+        let router = state.pr.read().await;
+        if is_anthropic {
+            router
+                .route_anthropic(&model)
+                .await
+                .map(|t| t.base_url)
+                .unwrap_or_else(|_| ANTHROPIC_BASE_URL.to_string())
+        } else {
+            router
+                .route_openai(&model)
+                .await
+                .map(|t| t.base_url)
+                .unwrap_or_else(|_| OPENAI_BASE_URL.to_string())
+        }
+    };
 
     // Extract API key from headers
     let api_key = if is_anthropic {
@@ -279,11 +297,11 @@ async fn handle_open_responses_streaming(
     // Create HTTP client
     let client = reqwest::Client::new();
 
-    // Forward to upstream
+    // Forward to upstream using provider's configured base URL
     let upstream_response = if is_anthropic {
-        forward_to_anthropic(&client, upstream_bytes, &api_key, None, None).await
+        forward_to_anthropic(&client, upstream_bytes, &api_key, &base_url, None, None).await
     } else {
-        forward_to_openai(&client, upstream_bytes, &api_key, None).await
+        forward_to_openai(&client, upstream_bytes, &api_key, &base_url, None).await
     };
 
     let response = match upstream_response {
@@ -563,7 +581,10 @@ impl ProxyRouter {
         }
 
         // Resolve API key: custody:// via accessor, env:// via env var
-        let api_key = if let Some(custody_id) = provider.api_key_ref.strip_prefix("custody://") {
+        // Empty api_key_ref = explicitly keyless (no-key provider)
+        let api_key = if provider.api_key_ref.is_empty() {
+            Some(String::new())
+        } else if let Some(custody_id) = provider.api_key_ref.strip_prefix("custody://") {
             // Custody-backed key resolution
             if let Some(accessor) = &self.key_accessor {
                 accessor.read().await.get_key(custody_id).await.ok().flatten()
@@ -589,14 +610,6 @@ impl ProxyRouter {
             } else {
                 None
             }
-        } else if let Some(accessor) = &self.key_accessor {
-            // No api_key_ref at all — still try accessor by provider_id
-            accessor
-                .read().await
-                .get_key(&provider.provider_id)
-                .await
-                .ok()
-                .flatten()
         } else {
             None
         };
@@ -664,25 +677,40 @@ impl ProxyRouter {
         })
     }
 
-    /// Match a model name against configured routes
+    /// Match a model name against configured routes.
+    /// Prefers the most specific (longest) matching pattern to avoid
+    /// catch-all wildcards like `*` shadowing targeted routes like `gpt-*`.
     async fn match_model_route(&self, model: &str) -> Result<RouteTarget> {
+        let mut best_match: Option<(&str, &str)> = None; // (pattern, provider_id)
+
         for (pattern, provider_id) in &self.config.model_routes {
             if glob_match(pattern, model) {
-                debug!(
-                    "Model '{}' matched route pattern '{}' -> provider '{}'",
-                    model, pattern, provider_id
-                );
-
-                if let Some(provider) = self.get_enabled_provider(provider_id) {
-                    return self.provider_to_route_target(provider).await;
-                } else {
-                    warn!(
-                        "Model route points to unknown/disabled provider: {}",
-                        provider_id
-                    );
+                let is_better = match best_match {
+                    None => true,
+                    Some((prev_pat, _)) => pattern.len() > prev_pat.len(),
+                };
+                if is_better {
+                    best_match = Some((pattern, provider_id));
                 }
             }
         }
+
+        if let Some((pattern, provider_id)) = best_match {
+            debug!(
+                "Model '{}' matched route pattern '{}' -> provider '{}'",
+                model, pattern, provider_id
+            );
+
+            if let Some(provider) = self.get_enabled_provider(provider_id) {
+                return self.provider_to_route_target(provider).await;
+            } else {
+                warn!(
+                    "Model route points to unknown/disabled provider: {}",
+                    provider_id
+                );
+            }
+        }
+
         Err(anyhow!("No matching route for model: {}", model))
     }
 
@@ -731,7 +759,6 @@ impl ProxyRouter {
         organization: Option<&str>,
     ) -> Result<reqwest::Response> {
         let target = self.route_openai(model).await?;
-        let effective_key = target.api_key.as_deref().unwrap_or(api_key);
         let url = format!("{}/v1/chat/completions", target.base_url);
 
         debug!("Routing OpenAI request for model '{}' to {}", model, url);
@@ -739,9 +766,17 @@ impl ProxyRouter {
         let mut request = self
             .client
             .post(&url)
-            .header("authorization", format!("Bearer {}", effective_key))
             .header("content-type", "application/json")
             .body(body);
+
+        let effective_key = target.api_key.as_deref().or_else(|| {
+            if api_key.is_empty() { None } else { Some(api_key) }
+        });
+        if let Some(key) = effective_key {
+            if !key.is_empty() {
+                request = request.header("authorization", format!("Bearer {}", key));
+            }
+        }
 
         if let Some(org) = organization {
             request = request.header("openai-organization", org);
@@ -770,7 +805,9 @@ impl ProxyRouter {
             .body(body);
 
         if let Some(api_key) = target.api_key {
-            request = request.header("authorization", format!("Bearer {}", api_key));
+            if !api_key.is_empty() {
+                request = request.header("authorization", format!("Bearer {}", api_key));
+            }
         }
 
         let response = request.send().await?;

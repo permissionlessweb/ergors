@@ -551,6 +551,8 @@ pub struct ProviderConfig {
     pub set_as_default: bool,
     #[prost(string, tag = "4")]
     pub base_url: ::prost::alloc::string::String,
+    #[prost(bool, tag = "5")]
+    pub no_key: bool,
 }
 impl ::prost::Name for ProviderConfig {
     const NAME: &'static str = "ProviderConfig";

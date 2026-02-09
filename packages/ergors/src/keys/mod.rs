@@ -16,6 +16,7 @@
 use anyhow::{anyhow, Result};
 use camino::Utf8Path;
 use ho_std::constants::DATA_FOLDER_NAME;
+use ho_std::keys::cosmos::cosmos_address_from_pubkey;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 
 use crate::client::ManagementClient;
@@ -60,11 +61,32 @@ pub enum KeysSubCmd {
         /// Bech32 address prefix (ergo=Ergors, akash=Akash, cosmos=Cosmos Hub, etc.)
         #[arg(long, default_value = "ergo")]
         prefix: String,
+
+        /// BIP-44 coin type for HD derivation path (118=Cosmos/Akash, 60=EVM, 330=Terra, 529=Secret)
+        #[arg(long, default_value = "118")]
+        coin_type: u32,
     },
 
     /// List all stored keys (shows labels, addresses, default status)
+    ///
+    /// Use --prefix to re-derive addresses with a different bech32 prefix
+    /// from the stored public keys (e.g., show akash1 addresses instead of ergo1).
+    /// Use --label to filter to a specific key, and -a/--address to output
+    /// just the address string (useful for scripting).
     #[clap(display_order = 200)]
-    List {},
+    List {
+        /// Override bech32 prefix for displayed addresses (derives from stored public key)
+        #[arg(long)]
+        prefix: Option<String>,
+
+        /// Filter by key label
+        #[arg(long)]
+        label: Option<String>,
+
+        /// Output only the address string (for scripting)
+        #[arg(short = 'a', long)]
+        address: bool,
+    },
 
     /// Delete a key by label
     #[clap(display_order = 300)]
@@ -123,6 +145,8 @@ impl KeysCmd {
             KeysSubCmd::ImportMnemonic {
                 label,
                 default,
+                prefix,
+                coin_type,
             } => {
                 // Prompt for mnemonic (hidden input - never stored in history)
                 let phrase = get_mnemonic()?;
@@ -131,14 +155,14 @@ impl KeysCmd {
                 // We pass empty string and the daemon handles it.
                 let password = String::new();
 
-                // Keys are chain-agnostic: use label as key_name, no chain_id, default prefix
+                // Import with user-specified prefix and coin type
                 let resp = client
                     .import_cosmos_key(
                         &phrase,
                         label,
                         label, // use label as key_name
                         "",    // chain-agnostic
-                        DEFAULT_ADDRESS_PREFIX,
+                        prefix, // user-specified prefix
                         *default,
                         &password,
                     )
@@ -164,8 +188,32 @@ impl KeysCmd {
                     return Err(anyhow!("Import failed: {}", resp.error_message));
                 }
             }
-            KeysSubCmd::List {} => {
-                let keys = client.list_cosmos_keys().await?;
+            KeysSubCmd::List { prefix, label: label_filter, address: address_only } => {
+                if prefix.is_some() {
+                    eprintln!("Note: --prefix re-derivation requires direct storage access (stop daemon first)");
+                    eprintln!("Showing stored addresses instead.");
+                }
+
+                let mut keys = client.list_cosmos_keys().await?;
+
+                // Filter by label if specified
+                if let Some(filter) = label_filter {
+                    keys.retain(|k| {
+                        let key_label = if k.label.is_empty() { &k.key_name } else { &k.label };
+                        key_label == filter
+                    });
+                }
+
+                // Address-only mode: output just the address string(s)
+                if *address_only {
+                    if keys.is_empty() {
+                        return Err(anyhow!("No matching key found"));
+                    }
+                    for key in &keys {
+                        println!("{}", key.address);
+                    }
+                    return Ok(());
+                }
 
                 if keys.is_empty() {
                     if json {
@@ -232,6 +280,8 @@ impl KeysCmd {
             KeysSubCmd::ImportMnemonic {
                 label,
                 default,
+                prefix,
+                coin_type,
             } => {
                 // Prompt for mnemonic (hidden input - never stored in history)
                 let phrase = get_mnemonic()?;
@@ -241,11 +291,15 @@ impl KeysCmd {
                     &phrase,
                     label,
                     *default,
+                    prefix,
+                    *coin_type,
                     json,
                 )
                 .await
             }
-            KeysSubCmd::List {} => self.list_keys_direct(storage, json).await,
+            KeysSubCmd::List { prefix, label, address } => {
+                self.list_keys_direct(storage, prefix.as_deref(), label.as_deref(), *address, json).await
+            }
             KeysSubCmd::Delete { label } => self.delete_key_direct(storage, label).await,
             KeysSubCmd::SetDefault { label } => self.set_default_direct(storage, label).await,
         }
@@ -257,6 +311,8 @@ impl KeysCmd {
         phrase: &str,
         label: &str,
         make_default: bool,
+        prefix: &str,
+        coin_type: u32,
         json: bool,
     ) -> Result<()> {
         let password = get_password(true)?;
@@ -289,14 +345,15 @@ impl KeysCmd {
             ));
         }
 
-        // Import and encrypt the mnemonic (chain-agnostic, default prefix)
-        let (encrypted, account_info) = manager.import_mnemonic_with_label(
+        // Import and encrypt the mnemonic with custom prefix and coin type
+        let (encrypted, account_info) = manager.import_mnemonic_full(
             key_name,
             phrase,
             "",  // chain-agnostic
-            DEFAULT_ADDRESS_PREFIX,
+            prefix, // user-specified prefix
             label,
             make_default,
+            coin_type,
         )?;
 
         // Check for duplicate address
@@ -331,10 +388,20 @@ impl KeysCmd {
         Ok(())
     }
 
-    async fn list_keys_direct(&self, storage: &ErgorsStorage, json: bool) -> Result<()> {
+    async fn list_keys_direct(
+        &self,
+        storage: &ErgorsStorage,
+        prefix_override: Option<&str>,
+        label_filter: Option<&str>,
+        address_only: bool,
+        json: bool,
+    ) -> Result<()> {
         let store = match storage.get_cosmos_key_store().await {
             Ok(Some(s)) => s,
             Ok(None) => {
+                if address_only {
+                    return Err(anyhow!("No matching key found"));
+                }
                 if json {
                     println!("{}", serde_json::to_string_pretty(&KeyListResponse { keys: vec![] })?);
                 } else {
@@ -345,7 +412,24 @@ impl KeysCmd {
             Err(e) => return Err(anyhow!("Failed to load key store: {}", e)),
         };
 
-        if store.keys.is_empty() {
+        // Collect keys, applying label filter
+        let keys: Vec<_> = store
+            .keys
+            .iter()
+            .filter(|key| {
+                if let Some(filter) = label_filter {
+                    let key_label = if key.label.is_empty() { &key.key_name } else { &key.label };
+                    key_label == filter
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        if keys.is_empty() {
+            if address_only {
+                return Err(anyhow!("No matching key found"));
+            }
             if json {
                 println!("{}", serde_json::to_string_pretty(&KeyListResponse { keys: vec![] })?);
             } else {
@@ -356,28 +440,43 @@ impl KeysCmd {
 
         let default_name = EncryptedCosmosKeyManager::get_default_key_name(&store);
 
+        // Resolve address for a key, applying prefix override if set
+        let resolve_address = |key: &ho_std::types::ergors::orch::v1::EncryptedCosmosMnemonic| -> String {
+            let account = store
+                .derived_accounts
+                .iter()
+                .find(|a| a.key_name == key.key_name);
+
+            match (prefix_override, account) {
+                (Some(pfx), Some(a)) => {
+                    rederive_address(&a.public_key, pfx)
+                        .unwrap_or_else(|_| a.address.clone())
+                }
+                (_, Some(a)) => a.address.clone(),
+                _ => "(unknown)".to_string(),
+            }
+        };
+
+        // Address-only mode: output just the address string(s)
+        if address_only {
+            for key in &keys {
+                println!("{}", resolve_address(key));
+            }
+            return Ok(());
+        }
+
         if json {
             let resp = KeyListResponse {
-                keys: store
-                    .keys
+                keys: keys
                     .iter()
-                    .map(|key| {
-                        let address = store
-                            .derived_accounts
-                            .iter()
-                            .find(|a| a.key_name == key.key_name)
-                            .map(|a| a.address.clone())
-                            .unwrap_or_default();
-
-                        KeyEntry {
-                            label: if key.label.is_empty() {
-                                key.key_name.clone()
-                            } else {
-                                key.label.clone()
-                            },
-                            address,
-                            is_default: default_name == Some(key.key_name.as_str()),
-                        }
+                    .map(|key| KeyEntry {
+                        label: if key.label.is_empty() {
+                            key.key_name.clone()
+                        } else {
+                            key.label.clone()
+                        },
+                        address: resolve_address(key),
+                        is_default: default_name == Some(key.key_name.as_str()),
                     })
                     .collect(),
             };
@@ -389,22 +488,13 @@ impl KeysCmd {
             );
             println!("{}", "-".repeat(70));
 
-            for key in &store.keys {
-                let address = store
-                    .derived_accounts
-                    .iter()
-                    .find(|a| a.key_name == key.key_name)
-                    .map(|a| a.address.as_str())
-                    .unwrap_or("(unknown)");
-
+            for key in &keys {
                 let is_default = default_name == Some(key.key_name.as_str());
-                let default_marker = if is_default { "*" } else { "" };
-
                 println!(
                     "{:<20} {:<45} {}",
                     if key.label.is_empty() { &key.key_name } else { &key.label },
-                    address,
-                    default_marker,
+                    resolve_address(key),
+                    if is_default { "*" } else { "" },
                 );
             }
         }
@@ -452,6 +542,15 @@ impl KeysCmd {
         println!("Key '{}' set as default.", key_name);
         Ok(())
     }
+}
+
+/// Re-derive a bech32 address from a stored public key with a different prefix.
+///
+/// The public key bytes are stored in derived_accounts. This function
+/// re-encodes them with the given bech32 prefix, allowing runtime
+/// address derivation without needing the mnemonic.
+fn rederive_address(public_key: &[u8], prefix: &str) -> Result<String> {
+    cosmos_address_from_pubkey(public_key, prefix)
 }
 
 /// Get mnemonic phrase from environment or prompt (hidden input).

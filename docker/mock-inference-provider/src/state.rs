@@ -1,8 +1,10 @@
 use crate::handlers::api_keys::ApiKeyStore;
 use crate::types::ModelInfo;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 
 /// Application state shared across handlers.
 #[derive(Clone)]
@@ -10,6 +12,8 @@ pub struct AppState {
     pub config: Arc<AppConfig>,
     pub request_count: Arc<AtomicU64>,
     pub api_keys: ApiKeyStore,
+    /// Headers from the last OpenAI chat request (for test verification)
+    pub last_request_headers: Arc<RwLock<HashMap<String, String>>>,
 }
 
 /// Application configuration parsed from CLI args.

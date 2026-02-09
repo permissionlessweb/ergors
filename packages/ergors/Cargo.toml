@@ -76,7 +76,6 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 serde_yaml = { workspace = true }
 x25519-dalek = { workspace = true }
-mimalloc = { version = "0.1", default-features = false }
 
 # Discord gateway (optional)
 serenity = { version = "0.12", optional = true, default-features = false, features = ["client", "gateway", "rustls_backend", "model", "cache"] }

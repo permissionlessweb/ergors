@@ -1,6 +1,6 @@
 use axum::{
     extract::{Json, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 
@@ -48,10 +48,22 @@ pub async fn completions_handler(
 
 pub async fn chat_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<OllamaChatRequest>,
 ) -> Response {
     bump(&state);
     simulate_latency(&state.config).await;
+
+    // Capture headers for debug inspection
+    {
+        let mut last = state.last_request_headers.write().await;
+        last.clear();
+        for (name, value) in headers.iter() {
+            if let Ok(v) = value.to_str() {
+                last.insert(name.as_str().to_string(), v.to_string());
+            }
+        }
+    }
 
     if should_error(&state.config) {
         return (
