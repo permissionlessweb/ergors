@@ -305,10 +305,13 @@ impl EncryptedCosmosKeyManager {
     /// Get a keypair from an encrypted mnemonic with custom coin type
     ///
     /// This allows deriving addresses for different cosmos chains:
-    /// - 118: Cosmos/Akash (default)
+    /// - 118: Cosmos Hub, Akash Network, and most Cosmos chains (default)
     /// - 330: Terra
     /// - 60: Ethereum (for EVM chains)
     /// - 529: Secret Network
+    ///
+    /// Note: Coin type determines the BIP-44 derivation path. Many chains share
+    /// coin type 118 but use different bech32 prefixes (cosmos1, akash1, ergo1, etc.)
     pub fn get_keypair_with_coin_type(
         &mut self,
         encrypted: &EncryptedCosmosMnemonic,
