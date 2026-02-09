@@ -386,26 +386,23 @@ mod tests {
     fn test_workflow_step_progression() {
         // Test that steps follow expected order (with new grant steps)
         let steps = vec![
-            AkashWorkflowStep::KeySelection,      // 1
-            AkashWorkflowStep::BalanceCheck,      // 2
-            AkashWorkflowStep::GrantRequest,      // 3 (new)
-            AkashWorkflowStep::GrantWait,         // 4 (new)
-            AkashWorkflowStep::AuthzSetup,        // 5
-            AkashWorkflowStep::FeegrantSetup,     // 6
-            AkashWorkflowStep::SdlConfiguration,  // 7
-            AkashWorkflowStep::CertificateSetup,  // 8
-            AkashWorkflowStep::DeploymentCreate,  // 9
-            AkashWorkflowStep::BidWait,           // 10
-            AkashWorkflowStep::ProviderSelection, // 11
-            AkashWorkflowStep::LeaseCreate,       // 12
-            AkashWorkflowStep::ManifestSend,      // 13
-            AkashWorkflowStep::EndpointRetrieval, // 14
-            AkashWorkflowStep::EndpointTesting,   // 15
-            AkashWorkflowStep::Complete,          // 16
+            (AkashWorkflowStep::KeySelection,      1),
+            (AkashWorkflowStep::BalanceCheck,      2),
+            (AkashWorkflowStep::GrantRequest,      3),
+            (AkashWorkflowStep::GrantWait,         4),
+            (AkashWorkflowStep::SdlConfiguration,  7),
+            (AkashWorkflowStep::CertificateSetup,  8),
+            (AkashWorkflowStep::DeploymentCreate,  9),
+            (AkashWorkflowStep::BidWait,           10),
+            (AkashWorkflowStep::ProviderSelection, 11),
+            (AkashWorkflowStep::LeaseCreate,       12),
+            (AkashWorkflowStep::ManifestSend,      13),
+            (AkashWorkflowStep::EndpointRetrieval, 14),
+            (AkashWorkflowStep::Complete,          16),
         ];
 
-        for (i, step) in steps.iter().enumerate() {
-            assert_eq!(*step as i32, (i + 1) as i32);
+        for (step, expected) in &steps {
+            assert_eq!(*step as i32, *expected);
         }
     }
 

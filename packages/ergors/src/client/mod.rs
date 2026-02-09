@@ -3,8 +3,12 @@
 //! Provides a wrapper around the tonic-generated client.
 
 use anyhow::{Context, Result};
+use commonware_codec::Encode;
+use commonware_cryptography::{blake3::Blake3, Hasher, Signer};
+use ho_std::keys::commonware::NodePrivKey;
 use ho_std::types::ergors::management::v1::{
     management_service_client::ManagementServiceClient as ProtoClient,
+    AddDiscordAllowedGuildRequest,
     // Workspace types
     AddWorkspaceRequest,
     AddWorkspaceResponse,
@@ -15,33 +19,42 @@ use ho_std::types::ergors::management::v1::{
     CompleteTaskWorktreeResponse,
     ConfigData,
     ConfigUpdate,
+    ConfigureDiscordGatewayRequest,
     ConfigureProxyRoutesRequest,
+    CosmosKeyInfo,
     CreateAkashDeploymentRequest,
     CreateAkashDeploymentResponse,
     CreateTaskWorktreeRequest,
     CreateTaskWorktreeResponse,
+    DeleteCosmosKeyRequest,
+    DisableGatewayRequest,
     Empty,
+    EnableGatewayRequest,
     EngineState,
     EngineStatus,
     FailTaskWorktreeRequest,
+    GatewayStatusResponse,
     GetAkashDeploymentRequest,
     GetAkashDeploymentResponse,
+    GetDiscordConfigRequest,
+    GetDiscordConfigResponse,
+    GetGatewayStatusRequest,
     // Key address query types
     GetKeyAddressRequest,
     GetKeyAddressResponse,
-    ImportCosmosKeyRequest,
-    ImportCosmosKeyResponse,
-    DeleteCosmosKeyRequest,
-    SetDefaultCosmosKeyRequest,
-    CosmosKeyInfo,
     GetSdlDefaultsRequest,
     GetSdlDefaultsResponse,
     GetSdlTemplateRequest,
     GetSdlTemplateResponse,
     GetWorkspaceRequest,
     GetWorkspaceResponse,
+    ImportCosmosKeyRequest,
+    ImportCosmosKeyResponse,
     ListAkashDeploymentsRequest,
     ListAkashDeploymentsResponse,
+    // Gateway types
+    ListGatewaysRequest,
+    ListGatewaysResponse,
     ListGrantRequestsRequest,
     ListGrantRequestsResponse,
     // SDL template types
@@ -63,6 +76,7 @@ use ho_std::types::ergors::management::v1::{
     QueryAkashBidsResponse,
     QueryBalanceRequest,
     QueryBalanceResponse,
+    RemoveDiscordAllowedGuildRequest,
     RemoveWorkspaceRequest,
     RenderSdlTemplateRequest,
     RenderSdlTemplateResponse,
@@ -71,6 +85,7 @@ use ho_std::types::ergors::management::v1::{
     RevokeGrantRequest,
     SelectAkashProviderRequest,
     SelectAkashProviderResponse,
+    SetDefaultCosmosKeyRequest,
     SetWorkflowEndpointsRequest,
     SetWorkflowEndpointsResponse,
     ShutdownRequest,
@@ -80,68 +95,98 @@ use ho_std::types::ergors::management::v1::{
     TokenLabel,
     TokenList,
     TokenResponse,
-    // Gateway types
-    ListGatewaysRequest,
-    ListGatewaysResponse,
-    GetGatewayStatusRequest,
-    GatewayStatusResponse,
-    EnableGatewayRequest,
-    DisableGatewayRequest,
-    ConfigureDiscordGatewayRequest,
-    AddDiscordAllowedGuildRequest,
-    RemoveDiscordAllowedGuildRequest,
-    GetDiscordConfigRequest,
-    GetDiscordConfigResponse,
+    // CLI key management types
+    ListCliKeysRequest,
+    ListCliKeysResponse,
+    RegisterCliKeyRequest,
+    RevokeCliKeyRequest,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
 use ho_std::types::ergors::orch::v1::{
     AddTrustedProviderRequest,
     AkashWorkflowOptions,
-    CloseAkashLeaseRequest,
     CloseAkashDeploymentRequest,
-    UpdateAkashDeploymentRequest,
-    TopupAkashEscrowRequest,
-    GetLeaseStatusRequest,
-    LeaseStatusResponse,
-    ListTrustedProvidersRequest,
-    ListTrustedProvidersResponse,
-    RemoveTrustedProviderRequest,
-    // Automated workflow types
-    RunAkashDeploymentRequest,
-    RunAkashDeploymentResponse,
+    CloseAkashLeaseRequest,
     // Certificate management types
     CreateAkashCertificateRequest,
     CreateAkashCertificateResponse,
-    RevokeAkashCertificateRequest,
+    GetLeaseStatusRequest,
+    LeaseStatusResponse,
     ListAkashCertificatesRequest,
     ListAkashCertificatesResponse,
+    ListTrustedProvidersRequest,
+    ListTrustedProvidersResponse,
+    RagConfigureRequest,
+    RagDeleteRequest,
     // RAG types
     RagIngestRequest,
     RagIngestResponse,
+    RagListSourcesRequest,
+    RagListSourcesResponse,
+    RagOperationResult,
     RagQueryRequest,
     RagQueryResponse,
     RagStatusRequest,
     RagStatusResponse,
-    RagDeleteRequest,
-    RagOperationResult,
-    RagListSourcesRequest,
-    RagListSourcesResponse,
-    RagConfigureRequest,
+    RemoveTrustedProviderRequest,
+    RevokeAkashCertificateRequest,
+    // Automated workflow types
+    RunAkashDeploymentRequest,
+    RunAkashDeploymentResponse,
+    TopupAkashEscrowRequest,
+    UpdateAkashDeploymentRequest,
 };
 use tonic::transport::Channel;
+use tonic::service::interceptor::InterceptedService;
 
-/// Management client wrapping the generated tonic client
+/// Client-side interceptor that signs gRPC requests with an Ed25519 key.
+/// When `signing_key` is `None`, no auth headers are added (local connections).
+#[derive(Clone)]
+pub struct ClientAuthInterceptor {
+    signing_key: Option<NodePrivKey>,
+}
+
+impl tonic::service::Interceptor for ClientAuthInterceptor {
+    fn call(&mut self, mut req: tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> {
+        if let Some(key) = &self.signing_key {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .to_string();
+
+            let message = Blake3::hash(timestamp.as_bytes());
+            let signature = key.sign(None, &message);
+            let pubkey_hex = hex::encode(&key.id().0.encode());
+            let sig_hex = hex::encode(&signature.encode());
+
+            req.metadata_mut()
+                .insert("x-timestamp", timestamp.parse().unwrap());
+            req.metadata_mut()
+                .insert("x-signature", sig_hex.parse().unwrap());
+            req.metadata_mut()
+                .insert("x-public-key", pubkey_hex.parse().unwrap());
+        }
+        Ok(req)
+    }
+}
+
+/// Management client wrapping the generated tonic client with auth interceptor
 pub struct ManagementClient {
-    inner: ProtoClient<Channel>,
+    inner: ProtoClient<InterceptedService<Channel, ClientAuthInterceptor>>,
 }
 
 impl ManagementClient {
-    /// Connect to the engine gRPC server
-    pub async fn connect(addr: &str) -> Result<Self> {
-        let inner = ProtoClient::connect(addr.to_string())
+    /// Connect to the engine gRPC server with optional signing key for remote auth
+    pub async fn connect(addr: &str, signing_key: Option<NodePrivKey>) -> Result<Self> {
+        let channel = Channel::from_shared(addr.to_string())
+            .context("Invalid gRPC address")?
+            .connect()
             .await
             .context("Failed to connect to engine. Is it running?")?;
 
+        let interceptor = ClientAuthInterceptor { signing_key };
+        let inner = ProtoClient::with_interceptor(channel, interceptor);
         Ok(Self { inner })
     }
 
@@ -372,14 +417,18 @@ impl ManagementClient {
         &mut self,
         name: &str,
         api_key: &str,
+        base_url: Option<&str>,
         set_as_default: bool,
+        no_key: bool,
     ) -> Result<OperationResult> {
         let response = self
             .inner
             .configure_provider(ProviderConfig {
                 name: name.to_string(),
-                api_key: api_key.to_string(),
+                api_key_ref: api_key.to_string(),
                 set_as_default,
+                base_url: base_url.unwrap_or("").to_string(),
+                no_key,
             })
             .await
             .context("Failed to configure provider")?;
@@ -435,171 +484,6 @@ impl ManagementClient {
             .list_auth_tokens(Empty {})
             .await
             .context("Failed to list auth tokens")?;
-
-        Ok(response.into_inner())
-    }
-
-    // ============ Workspace Management ============
-
-    /// Add a new workspace
-    pub async fn add_workspace(
-        &mut self,
-        name: &str,
-        remote_url: Option<&str>,
-    ) -> Result<AddWorkspaceResponse> {
-        let response = self
-            .inner
-            .add_workspace(AddWorkspaceRequest {
-                name: name.to_string(),
-                remote_url: remote_url.map(|s| s.to_string()).unwrap_or_default(),
-            })
-            .await
-            .context("Failed to add workspace")?;
-
-        Ok(response.into_inner())
-    }
-
-    /// Get workspace details
-    pub async fn get_workspace(&mut self, workspace_id: &str) -> Result<GetWorkspaceResponse> {
-        let response = self
-            .inner
-            .get_workspace(GetWorkspaceRequest {
-                workspace_id: workspace_id.to_string(),
-            })
-            .await
-            .context("Failed to get workspace")?;
-
-        Ok(response.into_inner())
-    }
-
-    /// List all workspaces
-    pub async fn list_workspaces(&mut self, limit: u32) -> Result<ListWorkspacesResponse> {
-        let response = self
-            .inner
-            .list_workspaces(ListWorkspacesRequest { limit, offset: 0 })
-            .await
-            .context("Failed to list workspaces")?;
-
-        Ok(response.into_inner())
-    }
-
-    /// Remove a workspace
-    pub async fn remove_workspace(
-        &mut self,
-        workspace_id: &str,
-        force: bool,
-    ) -> Result<OperationResult> {
-        let response = self
-            .inner
-            .remove_workspace(RemoveWorkspaceRequest {
-                workspace_id: workspace_id.to_string(),
-                force,
-            })
-            .await
-            .context("Failed to remove workspace")?;
-
-        Ok(response.into_inner())
-    }
-
-    /// Sync workspace with remote
-    pub async fn sync_workspace(
-        &mut self,
-        workspace_id: &str,
-        remote_name: &str,
-        push: bool,
-        fetch: bool,
-    ) -> Result<SyncWorkspaceResponse> {
-        let response: tonic::Response<SyncWorkspaceResponse> = self
-            .inner
-            .sync_workspace(SyncWorkspaceRequest {
-                workspace_id: workspace_id.to_string(),
-                remote_name: remote_name.to_string(),
-                push,
-                fetch,
-            })
-            .await
-            .context("Failed to sync workspace")?;
-
-        Ok(response.into_inner())
-    }
-
-    // ============ Task Worktree Management ============
-
-    /// Create a new task worktree
-    pub async fn create_task_worktree(
-        &mut self,
-        workspace_id: &str,
-        task_id: &str,
-        assigned_node_id: Option<&str>,
-    ) -> Result<CreateTaskWorktreeResponse> {
-        let response = self
-            .inner
-            .create_task_worktree(CreateTaskWorktreeRequest {
-                workspace_id: workspace_id.to_string(),
-                task_id: task_id.to_string(),
-                assigned_node_id: assigned_node_id.map(|s| s.to_string()).unwrap_or_default(),
-            })
-            .await
-            .context("Failed to create task worktree")?;
-
-        Ok(response.into_inner())
-    }
-
-    /// List task worktrees
-    pub async fn list_task_worktrees(
-        &mut self,
-        workspace_id: Option<&str>,
-        assigned_node_id: Option<&str>,
-    ) -> Result<ListTaskWorktreesResponse> {
-        let response = self
-            .inner
-            .list_task_worktrees(ListTaskWorktreesRequest {
-                workspace_id: workspace_id.map(|s| s.to_string()).unwrap_or_default(),
-                assigned_node_id: assigned_node_id.map(|s| s.to_string()).unwrap_or_default(),
-                status: 0,
-            })
-            .await
-            .context("Failed to list task worktrees")?;
-
-        Ok(response.into_inner())
-    }
-
-    /// Complete a task worktree
-    pub async fn complete_task_worktree(
-        &mut self,
-        task_id: &str,
-        commit_message: &str,
-        merge_to_main: bool,
-    ) -> Result<CompleteTaskWorktreeResponse> {
-        let response = self
-            .inner
-            .complete_task_worktree(CompleteTaskWorktreeRequest {
-                task_id: task_id.to_string(),
-                commit_message: commit_message.to_string(),
-                merge_to_main,
-            })
-            .await
-            .context("Failed to complete task worktree")?;
-
-        Ok(response.into_inner())
-    }
-
-    /// Fail/abandon a task worktree
-    pub async fn fail_task_worktree(
-        &mut self,
-        task_id: &str,
-        reason: &str,
-        cleanup: bool,
-    ) -> Result<OperationResult> {
-        let response = self
-            .inner
-            .fail_task_worktree(FailTaskWorktreeRequest {
-                task_id: task_id.to_string(),
-                reason: reason.to_string(),
-                cleanup,
-            })
-            .await
-            .context("Failed to fail task worktree")?;
 
         Ok(response.into_inner())
     }
@@ -742,19 +626,11 @@ impl ManagementClient {
     /// Configure proxy routing dynamically
     pub async fn configure_proxy_routes(
         &mut self,
-        openai_base_url: &str,
-        anthropic_base_url: &str,
-        ollama_base_url: &str,
         model_routes: std::collections::HashMap<String, String>,
     ) -> Result<OperationResult> {
         let response = self
             .inner
-            .configure_proxy_routes(ConfigureProxyRoutesRequest {
-                openai_base_url: openai_base_url.to_string(),
-                anthropic_base_url: anthropic_base_url.to_string(),
-                ollama_base_url: ollama_base_url.to_string(),
-                model_routes,
-            })
+            .configure_proxy_routes(ConfigureProxyRoutesRequest { model_routes })
             .await
             .context("Failed to configure proxy routes")?;
 
@@ -992,7 +868,11 @@ impl ManagementClient {
     }
 
     /// Update a deployment with new SDL
-    pub async fn update_akash_deployment(&mut self, session_id: &str, sdl_content: &str) -> Result<OperationResult> {
+    pub async fn update_akash_deployment(
+        &mut self,
+        session_id: &str,
+        sdl_content: &str,
+    ) -> Result<OperationResult> {
         let response = self
             .inner
             .update_akash_deployment(UpdateAkashDeploymentRequest {
@@ -1006,7 +886,11 @@ impl ManagementClient {
     }
 
     /// Top up escrow account for a deployment
-    pub async fn topup_akash_escrow(&mut self, session_id: &str, amount_uakt: u64) -> Result<OperationResult> {
+    pub async fn topup_akash_escrow(
+        &mut self,
+        session_id: &str,
+        amount_uakt: u64,
+    ) -> Result<OperationResult> {
         let response = self
             .inner
             .topup_akash_escrow(TopupAkashEscrowRequest {
@@ -1319,7 +1203,10 @@ impl ManagementClient {
     }
 
     /// Remove Discord allowed guild
-    pub async fn remove_discord_allowed_guild(&mut self, guild_id: &str) -> Result<OperationResult> {
+    pub async fn remove_discord_allowed_guild(
+        &mut self,
+        guild_id: &str,
+    ) -> Result<OperationResult> {
         let response = self
             .inner
             .remove_discord_allowed_guild(RemoveDiscordAllowedGuildRequest {
@@ -1338,6 +1225,47 @@ impl ManagementClient {
             .get_discord_config(GetDiscordConfigRequest {})
             .await
             .context("Failed to get Discord config")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ CLI Key Management ============
+
+    pub async fn register_cli_key(
+        &mut self,
+        pubkey_hex: &str,
+        label: &str,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .register_cli_key(RegisterCliKeyRequest {
+                public_key_hex: pubkey_hex.to_string(),
+                label: label.to_string(),
+            })
+            .await
+            .context("Failed to register CLI key")?;
+
+        Ok(response.into_inner())
+    }
+
+    pub async fn revoke_cli_key(&mut self, pubkey_hex: &str) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .revoke_cli_key(RevokeCliKeyRequest {
+                public_key_hex: pubkey_hex.to_string(),
+            })
+            .await
+            .context("Failed to revoke CLI key")?;
+
+        Ok(response.into_inner())
+    }
+
+    pub async fn list_cli_keys(&mut self) -> Result<ListCliKeysResponse> {
+        let response = self
+            .inner
+            .list_cli_keys(ListCliKeysRequest {})
+            .await
+            .context("Failed to list CLI keys")?;
 
         Ok(response.into_inner())
     }
@@ -1373,3 +1301,11 @@ pub fn format_uptime(seconds: u64) -> String {
 
 // Re-export for commands module
 pub use ho_std::types::ergors::network::v1::NodeType as NodeTypeProto;
+
+pub mod grpc;
+pub mod rlm;
+
+// Re-export key types and functions
+pub use crate::auth::grpc::{create_grpc_auth_interceptor, AuthorizedCliKeys};
+pub use grpc::{start_grpc_server, ManagementServiceImpl};
+pub use rlm::{load_documents_by_prefix, RlmDocService};

@@ -8,6 +8,7 @@ use crate::config::{ContractDeployment, ErgorsConfig};
 use crate::storage::ErgorsStorage;
 use ho_std::error::HoResult;
 use ho_std::traits::HoConfigTrait;
+use ho_std::types::ergors::management::v1::ProviderConfig;
 use ho_std::wasm::WasmRuntime;
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
@@ -351,6 +352,32 @@ impl ContractManager {
                     "Contract '{}' already deployed at {}, skipping",
                     contract.name, address
                 );
+
+                // Even though we're skipping deployment, ensure SDL template contracts are registered
+                if contract.name.contains("sdl") && contract.name.contains("template") {
+                    // Check if already registered
+                    if let Ok(None) = self.storage.get_sdl_template_contract(&address).await {
+                        info!(
+                            "Registering existing SDL template contract: {}",
+                            contract.name
+                        );
+                        let sdl_label = if contract.label.is_empty() {
+                            Some(contract.name.clone())
+                        } else {
+                            Some(contract.label.clone())
+                        };
+                        // We don't have code_id here, use 0 as placeholder
+                        // TODO: retrieve actual code_id from contract info
+                        if let Err(e) = self
+                            .storage
+                            .register_sdl_template_contract(&address, sdl_label, 0)
+                            .await
+                        {
+                            warn!("Failed to register existing SDL template contract: {}", e);
+                        }
+                    }
+                }
+
                 return Ok(address);
             }
         }
@@ -517,18 +544,6 @@ pub struct IdentityRegistryInstantiateMsg {
     pub providers: Vec<ProviderConfig>,
 }
 
-/// Provider configuration for the identity registry
-#[derive(Debug, Clone, Serialize)]
-pub struct ProviderConfig {
-    /// Provider name (e.g., "anthropic", "openai")
-    pub name: String,
-    /// Ownership type: "shared" or "local"
-    pub ownership: String,
-    /// For shared providers: threshold for Shamir reconstruction
-    pub threshold: Option<u32>,
-    /// For shared providers: total shares to generate
-    pub total_shares: Option<u32>,
-}
 
 /// Instantiation message for the auth_registry_updater contract
 #[derive(Debug, Clone, Serialize)]

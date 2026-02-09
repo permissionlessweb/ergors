@@ -3,7 +3,8 @@
 **Issues**: [#7 Privacy Primitives](https://github.com/permissionlessweb/ergors/issues/7) | [#13 Embedding & RAG](https://github.com/permissionlessweb/ergors/issues/13) | [#3 Storage Architecture](https://github.com/permissionlessweb/ergors/issues/3) | [#14 Cosmos Query Macro](https://github.com/permissionlessweb/ergors/issues/14) | [#1 Akash Deployment](https://github.com/permissionlessweb/ergors/issues/1)
 
 - toad support: <https://github.com/batrachianai/toad>
-- claw-machine support:
+- claw-machine support: <https://github.com/noahsaso/claw-machine>
+  - configure mpc-like support mimicing: <https://github.com/7836246/claude-team-mcp>
 
 ## OPTIMIZATIONS
 
@@ -26,6 +27,9 @@
 **Issues**: [#4 Network Identity & Consensus](https://github.com/permissionlessweb/ergors/issues/4)
 
 - implement bft between nodes (state-sync application-state root hashes, bft-consensus of per-node state commitments)
+<!-- - designate supreme leader: allow consensus nodes to drop/not participate in conseunsus, as long as 1 node (supreme-leader) is still active we dont prohobit incrementing blocks.if supreme-leader drops, halt everything until they are back on. -->
+- register pper to participate to expect provision in commitment
+- nepoitc order: allow supreme leader to invite/expect other nodes to particiapte in simplex ordering, parameters for if liveness for node does not exist to continue without them
 - implement network topology data and access (alot of TODO's currently)
 - ensure api endpionts access/use are standardize thorughout logic (cosmos grpc,api/rpc)
 
@@ -34,13 +38,16 @@
 - use label||session id for all cli commands
 - do not poll for workflow in cache if its closed (currently still polls for deployments closed on error during inital deplyoment workflow)
 - ensure all requests made to endpoing are saved in storage layer
-- display known response from api for helping/debugging when incorrect api defintion is called (generic fallback page)
+
+- display known response from api for helping/debugging when incorrect api defintion is called (generic fallback page/api/cli)
+  - okapi
 
 ## SECURITY
 
 **Issues**: [#6 Key Management & Auth](https://github.com/permissionlessweb/ergors/issues/6)
 
 - condense key sharing/rotation,Oauth, threshold signatures into custody and keys libraries
+- avoid ERGORS_CUSTODY_PASSWORD usage always, remove from codebase and fix any logic (sentienel) that requires usage of this value
 
 ## COMMUNICATION
 
@@ -74,6 +81,8 @@ We can update how we keep track of the following values to a dedicated layer in 
 
 **Issues**: [#5 Configuration System Hardening](https://github.com/permissionlessweb/ergors/issues/5)
 
+- merge config and runtime-config into one command config
+
 ## ORCHESTRATOR SERVICE
 
 **Issues**: [#11 Agentic Workflow Enhancements](https://github.com/permissionlessweb/ergors/issues/11) | [#8 Testing Infrastructure](https://github.com/permissionlessweb/ergors/issues/8)
@@ -84,6 +93,8 @@ We can update how we keep track of the following values to a dedicated layer in 
   - <https://github.com/shobrook/weightgain>: improve embeddings
 
 - define scripts with instructions to run for each step in agentic orchestration
+- prompt populating logic: prompt templates for specific actions filled in with session/agentic specific data (git worktree commands, agents/subagents to spawn)
+- <https://models.dev/>
 
 ### BOOTSTRAPPING
 

@@ -1,85 +1,87 @@
 # Testing
 
-## E2E Deployment Workflow Test
+## E2E Testing - Quick Start
 
-Run the complete ERGORS deployment workflow test:
+### Unified Interface
 
-```bash
-./scripts/e2e-test.sh
-```
-
-### What It Does
-
-1. **Build ERGORS** - Compiles the ergors binary
-2. **Start ERGORS Network** - Spawns coordinator + executor nodes
-3. **Setup Akash** - Creates Kind cluster with Akash environment
-4. **Build Image** - Builds mock inference provider Docker image
-5. **Deploy via ERGORS** - Executes deployment workflow:
-   - Executor requests grant from coordinator
-   - Coordinator approves grant
-   - Executor deploys to Akash
-6. **Test Network** - Verifies ERGORS node connectivity
-7. **Test Service** - Verifies deployed APIs (Ollama, OpenAI, TGI)
-8. **Cleanup** - Stops nodes, deletes cluster
-
-### Options
+All E2E tests are now run through a single unified command:
 
 ```bash
-./scripts/e2e-test.sh --skip-build     # Use existing ergors binary
-./scripts/e2e-test.sh --skip-network   # Use existing ERGORS network
-./scripts/e2e-test.sh --skip-akash     # Use existing Kind cluster
-./scripts/e2e-test.sh --skip-cleanup   # Keep everything running
-./scripts/e2e-test.sh --verbose        # Show detailed output
+# Run all test suites
+just e2e
+
+# Run specific suite
+just e2e inference
+just e2e network
+just e2e deployment
+just e2e api
+
+# List available suites
+just e2e list
+
+# Show detailed help
+just e2e help
+
+# Run with options
+just e2e inference --verbose
+just e2e inference --skip-build
+just e2e inference --skip-cleanup
 ```
 
-## Spawn Test Network Only
+### Available Test Suites
 
-Start an ERGORS network for manual testing:
+| Suite | Description | Auto-Skips |
+|-------|-------------|------------|
+| `all` | All test suites (default) | - |
+| `network` | Network setup and connectivity | Akash, Ethereum, Inference |
+| `grants` | Grant management and validation | Ethereum, Inference |
+| `deployment` | Akash deployment workflows | Ethereum, Inference |
+| `security` | Security and permissions | Akash, Ethereum, Inference |
+| `contracts` | CosmWasm contract integration | Akash, Ethereum, Inference |
+| `api` | gRPC/REST API endpoints | Akash, Ethereum, Inference |
+| `bootstrap` | Node bootstrap and P2P transfers | Ethereum, Inference |
+| `ethereum` | Ethereum integration | - |
+| `inference` | LLM inference proxy routing | Akash, Ethereum |
+| `sdl-storage` | SDL storage and retrieval | Akash, Ethereum, Inference |
+| `chain-config` | Chain configuration | Akash, Ethereum, Inference |
+| `sentinel` | Sentinel mode (standalone) | All |
+
+### Common Options
 
 ```bash
-./scripts/spawn-test-network.sh --keep-running
+--skip-build        # Skip building ergors binary
+--skip-contracts    # Skip building CosmWasm contracts
+--skip-network      # Skip ERGORS network setup
+--skip-akash        # Skip Akash/Kind setup
+--skip-cleanup      # Keep everything running after tests
+--skip-ethereum     # Skip Ethereum/Anvil setup
+--skip-inference    # Skip mock inference provider
+--verbose           # Enable verbose output
 ```
 
-### Options
+### Examples
 
 ```bash
-./scripts/spawn-test-network.sh --executors 3     # Number of executor nodes
-./scripts/spawn-test-network.sh --with-referee    # Include referee node
-./scripts/spawn-test-network.sh --base-port 50200 # Starting port
+# Development iteration (fast)
+just e2e inference --skip-build
+
+# Debug mode (keep running)
+just e2e inference --verbose --skip-cleanup
+
+# Quick API validation
+just e2e api
+
+# Full integration test
+just e2e all --verbose
 ```
 
-## Prerequisites
-
-- Docker (running)
-- kind
-- kubectl
-- cargo (Rust)
-
-## Test Coverage
-
-**ERGORS Network:**
-
-- Coordinator node starts and accepts connections
-- Executor nodes connect to coordinator
-- Grant request/approval workflow
-- Node health monitoring
-
-**Akash Deployment:**
-
-- Container deploys to Akash provider
-- Service is exposed and accessible
-- Pod reaches running state
-- Deployment scaling works
-
-**Inference APIs (on deployed service):**
-
-- Ollama: `/api/tags`, `/api/generate`, `/api/chat`
-- OpenAI: `/v1/models`, `/v1/chat/completions`
-- TGI: `/info`, `/generate`
+---
 
 ## TODO
 
 ### DEPLOYMENT
+
+- trusted/limited runtime: ensure functionliaty for our minimized trusted runtime so that we can first allow an admin to configure the sensitive information before actually starting the engine.
 
 #### PHASE 1: simple deployment to provider via akash workflow automation
 
@@ -109,6 +111,6 @@ Start an ERGORS network for manual testing:
 
 ### STORAGE
 
-- test network state compression: fill up network state with many different various configurations and files. benchmark and 
+- test network state compression: fill up network state with many different various configurations and files. benchmark and
 
 ### Benchmarking

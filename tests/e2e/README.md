@@ -6,4 +6,4 @@ The goal of these test are 100% local, fully automated e2e testing of engines fu
 - akash network localnet, & provider spun up via kind and kube-clusers
 - mock inference provider spun up via docker (for testing api-key usage)
 
-We want 0 human intervention in this e2e tests. This is a closed loop verifying itself. 
+We want 0 human intervention in this e2e tests. This is a closed loop verifying itself.

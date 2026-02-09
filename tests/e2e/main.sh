@@ -6,14 +6,15 @@
 #   ./scripts/e2e/main.sh [options]
 #
 # Options:
-#   --skip-build       Skip building ergors binary
+#   --skip-build       (deprecated — cargo is incremental, always rebuilds safely)
 #   --skip-contracts   Skip building CosmWasm contracts
 #   --skip-network     Skip ERGORS network setup (use existing)
 #   --skip-akash       Skip Akash/Kind setup (use existing)
 #   --skip-cleanup     Keep everything running after tests
-#   --verbose          Enable verbose output
+#   --skip-inference   Skip mock inference provider (Docker)
 #   --skip-ethereum   Skip Ethereum/Anvil setup
-#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|all)
+#   --verbose          Enable verbose output
+#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|sdl-storage|chain-config|sentinel|all)
 #   --akash-home PATH  Set Akash repo location
 #   --help             Show this help message
 #
@@ -63,6 +64,10 @@ source "${SCRIPT_DIR}/tests/ethereum.sh"
 source "${SCRIPT_DIR}/tests/inference.sh"
 # shellcheck source=tests/sdl_storage.sh
 source "${SCRIPT_DIR}/tests/sdl_storage.sh"
+# shellcheck source=tests/chain_config.sh
+source "${SCRIPT_DIR}/tests/chain_config.sh"
+# shellcheck source=tests/sentinel.sh
+source "${SCRIPT_DIR}/tests/sentinel.sh"
 
 # =============================================================================
 # Configuration
@@ -73,6 +78,7 @@ SKIP_NETWORK=false
 SKIP_AKASH=false
 SKIP_CLEANUP=false
 SKIP_ETHEREUM=false
+SKIP_INFERENCE=false
 VERBOSE=false
 TEST_SUITE="all"
 MOCK_PROVIDER_PORT=11434
@@ -88,12 +94,13 @@ print_help() {
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --skip-build) SKIP_BUILD=true; shift ;;
+        --skip-build) log_warn "--skip-build is deprecated (cargo is incremental, always rebuilds safely)"; shift ;;
         --skip-contracts) SKIP_CONTRACTS=true; shift ;;
         --skip-network) SKIP_NETWORK=true; shift ;;
         --skip-akash) SKIP_AKASH=true; shift ;;
         --skip-cleanup) SKIP_CLEANUP=true; shift ;;
         --skip-ethereum) SKIP_ETHEREUM=true; shift ;;
+        --skip-inference) SKIP_INFERENCE=true; shift ;;
         --verbose) VERBOSE=true; shift ;;
         --test) TEST_SUITE="$2"; shift 2 ;;
         --akash-home) AKASH_HOME="$2"; shift 2 ;;
@@ -103,6 +110,23 @@ while [[ $# -gt 0 ]]; do
 done
 
 export VERBOSE
+
+# Auto-skip heavy infrastructure for suites that only need the ERGORS network
+case "$TEST_SUITE" in
+    chain-config|network|contracts|api|sdl-storage)
+        SKIP_AKASH=true
+        SKIP_ETHEREUM=true
+        SKIP_INFERENCE=true
+        ;;
+    security|inference)
+        SKIP_AKASH=true
+        SKIP_ETHEREUM=true
+        ;;
+    grants|bootstrap)
+        SKIP_ETHEREUM=true
+        SKIP_INFERENCE=true
+        ;;
+esac
 
 # =============================================================================
 # Prerequisites Check
@@ -148,6 +172,12 @@ check_prerequisites() {
 cleanup() {
     local exit_code=$?
 
+    # Prevent double cleanup (can happen if cleanup is called from trap and then EXIT)
+    if [[ -n "${_CLEANUP_DONE:-}" ]]; then
+        return $exit_code
+    fi
+    _CLEANUP_DONE=1
+
     if [[ "$SKIP_CLEANUP" == true ]]; then
         log_warn "Skipping cleanup (--skip-cleanup)"
         log_warn "Test dir: ${TEST_DIR}"
@@ -155,10 +185,14 @@ cleanup() {
         log_warn "Anvil PID: ${ANVIL_PID:-none}"
         log_warn "Akash Node PID: ${AKASH_NODE_PID:-none}"
         log_warn "Akash Provider PID: ${AKASH_PROVIDER_PID:-none}"
+        log_warn "Mock Provider PID: ${MOCK_PROVIDER_PID:-none}"
         return
     fi
 
     log_step "Cleanup"
+
+    # Stop mock inference provider
+    ergors_stop_mock_provider
 
     # Stop inference provider
     cleanup_inference_tests
@@ -203,10 +237,10 @@ cleanup() {
     return $exit_code
 }
 
-# Trap both EXIT and common error signals for comprehensive cleanup
+# Trap EXIT for cleanup (INT/TERM will trigger EXIT automatically)
 trap cleanup EXIT
-trap 'cleanup; exit 130' INT
-trap 'cleanup; exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # =============================================================================
 # Build Phase
@@ -224,15 +258,11 @@ run_build_phase() {
         }
     fi
 
-    # Build ERGORS
-    if [[ "$SKIP_BUILD" == true ]]; then
-        log_warn "Skipping ERGORS build"
-    else
-        ergors_build || {
-            log_error "ERGORS build failed"
-            exit 1
-        }
-    fi
+    # Build ERGORS (always rebuild — cargo is incremental, skipping risks stale binaries)
+    ergors_build || {
+        log_error "ERGORS build failed"
+        exit 1
+    }
 
     log_success "Build phase complete"
 }
@@ -243,6 +273,58 @@ run_build_phase() {
 run_infrastructure_phase() {
     log_step "Infrastructure Setup Phase"
 
+    # Start mock inference provider (standalone, no engine needed)
+    if [[ "$SKIP_INFERENCE" == true ]]; then
+        log_warn "Skipping mock inference provider"
+    else
+        log "Starting mock inference provider..."
+        if ergors_start_mock_provider; then
+            log_success "Mock provider started"
+        else
+            log_error "Mock inference provider failed to start"
+            exit 1
+        fi
+    fi
+
+    # Generate API keys from mock provider BEFORE starting network
+    # These will be configured into the nodes during startup
+    local OPENAI_KEY ANTHROPIC_KEY OLLAMA_KEY
+    if [[ "$SKIP_INFERENCE" != true ]] && [[ "$SKIP_NETWORK" != true ]]; then
+        # Verify mock provider is healthy before generating keys
+        log "Verifying mock provider is ready..."
+        local health_check
+        health_check=$(curl -s "${MOCK_PROVIDER_URL}/health" | jq -r '.status' 2>/dev/null || echo "error")
+        if [[ "$health_check" != "ok" ]]; then
+            log_error "Mock provider is not healthy (status: $health_check)"
+            exit 1
+        fi
+        log "Mock provider is healthy"
+
+        log "Generating API keys from mock provider..."
+        OPENAI_KEY=$(ergors_generate_mock_api_key "openai") || {
+            log_error "Failed to generate OpenAI API key"
+            exit 1
+        }
+        ANTHROPIC_KEY=$(ergors_generate_mock_api_key "anthropic") || {
+            log_error "Failed to generate Anthropic API key"
+            exit 1
+        }
+        OLLAMA_KEY=$(ergors_generate_mock_api_key "ollama") || {
+            log_error "Failed to generate Ollama API key"
+            exit 1
+        }
+
+        # Export for network startup
+        export OPENAI_API_KEY="$OPENAI_KEY"
+        export ANTHROPIC_API_KEY="$ANTHROPIC_KEY"
+        export OLLAMA_API_KEY="$OLLAMA_KEY"
+
+        log_success "API keys generated from mock provider"
+        log_verbose "  OpenAI: ${OPENAI_KEY:0:20}..."
+        log_verbose "  Anthropic: ${ANTHROPIC_KEY:0:20}..."
+        log_verbose "  Ollama: ${OLLAMA_KEY:0:20}..."
+    fi
+
     # Start ERGORS network
     if [[ "$SKIP_NETWORK" == true ]]; then
         log_warn "Skipping ERGORS network setup"
@@ -251,6 +333,17 @@ run_infrastructure_phase() {
             log_error "ERGORS network setup failed"
             exit 1
         }
+
+        # Configure inference providers via gRPC (after nodes are running)
+        if [[ "$SKIP_INFERENCE" != true ]] && [[ -n "${OPENAI_KEY:-}" ]]; then
+            log "Configuring inference providers via ergors provider add..."
+            if ergors_configure_providers_via_grpc "$OPENAI_KEY" "$ANTHROPIC_KEY" "$OLLAMA_KEY"; then
+                log_success "Providers configured via gRPC"
+            else
+                log_error "Failed to configure providers"
+                exit 1
+            fi
+        fi
     fi
 
     # Setup Akash infrastructure
@@ -328,6 +421,13 @@ run_tests() {
             run_network_tests  # Ensure nodes are up
             run_sdl_storage_tests
             ;;
+        chain-config)
+            run_network_tests  # Ensure nodes are up
+            run_chain_config_tests
+            ;;
+        sentinel)
+            run_sentinel_tests
+            ;;
         all)
             # Phase 1: Network tests
             run_network_tests
@@ -361,10 +461,16 @@ run_tests() {
 
             # Phase 10: SDL storage dual-path tests
             run_sdl_storage_tests
+
+            # Phase 11: Chain config CRUD tests
+            run_chain_config_tests
+
+            # Phase 12: Sentinel mode tests (standalone, no network needed)
+            run_sentinel_tests
             ;;
         *)
             log_error "Unknown test suite: $TEST_SUITE"
-            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, all"
+            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, chain-config, sentinel, all"
             exit 1
             ;;
     esac
@@ -385,6 +491,17 @@ main() {
     echo -e "  ${BOLD}Test Suite:${NC}  $TEST_SUITE"
     echo -e "  ${BOLD}Test Dir:${NC}    $TEST_DIR"
     echo ""
+
+    # Sentinel tests are standalone — skip prerequisites and infrastructure
+    if [[ "$TEST_SUITE" == "sentinel" ]]; then
+        run_build_phase
+        run_tests
+        local end_time duration
+        end_time=$(date +%s)
+        duration=$((end_time - START_TIME))
+        print_test_summary "$duration"
+        return
+    fi
 
     # Check prerequisites
     check_prerequisites

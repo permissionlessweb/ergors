@@ -89,6 +89,7 @@ impl MockManagementClient {
                 ssh_port: 22,
                 node_type: "development".to_string(),
                 public_key: Some(vec![0u8; 32]),
+                bech32_address: None,
             },
             node_type: NodeType::Development,
             simulated_latency_ms: 0,

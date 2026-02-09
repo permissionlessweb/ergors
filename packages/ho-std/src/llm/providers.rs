@@ -78,3 +78,14 @@ llm_entity! {
         api_type: OpenAiJoint,
     }
 }
+
+// Ollama Provider (OpenAI-compatible local inference)
+llm_entity! {
+    OllamaProvider {
+        name: "ollama",
+        env_key: "OLLAMA_API_KEY",
+        base_url: "http://127.0.0.1:11434",
+        models: ["llama2", "llama3", "mistral", "codellama"],
+        api_type: OpenAiJoint,
+    }
+}

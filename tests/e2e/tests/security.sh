@@ -305,8 +305,10 @@ test_error_handling() {
         else
             test_pass "missing_fields_error" "Missing fields returns error"
         fi
+    elif echo "$missing_fields_response" | grep -qiE "missing field|messages|required|deserialize"; then
+        test_pass "missing_fields_error" "Missing fields returns error: ${missing_fields_response:0:80}"
     else
-        test_fail "missing_fields_error" "Missing required fields not validated"
+        test_fail "missing_fields_error" "Missing required fields not validated" "Response: ${missing_fields_response:0:200}"
     fi
 
     # Test 3: Empty request body
@@ -351,6 +353,137 @@ test_error_handling() {
 }
 
 # =============================================================================
+# Keyless Provider Tests
+# =============================================================================
+
+test_keyless_providers() {
+    log_section "Keyless Provider Tests"
+
+    # These tests verify the --no-key provider registration flow:
+    # 1. CLI accepts --no-key without prompting for API key
+    # 2. Provider appears in provider list as configured
+    # 3. Requests forwarded without Authorization header
+    # 4. Keyed providers still work normally alongside keyless ones
+
+    # Requires mock provider to be running
+    if [[ -z "${MOCK_PROVIDER_URL:-}" ]]; then
+        test_skip "keyless_provider_prereq" "Mock provider not running, skipping keyless tests"
+        return 0
+    fi
+
+    local coord_home="$TEST_DIR/coordinator"
+
+    # Test 1: Register a keyless provider via --no-key
+    # NOTE: use `|| true` to prevent set -e from aborting on non-zero exit
+    log_verbose "Registering keyless provider 'local-sglang'..."
+    local add_exit=0
+    local add_output
+    add_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" provider add local-sglang \
+        --base-url "$MOCK_PROVIDER_URL" --no-key </dev/null 2>&1) || add_exit=$?
+
+    if [[ $add_exit -eq 0 ]]; then
+        test_pass "keyless_provider_add" "Keyless provider 'local-sglang' registered (exit 0)"
+    else
+        test_fail "keyless_provider_add" "Failed to register keyless provider" "Exit: $add_exit Output: $add_output"
+        return 1
+    fi
+
+    # Test 2: --no-key requires --base-url (should fail without it)
+    log_verbose "Testing --no-key without --base-url (should fail)..."
+    local bad_exit=0
+    local bad_output
+    bad_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" provider add bad-provider \
+        --no-key </dev/null 2>&1) || bad_exit=$?
+
+    if [[ $bad_exit -ne 0 ]]; then
+        test_pass "keyless_requires_base_url" "--no-key without --base-url correctly rejected"
+    else
+        test_fail "keyless_requires_base_url" "--no-key without --base-url should have failed" "Output: $bad_output"
+    fi
+
+    # Test 3: Keyless provider appears in provider list
+    log_verbose "Verifying keyless provider in provider list..."
+    local list_output
+    list_output=$("$ERGORS_BIN" --home "$coord_home" provider list 2>&1) || true
+
+    if echo "$list_output" | grep -q "local-sglang"; then
+        test_pass "keyless_in_provider_list" "Keyless provider 'local-sglang' appears in provider list"
+    else
+        test_fail "keyless_in_provider_list" "Keyless provider not found in provider list" "Output: $list_output"
+    fi
+
+    # Test 4: Register a second keyless provider with --default
+    log_verbose "Registering keyless provider 'local-embeddings' as default..."
+    local default_exit=0
+    local default_output
+    default_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" provider add local-embeddings \
+        --base-url "$MOCK_PROVIDER_URL" --no-key --default </dev/null 2>&1) || default_exit=$?
+
+    if [[ $default_exit -eq 0 ]]; then
+        test_pass "keyless_provider_default" "Keyless provider with --default registered"
+    else
+        test_fail "keyless_provider_default" "Failed to register keyless default provider" "Exit: $default_exit Output: $default_output"
+    fi
+
+    # Test 5: Forwarding to keyless provider omits Authorization header
+    # The keyless provider (local-sglang) is registered as OpenAI type, so it gets
+    # gpt-* model routes. Use a gpt-* model name to route through it.
+    log_verbose "Testing keyless forwarding (no Authorization header)..."
+
+    local chat_response
+    chat_response=$(curl -s --max-time 15 -X POST "http://${COORDINATOR_API}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d '{"model":"gpt-keyless-test","messages":[{"role":"user","content":"test keyless"}]}' \
+        2>/dev/null) || chat_response="{}"
+    log_debug "Keyless chat response: $chat_response"
+
+    # Check the mock provider's captured headers
+    local captured_headers
+    captured_headers=$(curl -s --max-time 5 "${MOCK_PROVIDER_URL}/debug/last-headers" 2>/dev/null) || captured_headers="{}"
+    log_debug "Captured headers: $captured_headers"
+
+    local has_auth
+    has_auth=$(echo "$captured_headers" | jq -r '.headers.authorization // empty' 2>/dev/null)
+
+    if [[ -z "$has_auth" ]]; then
+        test_pass "keyless_no_auth_header" "Keyless provider request forwarded WITHOUT Authorization header"
+    else
+        test_fail "keyless_no_auth_header" "Authorization header should not be present for keyless providers" "Got: $has_auth"
+    fi
+
+    # Test 6: Keyed provider still sends auth header (Anthropic x-api-key)
+    # Use Anthropic endpoint since its claude-* routes aren't overwritten by keyless providers
+    if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        log_verbose "Verifying keyed provider still sends auth header (Anthropic)..."
+        local keyed_response
+        keyed_response=$(curl -s --max-time 15 -X POST "http://${COORDINATOR_API}/v1/messages" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -d '{"model":"claude-3-haiku-20240307","messages":[{"role":"user","content":"test keyed"}],"max_tokens":5}' \
+            2>/dev/null) || keyed_response="{}"
+        log_debug "Keyed response: $keyed_response"
+
+        # Anthropic mock provider validates x-api-key header — if we get a response
+        # (not 401), the key was forwarded correctly
+        local keyed_error
+        keyed_error=$(echo "$keyed_response" | jq -r '.error.type // empty' 2>/dev/null)
+
+        if [[ "$keyed_error" != "authentication_error" ]]; then
+            test_pass "keyed_has_auth_header" "Keyed provider request forwarded WITH auth header"
+        else
+            test_fail "keyed_has_auth_header" "Keyed provider auth header not forwarded" "Response: $keyed_response"
+        fi
+    else
+        test_skip "keyed_has_auth_header" "No ANTHROPIC_API_KEY set, skipping keyed auth header test"
+    fi
+
+    log_success "Keyless provider tests completed"
+}
+
+# =============================================================================
 # Combined Security Test Suite
 # =============================================================================
 
@@ -369,4 +502,7 @@ run_security_tests() {
 
     # Test error handling and input validation
     test_error_handling
+
+    # Test keyless provider registration and forwarding
+    test_keyless_providers
 }

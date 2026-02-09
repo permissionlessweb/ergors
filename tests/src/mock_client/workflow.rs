@@ -267,12 +267,6 @@ impl MockWorkflowEngine {
                 workflow.current_step = AkashWorkflowStep::GrantWait as i32;
             }
             AkashWorkflowStep::GrantWait => {
-                workflow.current_step = AkashWorkflowStep::AuthzSetup as i32;
-            }
-            AkashWorkflowStep::AuthzSetup => {
-                workflow.current_step = AkashWorkflowStep::FeegrantSetup as i32;
-            }
-            AkashWorkflowStep::FeegrantSetup => {
                 workflow.current_step = AkashWorkflowStep::SdlConfiguration as i32;
             }
             AkashWorkflowStep::SdlConfiguration => {
@@ -288,18 +282,6 @@ impl MockWorkflowEngine {
             | AkashWorkflowStep::ManifestSend
             | AkashWorkflowStep::EndpointRetrieval => {
                 self.advance_real_workflow(&mut workflow).await?;
-            }
-
-            AkashWorkflowStep::EndpointTesting => {
-                // Merged with WaitForEndpoints in real workflow.
-                // If we're here, endpoints were already retrieved.
-                workflow.current_step = AkashWorkflowStep::Complete as i32;
-                workflow.status = AkashWorkflowStatus::Completed as i32;
-                let now = chrono::Utc::now();
-                workflow.completed_at = Some(pbjson_types::Timestamp {
-                    seconds: now.timestamp(),
-                    nanos: now.timestamp_subsec_nanos() as i32,
-                });
             }
 
             AkashWorkflowStep::Complete => {}
@@ -419,13 +401,13 @@ impl MockWorkflowEngine {
             }
             Ok(StepResult::Complete) => {
                 Self::sync_proto_from_state(workflow, &state);
-                // EndpointRetrieval -> EndpointTesting transition
-                if current_proto == AkashWorkflowStep::EndpointRetrieval {
-                    workflow.current_step = AkashWorkflowStep::EndpointTesting as i32;
-                } else {
-                    workflow.current_step = AkashWorkflowStep::Complete as i32;
-                    workflow.status = AkashWorkflowStatus::Completed as i32;
-                }
+                workflow.current_step = AkashWorkflowStep::Complete as i32;
+                workflow.status = AkashWorkflowStatus::Completed as i32;
+                let now = chrono::Utc::now();
+                workflow.completed_at = Some(pbjson_types::Timestamp {
+                    seconds: now.timestamp(),
+                    nanos: now.timestamp_subsec_nanos() as i32,
+                });
             }
             Ok(StepResult::Failed(reason)) => {
                 workflow.current_step = AkashWorkflowStep::Failed as i32;

@@ -5,11 +5,15 @@
 //! (e.g., config_cmd, keys, init).
 
 pub mod bootstrap;
+pub mod call;
+pub mod config;
 pub mod deploy;
 pub mod gateway;
+pub mod init;
 pub mod rag;
+pub mod responses;
+pub mod sentinel;
 pub mod workspace;
-
 use anyhow::Result;
 use clap::Subcommand;
 use std::collections::HashMap;
@@ -23,6 +27,7 @@ pub struct CliContext {
     pub home: camino::Utf8PathBuf,
     pub grpc_addr: String,
     pub json: bool,
+    pub signing_key: Option<ho_std::keys::commonware::NodePrivKey>,
 }
 
 pub use bootstrap::BootstrapCmd;
@@ -69,7 +74,7 @@ impl EngineCmd {
                 grpc_port,
             } => {
                 // Check if engine is already running
-                if let Ok(mut c) = ManagementClient::connect(&ctx.grpc_addr).await {
+                if let Ok(mut c) = ManagementClient::connect(&ctx.grpc_addr, ctx.signing_key.clone()).await {
                     if c.get_status().await.is_ok() {
                         println!("Engine is already running at {}", ctx.grpc_addr);
                         return Ok(());
@@ -114,7 +119,7 @@ impl EngineCmd {
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
                     // Verify it's running
-                    match ManagementClient::connect(&ctx.grpc_addr).await {
+                    match ManagementClient::connect(&ctx.grpc_addr, ctx.signing_key.clone()).await {
                         Ok(mut c) => {
                             if c.get_status().await.is_ok() {
                                 println!("Engine is running. Use 'ergors status' for details.");
@@ -146,18 +151,16 @@ impl EngineCmd {
                         let status = c.get_status().await?;
 
                         if ctx.json {
-                            println!(
-                                "{}",
-                                serde_json::to_string_pretty(&serde_json::json!({
-                                    "version": status.version,
-                                    "state": format_engine_state(status.state),
-                                    "uptime_seconds": status.uptime_seconds,
-                                    "storage_status": status.storage_status,
-                                    "network_status": status.network_status,
-                                    "connected_peers": status.connected_peers,
-                                    "total_requests": status.total_requests_handled,
-                                }))?
-                            );
+                            let resp = responses::StatusResponse {
+                                version: status.version.clone(),
+                                state: format_engine_state(status.state).to_string(),
+                                uptime_seconds: status.uptime_seconds,
+                                storage_status: status.storage_status.clone(),
+                                network_status: status.network_status.clone(),
+                                connected_peers: status.connected_peers,
+                                total_requests: status.total_requests_handled,
+                            };
+                            println!("{}", serde_json::to_string_pretty(&resp)?);
                         } else {
                             println!("ERGORS Engine Status");
                             println!("====================");
@@ -172,13 +175,11 @@ impl EngineCmd {
                     }
                     Err(_) => {
                         if ctx.json {
-                            println!(
-                                "{}",
-                                serde_json::to_string_pretty(&serde_json::json!({
-                                    "state": "stopped",
-                                    "error": "Cannot connect to engine"
-                                }))?
-                            );
+                            let resp = responses::StatusStoppedResponse {
+                                state: "stopped",
+                                error: "Cannot connect to engine".to_string(),
+                            };
+                            println!("{}", serde_json::to_string_pretty(&resp)?);
                         } else {
                             println!("Engine Status: NOT RUNNING");
                             println!("Cannot connect to engine at {}", ctx.grpc_addr);
@@ -247,7 +248,10 @@ pub enum NodeCmd {
 impl NodeCmd {
     pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
-            NodeCmd::Info { prefix, all_prefixes } => {
+            NodeCmd::Info {
+                prefix,
+                all_prefixes,
+            } => {
                 use ho_std::keys::cosmos::cosmos_address_from_ed25519_pubkey;
 
                 let identity = client.get_node_identity().await?;
@@ -255,8 +259,9 @@ impl NodeCmd {
                 // Derive addresses with different prefixes if requested
                 let addresses = if *all_prefixes {
                     // Common Cosmos ecosystem prefixes
-                    let prefixes = vec!["ergors", "akash", "cosmos", "osmo", "juno", "stars"];
-                    prefixes.iter()
+                    let prefixes = ["ergors", "akash", "cosmos", "osmo", "juno", "stars"];
+                    prefixes
+                        .iter()
                         .filter_map(|p| {
                             identity.public_key.as_ref().and_then(|pk| {
                                 cosmos_address_from_ed25519_pubkey(pk, p)
@@ -267,7 +272,9 @@ impl NodeCmd {
                         .collect::<Vec<_>>()
                 } else if prefix != "ergors" {
                     // Derive address with custom prefix
-                    identity.public_key.as_ref()
+                    identity
+                        .public_key
+                        .as_ref()
                         .and_then(|pk| {
                             cosmos_address_from_ed25519_pubkey(pk, prefix)
                                 .ok()
@@ -287,9 +294,10 @@ impl NodeCmd {
                         "bech32_address": identity.bech32_address,
                     });
                     if !addresses.is_empty() {
-                        json["addresses"] = serde_json::json!(addresses.iter().map(|(p, a)| {
-                            serde_json::json!({"prefix": p, "address": a})
-                        }).collect::<Vec<_>>());
+                        json["addresses"] = serde_json::json!(addresses
+                            .iter()
+                            .map(|(p, a)| { serde_json::json!({"prefix": p, "address": a}) })
+                            .collect::<Vec<_>>());
                     }
                     println!("{}", serde_json::to_string_pretty(&json)?);
                 } else {
@@ -555,9 +563,14 @@ pub enum ProviderCmd {
         /// API key (will prompt if not provided)
         #[arg(long)]
         api_key: Option<String>,
+        #[arg(long)]
+        base_url: Option<String>,
         /// Set as default provider
         #[arg(long)]
         default: bool,
+        /// Register without an API key (for local/co-deployed inference)
+        #[arg(long)]
+        no_key: bool,
     },
     /// Test provider connectivity
     Test {
@@ -609,37 +622,59 @@ impl ProviderCmd {
             ProviderCmd::Add {
                 name,
                 api_key,
+                base_url,
                 default,
+                no_key,
             } => {
-                let key = match api_key {
-                    Some(k) => k.clone(),
-                    None => {
-                        // Prompt for API key
-                        print!("Enter API key for {}: ", name);
-                        use std::io::{self, Write};
-                        io::stdout().flush()?;
-                        let mut input = String::new();
-                        io::stdin().read_line(&mut input)?;
-                        input.trim().to_string()
+                // Normalize provider name to lowercase for consistency
+                let name_lower = name.to_lowercase();
+
+                let key = if *no_key {
+                    if base_url.is_none() {
+                        anyhow::bail!("--base-url is required when using --no-key");
+                    }
+                    String::new()
+                } else {
+                    match api_key {
+                        Some(k) => k.clone(),
+                        None => {
+                            use std::io::IsTerminal;
+                            if std::io::stdin().is_terminal() {
+                                rpassword::prompt_password(format!(
+                                    "Enter API key for {}: ",
+                                    name_lower
+                                ))?
+                            } else {
+                                let mut input = String::new();
+                                std::io::stdin().read_line(&mut input)?;
+                                input.trim().to_string()
+                            }
+                        }
                     }
                 };
+                if !*no_key && key.is_empty() {
+                    anyhow::bail!("API key cannot be empty");
+                }
 
-                let result = client.configure_provider(name, &key, *default).await?;
+                let result = client.configure_provider(&name_lower, &key, base_url.as_deref(), *default, *no_key).await?;
 
                 if result.success {
-                    println!("Provider {} configured", name);
+                    println!("Provider '{}' configured ({})", name_lower, result.message);
                     if *default {
                         println!("Set as default provider");
                     }
                 } else {
-                    println!("Failed to configure provider: {}", result.message);
+                    eprintln!("Error: {}", result.message);
+                    std::process::exit(1);
                 }
                 Ok(())
             }
             ProviderCmd::Test { name } => {
-                match name {
+                // Normalize provider name to lowercase
+                let name_lower = name.as_ref().map(|n| n.to_lowercase());
+                match name_lower {
                     Some(n) => {
-                        let result = client.test_provider(n).await?;
+                        let result = client.test_provider(&n).await?;
 
                         if result.success {
                             println!("{}: OK ({}ms)", n, result.latency_ms);
@@ -670,10 +705,12 @@ impl ProviderCmd {
                 Ok(())
             }
             ProviderCmd::Default { name } => {
-                let result = client.configure_provider(name, "", true).await?;
+                // Normalize provider name to lowercase
+                let name_lower = name.to_lowercase();
+                let result = client.configure_provider(&name_lower, "", None, true, false).await?;
 
                 if result.success {
-                    println!("Default provider set to: {}", name);
+                    println!("Default provider set to: {}", name_lower);
                 } else {
                     println!("Failed to set default: {}", result.message);
                 }
@@ -717,14 +754,21 @@ impl SdlCmd {
                 let list = client.list_sdl_templates().await?;
 
                 if ctx.json {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                        "templates": list.templates,
-                    }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "templates": list.templates,
+                        }))?
+                    );
                 } else {
                     println!("SDL Template Contracts");
                     println!("======================");
                     for template in &list.templates {
-                        println!("  {} - {}", template.contract_address, template.label.as_ref().unwrap_or(&"(no label)".to_string()));
+                        println!(
+                            "  {} - {}",
+                            template.contract_address,
+                            template.label.as_ref().unwrap_or(&"(no label)".to_string())
+                        );
                     }
                 }
                 Ok(())
@@ -733,10 +777,13 @@ impl SdlCmd {
                 let template = client.get_sdl_template(contract_address).await?;
 
                 if ctx.json {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                        "sdl_template": template.sdl_template,
-                        "template_json": template.template_json,
-                    }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "sdl_template": template.sdl_template,
+                            "template_json": template.template_json,
+                        }))?
+                    );
                 } else {
                     println!("SDL Template from {}", contract_address);
                     println!("==========================================");
@@ -748,9 +795,12 @@ impl SdlCmd {
                 let defaults = client.get_sdl_defaults(contract_address).await?;
 
                 if ctx.json {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                        "defaults": defaults.defaults,
-                    }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "defaults": defaults.defaults,
+                        }))?
+                    );
                 } else {
                     println!("Variable Defaults from {}", contract_address);
                     println!("==========================================");
@@ -760,15 +810,23 @@ impl SdlCmd {
                 }
                 Ok(())
             }
-            SdlCmd::Render { contract_address, vars } => {
+            SdlCmd::Render {
+                contract_address,
+                vars,
+            } => {
                 let variables: HashMap<String, String> = vars.iter().cloned().collect();
-                let rendered = client.render_sdl_template(contract_address, variables).await?;
+                let rendered = client
+                    .render_sdl_template(contract_address, variables)
+                    .await?;
 
                 if ctx.json {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                        "rendered_sdl": rendered.rendered_sdl,
-                        "used_variables": rendered.used_variables,
-                    }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "rendered_sdl": rendered.rendered_sdl,
+                            "used_variables": rendered.used_variables,
+                        }))?
+                    );
                 } else {
                     println!("Rendered SDL from {}", contract_address);
                     println!("==========================================");

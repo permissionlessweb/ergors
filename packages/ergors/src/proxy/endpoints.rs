@@ -1,7 +1,6 @@
 //! HTTP endpoint handlers for the LLM proxy.
 
 use crate::proxy::capture::{create_capture_service, CaptureMessage};
-use ho_std::types::ergors::orch::v1::ProxyRouterConfig;
 use crate::proxy::session::{detect_client_type, extract_api_key, extract_session_id};
 use crate::proxy::streaming::{create_anthropic_sse_stream, create_openai_sse_stream};
 use crate::ErgorsAppState;
@@ -13,6 +12,7 @@ use axum::{
     Json,
 };
 use bytes::Bytes;
+use ho_std::types::ergors::orch::v1::ProxyRouterConfig;
 use ho_std::types::ergors::proxy::v1::{ProxyApiFormat, QueryProxySessionsRequest};
 use tokio::sync::{mpsc, OnceCell};
 use tracing::{debug, error, info};
@@ -502,8 +502,11 @@ pub async fn handle_update_proxy_config(
     State(state): State<ErgorsAppState>,
     Json(config): Json<ProxyRouterConfig>,
 ) -> Json<serde_json::Value> {
-    info!("Updating proxy router config: {} providers, {} model routes",
-        config.providers.len(), config.model_routes.len());
+    info!(
+        "Updating proxy router config: {} providers, {} model routes",
+        config.providers.len(),
+        config.model_routes.len()
+    );
 
     // Load current config from storage to get version
     let current_version = match state.s.get_proxy_router_config().await {
@@ -520,7 +523,6 @@ pub async fn handle_update_proxy_config(
 
     // Create proto config for storage with incremented version
     let proto_config = ho_std::types::ergors::orch::v1::ProxyRouterConfig {
-        ollama_base_url: config.ollama_base_url.clone(),
         model_routes: config.model_routes.clone(),
         providers: config.providers.clone(),
         updated_at: Some(pbjson_types::Timestamp {
@@ -566,7 +568,6 @@ pub async fn handle_get_proxy_config(
     let stored_config = state.s.get_proxy_router_config().await.ok().flatten();
 
     let mut response = serde_json::json!({
-        "ollama_base_url": config.ollama_base_url,
         "model_routes": config.model_routes,
         "providers": config.providers,
     });
@@ -575,10 +576,8 @@ pub async fn handle_get_proxy_config(
     if let Some(stored) = stored_config {
         response["version"] = serde_json::json!(stored.version);
         if let Some(updated_at) = stored.updated_at {
-            response["updated_at"] = serde_json::json!(format!(
-                "{}.{}",
-                updated_at.seconds, updated_at.nanos
-            ));
+            response["updated_at"] =
+                serde_json::json!(format!("{}.{}", updated_at.seconds, updated_at.nanos));
         }
         if !stored.change_reason.is_empty() {
             response["change_reason"] = serde_json::json!(stored.change_reason);

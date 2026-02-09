@@ -2695,7 +2695,7 @@ impl ::prost::Name for CosmosKeyStore {
         "/ergors.orch.v1.CosmosKeyStore".into()
     }
 }
-/// Configuration for Akash network deployment endpoints
+/// Configuration for Akash network deployment endpoints (DEPRECATED - use CosmosChainConfig)
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AkashDeployConfig {
@@ -2747,15 +2747,83 @@ impl ::prost::Name for AkashDeployConfig {
         "/ergors.orch.v1.AkashDeployConfig".into()
     }
 }
+/// Configuration for any Cosmos SDK chain
+/// Stored in cnidarium for deterministic, versioned config management
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CosmosChainConfig {
+    /// Chain ID (e.g., "akashnet-2", "osmosis-1", "cosmoshub-4", "local")
+    #[prost(string, tag = "1")]
+    pub chain_id: ::prost::alloc::string::String,
+    /// Human-readable chain name (e.g., "Akash Network", "Osmosis", "Cosmos Hub")
+    #[prost(string, tag = "2")]
+    pub chain_name: ::prost::alloc::string::String,
+    /// Bech32 address prefix (e.g., "akash", "osmo", "cosmos")
+    #[prost(string, tag = "3")]
+    pub bech32_prefix: ::prost::alloc::string::String,
+    /// Native token denom (e.g., "uakt", "uosmo", "uatom")
+    #[prost(string, tag = "4")]
+    pub denom: ::prost::alloc::string::String,
+    /// Gas prices for transactions (e.g., "0.025uakt")
+    #[prost(string, tag = "5")]
+    pub gas_prices: ::prost::alloc::string::String,
+    /// Gas adjustment multiplier (e.g., 1.3)
+    #[prost(double, tag = "6")]
+    pub gas_adjustment: f64,
+    /// RPC endpoints for tendermint queries (e.g., "<https://rpc.akash.network:443">)
+    #[prost(string, repeated, tag = "7")]
+    pub rpc_endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// gRPC endpoints for Cosmos SDK queries (e.g., "grpc.akash.network:9090")
+    #[prost(string, repeated, tag = "8")]
+    pub grpc_endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// REST/LCD endpoints for HTTP queries (e.g., "<https://api.akash.network">)
+    #[prost(string, repeated, tag = "9")]
+    pub rest_endpoints: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Maximum retry attempts per endpoint before failover (default: 2)
+    #[prost(uint32, tag = "10")]
+    pub max_retries_per_endpoint: u32,
+    /// Total maximum retry attempts across all endpoints (default: 6)
+    #[prost(uint32, tag = "11")]
+    pub max_total_retries: u32,
+    /// Connection timeout in seconds (default: 10)
+    #[prost(uint32, tag = "12")]
+    pub connection_timeout_seconds: u32,
+    /// Keyring backend for this chain ("os", "file", "test")
+    #[prost(string, tag = "13")]
+    pub keyring_backend: ::prost::alloc::string::String,
+    /// Default key name to use for transactions on this chain
+    #[prost(string, tag = "14")]
+    pub default_key_name: ::prost::alloc::string::String,
+    /// Chain-specific features/capabilities
+    ///
+    /// e.g., \["authz", "feegrant", "ibc"\]
+    #[prost(string, repeated, tag = "15")]
+    pub features: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Optional: Trusted provider/validator addresses (for Akash deployments)
+    #[prost(string, repeated, tag = "16")]
+    pub trusted_addresses: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Timestamp when this config was last updated (seconds since epoch)
+    #[prost(int64, tag = "17")]
+    pub updated_at: i64,
+    /// Who last updated this config (node identity or admin address)
+    #[prost(string, tag = "18")]
+    pub updated_by: ::prost::alloc::string::String,
+}
+impl ::prost::Name for CosmosChainConfig {
+    const NAME: &'static str = "CosmosChainConfig";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.CosmosChainConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.CosmosChainConfig".into()
+    }
+}
 /// Configuration for dynamic LLM proxy routing
 /// Stored in cnidarium for deterministic, immutable logging of endpoint changes
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProxyRouterConfig {
-    /// Override base URL for Ollama API requests
-    #[deprecated]
-    #[prost(string, tag = "3")]
-    pub ollama_base_url: ::prost::alloc::string::String,
     /// Model-specific routing rules (glob patterns -> provider IDs)
     /// e.g., "claude-*" -> "anthropic"
     /// e.g., "llama-*" -> "local-ollama"
@@ -2804,11 +2872,7 @@ pub struct InferenceProviderConfig {
     /// Base URL for API requests (e.g., "<https://api.openai.com",> "<http://localhost:11434">)
     #[prost(string, tag = "2")]
     pub base_url: ::prost::alloc::string::String,
-    /// API key for authentication (stored as plaintext reference or encrypted blob)
-    /// For custody-managed keys, use api_key_ref instead
-    #[prost(string, tag = "3")]
-    pub api_key: ::prost::alloc::string::String,
-    /// Reference to a custody-managed API key (alternative to api_key)
+    /// Reference to a custody-managed API key
     /// Format: "custody://{key_id}" or "env://{ENV_VAR_NAME}"
     #[prost(string, tag = "4")]
     pub api_key_ref: ::prost::alloc::string::String,

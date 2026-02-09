@@ -10,15 +10,19 @@
 
 use ho_std::llm::DeploymentProviderCache;
 use ho_std::types::ergors::orch::v1::{
-    AkashDeploymentWorkflow, AkashServiceEndpoint, AkashWorkflowStatus,
-    PromptMessage, PromptRequest, TokenUsage,
+    AkashDeploymentWorkflow, AkashServiceEndpoint, AkashWorkflowStatus, PromptMessage,
+    PromptRequest, TokenUsage,
 };
 
-use ergors::proxy::router::{
-    ProxyRouter, ProxyRouterConfig, ProviderType, DEFAULT_ANTHROPIC_URL, DEFAULT_OPENAI_URL,
-};
+#[allow(deprecated)]
+use ergors::proxy::router::{ProviderType, ProxyRouter};
+use ergors::proxy::{InferenceProviderConfig, InferenceProviderType, ProxyRouterConfig};
 
+use ho_std::constants::{ANTHROPIC_BASE_URL, OPENAI_BASE_URL};
 use std::collections::HashMap;
+
+const DEFAULT_ANTHROPIC_URL: &str = ANTHROPIC_BASE_URL;
+const DEFAULT_OPENAI_URL: &str = OPENAI_BASE_URL;
 
 // ============================================================================
 // Test 1: DeploymentProviderCache Operations
@@ -88,19 +92,28 @@ async fn test_cache_list_models_returns_all_labels() {
 
     cache
         .add_deployment(&make_completed_workflow(
-            "s1", "alpha", "model-a", "https://a:8080",
+            "s1",
+            "alpha",
+            "model-a",
+            "https://a:8080",
         ))
         .await
         .unwrap();
     cache
         .add_deployment(&make_completed_workflow(
-            "s2", "beta", "model-b", "https://b:8080",
+            "s2",
+            "beta",
+            "model-b",
+            "https://b:8080",
         ))
         .await
         .unwrap();
     cache
         .add_deployment(&make_completed_workflow(
-            "s3", "gamma", "model-c", "https://c:8080",
+            "s3",
+            "gamma",
+            "model-c",
+            "https://c:8080",
         ))
         .await
         .unwrap();
@@ -118,15 +131,11 @@ async fn test_cache_clear_removes_all_entries() {
     let cache = DeploymentProviderCache::new();
 
     cache
-        .add_deployment(&make_completed_workflow(
-            "s1", "a", "m-a", "https://a:8080",
-        ))
+        .add_deployment(&make_completed_workflow("s1", "a", "m-a", "https://a:8080"))
         .await
         .unwrap();
     cache
-        .add_deployment(&make_completed_workflow(
-            "s2", "b", "m-b", "https://b:8080",
-        ))
+        .add_deployment(&make_completed_workflow("s2", "b", "m-b", "https://b:8080"))
         .await
         .unwrap();
     assert_eq!(cache.count().await, 2);
@@ -548,10 +557,7 @@ async fn test_models_endpoint_combines_deployments_and_providers() {
     let deployment_models = cache.list_models().await;
 
     // Simulated configured provider models
-    let provider_models = vec![
-        "gpt-4".to_string(),
-        "claude-3-opus".to_string(),
-    ];
+    let provider_models = vec!["gpt-4".to_string(), "claude-3-opus".to_string()];
 
     // Combine: deployments + providers
     let mut all_models: Vec<String> = deployment_models;
@@ -586,138 +592,167 @@ async fn test_deployment_endpoint_has_model_metadata() {
 }
 
 // ============================================================================
-// Test 6: ProxyRouter Glob Matching
+// Test 6: ProxyRouter Glob Matching & Provider Routing
 // ============================================================================
 
 /// Verify that default ProxyRouter routes Anthropic to DEFAULT_ANTHROPIC_URL.
-#[test]
-fn test_proxy_router_default_anthropic_routing() {
+#[tokio::test]
+async fn test_proxy_router_default_anthropic_routing() {
     let router = ProxyRouter::default_router();
-    let target = router.route_anthropic("claude-3-opus");
+    let target = router.route_anthropic("claude-3-opus").await.unwrap();
 
     assert_eq!(target.base_url, DEFAULT_ANTHROPIC_URL);
-    assert_eq!(target.provider_type, ProviderType::Anthropic);
+    assert_eq!(
+        target.provider_type,
+        InferenceProviderType::Anthropic as i32
+    );
 }
 
 /// Verify that default ProxyRouter routes OpenAI to DEFAULT_OPENAI_URL.
-#[test]
-fn test_proxy_router_default_openai_routing() {
+#[tokio::test]
+async fn test_proxy_router_default_openai_routing() {
     let router = ProxyRouter::default_router();
-    let target = router.route_openai("gpt-4");
+    let target = router.route_openai("gpt-4").await.unwrap();
 
     assert_eq!(target.base_url, DEFAULT_OPENAI_URL);
-    assert_eq!(target.provider_type, ProviderType::OpenAI);
+    assert_eq!(target.provider_type, InferenceProviderType::Openai as i32);
 }
 
 /// Verify that default ProxyRouter routes Ollama to localhost:11434.
-#[test]
-fn test_proxy_router_default_ollama_routing() {
+#[tokio::test]
+async fn test_proxy_router_default_ollama_routing() {
     let router = ProxyRouter::default_router();
-    let target = router.route_ollama("llama3.1");
+    let target = router.route_ollama("llama3.1").await.unwrap();
 
     assert_eq!(target.base_url, "http://localhost:11434");
-    assert_eq!(target.provider_type, ProviderType::Ollama);
+    assert_eq!(target.provider_type, InferenceProviderType::Ollama as i32);
     assert!(target.api_key.is_none());
 }
 
 /// Verify that model-specific glob routes override default routing.
-#[test]
-fn test_proxy_router_glob_model_route_overrides() {
-    let mut model_routes = HashMap::new();
-    model_routes.insert("llama-*".to_string(), "http://localhost:11434".to_string());
-    model_routes.insert(
-        "mistral-*".to_string(),
-        "http://localhost:11434".to_string(),
+#[tokio::test]
+async fn test_proxy_router_glob_model_route_overrides() {
+    let config = make_router_config_with_routes(
+        vec![("llama-*", "local-ollama"), ("mistral-*", "local-ollama")],
+        vec![(
+            "local-ollama",
+            "http://localhost:11434",
+            InferenceProviderType::Ollama,
+        )],
     );
+    let router = ProxyRouter::new(config, None);
 
-    let config = ProxyRouterConfig {
-        model_routes,
-        ..Default::default()
-    };
-    let router = ProxyRouter::new(config);
-
-    // llama-* should route to local Ollama
-    let llama_target = router.route_openai("llama-3.1-70b");
+    let llama_target = router.route_openai("llama-3.1-70b").await.unwrap();
     assert_eq!(llama_target.base_url, "http://localhost:11434");
 
-    // mistral-* should also route to local Ollama
-    let mistral_target = router.route_openai("mistral-large-2");
+    let mistral_target = router.route_openai("mistral-large-2").await.unwrap();
     assert_eq!(mistral_target.base_url, "http://localhost:11434");
 
-    // gpt-4 should NOT match any glob, falls back to default OpenAI
-    let gpt_target = router.route_openai("gpt-4");
+    let gpt_target = router.route_openai("gpt-4").await.unwrap();
     assert_eq!(gpt_target.base_url, DEFAULT_OPENAI_URL);
 }
 
 /// Verify that custom base URL overrides the default for a provider.
-#[test]
-fn test_proxy_router_custom_base_url() {
-    let config = ProxyRouterConfig {
-        anthropic_base_url: Some("http://localhost:9090".to_string()),
-        openai_base_url: Some("http://localhost:9091".to_string()),
-        ollama_base_url: Some("http://remote-ollama:11434".to_string()),
-        ..Default::default()
-    };
-    let router = ProxyRouter::new(config);
+#[tokio::test]
+async fn test_proxy_router_custom_base_url() {
+    let config = make_router_config_with_providers(vec![
+        (
+            "anthropic",
+            "http://localhost:9090",
+            InferenceProviderType::Anthropic,
+        ),
+        (
+            "openai",
+            "http://localhost:9091",
+            InferenceProviderType::Openai,
+        ),
+        (
+            "ollama",
+            "http://remote-ollama:11434",
+            InferenceProviderType::Ollama,
+        ),
+    ]);
+    let router = ProxyRouter::new(config, None);
 
     assert_eq!(
-        router.route_anthropic("claude-3-opus").base_url,
+        router.route_anthropic("claude-3-opus").await.unwrap().base_url,
         "http://localhost:9090"
     );
     assert_eq!(
-        router.route_openai("gpt-4").base_url,
+        router.route_openai("gpt-4").await.unwrap().base_url,
         "http://localhost:9091"
     );
     assert_eq!(
-        router.route_ollama("llama3").base_url,
+        router.route_ollama("llama3").await.unwrap().base_url,
         "http://remote-ollama:11434"
     );
 }
 
-/// Verify that API key overrides are returned for matching base URLs.
-#[test]
-fn test_proxy_router_api_key_override_by_url() {
-    let mut api_keys = HashMap::new();
-    api_keys.insert(
-        "http://custom-provider:8080".to_string(),
-        "sk-custom-key-123".to_string(),
+/// Verify that API keys are resolved via custody-backed accessor.
+#[tokio::test]
+async fn test_proxy_router_api_key_via_accessor() {
+    use ho_std::traits::ApiKeyMethod;
+    use std::sync::Arc;
+
+    let accessor = Arc::new(MockKeyAccessor(HashMap::from([
+        ("custom".to_string(), "sk-custom-key-123".to_string()),
+    ])));
+
+    let mut providers = HashMap::new();
+    providers.insert(
+        "custom".to_string(),
+        InferenceProviderConfig {
+            provider_id: "custom".to_string(),
+            base_url: "http://custom-provider:8080".to_string(),
+            enabled: true,
+            provider_type: InferenceProviderType::Custom as i32,
+            ..Default::default()
+        },
     );
 
     let mut model_routes = HashMap::new();
-    model_routes.insert(
-        "custom-*".to_string(),
-        "http://custom-provider:8080".to_string(),
-    );
+    model_routes.insert("custom-*".to_string(), "custom".to_string());
 
     let config = ProxyRouterConfig {
         model_routes,
-        api_keys,
+        providers,
         ..Default::default()
     };
-    let router = ProxyRouter::new(config);
+    let router = ProxyRouter::new(config, Some(accessor));
 
-    let target = router.route_openai("custom-model-v1");
+    let target = router.route_openai("custom-model-v1").await.unwrap();
     assert_eq!(target.base_url, "http://custom-provider:8080");
     assert_eq!(target.api_key.as_deref(), Some("sk-custom-key-123"));
 }
 
-/// Verify that provider_api_keys are used as fallback for provider-level keys.
-#[test]
-fn test_proxy_router_provider_api_key_fallback() {
-    let mut provider_api_keys = HashMap::new();
-    provider_api_keys.insert("anthropic".to_string(), "sk-ant-fallback".to_string());
-    provider_api_keys.insert("openai".to_string(), "sk-oai-fallback".to_string());
+/// Verify that custody-backed keys are resolved for provider fallback routing.
+#[tokio::test]
+async fn test_proxy_router_provider_api_key_via_accessor() {
+    use std::sync::Arc;
 
-    let config = ProxyRouterConfig {
-        provider_api_keys,
-        ..Default::default()
-    };
-    let router = ProxyRouter::new(config);
+    let accessor = Arc::new(MockKeyAccessor(HashMap::from([
+        ("anthropic".to_string(), "sk-ant-fallback".to_string()),
+        ("openai".to_string(), "sk-oai-fallback".to_string()),
+    ])));
 
-    let anthropic_target = router.route_anthropic("claude-3-opus");
+    let config = make_router_config_with_providers(vec![
+        (
+            "anthropic",
+            "https://api.anthropic.com",
+            InferenceProviderType::Anthropic,
+        ),
+        (
+            "openai",
+            "https://api.openai.com",
+            InferenceProviderType::Openai,
+        ),
+    ]);
+    let router = ProxyRouter::new(config, Some(accessor));
+
+    let anthropic_target = router.route_anthropic("claude-3-opus").await.unwrap();
     assert_eq!(anthropic_target.api_key.as_deref(), Some("sk-ant-fallback"));
 
-    let openai_target = router.route_openai("gpt-4");
+    let openai_target = router.route_openai("gpt-4").await.unwrap();
     assert_eq!(openai_target.api_key.as_deref(), Some("sk-oai-fallback"));
 }
 
@@ -726,88 +761,104 @@ fn test_proxy_router_provider_api_key_fallback() {
 fn test_proxy_router_config_default_is_empty() {
     let config = ProxyRouterConfig::default();
 
-    assert!(config.anthropic_base_url.is_none());
-    assert!(config.openai_base_url.is_none());
-    assert!(config.ollama_base_url.is_none());
     assert!(config.model_routes.is_empty());
-    assert!(config.api_keys.is_empty());
-    assert!(config.provider_api_keys.is_empty());
+    assert!(config.providers.is_empty());
 }
 
 /// Verify that update_config replaces the router configuration.
-#[test]
-fn test_proxy_router_update_config() {
+#[tokio::test]
+async fn test_proxy_router_update_config() {
     let mut router = ProxyRouter::default_router();
 
-    // Default should route to standard URLs
     assert_eq!(
-        router.route_anthropic("claude").base_url,
+        router.route_anthropic("claude").await.unwrap().base_url,
         DEFAULT_ANTHROPIC_URL
     );
 
-    // Update config with custom base URL
-    let new_config = ProxyRouterConfig {
-        anthropic_base_url: Some("http://new-proxy:8080".to_string()),
-        ..Default::default()
-    };
+    let new_config = make_router_config_with_providers(vec![(
+        "anthropic",
+        "http://new-proxy:8080",
+        InferenceProviderType::Anthropic,
+    )]);
     router.update_config(new_config);
 
-    // Now should route to new URL
     assert_eq!(
-        router.route_anthropic("claude").base_url,
+        router.route_anthropic("claude").await.unwrap().base_url,
         "http://new-proxy:8080"
     );
 }
 
-/// Verify that ProviderType enum contains expected variants.
+/// Verify that InferenceProviderType enum contains expected variants.
 #[test]
 fn test_provider_type_variants() {
     assert_eq!(ProviderType::Anthropic, ProviderType::Anthropic);
-    assert_eq!(ProviderType::OpenAI, ProviderType::OpenAI);
+    assert_eq!(ProviderType::Openai, ProviderType::Openai);
     assert_eq!(ProviderType::Ollama, ProviderType::Ollama);
     assert_eq!(ProviderType::Custom, ProviderType::Custom);
-    assert_ne!(ProviderType::Anthropic, ProviderType::OpenAI);
+    assert_ne!(ProviderType::Anthropic, ProviderType::Openai);
 }
 
-/// Verify that glob patterns with ? match single characters.
-#[test]
-fn test_proxy_router_single_char_glob() {
-    let mut model_routes = HashMap::new();
-    model_routes.insert("gpt-?".to_string(), "http://gpt-single:8080".to_string());
-
-    let config = ProxyRouterConfig {
-        model_routes,
-        ..Default::default()
-    };
-    let router = ProxyRouter::new(config);
-
-    // gpt-4 should match gpt-?
-    let target = router.route_openai("gpt-4");
-    assert_eq!(target.base_url, "http://gpt-single:8080");
-
-    // gpt-4-turbo should NOT match gpt-? (too many chars)
-    let target_multi = router.route_openai("gpt-4-turbo");
-    assert_eq!(target_multi.base_url, DEFAULT_OPENAI_URL);
-}
-
-/// Verify case-insensitive glob matching.
-#[test]
-fn test_proxy_router_case_insensitive_glob() {
-    let mut model_routes = HashMap::new();
-    model_routes.insert(
-        "Claude-*".to_string(),
-        "http://case-test:8080".to_string(),
+/// Verify that glob patterns with * match multiple characters but not mismatches.
+#[tokio::test]
+async fn test_proxy_router_wildcard_glob() {
+    let config = make_router_config_with_routes(
+        vec![("gpt-4*", "openai-custom")],
+        vec![(
+            "openai-custom",
+            "http://gpt-custom:8080",
+            InferenceProviderType::Openai,
+        )],
     );
+    let router = ProxyRouter::new(config, None);
 
-    let config = ProxyRouterConfig {
-        model_routes,
-        ..Default::default()
-    };
-    let router = ProxyRouter::new(config);
+    let target = router.route_openai("gpt-4").await.unwrap();
+    assert_eq!(target.base_url, "http://gpt-custom:8080");
 
-    // Lowercase input should match uppercase pattern
-    let target = router.route_anthropic("claude-3-opus");
+    let target_turbo = router.route_openai("gpt-4-turbo").await.unwrap();
+    assert_eq!(target_turbo.base_url, "http://gpt-custom:8080");
+
+    let target_claude = router.route_openai("claude-3").await.unwrap();
+    assert_eq!(target_claude.base_url, DEFAULT_OPENAI_URL);
+}
+
+/// Verify case-sensitive glob matching (patterns are matched as-is).
+#[tokio::test]
+async fn test_proxy_router_case_sensitive_glob() {
+    let config = make_router_config_with_routes(
+        vec![("Claude-*", "anthropic-custom")],
+        vec![(
+            "anthropic-custom",
+            "http://case-test:8080",
+            InferenceProviderType::Anthropic,
+        )],
+    );
+    let router = ProxyRouter::new(config, None);
+
+    let target = router.route_anthropic("Claude-3-opus").await.unwrap();
     assert_eq!(target.base_url, "http://case-test:8080");
+}
+
+// ============================================================================
+// Mock Key Accessor for tests
+// ============================================================================
+
+/// Simple in-memory ApiKeyMethod implementation for testing
+struct MockKeyAccessor(HashMap<String, String>);
+
+#[async_trait::async_trait]
+impl ho_std::traits::ApiKeyMethod for MockKeyAccessor {
+    async fn get_key(&self, provider: &str) -> ho_std::error::HoResult<Option<String>> {
+        Ok(self.0.get(provider).cloned())
+    }
+
+    async fn set_key(&mut self, provider: &str, key: String) -> ho_std::error::HoResult<()> {
+        self.0.insert(provider.to_string(), key);
+        Ok(())
+    }
+
+    async fn available_providers(&self) -> Vec<String> {
+        self.0.keys().cloned().collect()
+    }
 }
 
 // ============================================================================
@@ -836,4 +887,56 @@ fn make_completed_workflow(
         model_name: model_name.to_string(),
     });
     workflow
+}
+
+/// Build a ProxyRouterConfig with providers (no API keys).
+fn make_router_config_with_providers(
+    providers_list: Vec<(&str, &str, InferenceProviderType)>,
+) -> ProxyRouterConfig {
+    let mut providers = HashMap::new();
+    for (id, base_url, ptype) in providers_list {
+        providers.insert(
+            id.to_string(),
+            InferenceProviderConfig {
+                provider_id: id.to_string(),
+                base_url: base_url.to_string(),
+                enabled: true,
+                provider_type: ptype as i32,
+                ..Default::default()
+            },
+        );
+    }
+    ProxyRouterConfig {
+        providers,
+        ..Default::default()
+    }
+}
+
+/// Build a ProxyRouterConfig with model routes and backing providers.
+fn make_router_config_with_routes(
+    routes: Vec<(&str, &str)>,
+    providers_list: Vec<(&str, &str, InferenceProviderType)>,
+) -> ProxyRouterConfig {
+    let mut model_routes = HashMap::new();
+    for (pattern, provider_id) in routes {
+        model_routes.insert(pattern.to_string(), provider_id.to_string());
+    }
+    let mut providers = HashMap::new();
+    for (id, base_url, ptype) in providers_list {
+        providers.insert(
+            id.to_string(),
+            InferenceProviderConfig {
+                provider_id: id.to_string(),
+                base_url: base_url.to_string(),
+                enabled: true,
+                provider_type: ptype as i32,
+                ..Default::default()
+            },
+        );
+    }
+    ProxyRouterConfig {
+        model_routes,
+        providers,
+        ..Default::default()
+    }
 }

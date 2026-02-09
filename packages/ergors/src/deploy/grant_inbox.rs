@@ -121,7 +121,7 @@ pub async fn handle_submit(
         summary: input.summary,
         rejection_reason: String::new(),
         result: String::new(),
-        created_at: Some(now.clone()),
+        created_at: Some(now),
         updated_at: Some(now),
     };
 
@@ -276,7 +276,7 @@ pub async fn handle_submit_grant(
         summary,
         rejection_reason: rejection_reason.clone(),
         result: String::new(),
-        created_at: Some(now.clone()),
+        created_at: Some(now),
         updated_at: Some(now),
     };
 

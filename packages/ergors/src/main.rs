@@ -11,18 +11,19 @@ use commonware_runtime::{
 };
 use ergors::{
     auth::AuthCmd,
-    call::CallCmd,
+    auth::grpc::AuthorizedCliKeys,
     client::ManagementClient,
     commands::{
-        BootstrapCmd, CliContext, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd, RagCmd,
+        call::CallCmd, config::ConfigCmd, init::InitCmd, sentinel::SentinelCmd, BootstrapCmd,
+        CliContext, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd, RagCmd,
         RemoteConfigCmd, SdlCmd, WorkspaceCmd,
     },
     config::ErgorsConfig,
-    config_cmd::ConfigCmd,
     daemon::{Daemon, SignalHandler},
-    grpc::{management::{start_grpc_server, ManagementServiceImpl}, RlmDocService},
-    init::InitCmd,
     keys::KeysCmd,
+    client::grpc::{start_grpc_server, ManagementServiceImpl},
+    client::RlmDocService,
+    sentinel::SentinelServer,
     server::Server as CwHoServer,
 };
 use ho_std::{
@@ -54,7 +55,8 @@ fn install_terminal_restore_hook() {
             use std::os::unix::io::AsRawFd;
             if let Ok(mut termios) = termios::Termios::from_fd(std::io::stdin().as_raw_fd()) {
                 termios.c_lflag |= termios::ECHO | termios::ICANON;
-                let _ = termios::tcsetattr(std::io::stdin().as_raw_fd(), termios::TCSANOW, &termios);
+                let _ =
+                    termios::tcsetattr(std::io::stdin().as_raw_fd(), termios::TCSANOW, &termios);
             }
         }
         eprintln!();
@@ -84,6 +86,10 @@ pub struct Cli {
     /// Output in JSON format (for scripting)
     #[arg(long)]
     pub json: bool,
+
+    /// Ed25519 signing key for authenticated remote access (64 hex chars)
+    #[arg(long, env = "ERGORS_SIGNING_KEY_HEX")]
+    pub signing_key_hex: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -119,6 +125,8 @@ pub enum Commands {
     Keys(KeysCmd),
     /// Manage authorization
     ManageAuth(AuthCmd),
+    /// Sentinel: bootstrap a remote sentinel node
+    Sentinel(SentinelCmd),
 
     // =========== gRPC Commands (need daemon running) ===========
     /// Node identity management
@@ -149,7 +157,7 @@ pub enum Commands {
     #[command(subcommand)]
     RuntimeConfig(RemoteConfigCmd),
 
-    /// Execute a call (TODO)
+    /// Make inference calls through the node's HTTP proxy
     Call(CallCmd),
 }
 
@@ -183,10 +191,11 @@ fn main() -> Result<()> {
     match &cli.command {
         // Local commands (synchronous, no daemon needed)
         Commands::Init(cmd) => cmd.init(cli.home.as_path())?,
-        Commands::Config(cmd) => cmd.exec(cli.home.as_path())?,
-        Commands::Keys(cmd) => cmd.exec(cli.home.as_path())?,
+        Commands::Config(cmd) => cmd.exec(cli.home.as_path(), cli.json)?,
+        Commands::Keys(cmd) => cmd.exec(cli.home.as_path(), cli.json)?,
         Commands::ManageAuth(cmd) => cmd.exec(cli.home.as_path())?,
-        Commands::Call(_) => todo!(),
+        Commands::Sentinel(cmd) => cmd.exec(cli.home.as_path())?,
+        Commands::Call(cmd) => cmd.exec(cli.home.as_path(), &cli.grpc_addr, cli.json)?,
 
         // Daemon start (special case - runs the server)
         Commands::Start { grpc_port } => start(&cli, *grpc_port)?,
@@ -206,16 +215,57 @@ fn run_async_command(cli: Cli) -> Result<()> {
         .block_on(async move { execute_grpc_command(&cli).await })
 }
 
+/// Resolve signing key for remote gRPC connections.
+/// Local connections don't need a key; remote connections require one.
+fn resolve_signing_key(
+    addr: &str,
+    key_hex: Option<&str>,
+) -> Result<Option<ho_std::keys::commonware::NodePrivKey>> {
+    let is_local = is_loopback_addr(addr);
+
+    match (is_local, key_hex) {
+        (true, _) => Ok(None),
+        (false, Some(hex)) => {
+            let key = ho_std::keys::commonware::NodePrivKey::from_hex(hex)
+                .ok_or_else(|| anyhow::anyhow!("Invalid --signing-key-hex (expected 64 hex chars)"))?;
+            Ok(Some(key))
+        }
+        (false, None) => {
+            anyhow::bail!(
+                "Remote gRPC target requires --signing-key-hex or ERGORS_SIGNING_KEY_HEX.\n\
+                 Register your public key on the engine with: ergors config register-cli-key <pubkey_hex>"
+            );
+        }
+    }
+}
+
+fn is_loopback_addr(addr: &str) -> bool {
+    // Strip scheme (http://, https://) and port to extract host
+    let stripped = addr
+        .strip_prefix("http://")
+        .or_else(|| addr.strip_prefix("https://"))
+        .unwrap_or(addr);
+    let host = stripped.split(':').next().unwrap_or(stripped);
+
+    matches!(
+        host,
+        "localhost" | "127.0.0.1" | "::1" | "0.0.0.0" | "[::1]"
+    )
+}
+
 /// Execute a gRPC command against the daemon
 async fn execute_grpc_command(cli: &Cli) -> Result<()> {
+    let signing_key = resolve_signing_key(&cli.grpc_addr, cli.signing_key_hex.as_deref())?;
+
     let ctx = CliContext {
         home: cli.home.clone(),
         grpc_addr: cli.grpc_addr.clone(),
         json: cli.json,
+        signing_key: signing_key.clone(),
     };
 
     // Create gRPC client (lazy - some commands check if daemon is running first)
-    let client = ManagementClient::connect(&cli.grpc_addr).await;
+    let client = ManagementClient::connect(&cli.grpc_addr, signing_key).await;
 
     match &cli.command {
         // Daemon control commands
@@ -254,6 +304,7 @@ async fn execute_grpc_command(cli: &Cli) -> Result<()> {
         | Commands::Config(_)
         | Commands::Keys(_)
         | Commands::ManageAuth(_)
+        | Commands::Sentinel(_)
         | Commands::Call(_) => {
             unreachable!("Local commands should be handled in main()")
         }
@@ -287,6 +338,30 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
 
     info!("Starting ERGORS engine...");
 
+    // Sentinel mode: run lightweight init server when ERGORS_ADMIN_PUBKEY is
+    // set and no identity file exists yet. The sentinel collects secrets via
+    // Ed25519-signed HTTP requests, then falls through to normal startup.
+    let admin_pubkey = std::env::var("ERGORS_ADMIN_PUBKEY").ok();
+    let identity_path = cli.home.join("node_identity.enc");
+
+    if let Some(ref pubkey) = admin_pubkey {
+        if !identity_path.exists() {
+            info!("Sentinel mode: ERGORS_ADMIN_PUBKEY set, no identity — starting sentinel");
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| ho_std::llm::HoError::Cfg(format!("tokio runtime: {}", e)))?;
+            let sentinel_pw = rt
+                .block_on(async { SentinelServer::new(pubkey, cli.home.clone()).run().await })
+                .map_err(|e| ho_std::llm::HoError::Cfg(format!("sentinel failed: {}", e)))?;
+            // Sentinel done — config.toml, node_identity.enc, api-keys.enc now exist.
+            // Set env var here while still single-threaded (before commonware Runner spawns threads).
+            if let Some(pw) = sentinel_pw {
+                std::env::set_var("ERGORS_CUSTODY_PASSWORD", &pw);
+            }
+        }
+    }
+
     // commonware runtime of the server with the config defined.
     let home = cli.home.clone();
     Runner::new(RuntimeConfig::default()).start(|context| async move {
@@ -316,9 +391,21 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
         // Get app state for gRPC service
         let app_state = s.state();
 
+        // Load authorized CLI keys from storage into runtime set
+        let authorized_keys = AuthorizedCliKeys::new();
+        if let Ok(stored) = app_state.s.get_authorized_cli_keys().await {
+            authorized_keys.load_from(&stored.keys);
+            if !stored.keys.is_empty() {
+                info!("Loaded {} authorized CLI keys from storage", stored.keys.len());
+            }
+        }
+
         // Create gRPC management service
-        let grpc_service =
-            ManagementServiceImpl::new(app_state.clone(), tokio::sync::broadcast::channel(1).0);
+        let grpc_service = ManagementServiceImpl::new(
+            app_state.clone(),
+            tokio::sync::broadcast::channel(1).0,
+            authorized_keys.clone(),
+        );
 
         // Create RLM document service
         let rlm_service = Some(RlmDocService::new(app_state.s.clone()));
@@ -329,7 +416,7 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
             .expect("Invalid gRPC address");
 
         let grpc_handle = tokio::spawn(async move {
-            if let Err(e) = start_grpc_server(grpc_addr, grpc_service, rlm_service).await {
+            if let Err(e) = start_grpc_server(grpc_addr, grpc_service, rlm_service, authorized_keys).await {
                 error!("gRPC server error: {}", e);
             }
         });

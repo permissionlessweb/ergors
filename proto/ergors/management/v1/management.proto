@@ -95,18 +95,18 @@ service ManagementService {
   // ============================================
 
   // Workspace lifecycle
-  rpc AddWorkspace(AddWorkspaceRequest) returns (AddWorkspaceResponse);
-  rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
-  rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
-  rpc RemoveWorkspace(RemoveWorkspaceRequest) returns (OperationResult);
-  rpc SyncWorkspace(SyncWorkspaceRequest) returns (SyncWorkspaceResponse);
+  //rpc AddWorkspace(AddWorkspaceRequest) returns (AddWorkspaceResponse);
+  //rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
+  //rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  //rpc RemoveWorkspace(RemoveWorkspaceRequest) returns (OperationResult);
+  //rpc SyncWorkspace(SyncWorkspaceRequest) returns (SyncWorkspaceResponse);
 
   // Task worktree operations
-  rpc CreateTaskWorktree(CreateTaskWorktreeRequest) returns (CreateTaskWorktreeResponse);
-  rpc ListTaskWorktrees(ListTaskWorktreesRequest) returns (ListTaskWorktreesResponse);
-  rpc CompleteTaskWorktree(CompleteTaskWorktreeRequest) returns (CompleteTaskWorktreeResponse);
-  rpc FailTaskWorktree(FailTaskWorktreeRequest) returns (OperationResult);
-  rpc ResolveConflict(ResolveConflictRequest) returns (ResolveConflictResponse);
+  // rpc CreateTaskWorktree(CreateTaskWorktreeRequest) returns (CreateTaskWorktreeResponse);
+  // rpc ListTaskWorktrees(ListTaskWorktreesRequest) returns (ListTaskWorktreesResponse);
+  // rpc CompleteTaskWorktree(CompleteTaskWorktreeRequest) returns (CompleteTaskWorktreeResponse);
+  // rpc FailTaskWorktree(FailTaskWorktreeRequest) returns (OperationResult);
+  // rpc ResolveConflict(ResolveConflictRequest) returns (ResolveConflictResponse);
 
   // ============================================
   // Akash Deployment Management
@@ -231,6 +231,27 @@ service ManagementService {
   rpc GetSdlDefaults(GetSdlDefaultsRequest) returns (GetSdlDefaultsResponse);
   // Render SDL template with variables
   rpc RenderSdlTemplate(RenderSdlTemplateRequest) returns (RenderSdlTemplateResponse);
+
+  // ============================================
+  // CLI Key Management (gRPC Authentication)
+  // ============================================
+
+  // Register an Ed25519 public key for authenticated remote CLI access
+  rpc RegisterCliKey(RegisterCliKeyRequest) returns (OperationResult);
+  // Revoke an authorized CLI key
+  rpc RevokeCliKey(RevokeCliKeyRequest) returns (OperationResult);
+  // List all authorized CLI keys
+  rpc ListCliKeys(ListCliKeysRequest) returns (ListCliKeysResponse);
+
+  // Cosmos Chain Configuration (Cnidarium-backed)
+  // Set or update chain configuration
+  rpc SetChainConfig(SetChainConfigRequest) returns (SetChainConfigResponse);
+  // Get chain configuration by chain ID
+  rpc GetChainConfig(GetChainConfigRequest) returns (GetChainConfigResponse);
+  // List all registered chain configurations
+  rpc ListChainConfigs(ListChainConfigsRequest) returns (ListChainConfigsResponse);
+  // Delete a chain configuration
+  rpc DeleteChainConfig(DeleteChainConfigRequest) returns (DeleteChainConfigResponse);
 }
 
 // Common empty request
@@ -431,8 +452,10 @@ message ProviderInfo {
 
 message ProviderConfig {
   string name = 1;
-  string api_key = 2;
+  string api_key_ref = 2;
   bool set_as_default = 3;
+  string base_url = 4;
+  bool no_key = 5;
 }
 
 message ProviderName {
@@ -1249,14 +1272,8 @@ message SetWorkflowEndpointsResponse {
 
 // Configure proxy routes request
 message ConfigureProxyRoutesRequest {
-  // Override base URL for OpenAI API requests
-  string openai_base_url = 1;
-  // Override base URL for Anthropic API requests
-  string anthropic_base_url = 2;
-  // Override base URL for Ollama API requests
-  string ollama_base_url = 3;
   // Model-specific routing rules (glob patterns -> URLs)
-  map<string, string> model_routes = 4;
+  map<string, string> model_routes = 1;
 }
 
 // ============================================
@@ -1484,4 +1501,66 @@ message GetDiscordConfigResponse {
   string command_prefix = 4;
   bool respond_to_mentions = 5;
   bool respond_to_dms = 6;
+}
+
+// ============================================
+// Cosmos Chain Configuration Messages
+// ============================================
+
+message SetChainConfigRequest {
+  ergors.orch.v1.CosmosChainConfig config = 1;
+}
+
+message SetChainConfigResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetChainConfigRequest {
+  string chain_id = 1;
+}
+
+message GetChainConfigResponse {
+  ergors.orch.v1.CosmosChainConfig config = 1;
+  bool found = 2;
+}
+
+message ListChainConfigsRequest {}
+
+message ListChainConfigsResponse {
+  repeated ergors.orch.v1.CosmosChainConfig chains = 1;
+}
+
+message DeleteChainConfigRequest {
+  string chain_id = 1;
+}
+
+message DeleteChainConfigResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// ============================================
+// CLI Key Management Messages
+// ============================================
+
+message RegisterCliKeyRequest {
+  string public_key_hex = 1;  // Ed25519 pubkey (64 hex chars)
+  string label = 2;           // Human-readable label
+}
+
+message RevokeCliKeyRequest {
+  string public_key_hex = 1;
+}
+
+message ListCliKeysRequest {}
+
+message ListCliKeysResponse {
+  repeated CliKeyEntry keys = 1;
+}
+
+message CliKeyEntry {
+  string public_key_hex = 1;
+  string label = 2;
+  google.protobuf.Timestamp added_at = 3;
 }

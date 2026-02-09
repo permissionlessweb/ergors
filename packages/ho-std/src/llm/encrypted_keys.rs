@@ -4,8 +4,11 @@
 //! Keys are encrypted using Argon2id for key derivation and ChaCha20Poly1305 for encryption,
 //! matching the custody system's security model.
 
+use crate::error::{HoError, HoResult};
+use crate::traits::ApiKeyMethod;
 use crate::types::ergors::storage::v1::{EncryptedApiKey, EncryptedApiKeyStore};
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use argon2::Argon2;
 use chacha20poly1305::{
     aead::{Aead, NewAead},
@@ -16,6 +19,42 @@ use prost::Message;
 use rand::RngCore;
 use std::collections::HashMap;
 use std::time::SystemTime;
+use zeroize::Zeroize;
+
+// ---------------------------------------------------------------------------
+// mlock / munlock helpers — prevent sensitive pages from being swapped to disk
+// ---------------------------------------------------------------------------
+
+/// Lock a byte region into physical RAM (prevent swap).
+/// Silently ignores errors (e.g. unprivileged process hitting RLIMIT_MEMLOCK).
+fn mlock_region(ptr: *const u8, len: usize) {
+    if len == 0 {
+        return;
+    }
+    unsafe {
+        libc::mlock(ptr as *const libc::c_void, len);
+    }
+}
+
+/// Unlock a previously mlocked region, allowing the OS to swap it again.
+fn munlock_region(ptr: *const u8, len: usize) {
+    if len == 0 {
+        return;
+    }
+    unsafe {
+        libc::munlock(ptr as *const libc::c_void, len);
+    }
+}
+
+/// mlock a String's heap buffer.
+fn mlock_string(s: &str) {
+    mlock_region(s.as_ptr(), s.len());
+}
+
+/// munlock a String's heap buffer.
+fn munlock_string(s: &str) {
+    munlock_region(s.as_ptr(), s.len());
+}
 
 /// Encryption method identifier
 const ENCRYPTION_METHOD: &str = "argon2id-chacha20poly1305-v1";
@@ -87,22 +126,26 @@ impl EncryptedApiKeyManager {
             .map_err(|e| anyhow::anyhow!("Key derivation failed: {}", e))?;
 
         self.derived_key = Some(key);
+        // Lock derived key pages into RAM — prevent swap-to-disk
+        if let Some(ref dk) = self.derived_key {
+            mlock_region(dk.as_ptr(), KEY_SIZE);
+        }
+        key.zeroize();
         Ok(())
     }
 
-    /// Lock the manager (clear derived key and cache)
+    /// Lock the manager — munlock + zeroize derived key and all cached plaintext keys.
+    /// Uses `zeroize` crate (write_volatile + compiler fence) to guarantee
+    /// the compiler cannot elide the memory wipe.  munlock releases the
+    /// swap-prevention after the pages are wiped.
     pub fn lock(&mut self) {
         if let Some(mut key) = self.derived_key.take() {
-            // Zero out the key memory
-            key.iter_mut().for_each(|b| *b = 0);
+            munlock_region(key.as_ptr(), KEY_SIZE);
+            key.zeroize();
         }
-        // Clear cached keys
         for (_, mut value) in self.cache.drain() {
-            // Zero out string memory (best effort)
-            unsafe {
-                let bytes = value.as_bytes_mut();
-                bytes.iter_mut().for_each(|b| *b = 0);
-            }
+            munlock_string(&value);
+            value.zeroize();
         }
     }
 
@@ -170,15 +213,21 @@ impl EncryptedApiKeyManager {
         // Decrypt
         let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
 
-        let decrypted = cipher
+        let mut decrypted = cipher
             .decrypt(nonce, encrypted.encrypted_key.as_ref())
             .map_err(|_| anyhow::anyhow!("Decryption failed - wrong password or corrupted data"))?;
 
-        let api_key = String::from_utf8(decrypted)
+        let api_key = String::from_utf8(decrypted.clone())
             .context("Decrypted data is not valid UTF-8")?;
 
-        // Cache the result
+        // Zeroize the intermediate plaintext buffer
+        decrypted.zeroize();
+
+        // Cache the result and mlock the plaintext buffer
         self.cache.insert(encrypted.provider_name.clone(), api_key.clone());
+        if let Some(cached) = self.cache.get(&encrypted.provider_name) {
+            mlock_string(cached);
+        }
 
         Ok(api_key)
     }
@@ -241,6 +290,11 @@ impl EncryptedApiKeyManager {
         &self.salt
     }
 
+    /// Get the number of cached (decrypted) providers (sync helper)
+    pub fn available_providers_sync(&self) -> usize {
+        self.cache.len()
+    }
+
     /// Add or update a single key in an existing store
     pub fn add_key_to_store(
         &self,
@@ -289,6 +343,30 @@ impl Default for EncryptedApiKeyManager {
 impl Drop for EncryptedApiKeyManager {
     fn drop(&mut self) {
         self.lock();
+    }
+}
+
+#[async_trait]
+impl ApiKeyMethod for EncryptedApiKeyManager {
+    async fn get_key(&self, provider: &str) -> HoResult<Option<String>> {
+        Ok(self.cache.get(provider).cloned())
+    }
+
+    async fn set_key(&mut self, provider: &str, key: String) -> HoResult<()> {
+        // munlock old value if overwriting
+        if let Some(old) = self.cache.get(provider) {
+            munlock_string(old);
+        }
+        self.cache.insert(provider.to_string(), key);
+        // mlock the new cached value
+        if let Some(cached) = self.cache.get(provider) {
+            mlock_string(cached);
+        }
+        Ok(())
+    }
+
+    async fn available_providers(&self) -> Vec<String> {
+        self.cache.keys().cloned().collect()
     }
 }
 
@@ -382,5 +460,35 @@ mod tests {
         manager.lock();
         assert!(!manager.is_unlocked());
         assert!(manager.cache.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_api_key_method_get_set() {
+        use crate::traits::ApiKeyMethod;
+
+        let mut manager = EncryptedApiKeyManager::new();
+        manager.unlock("password").unwrap();
+
+        // Populate cache via decrypt
+        let encrypted = manager.encrypt_key("anthropic", "sk-ant-123").unwrap();
+        manager.decrypt_key(&encrypted).unwrap();
+
+        // get_key reads from cache
+        let key = manager.get_key("anthropic").await.unwrap();
+        assert_eq!(key.as_deref(), Some("sk-ant-123"));
+
+        // Missing provider returns None
+        let missing = manager.get_key("unknown").await.unwrap();
+        assert!(missing.is_none());
+
+        // set_key inserts into cache
+        manager.set_key("openai", "sk-oai-456".into()).await.unwrap();
+        let oai = manager.get_key("openai").await.unwrap();
+        assert_eq!(oai.as_deref(), Some("sk-oai-456"));
+
+        // available_providers lists all cached keys
+        let mut providers = manager.available_providers().await;
+        providers.sort();
+        assert_eq!(providers, vec!["anthropic", "openai"]);
     }
 }

@@ -25,6 +25,9 @@
 
 pub mod capture;
 pub mod endpoints;
+pub mod error;
+pub mod open_responses;
+pub mod rag;
 pub mod router;
 pub mod session;
 pub mod streaming;

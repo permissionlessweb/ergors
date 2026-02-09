@@ -14,6 +14,10 @@ _E2E_ERGORS_LOADED=1
 ERGORS_BIN="${ERGORS_BIN:-${ROOT_DIR}/target/release/ergors}"
 TEST_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD:-e2e-test-password-12345}"
 
+# Deterministic test mnemonic for executor (different from faucet, so granter != grantee)
+# This is a throwaway key used only in E2E tests — never holds real funds
+EXECUTOR_TEST_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+
 # Network config
 BASE_PORT="${BASE_PORT:-50100}"
 COORDINATOR_GRPC=""
@@ -148,6 +152,26 @@ ERGORS_CUSTODY_PASSWORD=${TEST_CUSTODY_PASSWORD}
 EOF
 }
 
+_ergors_configure_local_chain() {
+    local home_dir="$1"
+    local rpc_endpoint="${2:-http://127.0.0.1:26657}"
+    local grpc_endpoint="${3:-http://127.0.0.1:9090}"
+
+    log_verbose "Configuring local chain: rpc=$rpc_endpoint, grpc=$grpc_endpoint"
+
+    ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$home_dir" config set-chain local \
+        --name "Akash Local" \
+        --prefix "akash" \
+        --denom "uakt" \
+        --rpc "$rpc_endpoint" \
+        --grpc "$grpc_endpoint" \
+        --gas-prices "0.025uakt" \
+        --gas-adjustment "1.5" \
+        --keyring-backend "test" \
+        --default-key "default" 2>&1 || return 1
+}
+
 _ergors_init_node() {
     local home_dir="$1"
     local node_id="$2"
@@ -171,9 +195,11 @@ _ergors_init_node() {
 }
 
 # Import faucet key into a node (internal helper)
+# Usage: _ergors_import_keys_to_node <home_dir> <node_name> [prefix]
 _ergors_import_keys_to_node() {
     local home_dir="$1"
     local node_name="$2"
+    local prefix="${3:-akash}"  # Default to akash for Akash faucet keys
 
     # Get faucet mnemonic
     local mnemonic
@@ -189,18 +215,52 @@ _ergors_import_keys_to_node() {
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
         --label "E2E Faucet Key" \
-        --key-name "faucet" \
-        --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
-        --address-prefix "akash" \
-        --make-default 2>&1) || true
+        --prefix "$prefix" \
+        --default 2>&1) || true
 
     # Check if import succeeded
-    if echo "$import_output" | grep -q "akash1"; then
+    if echo "$import_output" | grep -Eq "${prefix}1[a-z0-9]+"; then
         local addr
-        addr=$(echo "$import_output" | grep -o "akash1[a-z0-9]*" | head -1)
-        log_verbose "$node_name key imported: $addr"
+        addr=$(echo "$import_output" | grep -oE "${prefix}1[a-z0-9]*" | head -1)
+        log_verbose "$node_name: Imported faucet key: $addr"
+        return 0
+    elif echo "$import_output" | grep -qi "already exists"; then
+        log_verbose "$node_name: Faucet key already imported (skipping)"
+        return 0
     else
-        log_verbose "$node_name key import output: $import_output"
+        log_warn "$node_name: Key import may have issues"
+        log_debug "$import_output"
+        return 0  # Non-fatal
+    fi
+}
+
+# Import a separate test key into the executor node (different from faucet)
+# This ensures the executor has a distinct akash address for grantee operations
+# Usage: _ergors_import_executor_key <home_dir> <node_name>
+_ergors_import_executor_key() {
+    local home_dir="$1"
+    local node_name="$2"
+
+    local import_output
+    import_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        ERGORS_MNEMONIC="$EXECUTOR_TEST_MNEMONIC" \
+        "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
+        --label "E2E Executor Key" \
+        --prefix akash \
+        --default 2>&1) || true
+
+    if echo "$import_output" | grep -Eq "akash1[a-z0-9]+"; then
+        local addr
+        addr=$(echo "$import_output" | grep -oE "akash1[a-z0-9]+" | head -1)
+        log_verbose "$node_name: Imported executor key: $addr"
+        return 0
+    elif echo "$import_output" | grep -qi "already exists"; then
+        log_verbose "$node_name: Executor key already imported (skipping)"
+        return 0
+    else
+        log_warn "$node_name: Executor key import may have issues"
+        log_debug "$import_output"
+        return 0  # Non-fatal
     fi
 }
 
@@ -223,17 +283,33 @@ ergors_start_network() {
     local coord_p2p=$((port + 2))
     COORDINATOR_GRPC="127.0.0.1:${coord_grpc}"
     COORDINATOR_API="127.0.0.1:${coord_http}"
+
+    # Export gRPC address for CLI commands (CLI uses ERGORS_GRPC_ADDR, not ERGORS_GRPC_PORT)
+    export ERGORS_GRPC_ADDR="http://127.0.0.1:${coord_grpc}"
+    # Also export port for compatibility with other scripts
+    export ERGORS_GRPC_PORT="$coord_grpc"
+
     port=$((port + 10))
 
     _ergors_init_node "$coord_home" "coordinator"
     _ergors_generate_config "coordinator" "coordinator" "$coord_http" "$coord_p2p" "$coord_home"
     _ergors_import_keys_to_node "$coord_home" "coordinator"
 
+    # Note: LLM provider configuration will happen AFTER nodes start
+    # via ergors_configure_providers_via_grpc() using gRPC commands
+
     log "Starting coordinator..."
+
+    # Start coordinator with live logs (use tee to both display and save)
     ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
     NODE_DATA_PATH="${coord_home}" \
-    "$ERGORS_BIN" --home "$coord_home" start --grpc-port "$coord_grpc" \
-        > "$coord_home/node.log" 2>&1 &
+    OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+    ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+    OLLAMA_API_KEY="${OLLAMA_API_KEY:-}" \
+    MOCK_PROVIDER_URL="${MOCK_PROVIDER_URL:-}" \
+    RUST_LOG="${RUST_LOG:-info}" \
+    "$ERGORS_BIN" --home "$coord_home" start --grpc-port "$coord_grpc" 2>&1 | \
+        tee "$coord_home/node.log" &
     ERGORS_NODE_PIDS+=($!)
     register_pid $!
 
@@ -248,13 +324,23 @@ ergors_start_network() {
 
     _ergors_init_node "$exec_home" "executor_0"
     _ergors_generate_config "executor_0" "executor" "$exec_http" "$exec_p2p" "$exec_home"
-    _ergors_import_keys_to_node "$exec_home" "executor"
+    _ergors_import_executor_key "$exec_home" "executor"
+
+    # Note: LLM provider configuration will happen AFTER nodes start
+    # via ergors_configure_providers_via_grpc() using gRPC commands
 
     log "Starting executor..."
+
+    # Start executor with live logs (use tee to both display and save)
     ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
     NODE_DATA_PATH="${exec_home}" \
-    "$ERGORS_BIN" --home "$exec_home" start --grpc-port "$exec_grpc" \
-        > "$exec_home/node.log" 2>&1 &
+    OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+    ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+    OLLAMA_API_KEY="${OLLAMA_API_KEY:-}" \
+    MOCK_PROVIDER_URL="${MOCK_PROVIDER_URL:-}" \
+    RUST_LOG="${RUST_LOG:-info}" \
+    "$ERGORS_BIN" --home "$exec_home" start --grpc-port "$exec_grpc" 2>&1 | \
+        tee "$exec_home/node.log" &
     ERGORS_NODE_PIDS+=($!)
     register_pid $!
 
@@ -269,6 +355,14 @@ ergors_start_network() {
     if ! wait_for_port "127.0.0.1" "$exec_grpc" 30; then
         log_error "Executor failed to start"
         return 1
+    fi
+
+    # Configure local Akash chain in cnidarium
+    log "Configuring local Akash chain..."
+    if ! _ergors_configure_local_chain "$coord_home" "http://127.0.0.1:26657" "http://127.0.0.1:9090"; then
+        log_warn "Failed to configure local chain (will use defaults)"
+    else
+        log_success "Local chain configured"
     fi
 
     # Export for child scripts
@@ -438,7 +532,7 @@ ergors_cli() {
     local subcommand="${1:-}"
 
     # Build gRPC address for CLI commands
-    local grpc_addr="http://${COORDINATOR_GRPC:-localhost:50051}"
+    local grpc_addr="http://${COORDINATOR_GRPC}"
 
     case "$subcommand" in
         node)
@@ -449,20 +543,17 @@ ergors_cli() {
         deploy|sdl|bootstrap)
             # Deploy, SDL, and Bootstrap commands use CLI binary (connects to gRPC server)
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
-                echo '{"error":"'"$subcommand"' command failed"}'
+                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1
             ;;
         keys)
             # Keys commands use the ergors binary (local, no gRPC needed)
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$coord_home" keys "$@" 2>&1 || \
-                echo '{"error":"keys command failed"}'
+                "$ERGORS_BIN" --home "$coord_home" keys "$@" 2>&1
             ;;
         *)
             # Default: try as ergors binary subcommand with gRPC
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
-                echo '{"error":"command failed"}'
+                "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" "$@" 2>&1
             ;;
     esac
 }
@@ -473,7 +564,7 @@ ergors_cli_executor() {
     local subcommand="${1:-}"
 
     # Build gRPC address for CLI commands
-    local grpc_addr="http://${EXECUTOR_GRPC:-localhost:50111}"
+    local grpc_addr="http://${EXECUTOR_GRPC}"
 
     case "$subcommand" in
         node)
@@ -483,19 +574,16 @@ ergors_cli_executor() {
         deploy|sdl|bootstrap)
             # CLI commands that need gRPC
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
-                echo '{"error":"command failed"}'
+                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1
             ;;
         keys)
             # Keys commands are local (no gRPC needed)
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$exec_home" keys "$@" 2>&1 || \
-                echo '{"error":"keys command failed"}'
+                "$ERGORS_BIN" --home "$exec_home" keys "$@" 2>&1
             ;;
         *)
             ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1 || \
-                echo '{"error":"command failed"}'
+                "$ERGORS_BIN" --home "$exec_home" --grpc-addr "$grpc_addr" "$@" 2>&1
             ;;
     esac
 }
@@ -528,8 +616,8 @@ _ergors_node_api() {
             fi
             ;;
         address)
-            # Parse --prefix argument
-            local prefix="akash"
+            # Parse --prefix argument (default to ergors, not akash)
+            local prefix="ergors"
             while [[ $# -gt 0 ]]; do
                 case "$1" in
                     --prefix) prefix="$2"; shift 2 ;;
@@ -637,7 +725,10 @@ _ergors_cw_query_api() {
 # Identity Management
 # =============================================================================
 
-# Get and cache node addresses
+# Get and cache node addresses for Akash chain operations.
+# Coordinator: uses the imported faucet key's akash address (has funds, acts as granter)
+# Executor: uses its node identity re-derived with akash prefix (acts as grantee)
+# These must be DIFFERENT addresses for grant/feegrant operations.
 ergors_get_addresses() {
     if [[ -n "$COORDINATOR_ADDRESS" ]] && [[ -n "$EXECUTOR_ADDRESS" ]]; then
         return 0  # Already cached
@@ -645,20 +736,52 @@ ergors_get_addresses() {
 
     log "Querying node addresses..."
 
-    local coord_info
-    coord_info=$(ergors_cli node info 2>&1) || true
-    log_verbose "Coordinator node info: $coord_info"
-    COORDINATOR_ADDRESS=$(json_get "$coord_info" '.cosmos_address')
+    # Coordinator: use the faucet key (has funds on Akash chain)
+    # Use coordinator's gRPC addr so keys list queries the coordinator's daemon
+    if [[ -z "$COORDINATOR_ADDRESS" ]]; then
+        local coord_addr
+        coord_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+            ERGORS_GRPC_ADDR="http://${COORDINATOR_GRPC}" \
+            "$ERGORS_BIN" --home "$TEST_DIR/coordinator" keys list \
+            --prefix akash --label "E2E Faucet Key" -a 2>&1) || true
+        coord_addr=$(echo "$coord_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
+
+        if [[ -n "$coord_addr" ]]; then
+            COORDINATOR_ADDRESS="$coord_addr"
+        else
+            # Fallback: node identity with akash prefix from topology
+            local coord_info
+            coord_info=$(ergors_cli node info 2>&1) || true
+            log_verbose "Coordinator node info: $coord_info"
+            COORDINATOR_ADDRESS=$(json_get "$coord_info" '.bech32_address')
+        fi
+    fi
 
     if [[ -z "$COORDINATOR_ADDRESS" ]]; then
         log_error "Failed to get coordinator address"
         return 1
     fi
 
-    local exec_info
-    exec_info=$(ergors_cli_executor node info 2>&1) || true
-    log_verbose "Executor node info: $exec_info"
-    EXECUTOR_ADDRESS=$(json_get "$exec_info" '.cosmos_address')
+    # Executor: use the executor's own test key (different from faucet, acts as grantee)
+    # Use executor's gRPC addr so keys list queries the executor's daemon
+    if [[ -z "$EXECUTOR_ADDRESS" ]]; then
+        local exec_addr
+        exec_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+            ERGORS_GRPC_ADDR="http://${EXECUTOR_GRPC}" \
+            "$ERGORS_BIN" --home "$TEST_DIR/executor_0" keys list \
+            --prefix akash --label "E2E Executor Key" -a 2>&1) || true
+        exec_addr=$(echo "$exec_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
+
+        if [[ -n "$exec_addr" ]]; then
+            EXECUTOR_ADDRESS="$exec_addr"
+        else
+            # Fallback: try bech32_address from node topology
+            local exec_info
+            exec_info=$(ergors_cli_executor node info 2>&1) || true
+            log_verbose "Executor node info: $exec_info"
+            EXECUTOR_ADDRESS=$(json_get "$exec_info" '.bech32_address')
+        fi
+    fi
 
     if [[ -z "$EXECUTOR_ADDRESS" ]]; then
         log_error "Failed to get executor address"
@@ -672,11 +795,41 @@ ergors_get_addresses() {
 
 # Import the Akash faucet mnemonic into the coordinator node
 # This gives the coordinator a pre-funded key (10B AKT from genesis)
-# Uses: ergors keys import-mnemonic
+# Uses: ergors keys import-mnemonic --prefix akash
+# If a faucet key already exists (e.g., "E2E Faucet Key"), re-derive its akash address
 ergors_import_faucet_key() {
     local key_name="${1:-faucet}"
     local home_dir="${2:-$TEST_DIR/coordinator}"
 
+    # First, try to get the akash-prefixed address directly using --prefix and -a flags
+    # This re-derives the bech32 address from the stored pubkey with akash prefix
+    local akash_addr
+    akash_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$home_dir" keys list \
+        --prefix akash --label "E2E Faucet Key" -a 2>&1) || true
+    akash_addr=$(echo "$akash_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
+
+    if [[ -n "$akash_addr" ]]; then
+        log_success "Using existing E2E Faucet Key: $akash_addr"
+        export FAUCET_ADDRESS="$akash_addr"
+        return 0
+    fi
+
+    # Also check with the requested label name
+    if [[ "$key_name" != "E2E Faucet Key" ]]; then
+        akash_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+            "$ERGORS_BIN" --home "$home_dir" keys list \
+            --prefix akash --label "$key_name" -a 2>&1) || true
+        akash_addr=$(echo "$akash_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
+
+        if [[ -n "$akash_addr" ]]; then
+            log_success "Faucet key already exists: $akash_addr (label: $key_name)"
+            export FAUCET_ADDRESS="$akash_addr"
+            return 0
+        fi
+    fi
+
+    # No existing key found, import the mnemonic
     log "Importing faucet mnemonic into coordinator..."
 
     local mnemonic
@@ -687,49 +840,36 @@ ergors_import_faucet_key() {
 
     log_verbose "Mnemonic word count: $(echo "$mnemonic" | wc -w | tr -d ' ')"
 
-    # Import mnemonic using ergors engine binary
-    # Requires ERGORS_CUSTODY_PASSWORD for key encryption
+    # Import mnemonic with Akash prefix (coin type 118 is default)
     local import_output
     import_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
-        --label "E2E Faucet Key" \
-        --key-name "$key_name" \
-        --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
-        --address-prefix "akash" \
-        --make-default 2>&1) || true
+        --label "$key_name" \
+        --prefix akash \
+        --default 2>&1) || true
 
     log_verbose "Import output: $import_output"
 
-    # Verify key was imported by listing keys
-    local keys_output
-    keys_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        "$ERGORS_BIN" --home "$home_dir" keys list 2>&1) || true
+    # Extract akash address from import output
+    akash_addr=$(echo "$import_output" | grep -oE "akash1[a-z0-9]+" | head -1)
 
-    log_verbose "Keys list: $keys_output"
-
-    # Extract faucet address from keys list output
-    if echo "$keys_output" | grep -q "$key_name"; then
-        # Parse address from keys list (format: NAME  LABEL  ADDRESS  CHAIN  DEFAULT)
-        local addr
-        addr=$(echo "$keys_output" | grep "$key_name" | awk '{print $3}')
-
-        if [[ -n "$addr" ]] && [[ "$addr" == akash* ]]; then
-            log_success "Faucet key imported: $addr"
-            export FAUCET_ADDRESS="$addr"
-            return 0
-        fi
+    if [[ -n "$akash_addr" ]]; then
+        log_success "Faucet key imported: $akash_addr"
+        export FAUCET_ADDRESS="$akash_addr"
+        return 0
     fi
 
-    # Fallback: check if import message contains address
-    if echo "$import_output" | grep -q "akash1"; then
-        local addr
-        addr=$(echo "$import_output" | grep -o "akash1[a-z0-9]*" | head -1)
-        if [[ -n "$addr" ]]; then
-            log_success "Faucet key imported: $addr"
-            export FAUCET_ADDRESS="$addr"
-            return 0
-        fi
+    # Final fallback: list keys and re-derive with akash prefix
+    akash_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$home_dir" keys list \
+        --prefix akash -a 2>&1) || true
+    akash_addr=$(echo "$akash_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
+
+    if [[ -n "$akash_addr" ]]; then
+        log_success "Faucet key imported: $akash_addr"
+        export FAUCET_ADDRESS="$akash_addr"
+        return 0
     fi
 
     log_error "Failed to verify imported key"
@@ -1043,16 +1183,409 @@ ergors_bootstrap_cancel() {
 # SDL Template Commands (built on generic CosmWasm query)
 # =============================================================================
 
-# List SDL template contracts (queries storage, not contract)
+# List SDL template contracts (queries storage via gRPC)
 ergors_sdl_list() {
-    # This queries the node's storage for registered SDL contracts
+    # This queries the engine via gRPC for registered SDL contracts
     # Returns contracts with addresses, labels, and code_ids
     local coord_home="${TEST_DIR}/coordinator"
+    local grpc_addr="http://${COORDINATOR_GRPC}"
 
-    # Use the ergors binary to list contracts from storage
+    # Use the ergors binary to list contracts from engine (requires gRPC connection)
     ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        "$ERGORS_BIN" --home "$coord_home" sdl list 2>&1 || echo '{"error":"sdl list failed"}'
+        "$ERGORS_BIN" --home "$coord_home" --grpc-addr "$grpc_addr" sdl list 2>&1
 }
+
+# =============================================================================
+# Chain Config Functions
+# =============================================================================
+
+ergors_config_get_chain() {
+    local chain_id="$1"
+    local coord_home="${TEST_DIR}/coordinator"
+
+    ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" config get-chain "$chain_id" 2>&1
+}
+
+ergors_config_list_chains() {
+    local coord_home="${TEST_DIR}/coordinator"
+
+    ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" config list-chains 2>&1
+}
+
+# =============================================================================
+# Mock Inference Provider
+# =============================================================================
+
+MOCK_PROVIDER_PID=""
+MOCK_PROVIDER_URL=""
+MOCK_PROVIDER_BIN="${ROOT_DIR}/docker/mock-inference-provider/target/release/mock-inference-provider"
+MOCK_PROVIDER_SRC="${ROOT_DIR}/docker/mock-inference-provider"
+
+ergors_start_mock_provider() {
+    local provider_port="${1:-11434}"
+    local provider_host="127.0.0.1"
+
+    log "Starting mock inference provider..."
+
+    # Kill any existing mock provider on this port
+    kill_port "$provider_port" 2>/dev/null || true
+
+    # Always build fresh to pick up any code changes
+    log "Building mock inference provider..."
+    if ! cargo build --release --manifest-path "${MOCK_PROVIDER_SRC}/Cargo.toml" 2>&1 | tail -5; then
+        log_error "Failed to build mock inference provider"
+        return 1
+    fi
+
+    if [[ ! -f "$MOCK_PROVIDER_BIN" ]]; then
+        log_error "Mock provider binary not found after build: $MOCK_PROVIDER_BIN"
+        return 1
+    fi
+
+    # Ensure log directory exists
+    mkdir -p "${TEST_DIR}"
+
+    # Start as background process
+    log_verbose "Starting mock provider on port $provider_port..."
+    TESTDATA_MODE=true \
+    MIN_LATENCY_MS=0 \
+    MAX_LATENCY_MS=50 \
+    PORT="$provider_port" \
+    RUST_LOG=info \
+        "$MOCK_PROVIDER_BIN" > "${TEST_DIR}/mock-provider.log" 2>&1 &
+    MOCK_PROVIDER_PID=$!
+    register_pid $MOCK_PROVIDER_PID
+
+    # Wait for readiness
+    local max_wait=10
+    local wait_count=0
+    while ! curl -s "http://${provider_host}:${provider_port}/health" >/dev/null 2>&1; do
+        sleep 1
+        wait_count=$((wait_count + 1))
+        if [[ $wait_count -ge $max_wait ]]; then
+            log_error "Mock provider failed to start within ${max_wait}s"
+            if [[ -f "${TEST_DIR}/mock-provider.log" ]]; then
+                tail -20 "${TEST_DIR}/mock-provider.log"
+            fi
+            return 1
+        fi
+    done
+
+    MOCK_PROVIDER_URL="http://${provider_host}:${provider_port}"
+    export MOCK_PROVIDER_URL
+
+    log_success "Mock provider ready at $MOCK_PROVIDER_URL (PID $MOCK_PROVIDER_PID)"
+    return 0
+}
+
+ergors_stop_mock_provider() {
+    if [[ -n "${MOCK_PROVIDER_PID:-}" ]]; then
+        log_verbose "Stopping mock provider (PID $MOCK_PROVIDER_PID)..."
+        kill "$MOCK_PROVIDER_PID" 2>/dev/null || true
+        wait "$MOCK_PROVIDER_PID" 2>/dev/null || true
+        MOCK_PROVIDER_PID=""
+    fi
+}
+
+ergors_generate_mock_api_key() {
+    local provider="${1:-openai}"
+
+    local payload
+    payload=$(printf '{"provider":"%s","valid":true}' "$provider")
+
+    local response
+    response=$(curl -s "${MOCK_PROVIDER_URL}/api/keys/generate" \
+        -H "Content-Type: application/json" \
+        -d "$payload")
+
+    local api_key
+    api_key=$(echo "$response" | jq -r '.api_key')
+
+    if [[ "$api_key" == "null" ]] || [[ -z "$api_key" ]]; then
+        log_error "Failed to generate API key: $response"
+        return 1
+    fi
+
+    log_verbose "Generated ${provider} API key: ${api_key:0:20}..."
+    echo "$api_key"
+}
+
+# Register a keyless provider (for co-deployed/local inference with no auth)
+# Usage: ergors_add_keyless_provider <name> <base_url> [--default]
+ergors_add_keyless_provider() {
+    local name="$1"
+    local base_url="$2"
+    local set_default="${3:-}"
+
+    local default_flag=""
+    if [[ "$set_default" == "--default" ]]; then
+        default_flag="--default"
+    fi
+
+    local exit_code=0
+    local output
+    # shellcheck disable=SC2086
+    output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$TEST_DIR/coordinator" provider add "$name" \
+        --base-url "$base_url" --no-key $default_flag </dev/null 2>&1) || exit_code=$?
+
+    log_verbose "Keyless provider add ($name): exit=$exit_code output=$output"
+
+    if [[ $exit_code -ne 0 ]]; then
+        log_error "Failed to add keyless provider '$name': $output"
+        return 1
+    fi
+
+    log_success "Keyless provider '$name' registered → $base_url"
+    return 0
+}
+
+ergors_configure_api_keys() {
+    local coord_home="${TEST_DIR}/coordinator"
+
+    log "Configuring API keys for inference..."
+
+    # Generate API keys for each provider
+    local openai_key anthropic_key ollama_key
+    openai_key=$(ergors_generate_mock_api_key "openai") || return 1
+    anthropic_key=$(ergors_generate_mock_api_key "anthropic") || return 1
+    ollama_key=$(ergors_generate_mock_api_key "ollama") || return 1
+
+    log_verbose "Generated keys:"
+    log_verbose "  OpenAI: ${openai_key:0:20}..."
+    log_verbose "  Anthropic: ${anthropic_key:0:20}..."
+    log_verbose "  Ollama: ${ollama_key:0:20}..."
+
+    # Export as environment variables for LLM router (fallback method)
+    export OPENAI_API_KEY="$openai_key"
+    export ANTHROPIC_API_KEY="$anthropic_key"
+    export OLLAMA_API_KEY="$ollama_key"
+    export MOCK_PROVIDER_URL
+
+    # Use CLI to add providers with encrypted storage
+    # This tests the production path of encrypted API key storage
+    log "Adding providers via CLI (encrypted storage)..."
+
+    # Add OpenAI provider
+    echo "$openai_key" | ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" provider add openai \
+        --api-key "$openai_key" --default 2>&1 | grep -v "password" || true
+
+    # Add Anthropic provider
+    echo "$anthropic_key" | ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" provider add anthropic \
+        --api-key "$anthropic_key" 2>&1 | grep -v "password" || true
+
+    # Add Ollama provider
+    echo "$ollama_key" | ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$coord_home" provider add ollama \
+        --api-key "$ollama_key" 2>&1 | grep -v "password" || true
+
+    log_success "API keys configured via encrypted storage"
+
+    # Configure LLM entities for model-based routing
+    ergors_configure_llm_entities "$coord_home" "$openai_key" "$anthropic_key" "$ollama_key"
+
+    return 0
+}
+
+ergors_configure_providers_via_grpc() {
+    local openai_key="${1:-}"
+    local anthropic_key="${2:-}"
+    local ollama_key="${3:-}"
+
+    if [[ -z "$openai_key" ]] || [[ -z "$anthropic_key" ]] || [[ -z "$ollama_key" ]]; then
+        log_error "API keys are required for provider configuration"
+        return 1
+    fi
+
+    local mock_url="${MOCK_PROVIDER_URL:-http://127.0.0.1:11434}"
+
+    log "Configuring inference providers via gRPC..."
+    log_verbose "  OpenAI: $openai_key → ${mock_url}/v1"
+    log_verbose "  Anthropic: $anthropic_key → ${mock_url}/v1"
+    log_verbose "  Ollama: $ollama_key → $mock_url"
+
+    # Wait for gRPC server to be fully ready (port open != server ready)
+    log_verbose "Waiting for gRPC server initialization..."
+    sleep 3
+
+    # Helper function to retry provider add with exponential backoff
+    _add_provider_with_retry() {
+        local name="$1"
+        local key="$2"
+        local url="$3"
+        local max_attempts=8
+        local attempt=1
+        local wait_time=1
+
+        while [[ $attempt -le $max_attempts ]]; do
+            log_verbose "Adding $name provider (attempt $attempt/$max_attempts)..."
+            log_verbose "Command: $ERGORS_BIN --home $TEST_DIR/coordinator provider add $name --api-key [REDACTED] --base-url $url"
+
+            local output
+            # Use timeout to prevent hanging and redirect stdin from /dev/null
+            if output=$(timeout 10 "$ERGORS_BIN" --home "$TEST_DIR/coordinator" provider add "$name" \
+                --api-key "$key" \
+                --base-url "$url" </dev/null 2>&1); then
+                echo "$output" | tee -a "$TEST_DIR/coordinator/provider_config.log"
+                log_verbose "$name provider configured successfully"
+                return 0
+            fi
+
+            local exit_code=$?
+            if [[ $exit_code -eq 124 ]]; then
+                log_error "Command timed out after 10s - may be waiting for stdin"
+                return 1
+            fi
+
+            # Check if it's a connection error (retry) or other error (fail fast)
+            if echo "$output" | grep -q "Connection refused\|transport error\|Failed to connect"; then
+                if [[ $attempt -lt $max_attempts ]]; then
+                    log_warn "$name provider connection failed, retrying in ${wait_time}s..."
+                    sleep "$wait_time"
+                    wait_time=$((wait_time * 2))  # Exponential backoff
+                    attempt=$((attempt + 1))
+                else
+                    log_error "Failed to configure $name provider after $max_attempts attempts"
+                    echo "$output" | tee -a "$TEST_DIR/coordinator/provider_config.log"
+                    return 1
+                fi
+            else
+                # Non-connection error, fail immediately
+                log_error "Failed to configure $name provider: $output"
+                echo "$output" | tee -a "$TEST_DIR/coordinator/provider_config.log"
+                return 1
+            fi
+        done
+
+        return 1
+    }
+
+    # Configure OpenAI provider with retry
+    # NOTE: Do NOT append /v1 - the proxy forward methods already add the full path
+    # e.g., forward_openai() builds "{base_url}/v1/chat/completions"
+    if ! _add_provider_with_retry "openai" "$openai_key" "$mock_url"; then
+        return 1
+    fi
+
+    # Configure Anthropic provider with retry
+    if ! _add_provider_with_retry "anthropic" "$anthropic_key" "$mock_url"; then
+        return 1
+    fi
+
+    # Configure Ollama provider with retry
+    if ! _add_provider_with_retry "ollama" "$ollama_key" "$mock_url"; then
+        return 1
+    fi
+
+    log_success "Providers configured successfully"
+    return 0
+}
+
+# DEPRECATED: Old config.toml-based configuration (kept for reference)
+ergors_configure_llm_entities_deprecated() {
+    local home_dir="$1"
+    local openai_key="$2"
+    local anthropic_key="$3"
+    local ollama_key="$4"
+    local config_file="${home_dir}/config.toml"
+
+    log_verbose "Configuring LLM entities for model-based routing..."
+    log_verbose "  Home: $home_dir"
+    log_verbose "  OpenAI key: ${openai_key:0:20}..."
+    log_verbose "  Anthropic key: ${anthropic_key:0:20}..."
+    log_verbose "  Ollama key: ${ollama_key:0:20}..."
+
+    # Create api_keys.json file with all provider keys
+    local api_keys_file="${home_dir}/api_keys.json"
+    cat > "$api_keys_file" <<EOF
+{
+  "openai": "$openai_key",
+  "anthropic": "$anthropic_key",
+  "ollama": "$ollama_key"
+}
+EOF
+
+    log_verbose "Created api_keys.json: $api_keys_file"
+
+    # Check if config.toml exists
+    if [[ ! -f "$config_file" ]]; then
+        log_error "Config file not found: $config_file"
+        return 1
+    fi
+
+    # Remove existing [llm] section to avoid duplicate key error
+    # Strips from [llm] line to next [section] or EOF
+    if grep -q '^\[llm\]' "$config_file"; then
+        log_verbose "Removing existing [llm] section from config..."
+        sed -i.bak '/^\[llm\]/,/^\[/{/^\[llm\]/d;/^\[/!d;}' "$config_file"
+        rm -f "${config_file}.bak"
+    fi
+
+    # Append LLM configuration to config.toml
+    # This configures all three providers to route to the same mock provider
+    cat >> "$config_file" <<'EOF'
+
+# LLM Router Configuration
+[llm]
+api_keys_file = "api_keys.json"
+default_strategy = 0
+timeout_seconds = 30
+max_retries = 3
+default_entity = 0
+
+# OpenAI Entity (gpt-*, chatgpt-*)
+[[llm.entities]]
+name = "openai"
+base_url = "http://127.0.0.1:11434/v1"
+models = ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo", "test-model"]
+default_model = "gpt-3.5-turbo"
+priority = 1
+enabled = true
+default_strategy = 0
+timeout_seconds = 30
+max_retries = 3
+
+# Anthropic Entity (claude-*)
+[[llm.entities]]
+name = "anthropic"
+base_url = "http://127.0.0.1:11434/v1"
+models = ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku", "claude-2"]
+default_model = "claude-3-sonnet"
+priority = 2
+enabled = true
+default_strategy = 0
+timeout_seconds = 30
+max_retries = 3
+
+# Ollama Entity (llama*, mistral*)
+[[llm.entities]]
+name = "ollama"
+base_url = "http://127.0.0.1:11434"
+models = ["llama2", "llama3", "mistral", "codellama"]
+default_model = "llama2"
+priority = 3
+enabled = true
+default_strategy = 0
+timeout_seconds = 30
+max_retries = 3
+EOF
+
+    log_verbose "LLM entities configured with model-based routing"
+    log_verbose "  OpenAI: gpt-*, chatgpt-* → ${MOCK_PROVIDER_URL:-http://127.0.0.1:11434}/v1"
+    log_verbose "  Anthropic: claude-* → ${MOCK_PROVIDER_URL:-http://127.0.0.1:11434}/v1"
+    log_verbose "  Ollama: llama*, mistral* → ${MOCK_PROVIDER_URL:-http://127.0.0.1:11434}"
+    log_verbose "Config file updated: $config_file"
+
+    return 0
+}
+
+# =============================================================================
+# SDL Query Functions
+# =============================================================================
 
 # Get SDL template from contract
 ergors_sdl_get_template() {
@@ -1090,54 +1623,51 @@ ergors_sdl_render() {
 }
 
 # Import keys into running nodes (post-startup)
+# Uses --prefix akash since these keys are for Akash chain operations
 ergors_import_keys_post_startup() {
     log_section "Importing Keys into Running Nodes"
-    
+
     local coord_home="$TEST_DIR/coordinator"
     local exec_home="$TEST_DIR/executor_0"
-    
+
     # Get faucet mnemonic
     local mnemonic
     mnemonic=$(akash_get_faucet_mnemonic 2>/dev/null) || {
         log_warn "Could not get faucet mnemonic, skipping key import"
         return 0
     }
-    
+
     log "Importing faucet key into coordinator..."
     local coord_import
     coord_import=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$coord_home" keys import-mnemonic \
         --label "E2E Faucet Key" \
-        --key-name "faucet" \
-        --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
-        --address-prefix "akash" \
-        --make-default 2>&1) || true
-    
-    if echo "$coord_import" | grep -q "akash1"; then
+        --prefix akash \
+        --default 2>&1) || true
+
+    if echo "$coord_import" | grep -qE "akash1[a-z0-9]+"; then
         local addr
-        addr=$(echo "$coord_import" | grep -o "akash1[a-z0-9]*" | head -1)
+        addr=$(echo "$coord_import" | grep -oE "akash1[a-z0-9]+" | head -1)
         log_success "Coordinator key imported: $addr"
         export COORDINATOR_ADDRESS="$addr"
     else
         log_warn "Coordinator key import may have failed"
         log_debug "$coord_import"
     fi
-    
-    log "Importing faucet key into executor..."
+
+    log "Importing executor test key..."
     local exec_import
     exec_import=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        ERGORS_MNEMONIC="$mnemonic" \
+        ERGORS_MNEMONIC="$EXECUTOR_TEST_MNEMONIC" \
         "$ERGORS_BIN" --home "$exec_home" keys import-mnemonic \
-        --label "E2E Faucet Key" \
-        --key-name "faucet" \
-        --chain-id "${AKASH_LOCAL_CHAIN_ID:-local}" \
-        --address-prefix "akash" \
-        --make-default 2>&1) || true
-    
-    if echo "$exec_import" | grep -q "akash1"; then
+        --label "E2E Executor Key" \
+        --prefix akash \
+        --default 2>&1) || true
+
+    if echo "$exec_import" | grep -qE "akash1[a-z0-9]+"; then
         local addr
-        addr=$(echo "$exec_import" | grep -o "akash1[a-z0-9]*" | head -1)
+        addr=$(echo "$exec_import" | grep -oE "akash1[a-z0-9]+" | head -1)
         log_success "Executor key imported: $addr"
         export EXECUTOR_ADDRESS="$addr"
     else

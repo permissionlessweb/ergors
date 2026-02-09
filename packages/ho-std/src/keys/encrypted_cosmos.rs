@@ -134,6 +134,19 @@ impl EncryptedCosmosKeyManager {
         label: &str,
         is_default: bool,
     ) -> Result<(EncryptedCosmosMnemonic, CosmosAccountInfo)> {
+        self.generate_key_full(key_name, chain_id, address_prefix, label, is_default, 118)
+    }
+
+    /// Generate a new cosmos key with label, default designation, and custom coin type
+    pub fn generate_key_full(
+        &mut self,
+        key_name: &str,
+        chain_id: &str,
+        address_prefix: &str,
+        label: &str,
+        is_default: bool,
+        coin_type: u32,
+    ) -> Result<(EncryptedCosmosMnemonic, CosmosAccountInfo)> {
         let _key = self
             .derived_key
             .as_ref()
@@ -141,7 +154,7 @@ impl EncryptedCosmosKeyManager {
 
         // Generate new mnemonic
         let mnemonic = CosmosMnemonic::generate()?;
-        let keypair = mnemonic.derive_keypair(0)?;
+        let keypair = mnemonic.derive_keypair_with_coin_type(0, coin_type)?;
         let account_info = CosmosAccountInfo::from_keypair(&keypair, key_name, address_prefix)?;
 
         // Encrypt the mnemonic
@@ -177,14 +190,34 @@ impl EncryptedCosmosKeyManager {
         label: &str,
         is_default: bool,
     ) -> Result<(EncryptedCosmosMnemonic, CosmosAccountInfo)> {
+        self.import_mnemonic_full(key_name, phrase, chain_id, address_prefix, label, is_default, 118)
+    }
+
+    /// Import an existing mnemonic with label, default designation, and custom coin type
+    ///
+    /// Coin type determines the BIP-44 derivation path (m/44'/{coin_type}'/0'/0/0):
+    /// - 118: Cosmos Hub, Akash Network, and most Cosmos chains
+    /// - 60: Ethereum / EVM chains
+    /// - 330: Terra
+    /// - 529: Secret Network
+    pub fn import_mnemonic_full(
+        &mut self,
+        key_name: &str,
+        phrase: &str,
+        chain_id: &str,
+        address_prefix: &str,
+        label: &str,
+        is_default: bool,
+        coin_type: u32,
+    ) -> Result<(EncryptedCosmosMnemonic, CosmosAccountInfo)> {
         let _key = self
             .derived_key
             .as_ref()
             .ok_or_else(|| anyhow!("Manager is locked"))?;
 
-        // Validate mnemonic
+        // Validate mnemonic and derive keypair with specified coin type
         let mnemonic = CosmosMnemonic::from_phrase(phrase)?;
-        let keypair = mnemonic.derive_keypair(0)?;
+        let keypair = mnemonic.derive_keypair_with_coin_type(0, coin_type)?;
         let account_info = CosmosAccountInfo::from_keypair(&keypair, key_name, address_prefix)?;
 
         // Encrypt the mnemonic
@@ -305,10 +338,13 @@ impl EncryptedCosmosKeyManager {
     /// Get a keypair from an encrypted mnemonic with custom coin type
     ///
     /// This allows deriving addresses for different cosmos chains:
-    /// - 118: Cosmos/Akash (default)
+    /// - 118: Cosmos Hub, Akash Network, and most Cosmos chains (default)
     /// - 330: Terra
     /// - 60: Ethereum (for EVM chains)
     /// - 529: Secret Network
+    ///
+    /// Note: Coin type determines the BIP-44 derivation path. Many chains share
+    /// coin type 118 but use different bech32 prefixes (cosmos1, akash1, ergo1, etc.)
     pub fn get_keypair_with_coin_type(
         &mut self,
         encrypted: &EncryptedCosmosMnemonic,
@@ -564,5 +600,140 @@ mod tests {
 
         assert_eq!(loaded_store.keys.len(), 1);
         assert_eq!(loaded_store.keys[0].key_name, "key1");
+    }
+
+    #[test]
+    fn test_import_with_akash_prefix() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+        let mut manager = EncryptedCosmosKeyManager::new();
+        manager.unlock("test-password").unwrap();
+
+        let (_, account_info) = manager
+            .import_mnemonic_with_label("test-akash", phrase, "", "akash", "test-akash", false)
+            .unwrap();
+
+        assert!(account_info.hd_path.contains("44'/118'"));
+        assert!(
+            account_info.address.starts_with("akash1"),
+            "Expected akash1 prefix, got: {}",
+            account_info.address
+        );
+    }
+
+    #[test]
+    fn test_import_with_cosmos_prefix() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+        let mut manager = EncryptedCosmosKeyManager::new();
+        manager.unlock("test-password").unwrap();
+
+        let (_, account_info) = manager
+            .import_mnemonic_with_label("test-cosmos", phrase, "", "cosmos", "test-cosmos", false)
+            .unwrap();
+
+        assert!(account_info.hd_path.contains("44'/118'"));
+        assert!(
+            account_info.address.starts_with("cosmos1"),
+            "Expected cosmos1 prefix, got: {}",
+            account_info.address
+        );
+    }
+
+    #[test]
+    fn test_different_prefixes_same_public_key() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+        let mut manager = EncryptedCosmosKeyManager::new();
+        manager.unlock("test-password").unwrap();
+
+        let (_, akash_info) = manager
+            .import_mnemonic_with_label("akash", phrase, "", "akash", "akash", false)
+            .unwrap();
+
+        let (_, cosmos_info) = manager
+            .import_mnemonic_with_label("cosmos", phrase, "", "cosmos", "cosmos", false)
+            .unwrap();
+
+        // Same mnemonic + same coin type (118) = same public key
+        assert_eq!(
+            akash_info.public_key, cosmos_info.public_key,
+            "Same coin type with different prefixes should produce same public key"
+        );
+
+        // But different bech32 addresses
+        assert_ne!(
+            akash_info.address, cosmos_info.address,
+            "Different prefixes should produce different addresses"
+        );
+    }
+
+    #[test]
+    fn test_import_with_custom_coin_type() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+        let mut manager = EncryptedCosmosKeyManager::new();
+        manager.unlock("test-password").unwrap();
+
+        // Import with coin type 60 (EVM chains)
+        let (_, evm_info) = manager
+            .import_mnemonic_full("evm-key", phrase, "", "evmos", "evm-key", false, 60)
+            .unwrap();
+
+        // Import with default coin type 118 (Cosmos)
+        let (_, cosmos_info) = manager
+            .import_mnemonic_full("cosmos-key", phrase, "", "cosmos", "cosmos-key", false, 118)
+            .unwrap();
+
+        // Different coin types produce different derivation paths
+        assert!(
+            evm_info.hd_path.contains("44'/60'"),
+            "Expected coin type 60 in path, got: {}",
+            evm_info.hd_path
+        );
+        assert!(
+            cosmos_info.hd_path.contains("44'/118'"),
+            "Expected coin type 118 in path, got: {}",
+            cosmos_info.hd_path
+        );
+
+        // Different coin types produce different public keys (different derivation paths)
+        assert_ne!(
+            evm_info.public_key, cosmos_info.public_key,
+            "Different coin types should produce different public keys"
+        );
+    }
+
+    #[test]
+    fn test_runtime_address_rederivation_from_pubkey() {
+        use crate::keys::cosmos::cosmos_address_from_pubkey;
+
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+        let mut manager = EncryptedCosmosKeyManager::new();
+        manager.unlock("test-password").unwrap();
+
+        // Import with akash prefix
+        let (_, akash_info) = manager
+            .import_mnemonic_with_label("key1", phrase, "", "akash", "key1", false)
+            .unwrap();
+
+        // Re-derive address from stored public key with cosmos prefix
+        let cosmos_addr =
+            cosmos_address_from_pubkey(&akash_info.public_key, "cosmos").unwrap();
+        assert!(
+            cosmos_addr.starts_with("cosmos1"),
+            "Runtime re-derivation should produce cosmos1 address, got: {}",
+            cosmos_addr
+        );
+
+        // Re-derive with ergo prefix
+        let ergo_addr =
+            cosmos_address_from_pubkey(&akash_info.public_key, "ergo").unwrap();
+        assert!(
+            ergo_addr.starts_with("ergo1"),
+            "Runtime re-derivation should produce ergo1 address, got: {}",
+            ergo_addr
+        );
+
+        // All addresses are different strings but derived from same key
+        assert_ne!(akash_info.address, cosmos_addr);
+        assert_ne!(akash_info.address, ergo_addr);
+        assert_ne!(cosmos_addr, ergo_addr);
     }
 }

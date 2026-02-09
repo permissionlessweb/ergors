@@ -546,9 +546,13 @@ pub struct ProviderConfig {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub api_key: ::prost::alloc::string::String,
+    pub api_key_ref: ::prost::alloc::string::String,
     #[prost(bool, tag = "3")]
     pub set_as_default: bool,
+    #[prost(string, tag = "4")]
+    pub base_url: ::prost::alloc::string::String,
+    #[prost(bool, tag = "5")]
+    pub no_key: bool,
 }
 impl ::prost::Name for ProviderConfig {
     const NAME: &'static str = "ProviderConfig";
@@ -2701,17 +2705,8 @@ impl ::prost::Name for SetWorkflowEndpointsResponse {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConfigureProxyRoutesRequest {
-    /// Override base URL for OpenAI API requests
-    #[prost(string, tag = "1")]
-    pub openai_base_url: ::prost::alloc::string::String,
-    /// Override base URL for Anthropic API requests
-    #[prost(string, tag = "2")]
-    pub anthropic_base_url: ::prost::alloc::string::String,
-    /// Override base URL for Ollama API requests
-    #[prost(string, tag = "3")]
-    pub ollama_base_url: ::prost::alloc::string::String,
     /// Model-specific routing rules (glob patterns -> URLs)
-    #[prost(map = "string, string", tag = "4")]
+    #[prost(map = "string, string", tag = "1")]
     pub model_routes: ::std::collections::HashMap<
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
@@ -3407,6 +3402,222 @@ impl ::prost::Name for GetDiscordConfigResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.management.v1.GetDiscordConfigResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetChainConfigRequest {
+    #[prost(message, optional, tag = "1")]
+    pub config: ::core::option::Option<super::super::orch::v1::CosmosChainConfig>,
+}
+impl ::prost::Name for SetChainConfigRequest {
+    const NAME: &'static str = "SetChainConfigRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SetChainConfigRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SetChainConfigRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetChainConfigResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SetChainConfigResponse {
+    const NAME: &'static str = "SetChainConfigResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.SetChainConfigResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.SetChainConfigResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetChainConfigRequest {
+    #[prost(string, tag = "1")]
+    pub chain_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for GetChainConfigRequest {
+    const NAME: &'static str = "GetChainConfigRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetChainConfigRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetChainConfigRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetChainConfigResponse {
+    #[prost(message, optional, tag = "1")]
+    pub config: ::core::option::Option<super::super::orch::v1::CosmosChainConfig>,
+    #[prost(bool, tag = "2")]
+    pub found: bool,
+}
+impl ::prost::Name for GetChainConfigResponse {
+    const NAME: &'static str = "GetChainConfigResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.GetChainConfigResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.GetChainConfigResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListChainConfigsRequest {}
+impl ::prost::Name for ListChainConfigsRequest {
+    const NAME: &'static str = "ListChainConfigsRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListChainConfigsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListChainConfigsRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListChainConfigsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub chains: ::prost::alloc::vec::Vec<super::super::orch::v1::CosmosChainConfig>,
+}
+impl ::prost::Name for ListChainConfigsResponse {
+    const NAME: &'static str = "ListChainConfigsResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListChainConfigsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListChainConfigsResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteChainConfigRequest {
+    #[prost(string, tag = "1")]
+    pub chain_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeleteChainConfigRequest {
+    const NAME: &'static str = "DeleteChainConfigRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.DeleteChainConfigRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.DeleteChainConfigRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteChainConfigResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeleteChainConfigResponse {
+    const NAME: &'static str = "DeleteChainConfigResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.DeleteChainConfigResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.DeleteChainConfigResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterCliKeyRequest {
+    /// Ed25519 pubkey (64 hex chars)
+    #[prost(string, tag = "1")]
+    pub public_key_hex: ::prost::alloc::string::String,
+    /// Human-readable label
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RegisterCliKeyRequest {
+    const NAME: &'static str = "RegisterCliKeyRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RegisterCliKeyRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RegisterCliKeyRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RevokeCliKeyRequest {
+    #[prost(string, tag = "1")]
+    pub public_key_hex: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RevokeCliKeyRequest {
+    const NAME: &'static str = "RevokeCliKeyRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RevokeCliKeyRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RevokeCliKeyRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListCliKeysRequest {}
+impl ::prost::Name for ListCliKeysRequest {
+    const NAME: &'static str = "ListCliKeysRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListCliKeysRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListCliKeysRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCliKeysResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub keys: ::prost::alloc::vec::Vec<CliKeyEntry>,
+}
+impl ::prost::Name for ListCliKeysResponse {
+    const NAME: &'static str = "ListCliKeysResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.ListCliKeysResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.ListCliKeysResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CliKeyEntry {
+    #[prost(string, tag = "1")]
+    pub public_key_hex: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub added_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+impl ::prost::Name for CliKeyEntry {
+    const NAME: &'static str = "CliKeyEntry";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.CliKeyEntry".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.CliKeyEntry".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -5115,298 +5326,6 @@ pub mod management_service_client {
                 );
             self.inner.server_streaming(req, path, codec).await
         }
-        /// Workspace lifecycle
-        pub async fn add_workspace(
-            &mut self,
-            request: impl tonic::IntoRequest<super::AddWorkspaceRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::AddWorkspaceResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/AddWorkspace",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "AddWorkspace",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_workspace(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetWorkspaceRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetWorkspaceResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/GetWorkspace",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "GetWorkspace",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn list_workspaces(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ListWorkspacesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListWorkspacesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/ListWorkspaces",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "ListWorkspaces",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn remove_workspace(
-            &mut self,
-            request: impl tonic::IntoRequest<super::RemoveWorkspaceRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::OperationResult>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/RemoveWorkspace",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "RemoveWorkspace",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn sync_workspace(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SyncWorkspaceRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SyncWorkspaceResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/SyncWorkspace",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "SyncWorkspace",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        /// Task worktree operations
-        pub async fn create_task_worktree(
-            &mut self,
-            request: impl tonic::IntoRequest<super::CreateTaskWorktreeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CreateTaskWorktreeResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/CreateTaskWorktree",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "CreateTaskWorktree",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn list_task_worktrees(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ListTaskWorktreesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListTaskWorktreesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/ListTaskWorktrees",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "ListTaskWorktrees",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn complete_task_worktree(
-            &mut self,
-            request: impl tonic::IntoRequest<super::CompleteTaskWorktreeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CompleteTaskWorktreeResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/CompleteTaskWorktree",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "CompleteTaskWorktree",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn fail_task_worktree(
-            &mut self,
-            request: impl tonic::IntoRequest<super::FailTaskWorktreeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::OperationResult>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/FailTaskWorktree",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "FailTaskWorktree",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn resolve_conflict(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ResolveConflictRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ResolveConflictResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/ergors.management.v1.ManagementService/ResolveConflict",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "ergors.management.v1.ManagementService",
-                        "ResolveConflict",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
         /// Create a new Akash deployment workflow
         pub async fn create_akash_deployment(
             &mut self,
@@ -6854,6 +6773,217 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Register an Ed25519 public key for authenticated remote CLI access
+        pub async fn register_cli_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RegisterCliKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RegisterCliKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RegisterCliKey",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Revoke an authorized CLI key
+        pub async fn revoke_cli_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RevokeCliKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RevokeCliKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RevokeCliKey",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List all authorized CLI keys
+        pub async fn list_cli_keys(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListCliKeysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListCliKeysResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListCliKeys",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListCliKeys",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Cosmos Chain Configuration (Cnidarium-backed)
+        /// Set or update chain configuration
+        pub async fn set_chain_config(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetChainConfigResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/SetChainConfig",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "SetChainConfig",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get chain configuration by chain ID
+        pub async fn get_chain_config(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetChainConfigResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/GetChainConfig",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "GetChainConfig",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// List all registered chain configurations
+        pub async fn list_chain_configs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListChainConfigsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListChainConfigsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/ListChainConfigs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "ListChainConfigs",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Delete a chain configuration
+        pub async fn delete_chain_config(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteChainConfigResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/DeleteChainConfig",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "DeleteChainConfig",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -7143,72 +7273,6 @@ pub mod management_service_server {
             request: tonic::Request<super::StreamSessionRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::StreamSessionUpdatesStream>,
-            tonic::Status,
-        >;
-        /// Workspace lifecycle
-        async fn add_workspace(
-            &self,
-            request: tonic::Request<super::AddWorkspaceRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::AddWorkspaceResponse>,
-            tonic::Status,
-        >;
-        async fn get_workspace(
-            &self,
-            request: tonic::Request<super::GetWorkspaceRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetWorkspaceResponse>,
-            tonic::Status,
-        >;
-        async fn list_workspaces(
-            &self,
-            request: tonic::Request<super::ListWorkspacesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListWorkspacesResponse>,
-            tonic::Status,
-        >;
-        async fn remove_workspace(
-            &self,
-            request: tonic::Request<super::RemoveWorkspaceRequest>,
-        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
-        async fn sync_workspace(
-            &self,
-            request: tonic::Request<super::SyncWorkspaceRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SyncWorkspaceResponse>,
-            tonic::Status,
-        >;
-        /// Task worktree operations
-        async fn create_task_worktree(
-            &self,
-            request: tonic::Request<super::CreateTaskWorktreeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CreateTaskWorktreeResponse>,
-            tonic::Status,
-        >;
-        async fn list_task_worktrees(
-            &self,
-            request: tonic::Request<super::ListTaskWorktreesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListTaskWorktreesResponse>,
-            tonic::Status,
-        >;
-        async fn complete_task_worktree(
-            &self,
-            request: tonic::Request<super::CompleteTaskWorktreeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CompleteTaskWorktreeResponse>,
-            tonic::Status,
-        >;
-        async fn fail_task_worktree(
-            &self,
-            request: tonic::Request<super::FailTaskWorktreeRequest>,
-        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
-        async fn resolve_conflict(
-            &self,
-            request: tonic::Request<super::ResolveConflictRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ResolveConflictResponse>,
             tonic::Status,
         >;
         /// Create a new Akash deployment workflow
@@ -7557,6 +7621,57 @@ pub mod management_service_server {
             request: tonic::Request<super::RenderSdlTemplateRequest>,
         ) -> std::result::Result<
             tonic::Response<super::RenderSdlTemplateResponse>,
+            tonic::Status,
+        >;
+        /// Register an Ed25519 public key for authenticated remote CLI access
+        async fn register_cli_key(
+            &self,
+            request: tonic::Request<super::RegisterCliKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// Revoke an authorized CLI key
+        async fn revoke_cli_key(
+            &self,
+            request: tonic::Request<super::RevokeCliKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
+        /// List all authorized CLI keys
+        async fn list_cli_keys(
+            &self,
+            request: tonic::Request<super::ListCliKeysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListCliKeysResponse>,
+            tonic::Status,
+        >;
+        /// Cosmos Chain Configuration (Cnidarium-backed)
+        /// Set or update chain configuration
+        async fn set_chain_config(
+            &self,
+            request: tonic::Request<super::SetChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetChainConfigResponse>,
+            tonic::Status,
+        >;
+        /// Get chain configuration by chain ID
+        async fn get_chain_config(
+            &self,
+            request: tonic::Request<super::GetChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetChainConfigResponse>,
+            tonic::Status,
+        >;
+        /// List all registered chain configurations
+        async fn list_chain_configs(
+            &self,
+            request: tonic::Request<super::ListChainConfigsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListChainConfigsResponse>,
+            tonic::Status,
+        >;
+        /// Delete a chain configuration
+        async fn delete_chain_config(
+            &self,
+            request: tonic::Request<super::DeleteChainConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteChainConfigResponse>,
             tonic::Status,
         >;
     }
@@ -9583,478 +9698,6 @@ pub mod management_service_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/AddWorkspace" => {
-                    #[allow(non_camel_case_types)]
-                    struct AddWorkspaceSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::AddWorkspaceRequest>
-                    for AddWorkspaceSvc<T> {
-                        type Response = super::AddWorkspaceResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::AddWorkspaceRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::add_workspace(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = AddWorkspaceSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/GetWorkspace" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetWorkspaceSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::GetWorkspaceRequest>
-                    for GetWorkspaceSvc<T> {
-                        type Response = super::GetWorkspaceResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetWorkspaceRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::get_workspace(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetWorkspaceSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/ListWorkspaces" => {
-                    #[allow(non_camel_case_types)]
-                    struct ListWorkspacesSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::ListWorkspacesRequest>
-                    for ListWorkspacesSvc<T> {
-                        type Response = super::ListWorkspacesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ListWorkspacesRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::list_workspaces(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ListWorkspacesSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/RemoveWorkspace" => {
-                    #[allow(non_camel_case_types)]
-                    struct RemoveWorkspaceSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::RemoveWorkspaceRequest>
-                    for RemoveWorkspaceSvc<T> {
-                        type Response = super::OperationResult;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::RemoveWorkspaceRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::remove_workspace(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = RemoveWorkspaceSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/SyncWorkspace" => {
-                    #[allow(non_camel_case_types)]
-                    struct SyncWorkspaceSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::SyncWorkspaceRequest>
-                    for SyncWorkspaceSvc<T> {
-                        type Response = super::SyncWorkspaceResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SyncWorkspaceRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::sync_workspace(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SyncWorkspaceSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/CreateTaskWorktree" => {
-                    #[allow(non_camel_case_types)]
-                    struct CreateTaskWorktreeSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::CreateTaskWorktreeRequest>
-                    for CreateTaskWorktreeSvc<T> {
-                        type Response = super::CreateTaskWorktreeResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::CreateTaskWorktreeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::create_task_worktree(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = CreateTaskWorktreeSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/ListTaskWorktrees" => {
-                    #[allow(non_camel_case_types)]
-                    struct ListTaskWorktreesSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::ListTaskWorktreesRequest>
-                    for ListTaskWorktreesSvc<T> {
-                        type Response = super::ListTaskWorktreesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ListTaskWorktreesRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::list_task_worktrees(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ListTaskWorktreesSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/CompleteTaskWorktree" => {
-                    #[allow(non_camel_case_types)]
-                    struct CompleteTaskWorktreeSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::CompleteTaskWorktreeRequest>
-                    for CompleteTaskWorktreeSvc<T> {
-                        type Response = super::CompleteTaskWorktreeResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::CompleteTaskWorktreeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::complete_task_worktree(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = CompleteTaskWorktreeSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/FailTaskWorktree" => {
-                    #[allow(non_camel_case_types)]
-                    struct FailTaskWorktreeSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::FailTaskWorktreeRequest>
-                    for FailTaskWorktreeSvc<T> {
-                        type Response = super::OperationResult;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::FailTaskWorktreeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::fail_task_worktree(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = FailTaskWorktreeSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/ergors.management.v1.ManagementService/ResolveConflict" => {
-                    #[allow(non_camel_case_types)]
-                    struct ResolveConflictSvc<T: ManagementService>(pub Arc<T>);
-                    impl<
-                        T: ManagementService,
-                    > tonic::server::UnaryService<super::ResolveConflictRequest>
-                    for ResolveConflictSvc<T> {
-                        type Response = super::ResolveConflictResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ResolveConflictRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ManagementService>::resolve_conflict(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ResolveConflictSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
@@ -12344,6 +11987,334 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RenderSdlTemplateSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RegisterCliKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct RegisterCliKeySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RegisterCliKeyRequest>
+                    for RegisterCliKeySvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RegisterCliKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::register_cli_key(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RegisterCliKeySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RevokeCliKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct RevokeCliKeySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RevokeCliKeyRequest>
+                    for RevokeCliKeySvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RevokeCliKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::revoke_cli_key(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RevokeCliKeySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListCliKeys" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListCliKeysSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ListCliKeysRequest>
+                    for ListCliKeysSvc<T> {
+                        type Response = super::ListCliKeysResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListCliKeysRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_cli_keys(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListCliKeysSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/SetChainConfig" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetChainConfigSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::SetChainConfigRequest>
+                    for SetChainConfigSvc<T> {
+                        type Response = super::SetChainConfigResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetChainConfigRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::set_chain_config(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetChainConfigSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/GetChainConfig" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetChainConfigSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::GetChainConfigRequest>
+                    for GetChainConfigSvc<T> {
+                        type Response = super::GetChainConfigResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetChainConfigRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::get_chain_config(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetChainConfigSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/ListChainConfigs" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListChainConfigsSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::ListChainConfigsRequest>
+                    for ListChainConfigsSvc<T> {
+                        type Response = super::ListChainConfigsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListChainConfigsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::list_chain_configs(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListChainConfigsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/DeleteChainConfig" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteChainConfigSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::DeleteChainConfigRequest>
+                    for DeleteChainConfigSvc<T> {
+                        type Response = super::DeleteChainConfigResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteChainConfigRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::delete_chain_config(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteChainConfigSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

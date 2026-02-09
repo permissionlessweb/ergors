@@ -7,6 +7,14 @@ use clap::Subcommand;
 use std::collections::HashMap;
 use std::io::IsTerminal;
 
+use super::responses::{
+    BidEntry, DeployBalanceResponse, DeployBidsResponse, DeployCreateResponse,
+    DeployEndpointsResponse, DeployGetResponse, DeployGrantListResponse,
+    DeployGrantRequestResponse, DeployInfoResponse, DeployListResponse, DeployRunResponse,
+    DeploySelectResponse, DeploySetEndpointsResponse, DeployStatusResponse, DeployTopupResponse,
+    DeploymentRuntime, EndpointEntry, GrantRequestEntry, LeaseEntry, OperationResponse,
+    TrustedProviderEntry, TrustedProvidersResponse, WorkflowSummary,
+};
 use super::CliContext;
 use crate::client::ManagementClient;
 
@@ -140,15 +148,6 @@ pub enum DeployCmd {
     },
     /// Configure proxy routing to discovered services
     ConfigureProxy {
-        /// OpenAI-compatible API base URL
-        #[arg(long)]
-        openai_url: Option<String>,
-        /// Anthropic-compatible API base URL
-        #[arg(long)]
-        anthropic_url: Option<String>,
-        /// Ollama-compatible API base URL
-        #[arg(long)]
-        ollama_url: Option<String>,
         /// Model routing rules (glob=url pairs)
         #[arg(long, value_parser = parse_key_val)]
         route: Vec<(String, String)>,
@@ -430,19 +429,23 @@ impl DeployCmd {
                             .await?;
 
                         if ctx.json {
-                            let mut json = serde_json::json!({
-                                "session_id": session_id,
-                                "completed": run_response.completed,
-                            });
-                            if let Some(wf) = &run_response.workflow {
-                                json["current_step"] =
-                                    serde_json::json!(format_step(wf.current_step));
-                                json["status"] = serde_json::json!(format_status(wf.status));
-                            }
-                            if let Some(input) = &run_response.input_required {
-                                json["input_required"] = serde_json::json!(&input.message);
-                            }
-                            println!("{}", serde_json::to_string_pretty(&json)?);
+                            let resp = DeployRunResponse {
+                                session_id: session_id.clone(),
+                                completed: run_response.completed,
+                                current_step: run_response
+                                    .workflow
+                                    .as_ref()
+                                    .map(|wf| format_step(wf.current_step).to_string()),
+                                status: run_response
+                                    .workflow
+                                    .as_ref()
+                                    .map(|wf| format_status(wf.status).to_string()),
+                                input_required: run_response
+                                    .input_required
+                                    .as_ref()
+                                    .map(|i| i.message.clone()),
+                            };
+                            println!("{}", serde_json::to_string_pretty(&resp)?);
                         } else if run_response.completed {
                             println!("Deployment workflow completed!");
                         } else {
@@ -456,17 +459,15 @@ impl DeployCmd {
                         }
                     } else if ctx.json {
                         if let Some(wf) = &response.workflow {
-                            println!(
-                                "{}",
-                                serde_json::to_string_pretty(&serde_json::json!({
-                                    "session_id": wf.session_id,
-                                    "status": wf.status,
-                                    "current_step": wf.current_step,
-                                    "account_address": wf.account_address,
-                                    "chain_id": wf.chain_id,
-                                    "node_endpoint": wf.node_endpoint,
-                                }))?
-                            );
+                            let resp = DeployCreateResponse {
+                                session_id: wf.session_id.clone(),
+                                status: wf.status,
+                                current_step: wf.current_step,
+                                account_address: wf.account_address.clone(),
+                                chain_id: wf.chain_id.clone(),
+                                node_endpoint: wf.node_endpoint.clone(),
+                            };
+                            println!("{}", serde_json::to_string_pretty(&resp)?);
                         }
                     }
                 } else {
@@ -491,25 +492,20 @@ impl DeployCmd {
                 let response = client.list_akash_deployments(status_filter, *limit).await?;
 
                 if ctx.json {
-                    let workflows: Vec<_> = response
-                        .workflows
-                        .iter()
-                        .map(|wf| {
-                            serde_json::json!({
-                                "session_id": wf.session_id,
-                                "status": format_status(wf.status),
-                                "current_step": format_step(wf.current_step),
-                                "account_address": wf.account_address,
+                    let resp = DeployListResponse {
+                        workflows: response
+                            .workflows
+                            .iter()
+                            .map(|wf| WorkflowSummary {
+                                session_id: wf.session_id.clone(),
+                                status: format_status(wf.status).to_string(),
+                                current_step: format_step(wf.current_step).to_string(),
+                                account_address: wf.account_address.clone(),
                             })
-                        })
-                        .collect();
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "workflows": workflows,
-                            "total_count": response.total_count,
-                        }))?
-                    );
+                            .collect(),
+                        total_count: response.total_count,
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else {
                     println!("Akash Deployments ({} total)", response.total_count);
                     println!("==========================");
@@ -535,20 +531,18 @@ impl DeployCmd {
 
                 if let Some(wf) = &response.workflow {
                     if ctx.json {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&serde_json::json!({
-                                "session_id": wf.session_id,
-                                "status": format_status(wf.status),
-                                "current_step": format_step(wf.current_step),
-                                "account_address": wf.account_address,
-                                "chain_id": wf.chain_id,
-                                "node_endpoint": wf.node_endpoint,
-                                "selected_key_name": wf.selected_key_name,
-                                "last_error": wf.last_error,
-                                "retry_count": wf.retry_count,
-                            }))?
-                        );
+                        let resp = DeployGetResponse {
+                            session_id: wf.session_id.clone(),
+                            status: format_status(wf.status).to_string(),
+                            current_step: format_step(wf.current_step).to_string(),
+                            account_address: wf.account_address.clone(),
+                            chain_id: wf.chain_id.clone(),
+                            node_endpoint: wf.node_endpoint.clone(),
+                            selected_key_name: wf.selected_key_name.clone(),
+                            last_error: wf.last_error.clone(),
+                            retry_count: wf.retry_count,
+                        };
+                        println!("{}", serde_json::to_string_pretty(&resp)?);
                     } else {
                         println!("Deployment Workflow: {}", wf.session_id);
                         println!("====================");
@@ -587,51 +581,44 @@ impl DeployCmd {
 
                 if let Some(wf) = wf_response.workflow {
                     if ctx.json {
-                        // Build comprehensive JSON output
-                        let mut info = serde_json::json!({
-                            "session_id": wf.session_id,
-                            "status": format_status(wf.status),
-                            "current_step": format_step(wf.current_step),
-                            "account_address": wf.account_address,
-                            "chain_id": wf.chain_id,
-                            "node_endpoint": wf.node_endpoint,
-                        });
-
-                        if let Some(runtime) = &wf.deployment {
-                            info["deployment"] = serde_json::json!({
-                                "dseq": runtime.deployment_sequence,
-                                "provider": runtime.provider_address,
-                                "lease_id": runtime.lease_id,
-                            });
-                        }
-
-                        if let Some(lease_id) = &wf.lease_id_info {
-                            info["lease"] = serde_json::json!({
-                                "owner": lease_id.owner,
-                                "dseq": lease_id.dseq,
-                                "gseq": lease_id.gseq,
-                                "oseq": lease_id.oseq,
-                                "provider": lease_id.provider,
-                            });
-                        }
-
-                        if !wf.service_endpoints.is_empty() {
-                            info["endpoints"] = serde_json::json!(wf
-                                .service_endpoints
-                                .iter()
-                                .map(|e| {
-                                    serde_json::json!({
-                                        "service": e.service_name,
-                                        "uri": e.external_uri,
-                                        "internal_port": e.internal_port,
-                                        "external_port": e.external_port,
-                                        "protocol": e.protocol,
-                                    })
-                                })
-                                .collect::<Vec<_>>());
-                        }
-
-                        println!("{}", serde_json::to_string_pretty(&info)?);
+                        let resp = DeployInfoResponse {
+                            session_id: wf.session_id.clone(),
+                            status: format_status(wf.status).to_string(),
+                            current_step: format_step(wf.current_step).to_string(),
+                            account_address: wf.account_address.clone(),
+                            chain_id: wf.chain_id.clone(),
+                            node_endpoint: wf.node_endpoint.clone(),
+                            deployment: wf.deployment.as_ref().map(|rt| DeploymentRuntime {
+                                dseq: rt.deployment_sequence.parse().unwrap_or(0),
+                                provider: rt.provider_address.clone(),
+                                lease_id: rt.lease_id.clone(),
+                            }),
+                            lease: wf.lease_id_info.as_ref().map(|l| LeaseEntry {
+                                owner: l.owner.clone(),
+                                dseq: l.dseq,
+                                gseq: l.gseq,
+                                oseq: l.oseq,
+                                provider: l.provider.clone(),
+                                state: String::new(),
+                            }),
+                            endpoints: if wf.service_endpoints.is_empty() {
+                                None
+                            } else {
+                                Some(
+                                    wf.service_endpoints
+                                        .iter()
+                                        .map(|e| EndpointEntry {
+                                            service: e.service_name.clone(),
+                                            uri: e.external_uri.clone(),
+                                            internal_port: e.internal_port,
+                                            external_port: e.external_port,
+                                            protocol: e.protocol.clone(),
+                                        })
+                                        .collect(),
+                                )
+                            },
+                        };
+                        println!("{}", serde_json::to_string_pretty(&resp)?);
                     } else {
                         println!(
                             "╔══════════════════════════════════════════════════════════════╗"
@@ -762,23 +749,18 @@ impl DeployCmd {
                 let response = client.query_akash_bids(session_id).await?;
 
                 if ctx.json {
-                    let bids: Vec<_> = response
-                        .bids
-                        .iter()
-                        .map(|b| {
-                            serde_json::json!({
-                                "provider": b.provider_address,
-                                "price_uakt": b.price_uakt,
+                    let resp = DeployBidsResponse {
+                        bids: response
+                            .bids
+                            .iter()
+                            .map(|b| BidEntry {
+                                provider: b.provider_address.clone(),
+                                price_uakt: b.price_uakt,
                             })
-                        })
-                        .collect();
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "bids": bids,
-                            "total": response.total_bids,
-                        }))?
-                    );
+                            .collect(),
+                        total: response.total_bids,
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else {
                     println!("Bids ({} total)", response.total_bids);
                     println!("==========");
@@ -842,19 +824,25 @@ impl DeployCmd {
                     .await?;
 
                 if ctx.json {
-                    let mut json = serde_json::json!({
-                        "success": response.success,
-                        "provider": provider_address,
-                        "price_uakt": price,
-                    });
-                    if let Some(wf) = &response.workflow {
-                        json["current_step"] = serde_json::json!(format_step(wf.current_step));
-                        json["status"] = serde_json::json!(format_status(wf.status));
-                    }
-                    if !response.error_message.is_empty() {
-                        json["error"] = serde_json::json!(&response.error_message);
-                    }
-                    println!("{}", serde_json::to_string_pretty(&json)?);
+                    let resp = DeploySelectResponse {
+                        success: response.success,
+                        provider: provider_address.clone(),
+                        price_uakt: price,
+                        current_step: response
+                            .workflow
+                            .as_ref()
+                            .map(|wf| format_step(wf.current_step).to_string()),
+                        status: response
+                            .workflow
+                            .as_ref()
+                            .map(|wf| format_status(wf.status).to_string()),
+                        error: if response.error_message.is_empty() {
+                            None
+                        } else {
+                            Some(response.error_message.clone())
+                        },
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if response.success {
                     println!("Provider selected: {}", provider_address);
                     if price > 0 {
@@ -875,27 +863,23 @@ impl DeployCmd {
 
                 if let Some(wf) = wf_response.workflow {
                     if ctx.json {
-                        let endpoints: Vec<_> = wf
-                            .service_endpoints
-                            .iter()
-                            .map(|ep| {
-                                serde_json::json!({
-                                    "service": ep.service_name,
-                                    "uri": ep.external_uri,
-                                    "internal_port": ep.internal_port,
-                                    "external_port": ep.external_port,
-                                    "protocol": ep.protocol,
+                        let total = wf.service_endpoints.len();
+                        let resp = DeployEndpointsResponse {
+                            session_id: session_id.clone(),
+                            endpoints: wf
+                                .service_endpoints
+                                .iter()
+                                .map(|ep| EndpointEntry {
+                                    service: ep.service_name.clone(),
+                                    uri: ep.external_uri.clone(),
+                                    internal_port: ep.internal_port,
+                                    external_port: ep.external_port,
+                                    protocol: ep.protocol.clone(),
                                 })
-                            })
-                            .collect();
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&serde_json::json!({
-                                "session_id": session_id,
-                                "endpoints": endpoints,
-                                "total": wf.service_endpoints.len(),
-                            }))?
-                        );
+                                .collect(),
+                            total,
+                        };
+                        println!("{}", serde_json::to_string_pretty(&resp)?);
                     } else {
                         println!("Service Endpoints for {}", session_id);
                         println!("═══════════════════════════════════════════");
@@ -943,17 +927,23 @@ impl DeployCmd {
                 let response = client.set_workflow_endpoints(session_id, endpoints).await?;
 
                 if ctx.json {
-                    let mut json = serde_json::json!({
-                        "success": response.success,
-                    });
-                    if let Some(wf) = &response.workflow {
-                        json["current_step"] = serde_json::json!(format_step(wf.current_step));
-                        json["endpoints"] = serde_json::json!(&wf.endpoints);
-                    }
-                    if !response.error_message.is_empty() {
-                        json["error"] = serde_json::json!(&response.error_message);
-                    }
-                    println!("{}", serde_json::to_string_pretty(&json)?);
+                    let resp = DeploySetEndpointsResponse {
+                        success: response.success,
+                        current_step: response
+                            .workflow
+                            .as_ref()
+                            .map(|wf| format_step(wf.current_step).to_string()),
+                        endpoints: response
+                            .workflow
+                            .as_ref()
+                            .map(|wf| wf.endpoints.clone()),
+                        error: if response.error_message.is_empty() {
+                            None
+                        } else {
+                            Some(response.error_message.clone())
+                        },
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if response.success {
                     println!("Endpoints set for workflow {}", session_id);
                     if let Some(wf) = &response.workflow {
@@ -966,41 +956,15 @@ impl DeployCmd {
                 }
                 Ok(())
             }
-            DeployCmd::ConfigureProxy {
-                openai_url,
-                anthropic_url,
-                ollama_url,
-                route,
-            } => {
+            DeployCmd::ConfigureProxy { route } => {
                 let model_routes: HashMap<String, String> = route.iter().cloned().collect();
-                let result = client
-                    .configure_proxy_routes(
-                        openai_url.as_deref().unwrap_or(""),
-                        anthropic_url.as_deref().unwrap_or(""),
-                        ollama_url.as_deref().unwrap_or(""),
-                        model_routes,
-                    )
-                    .await?;
-
-                if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": result.success,
-                            "message": result.message,
-                        }))?
-                    );
-                } else if result.success {
-                    println!("Proxy routes configured");
-                    if let Some(url) = openai_url {
-                        println!("  OpenAI:    {}", url);
-                    }
-                    if let Some(url) = anthropic_url {
-                        println!("  Anthropic: {}", url);
-                    }
-                    if let Some(url) = ollama_url {
-                        println!("  Ollama:    {}", url);
-                    }
+                let result = client.configure_proxy_routes(model_routes).await?;
+                if ctx.json || result.success {
+                    let resp = OperationResponse {
+                        success: result.success,
+                        message: result.message.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else {
                     eprintln!("Failed to configure proxy: {}", result.message);
                 }
@@ -1024,14 +988,12 @@ impl DeployCmd {
                     .await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": response.success,
-                            "message": response.message,
-                            "request_id": response.request_id,
-                        }))?
-                    );
+                    let resp = DeployGrantRequestResponse {
+                        success: response.success,
+                        message: response.message.clone(),
+                        request_id: response.request_id.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if response.success {
                     println!("Grant request submitted");
                     println!("  Request ID: {}", response.request_id);
@@ -1051,13 +1013,11 @@ impl DeployCmd {
                     .await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": result.success,
-                            "message": result.message,
-                        }))?
-                    );
+                    let resp = OperationResponse {
+                        success: result.success,
+                        message: result.message.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if result.success {
                     if *reject {
                         println!("Grant request rejected: {}", request_id);
@@ -1080,13 +1040,11 @@ impl DeployCmd {
                     .await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": result.success,
-                            "message": result.message,
-                        }))?
-                    );
+                    let resp = OperationResponse {
+                        success: result.success,
+                        message: result.message.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if result.success {
                     println!("Grant revoked");
                     if *revoke_feegrant {
@@ -1107,24 +1065,21 @@ impl DeployCmd {
                     .await?;
 
                 if ctx.json {
-                    let requests: Vec<_> = response
-                        .requests
-                        .iter()
-                        .map(|r| {
-                            serde_json::json!({
-                                "request_id": r.request_id,
-                                "granter": r.granter_address,
-                                "grantee": r.grantee_address,
-                                "msg_types": r.msg_types,
-                                "allowance": r.allowance_amount,
-                                "status": r.status,
+                    let resp = DeployGrantListResponse {
+                        requests: response
+                            .requests
+                            .iter()
+                            .map(|r| GrantRequestEntry {
+                                request_id: r.request_id.clone(),
+                                granter: r.granter_address.clone(),
+                                grantee: r.grantee_address.clone(),
+                                msg_types: r.msg_types.clone(),
+                                allowance: r.allowance_amount,
+                                status: r.status.clone(),
                             })
-                        })
-                        .collect();
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({"requests": requests}))?
-                    );
+                            .collect(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else {
                     println!("Grant Requests ({} total)", response.requests.len());
                     println!("=======================");
@@ -1149,14 +1104,12 @@ impl DeployCmd {
                 let response = client.query_balance(address, denom).await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "address": response.address,
-                            "denom": response.denom,
-                            "amount": response.amount,
-                        }))?
-                    );
+                    let resp = DeployBalanceResponse {
+                        address: response.address.clone(),
+                        denom: response.denom.clone(),
+                        amount: response.amount.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else {
                     println!("Account Balance:");
                     println!("  Address: {}", response.address);
@@ -1205,18 +1158,27 @@ impl DeployCmd {
                     .await?;
 
                 if ctx.json {
-                    let mut json = serde_json::json!({
-                        "completed": response.completed,
-                    });
-                    if let Some(wf) = &response.workflow {
-                        json["session_id"] = serde_json::json!(&wf.session_id);
-                        json["current_step"] = serde_json::json!(format_step(wf.current_step));
-                        json["status"] = serde_json::json!(format_status(wf.status));
-                    }
-                    if let Some(input) = &response.input_required {
-                        json["input_required"] = serde_json::json!(&input.message);
-                    }
-                    println!("{}", serde_json::to_string_pretty(&json)?);
+                    let resp = DeployRunResponse {
+                        session_id: response
+                            .workflow
+                            .as_ref()
+                            .map(|wf| wf.session_id.clone())
+                            .unwrap_or_default(),
+                        completed: response.completed,
+                        current_step: response
+                            .workflow
+                            .as_ref()
+                            .map(|wf| format_step(wf.current_step).to_string()),
+                        status: response
+                            .workflow
+                            .as_ref()
+                            .map(|wf| format_status(wf.status).to_string()),
+                        input_required: response
+                            .input_required
+                            .as_ref()
+                            .map(|i| i.message.clone()),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if response.completed {
                     println!("Deployment workflow completed!");
                     if let Some(wf) = &response.workflow {
@@ -1240,13 +1202,11 @@ impl DeployCmd {
                 let result = client.close_akash_lease(session_id).await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": result.success,
-                            "message": result.message,
-                        }))?
-                    );
+                    let resp = OperationResponse {
+                        success: result.success,
+                        message: result.message.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if result.success {
                     println!("Lease closed for session: {}", session_id);
                 } else {
@@ -1258,13 +1218,11 @@ impl DeployCmd {
                 let result = client.close_akash_deployment(session_id).await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": result.success,
-                            "message": result.message,
-                        }))?
-                    );
+                    let resp = OperationResponse {
+                        success: result.success,
+                        message: result.message.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if result.success {
                     println!("Deployment closed for session: {}", session_id);
                     println!("  {}", result.message);
@@ -1283,13 +1241,11 @@ impl DeployCmd {
                     .await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": result.success,
-                            "message": result.message,
-                        }))?
-                    );
+                    let resp = OperationResponse {
+                        success: result.success,
+                        message: result.message.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if result.success {
                     println!("Deployment updated for session: {}", session_id);
                     println!("  {}", result.message);
@@ -1303,14 +1259,12 @@ impl DeployCmd {
                 let result = client.topup_akash_escrow(session_id, *amount).await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": result.success,
-                            "message": result.message,
-                            "amount_uakt": amount,
-                        }))?
-                    );
+                    let resp = DeployTopupResponse {
+                        success: result.success,
+                        message: result.message.clone(),
+                        amount_uakt: *amount,
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if result.success {
                     let amount_akt = *amount as f64 / 1_000_000.0;
                     println!("Escrow topped up for session: {}", session_id);
@@ -1326,32 +1280,36 @@ impl DeployCmd {
                     let response = client.get_lease_status(session_id).await?;
 
                     if ctx.json {
-                        let mut json = serde_json::json!({
-                            "deployment_status": response.deployment_status,
-                            "balance_remaining_uakt": response.balance_remaining_uakt,
-                        });
-                        if let Some(lease) = &response.lease {
-                            json["lease"] = serde_json::json!({
-                                "owner": lease.owner,
-                                "dseq": lease.dseq,
-                                "provider": lease.provider,
-                                "state": lease.state,
-                            });
-                        }
-                        if !response.endpoints.is_empty() {
-                            json["endpoints"] = serde_json::json!(response
-                                .endpoints
-                                .iter()
-                                .map(|e| {
-                                    serde_json::json!({
-                                        "service": e.service_name,
-                                        "uri": e.external_uri,
-                                        "port": e.external_port,
-                                    })
-                                })
-                                .collect::<Vec<_>>());
-                        }
-                        println!("{}", serde_json::to_string_pretty(&json)?);
+                        let resp = DeployStatusResponse {
+                            deployment_status: response.deployment_status.clone(),
+                            balance_remaining_uakt: response.balance_remaining_uakt,
+                            lease: response.lease.as_ref().map(|l| LeaseEntry {
+                                owner: l.owner.clone(),
+                                dseq: l.dseq,
+                                gseq: 0,
+                                oseq: 0,
+                                provider: l.provider.clone(),
+                                state: l.state.to_string(),
+                            }),
+                            endpoints: if response.endpoints.is_empty() {
+                                None
+                            } else {
+                                Some(
+                                    response
+                                        .endpoints
+                                        .iter()
+                                        .map(|e| EndpointEntry {
+                                            service: e.service_name.clone(),
+                                            uri: e.external_uri.clone(),
+                                            internal_port: 0,
+                                            external_port: e.external_port,
+                                            protocol: String::new(),
+                                        })
+                                        .collect(),
+                                )
+                            },
+                        };
+                        println!("{}", serde_json::to_string_pretty(&resp)?);
                     } else {
                         println!("Lease Status: {}", response.deployment_status);
                         if let Some(lease) = &response.lease {
@@ -1385,20 +1343,17 @@ impl DeployCmd {
                 let response = client.list_trusted_providers().await?;
 
                 if ctx.json {
-                    let providers: Vec<_> = response
-                        .providers
-                        .iter()
-                        .map(|p| {
-                            serde_json::json!({
-                                "address": p.address,
-                                "label": p.label,
+                    let resp = TrustedProvidersResponse {
+                        providers: response
+                            .providers
+                            .iter()
+                            .map(|p| TrustedProviderEntry {
+                                address: p.address.clone(),
+                                label: p.label.clone(),
                             })
-                        })
-                        .collect();
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({"providers": providers}))?
-                    );
+                            .collect(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else {
                     println!("Trusted Providers ({} total)", response.providers.len());
                     println!("=======================");
@@ -1421,13 +1376,11 @@ impl DeployCmd {
                 let result = client.add_trusted_provider(address, label).await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": result.success,
-                            "message": result.message,
-                        }))?
-                    );
+                    let resp = OperationResponse {
+                        success: result.success,
+                        message: result.message.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if result.success {
                     println!("Trusted provider added: {}", address);
                 } else {
@@ -1439,13 +1392,11 @@ impl DeployCmd {
                 let result = client.remove_trusted_provider(address).await?;
 
                 if ctx.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "success": result.success,
-                            "message": result.message,
-                        }))?
-                    );
+                    let resp = OperationResponse {
+                        success: result.success,
+                        message: result.message.clone(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if result.success {
                     println!("Trusted provider removed: {}", address);
                 } else {
@@ -1455,16 +1406,23 @@ impl DeployCmd {
             }
             DeployCmd::Cert { cmd } => {
                 match cmd {
-                    CertCmd::Create { key_name, account_index } => {
+                    CertCmd::Create {
+                        key_name,
+                        account_index,
+                    } => {
                         // Check if keys exist first
                         let keys = client.list_cosmos_keys().await?;
                         if keys.is_empty() {
-                            println!("No Cosmos keys found. A key is required to create certificates.");
+                            println!(
+                                "No Cosmos keys found. A key is required to create certificates."
+                            );
                             println!();
 
                             // Check if stdin is a terminal for interactive prompt
                             if !std::io::stdin().is_terminal() {
-                                eprintln!("Run 'ergors keys import-mnemonic' to import a key first.");
+                                eprintln!(
+                                    "Run 'ergors keys import-mnemonic' to import a key first."
+                                );
                                 std::process::exit(1);
                             }
 
@@ -1483,18 +1441,23 @@ impl DeployCmd {
                                 let mnemonic = crate::keys::get_mnemonic()?;
 
                                 // Import via gRPC (daemon uses custody password automatically)
-                                let import_resp = client.import_cosmos_key(
-                                    &mnemonic,
-                                    "Akash Deployment Key",  // label
-                                    "default",               // key_name
-                                    "akashnet-2",            // chain_id
-                                    "akash",                 // address_prefix
-                                    true,                    // make_default
-                                    "",                      // password (daemon uses custody)
-                                ).await?;
+                                let import_resp = client
+                                    .import_cosmos_key(
+                                        &mnemonic,
+                                        "Akash Deployment Key", // label
+                                        "default",              // key_name
+                                        "akashnet-2",           // chain_id
+                                        "akash",                // address_prefix
+                                        true,                   // make_default
+                                        "",                     // password (daemon uses custody)
+                                    )
+                                    .await?;
 
                                 if !import_resp.success {
-                                    eprintln!("Failed to import key: {}", import_resp.error_message);
+                                    eprintln!(
+                                        "Failed to import key: {}",
+                                        import_resp.error_message
+                                    );
                                     std::process::exit(1);
                                 }
 
@@ -1504,7 +1467,9 @@ impl DeployCmd {
                                     println!();
                                 }
                             } else {
-                                println!("Run 'ergors keys import-mnemonic' to import a key first.");
+                                println!(
+                                    "Run 'ergors keys import-mnemonic' to import a key first."
+                                );
                                 return Ok(());
                             }
                         }
@@ -1513,7 +1478,9 @@ impl DeployCmd {
                         println!("  Key:   {} (index {})", key_name, account_index);
                         println!();
 
-                        let response = client.create_akash_certificate(key_name, *account_index).await?;
+                        let response = client
+                            .create_akash_certificate(key_name, *account_index)
+                            .await?;
 
                         if response.success {
                             println!("Certificate created successfully!");
@@ -1521,7 +1488,9 @@ impl DeployCmd {
                             println!("  Serial:  {}", response.serial);
                             println!();
                             println!("The encrypted private key has been stored locally.");
-                            println!("You can now run automated deployments with mTLS authentication.");
+                            println!(
+                                "You can now run automated deployments with mTLS authentication."
+                            );
                         } else {
                             eprintln!("Failed to create certificate: {}", response.error_message);
                             eprintln!();
@@ -1531,7 +1500,11 @@ impl DeployCmd {
                         }
                         Ok(())
                     }
-                    CertCmd::Revoke { key_name, account_index, serial } => {
+                    CertCmd::Revoke {
+                        key_name,
+                        account_index,
+                        serial,
+                    } => {
                         println!("Revoking Akash certificate...");
                         println!("  Key:   {} (index {})", key_name, account_index);
                         if let Some(s) = serial {
@@ -1540,11 +1513,13 @@ impl DeployCmd {
                             println!("  Serial: (first valid certificate)");
                         }
 
-                        let result = client.revoke_akash_certificate(
-                            key_name,
-                            *account_index,
-                            serial.as_deref().unwrap_or(""),
-                        ).await?;
+                        let result = client
+                            .revoke_akash_certificate(
+                                key_name,
+                                *account_index,
+                                serial.as_deref().unwrap_or(""),
+                            )
+                            .await?;
 
                         if result.success {
                             println!();
@@ -1555,7 +1530,9 @@ impl DeployCmd {
                             }
                             println!();
                             println!("The local private key has been deleted.");
-                            println!("Run 'ergors deploy cert create' to create a new certificate.");
+                            println!(
+                                "Run 'ergors deploy cert create' to create a new certificate."
+                            );
                         } else {
                             eprintln!();
                             eprintln!("Failed to revoke certificate: {}", result.message);
@@ -1563,12 +1540,17 @@ impl DeployCmd {
                         }
                         Ok(())
                     }
-                    CertCmd::Show { key_name, account_index } => {
+                    CertCmd::Show {
+                        key_name,
+                        account_index,
+                    } => {
                         println!("Querying certificates from chain...");
                         println!("  Key: {} (index {})", key_name, account_index);
                         println!();
 
-                        let response = client.list_akash_certificates(key_name, *account_index, "").await?;
+                        let response = client
+                            .list_akash_certificates(key_name, *account_index, "")
+                            .await?;
 
                         println!("Address: {}", response.address);
                         println!();
@@ -1576,7 +1558,9 @@ impl DeployCmd {
                         if response.certificates.is_empty() {
                             println!("No certificates found for this address.");
                             println!();
-                            println!("Run 'ergors deploy cert create' to create a new certificate.");
+                            println!(
+                                "Run 'ergors deploy cert create' to create a new certificate."
+                            );
                         } else {
                             println!("Certificates:");
                             println!("╔════════════════════════════════╦══════════╦═════════════╗");
@@ -1584,7 +1568,8 @@ impl DeployCmd {
                             println!("╠════════════════════════════════╬══════════╬═════════════╣");
                             for cert in &response.certificates {
                                 let key_status = if cert.has_stored_key { "Yes" } else { "No" };
-                                println!("║ {:30} ║ {:8} ║ {:11} ║",
+                                println!(
+                                    "║ {:30} ║ {:8} ║ {:11} ║",
                                     truncate_str(&cert.serial, 30),
                                     cert.state,
                                     key_status
@@ -1593,12 +1578,15 @@ impl DeployCmd {
                             println!("╚════════════════════════════════╩══════════╩═════════════╝");
 
                             // Check if valid cert has stored key
-                            let valid_with_key = response.certificates.iter()
+                            let valid_with_key = response
+                                .certificates
+                                .iter()
                                 .any(|c| c.state == "valid" && c.has_stored_key);
 
                             if !valid_with_key {
                                 println!();
-                                let has_valid = response.certificates.iter().any(|c| c.state == "valid");
+                                let has_valid =
+                                    response.certificates.iter().any(|c| c.state == "valid");
                                 if has_valid {
                                     println!("⚠️  Warning: Valid certificate exists but private key is not stored locally.");
                                     println!("   mTLS authentication will fail. Consider revoking and creating a new certificate:");
@@ -1619,7 +1607,14 @@ impl DeployCmd {
                 println!("Provider info is automatically queried during bid selection.");
                 println!();
                 println!("Provider: {}", address);
-                println!("Refresh:  {}", if *refresh { "force chain query" } else { "use cache if available" });
+                println!(
+                    "Refresh:  {}",
+                    if *refresh {
+                        "force chain query"
+                    } else {
+                        "use cache if available"
+                    }
+                );
                 println!();
                 println!("Run 'ergors deploy create' to see provider info during deployment.");
                 Ok(())

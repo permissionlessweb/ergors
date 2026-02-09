@@ -35,6 +35,7 @@ macro_rules! llm_entity {
             api_key: Option<String>,
             key_accessor: Option<std::sync::Arc<dyn $crate::traits::ApiKeyMethod>>,
             extra_models: Vec<String>,
+            custom_base_url: Option<String>,
         }
 
         impl $name {
@@ -43,6 +44,7 @@ macro_rules! llm_entity {
                     api_key,
                     key_accessor: None,
                     extra_models: Vec::new(),
+                    custom_base_url: None,
                 }
             }
 
@@ -51,7 +53,25 @@ macro_rules! llm_entity {
                     api_key: None,
                     key_accessor: Some(key_accessor),
                     extra_models: Vec::new(),
+                    custom_base_url: None,
                 }
+            }
+
+            pub fn with_base_url(mut self, base_url: String) -> Self {
+                self.custom_base_url = Some(base_url);
+                self
+            }
+
+            fn effective_base_url(&self) -> &str {
+                let url = self.custom_base_url.as_deref().unwrap_or(Self::BASE_URL);
+                tracing::debug!(
+                    "Provider {} using base_url: {} (custom: {}, default: {})",
+                    Self::PROVIDER_NAME,
+                    url,
+                    self.custom_base_url.is_some(),
+                    Self::BASE_URL
+                );
+                url
             }
 
             pub const ENV_KEY: &'static str = $env_key;
@@ -78,6 +98,7 @@ macro_rules! llm_entity {
             api_key: Option<String>,
             key_accessor: Option<std::sync::Arc<dyn $crate::traits::ApiKeyMethod>>,
             extra_models: Vec<String>,
+            custom_base_url: Option<String>,
         }
 
         impl $name {
@@ -86,6 +107,7 @@ macro_rules! llm_entity {
                     api_key,
                     key_accessor: None,
                     extra_models: Vec::new(),
+                    custom_base_url: None,
                 }
             }
 
@@ -94,7 +116,25 @@ macro_rules! llm_entity {
                     api_key: None,
                     key_accessor: Some(key_accessor),
                     extra_models: Vec::new(),
+                    custom_base_url: None,
                 }
+            }
+
+            pub fn with_base_url(mut self, base_url: String) -> Self {
+                self.custom_base_url = Some(base_url);
+                self
+            }
+
+            fn effective_base_url(&self) -> &str {
+                let url = self.custom_base_url.as_deref().unwrap_or(Self::BASE_URL);
+                tracing::debug!(
+                    "Provider {} using base_url: {} (custom: {}, default: {})",
+                    Self::PROVIDER_NAME,
+                    url,
+                    self.custom_base_url.is_some(),
+                    Self::BASE_URL
+                );
+                url
             }
 
             pub const ENV_KEY: &'static str = $env_key;
@@ -155,7 +195,7 @@ macro_rules! llm_entity {
                     self,
                     client,
                     request,
-                    Self::BASE_URL,
+                    self.effective_base_url(),
                     Self::PROVIDER_NAME,
                 ).await
             }

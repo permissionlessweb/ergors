@@ -124,7 +124,7 @@ pub async fn ingest_github_repo(
         };
 
         // Create RAG instance
-        let rag = match crate::rag::new_remote_with_client(
+        let rag = match crate::proxy::rag::new_remote_with_client(
             &ctx.data().storage,
             ctx.data().rag_client.clone(),
             &rag_config.endpoint,

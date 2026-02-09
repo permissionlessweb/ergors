@@ -5,21 +5,20 @@ use bytes::Bytes;
 use reqwest::Client;
 use tracing::{debug, error};
 
-/// Anthropic API base URL
-pub const ANTHROPIC_API_URL: &str = "https://api.anthropic.com";
-/// OpenAI API base URL
-pub const OPENAI_API_URL: &str = "https://api.openai.com";
-
-/// Forward a request to the Anthropic API.
+/// Forward a request to an Anthropic-compatible API.
+///
+/// `base_url` is the provider's configured base URL (e.g., "https://api.anthropic.com").
+/// The `/v1/messages` path is appended automatically.
 pub async fn forward_to_anthropic(
     client: &Client,
     body: Bytes,
     api_key: &str,
+    base_url: &str,
     anthropic_version: Option<&str>,
     anthropic_beta: Option<&str>,
 ) -> Result<reqwest::Response> {
-    let url = format!("{}/v1/messages", ANTHROPIC_API_URL);
-    debug!("Forwarding request to Anthropic: {}", url);
+    let url = format!("{}/v1/messages", base_url);
+    debug!("Forwarding request to Anthropic-compatible API: {}", url);
 
     let mut request = client
         .post(&url)
@@ -44,15 +43,19 @@ pub async fn forward_to_anthropic(
     Ok(response)
 }
 
-/// Forward a request to the OpenAI API.
+/// Forward a request to an OpenAI-compatible API.
+///
+/// `base_url` is the provider's configured base URL (e.g., "https://api.openai.com").
+/// The `/v1/chat/completions` path is appended automatically.
 pub async fn forward_to_openai(
     client: &Client,
     body: Bytes,
     api_key: &str,
+    base_url: &str,
     organization: Option<&str>,
 ) -> Result<reqwest::Response> {
-    let url = format!("{}/v1/chat/completions", OPENAI_API_URL);
-    debug!("Forwarding request to OpenAI: {}", url);
+    let url = format!("{}/v1/chat/completions", base_url);
+    debug!("Forwarding request to OpenAI-compatible API: {}", url);
 
     let mut request = client
         .post(&url)

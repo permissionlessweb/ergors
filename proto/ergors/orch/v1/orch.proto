@@ -1061,7 +1061,7 @@ message CosmosKeyStore {
   string default_key_name = 5;
 }
 
-// Configuration for Akash network deployment endpoints
+// Configuration for Akash network deployment endpoints (DEPRECATED - use CosmosChainConfig)
 message AkashDeployConfig {
   // Chain ID (e.g. "akashnet-2" for mainnet, "local" for dev)
   string chain_id = 3;
@@ -1092,14 +1092,74 @@ message AkashDeployConfig {
 }
 
 // ==============================================
+// Generic Cosmos Chain Configuration (Cnidarium-backed)
+// ==============================================
+
+// Configuration for any Cosmos SDK chain
+// Stored in cnidarium for deterministic, versioned config management
+message CosmosChainConfig {
+  // Chain ID (e.g., "akashnet-2", "osmosis-1", "cosmoshub-4", "local")
+  string chain_id = 1;
+
+  // Human-readable chain name (e.g., "Akash Network", "Osmosis", "Cosmos Hub")
+  string chain_name = 2;
+
+  // Bech32 address prefix (e.g., "akash", "osmo", "cosmos")
+  string bech32_prefix = 3;
+
+  // Native token denom (e.g., "uakt", "uosmo", "uatom")
+  string denom = 4;
+
+  // Gas prices for transactions (e.g., "0.025uakt")
+  string gas_prices = 5;
+
+  // Gas adjustment multiplier (e.g., 1.3)
+  double gas_adjustment = 6;
+
+  // RPC endpoints for tendermint queries (e.g., "https://rpc.akash.network:443")
+  repeated string rpc_endpoints = 7;
+
+  // gRPC endpoints for Cosmos SDK queries (e.g., "grpc.akash.network:9090")
+  repeated string grpc_endpoints = 8;
+
+  // REST/LCD endpoints for HTTP queries (e.g., "https://api.akash.network")
+  repeated string rest_endpoints = 9;
+
+  // Maximum retry attempts per endpoint before failover (default: 2)
+  uint32 max_retries_per_endpoint = 10;
+
+  // Total maximum retry attempts across all endpoints (default: 6)
+  uint32 max_total_retries = 11;
+
+  // Connection timeout in seconds (default: 10)
+  uint32 connection_timeout_seconds = 12;
+
+  // Keyring backend for this chain ("os", "file", "test")
+  string keyring_backend = 13;
+
+  // Default key name to use for transactions on this chain
+  string default_key_name = 14;
+
+  // Chain-specific features/capabilities
+  repeated string features = 15;  // e.g., ["authz", "feegrant", "ibc"]
+
+  // Optional: Trusted provider/validator addresses (for Akash deployments)
+  repeated string trusted_addresses = 16;
+
+  // Timestamp when this config was last updated (seconds since epoch)
+  int64 updated_at = 17;
+
+  // Who last updated this config (node identity or admin address)
+  string updated_by = 18;
+}
+
+// ==============================================
 // Proxy Router Configuration (Immutable Audit Log)
 // ==============================================
 
 // Configuration for dynamic LLM proxy routing
 // Stored in cnidarium for deterministic, immutable logging of endpoint changes
 message ProxyRouterConfig {
-  // Override base URL for Ollama API requests
-  string ollama_base_url = 3 [deprecated = true];
   // Model-specific routing rules (glob patterns -> provider IDs)
   // e.g., "claude-*" -> "anthropic"
   // e.g., "llama-*" -> "local-ollama"
@@ -1127,11 +1187,7 @@ message InferenceProviderConfig {
   // Base URL for API requests (e.g., "https://api.openai.com", "http://localhost:11434")
   string base_url = 2;
 
-  // API key for authentication (stored as plaintext reference or encrypted blob)
-  // For custody-managed keys, use api_key_ref instead
-  string api_key = 3;
-
-  // Reference to a custody-managed API key (alternative to api_key)
+  // Reference to a custody-managed API key  
   // Format: "custody://{key_id}" or "env://{ENV_VAR_NAME}"
   string api_key_ref = 4;
 

@@ -89,6 +89,10 @@ start:
 watch:
     cargo watch -x "build -p {{engine}}"
 
+# Sync .team/agents/ to .claude/skills/ structure
+sync-agents:
+    @./scripts/sync-claude-agents.sh
+
 # ════════════════════════════════════════════════════════════════════════════
 # Proto generation
 # ════════════════════════════════════════════════════════════════════════════
@@ -133,18 +137,162 @@ test-verbose:
 test-jwt:
     @cd tests/scripts/jwt-verify && just test
 
-# Run E2E integration tests (all suites)
-e2e *args:
-    @echo "🧪 Running E2E integration tests..."
-    @bash tests/e2e/main.sh {{args}}
+# ════════════════════════════════════════════════════════════════════════════
+# E2E Testing - Unified Interface
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Usage:
+#   just e2e                          # Run all test suites
+#   just e2e <suite>                  # Run specific suite
+#   just e2e <suite> --verbose        # Run with verbose output
+#   just e2e <suite> --skip-build     # Skip building ergors
+#   just e2e list                     # List available test suites
+#   just e2e help                     # Show detailed help
+#
+# Available Suites:
+#   all              - Run all test suites (default)
+#   network          - Network setup and connectivity tests
+#   grants           - Grant management and validation tests
+#   deployment       - Akash deployment workflow tests
+#   security         - Security and permissions tests
+#   contracts        - CosmWasm contract integration tests
+#   api              - gRPC/REST API endpoint tests
+#   bootstrap        - Node bootstrap and P2P file transfer tests
+#   ethereum         - Ethereum integration tests
+#   inference        - LLM inference proxy routing tests
+#   sdl-storage      - SDL storage and retrieval tests
+#   chain-config     - Chain configuration tests
+#   sentinel         - Sentinel mode tests (standalone, no infra)
+#
+# Common Options:
+#   --skip-build        Skip building ergors binary
+#   --skip-contracts    Skip building CosmWasm contracts
+#   --skip-network      Skip ERGORS network setup (use existing)
+#   --skip-akash        Skip Akash/Kind setup (use existing)
+#   --skip-cleanup      Keep everything running after tests
+#   --skip-ethereum     Skip Ethereum/Anvil setup
+#   --skip-inference    Skip mock inference provider
+#   --verbose           Enable verbose output
+#
+# Examples:
+#   just e2e inference                    # Test inference routing
+#   just e2e inference --verbose          # With verbose output
+#   just e2e deployment --skip-build      # Skip build step
+#   just e2e sentinel --skip-cleanup      # Keep processes running
+#   just e2e all --verbose --skip-build   # All tests, verbose, no build
+#
+# ════════════════════════════════════════════════════════════════════════════
 
-# Run specific E2E test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|all)
-e2e-suite suite:
-    @bash tests/e2e/main.sh --test {{suite}}
+# Run E2E tests (default: all suites)
+[private]
+e2e-run suite="all" *args="":
+    @bash tests/e2e/main.sh --test {{suite}} {{args}}
 
-# Run E2E tests with verbose output
-e2e-verbose *args:
-    @bash tests/e2e/main.sh --verbose {{args}}
+# E2E test dispatcher with smart defaults
+e2e suite="all" *args="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Handle special commands
+    case "{{suite}}" in
+        list)
+            echo "📋 Available E2E Test Suites:"
+            echo ""
+            echo "  all              Run all test suites (default)"
+            echo "  network          Network setup and connectivity tests"
+            echo "  grants           Grant management and validation tests"
+            echo "  deployment       Akash deployment workflow tests"
+            echo "  security         Security and permissions tests"
+            echo "  contracts        CosmWasm contract integration tests"
+            echo "  api              gRPC/REST API endpoint tests"
+            echo "  bootstrap        Node bootstrap and P2P file transfer tests"
+            echo "  ethereum         Ethereum integration tests"
+            echo "  inference        LLM inference proxy routing tests"
+            echo "  sdl-storage      SDL storage and retrieval tests"
+            echo "  chain-config     Chain configuration tests"
+            echo "  sentinel         Sentinel mode tests (standalone)"
+            echo ""
+            echo "Usage: just e2e <suite> [options]"
+            echo "Run 'just e2e help' for detailed documentation"
+            ;;
+
+        help)
+            echo "════════════════════════════════════════════════════════════════"
+            echo "ERGORS E2E Testing - Unified Interface"
+            echo "════════════════════════════════════════════════════════════════"
+            echo ""
+            echo "USAGE:"
+            echo "  just e2e [suite] [options]"
+            echo ""
+            echo "SUITES:"
+            echo "  all              Run all test suites (default)"
+            echo "  network          Network setup and connectivity"
+            echo "  grants           Grant management and validation"
+            echo "  deployment       Akash deployment workflows"
+            echo "  security         Security and permissions"
+            echo "  contracts        CosmWasm contract integration"
+            echo "  api              gRPC/REST API endpoints"
+            echo "  bootstrap        Node bootstrap and P2P transfers"
+            echo "  ethereum         Ethereum integration"
+            echo "  inference        LLM inference proxy routing"
+            echo "  sdl-storage      SDL storage and retrieval"
+            echo "  chain-config     Chain configuration"
+            echo "  sentinel         Sentinel mode (standalone)"
+            echo ""
+            echo "OPTIONS:"
+            echo "  --skip-build        Skip building ergors binary"
+            echo "  --skip-contracts    Skip building CosmWasm contracts"
+            echo "  --skip-network      Skip ERGORS network setup"
+            echo "  --skip-akash        Skip Akash/Kind setup"
+            echo "  --skip-cleanup      Keep everything running after tests"
+            echo "  --skip-ethereum     Skip Ethereum/Anvil setup"
+            echo "  --skip-inference    Skip mock inference provider"
+            echo "  --verbose           Enable verbose output"
+            echo ""
+            echo "EXAMPLES:"
+            echo "  just e2e                          # Run all tests"
+            echo "  just e2e inference                # Test inference only"
+            echo "  just e2e inference --verbose      # With verbose output"
+            echo "  just e2e deployment --skip-build  # Skip build step"
+            echo "  just e2e all --skip-cleanup       # Keep running after"
+            echo ""
+            echo "INFRASTRUCTURE AUTO-SKIP:"
+            echo "  Tests automatically skip unnecessary infrastructure:"
+            echo "  • network, contracts, api → skip Akash, Ethereum, inference"
+            echo "  • inference → skip Akash, Ethereum"
+            echo "  • grants, bootstrap → skip Ethereum, inference"
+            echo ""
+            echo "For more details, see: tests/e2e/README.md"
+            ;;
+
+        *)
+            # Validate suite name
+            VALID_SUITES=(all network grants deployment security contracts api bootstrap ethereum inference sdl-storage chain-config sentinel)
+            SUITE_VALID=false
+            for valid in "${VALID_SUITES[@]}"; do
+                if [[ "{{suite}}" == "$valid" ]]; then
+                    SUITE_VALID=true
+                    break
+                fi
+            done
+
+            if [[ "$SUITE_VALID" == "false" ]]; then
+                echo "❌ Unknown test suite: {{suite}}"
+                echo ""
+                echo "Available suites:"
+                echo "  all, network, grants, deployment, security, contracts, api,"
+                echo "  bootstrap, ethereum, inference, sdl-storage, chain-config, sentinel"
+                echo ""
+                echo "Run 'just e2e list' to see all suites"
+                echo "Run 'just e2e help' for detailed help"
+                exit 1
+            fi
+
+            # Run the test suite
+            echo "🧪 Running E2E test suite: {{suite}}"
+            bash tests/e2e/main.sh --test {{suite}} {{args}}
+            ;;
+    esac
 
 # Generate code coverage report (format: html or json, default: html)
 coverage format="html" *args="--workspace":
@@ -329,4 +477,11 @@ i := "install"
 cov := "coverage"
 cw := "contracts-optimize"
 ct := "contracts-test"
-e := "e2e"
+
+# E2E test suite shortcuts
+e2e-inf := "e2e inference"
+e2e-net := "e2e network"
+e2e-api := "e2e api"
+e2e-dep := "e2e deployment"
+e2e-sec := "e2e security"
+e2e-sen := "e2e sentinel"

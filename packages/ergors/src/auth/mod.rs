@@ -32,6 +32,10 @@
 
 pub mod handlers;
 pub mod middleware;
+pub mod operation_recorder;
+pub use operation_recorder::record_operation;
+pub mod grpc;
+
 
 pub use handlers::{
     handle_check_authorization, handle_delete_authenticator, handle_list_authenticators,

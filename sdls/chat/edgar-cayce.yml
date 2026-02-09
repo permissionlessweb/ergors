@@ -1,0 +1,157 @@
+---
+version: "2.0"
+services:
+  ergors:
+    image: permissionlessweb/ergors:v0.0.1
+    expose:
+      - port: 8080
+        as: 80
+        to:
+          - global: true
+      - port: 50051
+        as: 50051
+        proto: tcp
+        to:
+          - global: true
+      - port: 26969
+        as: 26969
+        proto: tcp
+        to:
+          - global: true
+    env:
+      - ERGORS_ADMIN_PUBKEY=REPLACE_WITH_YOUR_ADMIN_PUBKEY_HEX
+      - ERGORS_API_PORT=8080
+      - ERGORS_GRPC_PORT=50051
+      - NODE_TYPE=NODE_TYPE_EXECUTOR
+      - P2P_PORT=26969
+      - MAIN_INFERENCE_URL=http://main-inference:8000
+      - SUBAGENT_INFERENCE_URL=http://sub-agent:8000
+
+  main-inference:
+    image: lmsysorg/sglang:dev-cu13
+    expose:
+      - port: 8000
+        as: 8000
+        to:
+          - service: ergors
+    command:
+      - bash
+      - "-c"
+    args:
+      - >-
+        python3 -m sglang.launch_server --model-path zai-org/GLM-4.7-Flash --tp-size 1 --host 0.0.0.0 --port 8000 --trust-remote-code --mem-fraction-static 0.87
+    params:
+      storage:
+        shm:
+          mount: /dev/shm
+        data:
+          mount: /root/.cache
+          readOnly: false
+
+  sub-agent:
+    image: lmsysorg/sglang:dev-cu13
+    expose:
+      - port: 8000
+        as: 8000
+        to:
+          - service: ergors
+    command:
+      - bash
+      - "-c"
+    args:
+      - >-
+        python3 -m sglang.launch_server --model-path Qwen/Qwen3-Coder-Next --tp-size 2 --host 0.0.0.0 --port 8000 --trust-remote-code --mem-fraction-static 0.87
+    params:
+      storage:
+        shm:
+          mount: /dev/shm
+        data:
+          mount: /root/.cache
+          readOnly: false
+
+profiles:
+  compute:
+    ergors:
+      resources:
+        cpu:
+          units: 2
+        memory:
+          size: 4Gi
+        storage:
+          - size: 20Gi
+    main-inference:
+      resources:
+        cpu:
+          units: 32
+        memory:
+          size: 128Gi
+        storage:
+          - size: 50Gi
+          - name: data
+            size: 500Gi
+            attributes:
+              persistent: true
+              class: beta3
+          - name: shm
+            size: 20Gi
+            attributes:
+              class: ram
+              persistent: false
+        gpu:
+          units: 1
+          attributes:
+            vendor:
+              nvidia:
+                - model: h100
+                  ram: 80Gi
+    sub-agent:
+      resources:
+        cpu:
+          units: 32
+        memory:
+          size: 128Gi
+        storage:
+          - size: 50Gi
+          - name: data
+            size: 500Gi
+            attributes:
+              persistent: true
+              class: beta3
+          - name: shm
+            size: 20Gi
+            attributes:
+              class: ram
+              persistent: false
+        gpu:
+          units: 2
+          attributes:
+            vendor:
+              nvidia:
+                - model: h100
+                  ram: 80Gi
+  placement:
+    dcloud:
+      pricing:
+        ergors:
+          denom: uakt
+          amount: 10000
+        main-inference:
+          denom: uakt
+          amount: 1000000
+        sub-agent:
+          denom: uakt
+          amount: 1000000
+
+deployment:
+  ergors:
+    dcloud:
+      profile: ergors
+      count: 1
+  main-inference:
+    dcloud:
+      profile: main-inference
+      count: 1
+  sub-agent:
+    dcloud:
+      profile: sub-agent
+      count: 1

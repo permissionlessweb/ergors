@@ -1,7 +1,6 @@
 use crate::{
-    deploy::cosmos_client::CosmosClient,
-    storage::ErgorsStorage,
-    AkashDeploymentContext, ErgorsAppState, ErgorsConfig, ErgorsNetworkManifold, LlmRouter,
+    deploy::cosmos_client::CosmosClient, storage::ErgorsStorage, AkashDeploymentContext,
+    ErgorsAppState, ErgorsConfig, ErgorsNetworkManifold, LlmRouter,
 };
 use axum::{
     extract::{Query, State},
@@ -16,7 +15,7 @@ use ho_std::keys::commonware::NodePrivKey;
 use ho_std::llm::{EncryptedApiKeyManager, HoError};
 use ho_std::network::AuthLayer;
 use ho_std::storage::identity::EncryptedIdentityBuilder;
-use ho_std::traits::NodeIdentityCustody;
+use ho_std::traits::{ApiKeyMethod, NodeIdentityCustody};
 use ho_std::{
     error::{error_json_detailed, HoResult},
     traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityCustodyBackend, NodeIdentityTrait},
@@ -133,7 +132,7 @@ impl Server {
         // Use the new generic route structure from ho-std
         let (public_router, protected_router) = ho_std::define_routes! {
             public_routes: [
-                { path: "/api/prompt", method: post, handler: crate::orchestrator::handle_prompt },
+                { path: "/api/prompt", method: post, handler: crate::proxy::router::handle_prompt },
                 { path: "/api/operations", method: get, handler: handle_query_operations },
                 { path: "/cosmos/extend-vote", method: get, handler: crate::headstash::vote_ext::handle_vote_extension },
                 { path: "/headstash/claim", method: post, handler: crate::headstash::claim::handle_headstash_claim },
@@ -141,7 +140,7 @@ impl Server {
                 { path: "/headstash/watch", method: get, handler: crate::headstash::indexer::handle_indexer_instructions },
                 { path: "/network/topology", method: get, handler: handle_network_topology },
                 // Open Responses API endpoint
-                { path: "/v1/responses", method: post, handler: crate::orchestrator::handle_open_responses },
+                { path: "/v1/responses", method: post, handler: crate::proxy::router::handle_open_responses },
                 // Proxy endpoints for CLI tools (Claude Code, opencode)
                 { path: "/v1/messages", method: post, handler: crate::proxy::handle_anthropic_proxy },
                 { path: "/v1/chat/completions", method: post, handler: crate::proxy::handle_openai_proxy },
@@ -172,7 +171,7 @@ impl Server {
                 { path: "/api/proxy/sessions/{id}", method: get, handler: crate::proxy::handle_get_session },
                 { path: "/api/proxy/config", method: post, handler: crate::proxy::handle_update_proxy_config },
                 { path: "/api/proxy/config", method: get, handler: crate::proxy::handle_get_proxy_config },
-                { path: "/orchestrate/fractal", method: post, handler: crate::orchestrator::handle_fractal_hoe_creation },
+                { path: "/orchestrate/fractal", method: post, handler: crate::proxy::router::handle_fractal_hoe_creation },
                 { path: "/orchestrate/prune", method: post, handler: crate::storage::handle_prune },
                 // Authenticator management endpoints
                 { path: "/auth/register", method: post, handler: crate::auth::handle_register_authenticator },
@@ -200,7 +199,7 @@ impl Server {
             .layer(TraceLayer::new_for_http())
             .layer(middleware::from_fn_with_state(
                 self.state.clone(),
-                crate::middleware::record_operation,
+                crate::auth::operation_recorder::record_operation,
             ))
             .with_state(self.state);
 
@@ -246,10 +245,17 @@ impl Server {
         // Start network using custody-backed identity (returns password for API key decryption)
         let custody_password = Self::start_network_with_custody(&mut nm, &c).await?;
 
-        // Load encrypted API keys and import to Cnidarium storage
-        if let Some(password) = &custody_password {
-            Self::load_and_store_encrypted_api_keys(&c, &s, password).await?;
-        }
+        // Load encrypted API keys and build custody-backed accessor
+        let key_accessor: Option<Arc<tokio::sync::RwLock<dyn ApiKeyMethod>>> =
+            if let Some(password) = &custody_password {
+                Self::load_and_store_encrypted_api_keys(&c, &s, password).await?
+                    .map(|mgr| Arc::new(tokio::sync::RwLock::new(mgr)) as Arc<tokio::sync::RwLock<dyn ApiKeyMethod>>)
+            } else {
+                None
+            };
+
+        // Load LLM entities from config into Cnidarium storage
+        Self::load_and_store_llm_entities(&c, &s).await?;
 
         // Initialize CosmWasm VM runtime
         #[cfg(feature = "cw")]
@@ -282,18 +288,19 @@ impl Server {
             contract_manager.deploy_required_contracts(&c).await?;
         }
 
-        // Load proxy router config from storage (or use default if none stored)
-        let proxy_router_config = match storage_arc.get_proxy_router_config().await {
+        // Load proxy router config from storage and populate with LLM entities
+        let mut proxy_router_config = match storage_arc.get_proxy_router_config().await {
             Ok(Some(stored_config)) => {
                 tracing::info!(
                     "📍 Loaded proxy router config from storage (version {})",
                     stored_config.version
                 );
-                // Use stored config directly (proto type is now the in-memory type)
                 stored_config
             }
             Ok(None) => {
-                tracing::info!("📍 No stored proxy router config found, using defaults");
+                tracing::info!(
+                    "📍 No stored proxy router config found, creating from LLM entities"
+                );
                 ho_std::types::ergors::orch::v1::ProxyRouterConfig::default()
             }
             Err(e) => {
@@ -305,12 +312,17 @@ impl Server {
             }
         };
 
+        // Populate proxy router config with LLM entities
+        Self::populate_proxy_config_from_llm_entities(&storage_arc, &mut proxy_router_config)
+            .await?;
+
         // Initialize Akash deployment context if config present and keys available
         let akash_context =
             Self::init_akash_context(&c, &storage_arc, custody_password.as_deref()).await;
 
         // Create LLM router
-        let llm_router = Arc::new(LlmRouter::new(&storage_arc.cs.latest_snapshot(), c.llm().deref()).await?);
+        let llm_router =
+            Arc::new(LlmRouter::new(&storage_arc.cs.latest_snapshot(), c.llm().deref()).await?);
 
         // Initialize gateway manager (for Discord, Nostr, etc.)
         let gateway_manager = Self::init_gateway_manager(&llm_router, &storage_arc, &c).await;
@@ -327,9 +339,10 @@ impl Server {
                 Instant::now(),
                 // c == config
                 c.clone(),
-                // pr == proxy router (loaded from storage or default)
+                // pr == proxy router (loaded from storage or default, with custody key accessor)
                 Arc::new(tokio::sync::RwLock::new(crate::proxy::ProxyRouter::new(
                     proxy_router_config,
+                    key_accessor,
                 ))),
                 // akash == Akash deployment context (optional)
                 akash_context,
@@ -410,9 +423,18 @@ impl Server {
 
         tracing::info!("🚀 Initializing Akash deployment context...");
         tracing::info!("   Chain:    {}", akash_config.chain_id);
-        tracing::info!("   RPC:      {} endpoint(s)", akash_config.rpc_endpoints.len());
-        tracing::info!("   gRPC:     {} endpoint(s)", akash_config.grpc_endpoints.len());
-        tracing::info!("   REST:     {} endpoint(s)", akash_config.rest_endpoints.len());
+        tracing::info!(
+            "   RPC:      {} endpoint(s)",
+            akash_config.rpc_endpoints.len()
+        );
+        tracing::info!(
+            "   gRPC:     {} endpoint(s)",
+            akash_config.grpc_endpoints.len()
+        );
+        tracing::info!(
+            "   REST:     {} endpoint(s)",
+            akash_config.rest_endpoints.len()
+        );
 
         // Get Cosmos key store from storage (use empty store if not found)
         let key_store = match storage.get_cosmos_key_store().await {
@@ -440,7 +462,9 @@ impl Server {
         // Create key manager from store (loads salt from existing keys)
         // NOTE: We keep it locked on startup - it will be unlocked with password during deployment
         let key_manager = EncryptedCosmosKeyManager::from_store(&key_store);
-        tracing::info!("🔐 Cosmos key manager initialized (locked - will unlock during deployment)");
+        tracing::info!(
+            "🔐 Cosmos key manager initialized (locked - will unlock during deployment)"
+        );
 
         // Get endpoints from config
         let endpoints = CosmosEndpoints::from_akash_config(&akash_config);
@@ -642,26 +666,6 @@ impl Server {
             }
         }
     }
-}
-
-/// Restore terminal echo after password prompt interruption.
-/// rpassword disables echo during input; if interrupted, we must re-enable it.
-#[cfg(unix)]
-fn restore_terminal_echo() {
-    use std::os::unix::io::AsRawFd;
-    if let Ok(mut termios) = termios::Termios::from_fd(std::io::stdin().as_raw_fd()) {
-        termios.c_lflag |= termios::ECHO | termios::ICANON;
-        let _ = termios::tcsetattr(std::io::stdin().as_raw_fd(), termios::TCSANOW, &termios);
-    }
-    eprintln!(); // Newline after prompt
-}
-
-#[cfg(not(unix))]
-fn restore_terminal_echo() {
-    eprintln!(); // Newline after prompt
-}
-
-impl Server {
     /// Import an existing private key to encrypted custody
     ///
     /// Used when migrating from external key sources or restoring from backup.
@@ -698,12 +702,12 @@ impl Server {
     /// 1. Checks if encrypted API keys already exist in Cnidarium storage
     /// 2. If not, loads from `api-keys.enc` file in the data directory
     /// 3. Imports the encrypted store into Cnidarium for network consensus
-    /// 4. Decrypts keys and sets them as environment variables for LLM router
+    /// 4. Decrypts keys and returns custody-backed ApiKeyMethod accessor
     async fn load_and_store_encrypted_api_keys(
         c: &ErgorsConfig,
         s: &ErgorsStorage,
         password: &str,
-    ) -> HoResult<()> {
+    ) -> HoResult<Option<EncryptedApiKeyManager>> {
         use cnidarium::StateWrite as _;
         use ho_std::llm::state_ext::{state_key, StateReadExt};
         use ho_std::Message as _;
@@ -715,14 +719,20 @@ impl Server {
         let snapshot = s.cs.latest_snapshot();
         let existing_store = snapshot.get_encrypted_api_key_store().await?;
 
-        if existing_store.is_some() {
+        if let Some(store) = existing_store {
             info!("🔐 Encrypted API keys found in Cnidarium storage");
 
-            // Decrypt and set environment variables for LLM router
-            let decrypted_keys = snapshot.load_and_decrypt_api_keys(password).await?;
-            Self::set_api_keys_env(&decrypted_keys);
+            let mut manager = EncryptedApiKeyManager::from_store(&store);
+            manager.unlock(password).map_err(|e| {
+                HoError::Crypto(format!("Failed to unlock API key manager: {}", e))
+            })?;
+            manager.load_store(&store).map_err(|e| {
+                HoError::Crypto(format!("Failed to decrypt API keys: {}", e))
+            })?;
 
-            return Ok(());
+            let count = manager.available_providers_sync();
+            info!("🔑 Loaded {} API keys from custody", count);
+            return Ok(Some(manager));
         }
 
         // No keys in Cnidarium - check for file
@@ -731,7 +741,7 @@ impl Server {
                 "📋 No encrypted API keys file at {} - skipping",
                 encrypted_file
             );
-            return Ok(());
+            return Ok(None);
         }
 
         // Load encrypted store from file
@@ -758,44 +768,131 @@ impl Server {
             store.keys.len()
         );
 
-        // Decrypt and set environment variables for LLM router
+        // Decrypt and return as accessor
         let mut manager = EncryptedApiKeyManager::from_store(&store);
         manager
             .unlock(password)
             .map_err(|e| HoError::Crypto(format!("Failed to unlock API key manager: {}", e)))?;
 
-        let decrypted_keys = manager
+        manager
             .load_store(&store)
             .map_err(|e| HoError::Crypto(format!("Failed to decrypt API keys: {}", e)))?;
 
-        Self::set_api_keys_env(&decrypted_keys);
+        let count = manager.available_providers_sync();
+        info!("🔑 Loaded {} API keys from custody", count);
+        Ok(Some(manager))
+    }
+
+    /// Load LLM entities from config and store in Cnidarium storage
+    ///
+    /// This method:
+    /// 1. Checks if entities are already stored in Cnidarium
+    /// 2. If not, imports entities from config.toml
+    /// 3. Stores them in verifiable storage for consensus
+    async fn load_and_store_llm_entities(c: &ErgorsConfig, s: &ErgorsStorage) -> HoResult<()> {
+        use ho_std::llm::state_ext::StateReadExt;
+        use ho_std::llm::state_ext::StateWriteExt;
+
+        let snapshot = s.cs.latest_snapshot();
+        let existing_providers = snapshot.get_llm_providers().await?;
+
+        if !existing_providers.is_empty() {
+            info!(
+                "📍 Found {} LLM entities in storage - skipping import",
+                existing_providers.len()
+            );
+            return Ok(());
+        }
+
+        // Get entities from config
+        let entities = &c.llm().entities;
+
+        if entities.is_empty() {
+            info!("📋 No LLM entities configured in config.toml");
+            return Ok(());
+        }
+
+        // Store entities in Cnidarium
+        let mut delta = cnidarium::StateDelta::new(s.cs.latest_snapshot());
+        delta.put_llm_providers(entities);
+        s.cs.commit(delta)
+            .await
+            .map_err(|e| HoError::Storage(format!("Failed to commit LLM entities: {}", e)))?;
+
+        info!(
+            "✅ Imported {} LLM entities to Cnidarium storage",
+            entities.len()
+        );
+
+        // Log each entity with details
+        for entity in entities {
+            info!(
+                "   - {} (base_url: {}, models: {})",
+                entity.name,
+                entity.base_url,
+                entity.models.join(", ")
+            );
+        }
 
         Ok(())
     }
 
-    /// Set decrypted API keys as environment variables for LLM router
-    fn set_api_keys_env(keys: &HashMap<String, String>) {
-        use ho_std::constants::*;
+    /// Populate proxy router config with LLM entities from storage
+    ///
+    /// Converts LlmEntity configs to InferenceProviderConfig for the proxy router
+    async fn populate_proxy_config_from_llm_entities(
+        s: &ErgorsStorage,
+        config: &mut ProxyRouterConfig,
+    ) -> HoResult<()> {
+        use ho_std::llm::state_ext::StateReadExt;
+        use ho_std::types::ergors::orch::v1::InferenceProviderType;
 
-        for (provider, api_key) in keys {
-            let env_var = match provider.as_str() {
-                "anthropic" => ANTHROPIC_API_KEY,
-                "openai" => OPENAI_API_KEY,
-                "grok" => GROK_API_KEY,
-                "akashml" => AKASHML_KEY,
-                "kimi" => KIMI_API_KEY,
-                _ => {
-                    // Use provider name uppercased with _API_KEY suffix
-                    let env_name = format!("{}_API_KEY", provider.to_uppercase());
-                    std::env::set_var(&env_name, api_key);
-                    info!("🔑 Set {} from encrypted storage", env_name);
-                    continue;
-                }
+        let snapshot = s.cs.latest_snapshot();
+        let entities = snapshot.get_llm_providers().await?;
+
+        if entities.is_empty() {
+            info!("⚠️  No LLM entities found in storage for proxy router");
+            return Ok(());
+        }
+
+        // Convert LlmEntity to InferenceProviderConfig
+        for entity in &entities {
+            let provider_type = match entity.name.to_lowercase().as_str() {
+                "openai" => InferenceProviderType::Openai,
+                "anthropic" => InferenceProviderType::Anthropic,
+                "ollama" => InferenceProviderType::Ollama,
+                "grok" => InferenceProviderType::Openai, // Grok uses OpenAI-compatible API
+                "akashml" | "akash" => InferenceProviderType::Openai, // Akash uses OpenAI-compatible API
+                _ => InferenceProviderType::Openai, // Default to OpenAI-compatible
             };
 
-            std::env::set_var(env_var, api_key);
-            info!("🔑 Set {} from encrypted storage", env_var);
+            let provider_config = InferenceProviderConfig {
+                provider_id: entity.name.clone(),
+                base_url: entity.base_url.clone(),
+                api_key_ref: String::new(),
+                enabled: entity.enabled,
+                provider_type: provider_type as i32,
+                ..Default::default()
+            };
+
+            config
+                .providers
+                .insert(entity.name.clone(), provider_config);
+
+            // Add model routes for this provider
+            for model in &entity.models {
+                config
+                    .model_routes
+                    .insert(model.clone(), entity.name.clone());
+            }
         }
+
+        info!(
+            "✅ Populated proxy router with {} providers from LLM entities",
+            entities.len()
+        );
+
+        Ok(())
     }
 
     /// Validate that all enabled LLM providers have API keys configured
@@ -875,125 +972,23 @@ impl Server {
 
         Ok(())
     }
+}
 
-    // /// Encrypt and store API keys from environment into the database
-    // ///
-    // /// This function runs on server startup and:
-    // /// 1. Reads api-keys.json config (env vars already loaded by Server::new)
-    // /// 2. Encrypts each API key with the node's private key
-    // /// 3. Stores encrypted keys in the database
-    // async fn encrypt_and_store_api_keys(c: &ErgorsConfig, s: &ErgorsStorage) -> HoResult<()> {
-    //     use ho_std::constants::LLM_API_KEYS_FILE;
-    //     use ho_std::custody::encrypted::encrypt_with_node_key;
-    //     use ho_std::llm::state_ext::StateWriteExt;
-    //     use rand_core::OsRng;
-    //     use std::env;
+/// Restore terminal echo after password prompt interruption.
+/// rpassword disables echo during input; if interrupted, we must re-enable it.
+#[cfg(unix)]
+fn restore_terminal_echo() {
+    use std::os::unix::io::AsRawFd;
+    if let Ok(mut termios) = termios::Termios::from_fd(std::io::stdin().as_raw_fd()) {
+        termios.c_lflag |= termios::ECHO | termios::ICANON;
+        let _ = termios::tcsetattr(std::io::stdin().as_raw_fd(), termios::TCSANOW, &termios);
+    }
+    eprintln!(); // Newline after prompt
+}
 
-    //     // Get home directory from storage config
-    //     let home_dir = camino::Utf8PathBuf::from_str(&c.storage().data_dir).unwrap();
-    //     let api_keys_path = home_dir.join(LLM_API_KEYS_FILE);
-
-    //     // Skip if api-keys.json doesn't exist yet
-    //     if !api_keys_path.exists() {
-    //         tracing::debug!("No api-keys.json found, skipping API key encryption");
-    //         return Ok(());
-    //     }
-
-    //     // Load api-keys.json (env vars already loaded in Server::new)
-    //     let config = ApiKeysJson::load(&api_keys_path)
-    //         .map_err(|e| HoError::Cfg(format!("Failed to load API keys config: {}", e)))?;
-
-    //     // Get node's private key bytes for encryption
-    //     let node_private_key = c
-    //         .identity()
-    //         .private_key
-    //         .as_ref()
-    //         .ok_or_else(|| HoError::Cfg("Node private key not configured".to_string()))?;
-
-    //     if node_private_key.len() != 32 {
-    //         return Err(HoError::Cfg(format!(
-    //             "Invalid node private key length: expected 32 bytes, got {}",
-    //             node_private_key.len()
-    //         )));
-    //     }
-
-    //     let key_bytes: [u8; 32] = node_private_key[..32]
-    //         .try_into()
-    //         .map_err(|_| HoError::Cfg("Failed to convert node key to array".to_string()))?;
-
-    //     let mut encrypted_count = 0;
-    //     let mut skipped_count = 0;
-
-    //     // Get a mutable state delta for writing
-    //     let mut delta = s.cs.latest_snapshot();
-
-    //     // Iterate through all configured providers
-    //     for (provider_name, provider_config) in &config.providers {
-    //         // Skip if provider is not enabled
-    //         if let Some(entity) = &provider_config.entity {
-    //             if !entity.enabled {
-    //                 tracing::debug!("Skipping disabled provider: {}", provider_name);
-    //                 skipped_count += 1;
-    //                 continue;
-    //             }
-    //         }
-
-    //         // Get the API key from environment or skip if none configured
-    //         let api_key_value = match &provider_config.api_key {
-    //             Some(key_ref) if key_ref.starts_with("${") && key_ref.ends_with("}") => {
-    //                 // Extract environment variable name
-    //                 let env_var_name = &key_ref[2..key_ref.len() - 1];
-
-    //                 match env::var(env_var_name) {
-    //                     Ok(value) if !value.is_empty() => value,
-    //                     _ => {
-    //                         tracing::debug!(
-    //                             "No env var {} for provider {}",
-    //                             env_var_name,
-    //                             provider_name
-    //                         );
-    //                         skipped_count += 1;
-    //                         continue;
-    //                     }
-    //                 }
-    //             }
-    //             Some(direct_key) if !direct_key.is_empty() => direct_key.clone(),
-    //             _ => {
-    //                 tracing::debug!("No API key configured for provider: {}", provider_name);
-    //                 skipped_count += 1;
-    //                 continue;
-    //             }
-    //         };
-
-    //         // Encrypt the API key
-    //         let encrypted_data =
-    //             encrypt_with_node_key(&mut OsRng, &key_bytes, api_key_value.as_bytes());
-
-    //         // Store in database
-    //         delta.put_encrypted_api_key(provider_name, encrypted_data);
-    //         encrypted_count += 1;
-
-    //         tracing::info!(
-    //             "🔐 Encrypted and stored API key for provider: {}",
-    //             provider_name
-    //         );
-    //     }
-
-    //     // Commit the transaction
-    //     s.cs.commit(delta)
-    //         .await
-    //         .map_err(|e| HoError::Storage(format!("Failed to commit encrypted keys: {}", e)))?;
-
-    //     if encrypted_count > 0 {
-    //         tracing::info!(
-    //             "✅ API Key Encryption: {} encrypted, {} skipped",
-    //             encrypted_count,
-    //             skipped_count
-    //         );
-    //     }
-
-    //     Ok(())
-    // }
+#[cfg(not(unix))]
+fn restore_terminal_echo() {
+    eprintln!(); // Newline after prompt
 }
 
 async fn handle_query(

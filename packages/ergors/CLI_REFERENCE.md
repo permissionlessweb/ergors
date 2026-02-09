@@ -9,28 +9,89 @@ ergors [OPTIONS] <COMMAND>
 ## Global Options
 
 | Flag | Description | Default | Env Var |
-|------|-------------|---------|---------|
+| ------ | ------------- | --------- | --------- |
 | `--home <PATH>` | Home directory for configuration and data | `~/.ergors` | `NODE_DATA_PATH` |
+| `--grpc-addr <URL>` | Engine gRPC address | `http://localhost:50051` | `ERGORS_GRPC_ADDR` |
 | `--log-level <LEVEL>` | Log level (trace, debug, info, warn, error) | `info` | - |
+| `--json` | Output in JSON format for scripting | `false` | - |
+| `--signing-key-hex <HEX>` | Ed25519 signing key for authenticated remote access (64 hex chars) | - | `ERGORS_SIGNING_KEY_HEX` |
 
 ## Command Groups
 
 | Group | Description | Commands |
-|-------|-------------|----------|
+| ------- | ------------- | ---------- |
 | `start` | Start the engine daemon | - |
 | `init` | Initialize configuration and setup | new, llms, providers, unsafe-wipe, migrate |
-| `config` | Manage configuration values | set, get, list, init |
+| `config` | Manage configuration values | set, get, list, init, register-cli-key, revoke-cli-key, list-cli-keys |
 | `manage-auth` | User authentication management | register, revoke |
 | `keys` | Manage Cosmos funding keys | import-mnemonic, list, delete, set-default |
 | `bootstrap` | Bootstrap new nodes via Akash or SSH | node, list, status, delete |
 | `gateway` | Communication gateway management | list, status, enable, disable, discord |
+| `sentinel` | Sentinel node bootstrap (encrypted) | bootstrap |
+| `call` | Make inference calls through the node | - |
+
+---
+
+## Call Command
+
+Send inference requests through the node's HTTP proxy. Detects API format (Anthropic vs OpenAI) from the model name and routes accordingly. Streaming is enabled by default.
+
+```bash
+ergors call [PROMPT] [OPTIONS]
+```
+
+| Option | Description | Default | Env Var |
+| ------ | ----------- | ------- | ------- |
+| `[PROMPT]` | Prompt text (positional). Reads from stdin if omitted. | - | - |
+| `-m, --model <NAME>` | Model name (drives format detection and routing) | `claude-sonnet-4-5-20250929` | - |
+| `-s, --system <TEXT>` | System prompt | - | - |
+| `--max-tokens <N>` | Maximum tokens to generate | `4096` | - |
+| `--no-stream` | Disable streaming (wait for full response) | `false` | - |
+| `--temperature <FLOAT>` | Sampling temperature | - | - |
+| `--api-addr <URL>` | HTTP API address override | Derived from `--grpc-addr` host + port 8080 | `ERGORS_API_ADDR` |
+
+**Format Detection:**
+
+| Model pattern | Format | Endpoint |
+| ------------- | ------ | -------- |
+| claude, haiku, sonnet, opus, anthropic | Anthropic | `POST /v1/messages` |
+| Everything else (gpt, o1, o3, llama, etc.) | OpenAI | `POST /v1/chat/completions` |
+
+**Examples:**
+
+```bash
+# Basic prompt (default model: claude-sonnet-4-5-20250929)
+ergors call "What is life?"
+
+# Specify model
+ergors call "Hello" --model gpt-4o
+
+# Pipe from stdin
+echo "Explain this" | ergors call --model gpt-4o
+
+# With system prompt and no streaming
+ergors call "Hello" -s "You are a poet" --no-stream --model llama3
+
+# Full JSON response (--json global flag + --no-stream)
+ergors --json call "Hello" --no-stream
+
+# Custom API address
+ergors call "Hello" --api-addr http://remote-node:8080
+```
+
+**Notes:**
+
+- The command never calls upstream providers directly — it always goes through the node's HTTP proxy
+- The node handles API key resolution from custody, request capture, and model routing
+- Streaming prints tokens to stdout as they arrive; pipe to a file for full capture
+- Use `--json` (global flag) with `--no-stream` to get the full API response as pretty-printed JSON
 
 ---
 
 ## Start Command
 
 | Command | Description | Options | Example |
-|---------|-------------|---------|---------|
+| --------- | ------------- | --------- | --------- |
 | `start` | Start engine (HTTP API + gRPC server) | `--grpc-port <PORT>` - gRPC management port (default: `50051`, env: `ERGORS_GRPC_PORT`) | `ergors start --grpc-port 60051` |
 
 **Notes:**
@@ -45,10 +106,10 @@ ergors [OPTIONS] <COMMAND>
 ## Init Commands
 
 | Command | Description | Options/Arguments | Example |
-|---------|-------------|-------------------|---------|
-| `init new` | Initialize new node with full setup | Auto-generates:<br>- Encrypted node identity (Ed25519)<br>- SSH keys from custody<br>- API key encryption<br>- Sample .env file | `ergors init new` |
-| `init llms` | Configure LLM provider API keys | Prompts for API keys:<br>- Anthropic (Claude)<br>- OpenAI (GPT)<br>- Ollama (local)<br>- Grok (xAI)<br>- Akash ML<br>Saves to `api-keys.toml` | `ergors init llms` |
-| `init providers` | Configure provider key sharing | Sets per-provider ownership:<br>- `shared` - Shamir secret sharing<br>- `local` - Node-only<br>Configures k-of-n threshold | `ergors init providers` |
+| --------- | ------------- | ------------------- | --------- |
+| `init new` | Initialize new node with full setup | Auto-generates: - Encrypted node identity (Ed25519) - SSH keys from custody - API key encryption - Sample .env file | `ergors init new` |
+| `init llms` | Configure LLM provider API keys | Prompts for API keys: - Anthropic (Claude) - OpenAI (GPT) - Ollama (local) - Grok (xAI) - Akash ML Saves to `api-keys.toml` | `ergors init llms` |
+| `init providers` | Configure provider key sharing | Sets per-provider ownership: - `shared` - Shamir secret sharing - `local` - Node-only Configures k-of-n threshold | `ergors init providers` |
 | `init unsafe-wipe` | Delete all data in home directory | **DESTRUCTIVE** - Requires custody password (same as `init new`). Fails if no custody exists. Removes all config, encrypted keys, deployment workflows, prompt history, and session data. | `ergors init unsafe-wipe` |
 | `init migrate` | Migrate from major versions | (TODO: not implemented) | `ergors init migrate` |
 
@@ -70,19 +131,53 @@ ergors [OPTIONS] <COMMAND>
 
 ---
 
+## Provider Commands
+
+| Command | Description | Options/Arguments | Example |
+| --------- | ------------- | ------------------- | --------- |
+| `provider list` | List configured LLM providers | Shows name and status (configured/disabled) for each provider. Use `--json` for machine-readable output. | `ergors provider list` |
+| `provider add <NAME>` | Register an API key for a provider | `<NAME>` - Provider name (openai, anthropic, etc.) `--api-key <KEY>` - API key (prompts with hidden input if omitted) `--default` - Set as default provider | `ergors provider add openai` |
+| `provider test [NAME]` | Test provider connectivity | `[NAME]` - Provider name (tests all if omitted). Reports latency in ms. | `ergors provider test openai` |
+| `provider default <NAME>` | Set the default provider | `<NAME>` - Provider name | `ergors provider default anthropic` |
+
+**Provider Add Details:**
+
+- API key input is hidden (rpassword) in interactive terminals; reads from stdin when piped
+- Key is encrypted with the custody password and stored in Cnidarium as `custody://<name>`
+- Requires custody to be initialized (via `ergors sentinel bootstrap` or `ergors init new`)
+- The proxy resolves `custody://<name>` references immediately without restart
+
+---
+
 ## Config Commands
 
 | Command | Description | Options/Arguments | Example |
-|---------|-------------|-------------------|---------|
-| `config init` | Initialize minimal valid configuration | `--node-type <TYPE>` - coordinator, executor, referee, development (default: `development`)<br>`--api-port <PORT>` - gRPC/API port (default: `50051`)<br>`--p2p-port <PORT>` - P2P port (default: `26656`)<br>`--with-sdl-contract` - Deploy SDL template contract on startup<br>`--sdl-wasm-path <PATH>` - Path to SDL WASM file (required if --with-sdl-contract) | `ergors config init --node-type executor --api-port 50051 --p2p-port 26656` |
-| `config set <KEY> <VALUE>` | Set configuration value | `<KEY>` - Dot-separated path (e.g., `network.listen_port`)<br>`<VALUE>` - Value (type validated) | `ergors config set network.listen_port 9090` |
+| --------- | ------------- | ------------------- | --------- |
+| `config init` | Initialize minimal valid configuration | `--node-type <TYPE>` - coordinator, executor, referee, development (default: `development`) `--api-port <PORT>` - gRPC/API port (default: `50051`) `--p2p-port <PORT>` - P2P port (default: `26656`) `--with-sdl-contract` - Deploy SDL template contract on startup `--sdl-wasm-path <PATH>` - Path to SDL WASM file (required if --with-sdl-contract) | `ergors config init --node-type executor --api-port 50051 --p2p-port 26656` |
+| `config set <KEY> <VALUE>` | Set configuration value | `<KEY>` - Dot-separated path (e.g., `network.listen_port`) `<VALUE>` - Value (type validated) | `ergors config set network.listen_port 9090` |
 | `config get <KEY>` | Get configuration value | `<KEY>` - Dot-separated path | `ergors config get identity.node_type` |
-| `config list` | List all configuration keys and types | - | `ergors config list` |
+| `config list` | Show actual configuration values (loads config file) | `--json` - Output as JSON | `ergors config list --json` |
+| `config list-chains` | List all configured Cosmos chains (requires daemon) | `--json` - Output as JSON | `ergors config list-chains --json` |
+| `config delete-chain <CHAIN_ID>` | Delete a Cosmos chain configuration (password-protected, requires daemon) | `<CHAIN_ID>` - Chain ID to delete. `--json` - Output as JSON | `ergors config delete-chain local` |
+| `config register-cli-key <PUBKEY_HEX>` | Register Ed25519 public key for remote CLI auth (requires daemon) | `--label <LABEL>` - Human-readable label (default: `cli`) | `ergors config register-cli-key abc123...def` |
+| `config revoke-cli-key <PUBKEY_HEX>` | Revoke an authorized CLI key (requires daemon) | - | `ergors config revoke-cli-key abc123...def` |
+| `config list-cli-keys` | List all authorized CLI keys (requires daemon) | `--json` - Output as JSON | `ergors config list-cli-keys` |
+
+### Remote Authentication Workflow
+
+To access a remote engine from a CLI:
+
+1. **Generate an Ed25519 keypair** (any standard tool, or use the node's existing key)
+2. **Register the public key on the engine** (from local access): `ergors config register-cli-key <pubkey_hex> --label "my-laptop"`
+3. **Use from remote**: `ergors --grpc-addr http://remote:50051 --signing-key-hex <privkey_hex> status`
+4. **Or set env var**: `export ERGORS_SIGNING_KEY_HEX=<privkey_hex>` then `ergors --grpc-addr http://remote:50051 status`
+
+Local connections (localhost/127.0.0.1) bypass authentication entirely.
 
 **Available Config Keys:**
 
 | Section | Key | Type | Description |
-|---------|-----|------|-------------|
+| --------- | ----- | ------ | ------------- |
 | **Home** | `home` | string | Home directory path |
 | **Identity** | `identity.host` | string | Node hostname/IP |
 | | `identity.p2p_port` | u32 | P2P listening port |
@@ -112,7 +207,7 @@ ergors [OPTIONS] <COMMAND>
 ## Auth Commands
 
 | Command | Description | Options/Arguments | Example |
-|---------|-------------|-------------------|---------|
+| --------- | ------------- | ------------------- | --------- |
 | `manage-auth register` | Register user key pair for API access | `--auth <BASE64_JSON>` - Base64-encoded auth structure | `ergors manage-auth register --auth <base64>` |
 | `manage-auth revoke` | Revoke user key pair | `--auth <BASE64_JSON>` - Base64-encoded auth structure | `ergors manage-auth revoke --auth <base64>` |
 
@@ -129,11 +224,11 @@ ergors [OPTIONS] <COMMAND>
 Manage Cosmos blockchain funding keys (Akash, Cosmos Hub, etc.) for deployment operations.
 
 | Command | Description | Options/Arguments | Example |
-|---------|-------------|-------------------|---------|
-| `keys import-mnemonic` | Import BIP-39 mnemonic seed phrase | `--label <LABEL>` - Human-readable label (required)<br>`--key-name <NAME>` - Internal identifier (default: `default`)<br>`--chain-id <ID>` - Chain ID (default: `akashnet-2`)<br>`--address-prefix <PREFIX>` - Bech32 prefix (default: `akash`)<br>`--make-default` - Set as default key | `ergors keys import-mnemonic --label "My Akash Key" --make-default` |
-| `keys list` | List all stored keys | Shows: name, label, address, chain ID, default marker | `ergors keys list` |
-| `keys delete` | Delete a key by name | `--key-name <NAME>` - Key name to delete (required) | `ergors keys delete --key-name old-key` |
-| `keys set-default` | Set a key as the default | `--key-name <NAME>` - Key name to make default (required) | `ergors keys set-default --key-name prod` |
+| --------- | ------------- | ------------------- | --------- |
+| `keys import-mnemonic` | Import BIP-39 mnemonic seed phrase | `--label <LABEL>` - Human-readable label (required), `--default` - Set as default, `--prefix <PREFIX>` - Bech32 prefix (default: "ergo"), `--coin-type <N>` - BIP-44 coin type (default: 118) | `ergors keys import-mnemonic --label "Akash Faucet" --prefix akash --default` |
+| `keys list` | List all stored keys | `--json` - Output as JSON, `--prefix <PREFIX>` - Re-derive addresses with different bech32 prefix, `--label <LABEL>` - Filter by key label, `-a`/`--address` - Output address only (for scripting) | `ergors keys list --label faucet -a --prefix akash` |
+| `keys delete` | Delete a key by label | `--label <LABEL>` - Key label to delete (required) | `ergors keys delete --label old-key` |
+| `keys set-default` | Set a key as the default | `--label <LABEL>` - Key label to make default (required) | `ergors keys set-default --label prod` |
 
 **Security:**
 
@@ -146,13 +241,28 @@ Manage Cosmos blockchain funding keys (Akash, Cosmos Hub, etc.) for deployment o
 - File permissions set to 0600 (owner read/write only) on Unix
 - For automation: use `ERGORS_MNEMONIC` env var (cleared after reading)
 
+**Chain-Agnostic Keys:**
+
+Keys are stored without chain binding. The address uses the `ergo` prefix by default. To derive a chain-specific address (e.g., for Akash), use `ergors node address --prefix akash`.
+
 **Example Output:**
 
 ```
-NAME            LABEL                ADDRESS                                       CHAIN        DEFAULT
---------------------------------------------------------------------------------
-prod            My Akash Key         akash1abc123...                                akashnet-2   *
-test            Test Key             akash1xyz789...                                akashnet-2
+LABEL                ADDRESS                                       DEFAULT
+----------------------------------------------------------------------
+My Key               ergo1abc123...                                 *
+Test Key             ergo1xyz789...
+```
+
+**JSON Output (`--json`):**
+
+```json
+{
+  "keys": [
+    { "label": "My Key", "address": "ergo1abc123...", "is_default": true },
+    { "label": "Test Key", "address": "ergo1xyz789...", "is_default": false }
+  ]
+}
 ```
 
 ---
@@ -181,7 +291,7 @@ ERGORS uses Cnidarium (JMT-based verifiable storage) for:
 When running, the engine exposes:
 
 | Endpoint | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `/v1/chat/completions` | OpenAI-compatible chat completions (proxies to configured provider or deployment) |
 | `/v1/messages` | Anthropic-compatible messages API |
 | `/v1/models` | List available models (configured providers + active Akash deployments) |
@@ -216,7 +326,7 @@ When running, the engine exposes:
 Used by `ergors` for remote management:
 
 | Service | Methods |
-|---------|---------|
+| --------- | --------- |
 | `ManagementService` | 70+ RPC methods for node control, deployment, network management |
 
 **Default Address:** `0.0.0.0:50051` (configurable via `--grpc-port`)
@@ -224,7 +334,7 @@ Used by `ergors` for remote management:
 ### Deployment Management RPCs
 
 | RPC Method | Purpose |
-|------------|---------|
+| ------------ | --------- |
 | `CreateAkashDeployment` | Initialize new deployment workflow session |
 | `RunAkashDeployment` | Execute automated deployment workflow |
 | `GetAkashDeployment` | Get deployment workflow details |
@@ -267,18 +377,20 @@ ERGORS uses PID file locking to prevent multiple instances:
 ## Environment Variables
 
 | Variable | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `NODE_DATA_PATH` | Override default home directory |
 | `ERGORS_GRPC_PORT` | Override default gRPC port |
 | `ERGORS_CUSTODY_PASSWORD` | Non-interactive custody password (for automation) |
 | Provider-specific | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GROK_API_KEY`, `AKASHML_API_KEY` |
+| `ERGORS_API_ADDR` | Override HTTP API address (default: derived from gRPC host + port 8080) |
+| `BOOTSTRAP_IMAGE_TAG` | Override default Docker image tag for bootstrapped nodes |
 
 ---
 
 ## Exit Codes
 
 | Code | Description |
-|------|-------------|
+| ------ | ------------- |
 | `0` | Success |
 | `1` | General error (config load failed, storage error, etc.) |
 | Non-zero | Runtime error with message on stderr |
@@ -296,7 +408,7 @@ ergors bootstrap node [OPTIONS]
 ```
 
 | Option | Description | Default |
-|--------|-------------|---------|
+| -------- | ------------- | --------- |
 | `--node-type <TYPE>` | Node type: coordinator, executor | `executor` |
 | `--image <TAG>` | Docker image tag | Latest from registry |
 | `--method <METHOD>` | Bootstrap method: akash, ssh | `akash` |
@@ -326,7 +438,7 @@ ergors bootstrap list [--active]
 ```
 
 | Option | Description |
-|--------|-------------|
+| -------- | ------------- |
 | `--active` | Show only in-progress sessions |
 
 ### Bootstrap Session Status
@@ -344,15 +456,8 @@ ergors bootstrap delete <SESSION_ID> [--force]
 ```
 
 | Option | Description |
-|--------|-------------|
+| -------- | ------------- |
 | `--force` | Skip confirmation prompt |
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `ERGORS_API_ADDR` | Override HTTP API address (default: derived from gRPC host + port 8080) |
-| `BOOTSTRAP_IMAGE_TAG` | Override default Docker image tag for bootstrapped nodes |
 
 ---
 
@@ -367,7 +472,7 @@ ergors deploy create --sdl <path> [OPTIONS]
 ```
 
 | Option | Description | Default |
-|--------|-------------|---------|
+| -------- | ------------- | --------- |
 | `--sdl <PATH>` | Path to SDL YAML file | Required (or --sdl-content) |
 | `--sdl-content <YAML>` | Raw SDL YAML content | - |
 | `--label <LABEL>` | User-friendly label for deployment (must be unique across active deployments) | - |
@@ -385,11 +490,12 @@ ergors deploy create --sdl <path> [OPTIONS]
 **Provider Selection Modes:**
 
 | Mode | Flag | Behavior |
-|------|------|----------|
+| ------ | ------ | ---------- |
 | **Auto (default)** | `--auto-select-bid` or none | Selects cheapest provider from trusted list (if configured) or all bids |
 | **Interactive** | `--interactive-bid` | Displays numbered list of providers, prompts for user selection via stdin |
 
 When `--interactive-bid` is used:
+
 - A formatted table shows all providers with prices and trusted status
 - User enters a number (1-N) to select a provider
 - User can enter 'q' to cancel the deployment
@@ -398,6 +504,7 @@ When `--interactive-bid` is used:
 **Trusted Providers:**
 
 The trusted providers list filters which providers are considered for deployment:
+
 - Managed via `ergors deploy trusted-providers`, `add-provider`, `remove-provider`
 - Default list seeded from hardcoded known-good providers
 - If trusted list exists and has matching bids, only those providers are eligible
@@ -417,6 +524,7 @@ The trusted providers list filters which providers are considered for deployment
 **Automatic Cleanup on Failure:**
 
 If any step fails after MsgCreateDeployment succeeds, the workflow automatically:
+
 - Broadcasts `MsgCloseDeployment` to close the deployment
 - Returns the escrow deposit to your wallet
 - Marks the workflow as failed with error message
@@ -424,6 +532,7 @@ If any step fails after MsgCreateDeployment succeeds, the workflow automatically
 This prevents hanging deployments and ensures you don't lose funds on failed deployments.
 
 If automatic cleanup fails, manually close with:
+
 ```bash
 ergors deploy close-deployment <session-id>
 ```
@@ -843,7 +952,7 @@ Convenience endpoint for grant requests. Automatically encodes `GrantRequest` as
 **Behavior:**
 
 | Granter Mode | Result |
-|--------------|--------|
+| -------------- | -------- |
 | `auto` | Immediately accepted and broadcast on-chain |
 | `whitelist` | Accepted if sender pubkey is in whitelist, otherwise rejected |
 | `manual` | Saved as pending, operator must accept/reject via protected endpoints |
@@ -990,7 +1099,7 @@ Update the granter configuration.
 Inbox messages are persisted in cnidarium with the following index structure:
 
 | Prefix | Key Format | Purpose |
-|--------|------------|---------|
+| -------- | ------------ | --------- |
 | `inbox` | `inbox/{id}` | Primary message storage |
 | `inbox_status` | `inbox_status/{status}:{id}` | Status index for listing |
 | `inbox_sender` | `inbox_sender/{hex}:{id}` | Sender index for lookups |
@@ -1084,7 +1193,7 @@ curl http://localhost:8080/v1/models
 ### Features
 
 | Feature | Description |
-|---------|-------------|
+| --------- | ------------- |
 | **Label-as-Model** | Deployment labels become model names directly |
 | **Priority Routing** | Deployments checked before configured providers (OpenAI, Anthropic) |
 | **O(1) Lookup** | In-memory cache for fast routing |
@@ -1105,7 +1214,7 @@ curl http://localhost:8080/v1/models
 Deployments must expose OpenAI-compatible endpoints:
 
 | Endpoint | Request Type | Response Format |
-|----------|--------------|-----------------|
+| ---------- | -------------- | ----------------- |
 | `/v1/chat/completions` | Chat messages | OpenAI ChatCompletion |
 | `/v1/embeddings` | Embedding request | OpenAI Embedding |
 
@@ -1132,7 +1241,7 @@ These are stored in `PromptResponse.tokens_used` for observability.
 RAG (Retrieval-Augmented Generation) vector database management.
 
 | Command | Description | Example |
-|---------|-------------|---------|
+| --------- | ------------- | --------- |
 | `rag ingest <file>` | Ingest file into vector DB | `ergors rag ingest docs.md --doc-type markdown` |
 | `rag query <query>` | Search vector DB | `ergors rag query "API endpoints" --top-k 5` |
 | `rag status` | Show RAG system status | `ergors rag status` |
@@ -1143,7 +1252,7 @@ RAG (Retrieval-Augmented Generation) vector database management.
 **Ingest Options:**
 
 | Option | Description |
-|--------|-------------|
+| -------- | ------------- |
 | `--uri <URI>` | Source URI (default: file path) |
 | `--doc-type <TYPE>` | Document type (markdown, code, text) |
 | `--tags <TAGS>` | Comma-separated tags |
@@ -1216,6 +1325,7 @@ ergors gateway discord set-token [--token <TOKEN>]
 ```
 
 **Notes:**
+
 - If `--token` is not provided, prompts interactively (hidden input, never in shell history)
 - Token is encrypted using the custody password
 
@@ -1232,6 +1342,7 @@ ergors gateway discord deny-guild <guild-id>
 ```
 
 **Notes:**
+
 - If no guilds are in the allowlist, the bot responds to all guilds
 - Guild IDs are Discord snowflake IDs (e.g., `123456789012345678`)
 
@@ -1263,7 +1374,7 @@ Allowed Guilds:
 Once the bot is configured and enabled, users can interact via Discord:
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `/prompt <message>` | Send a prompt to the AI |
 | `/thread [name]` | Create a new conversation thread |
 | `/clear` | Clear conversation history in current thread |
@@ -1276,11 +1387,13 @@ Once the bot is configured and enabled, users can interact via Discord:
 The `/ingest` command supports both regular URLs and GitHub repository URLs:
 
 **Regular URLs:**
+
 ```
 /ingest url:https://example.com/docs.html label:example-docs
 ```
 
 **GitHub Repositories:**
+
 ```
 /ingest url:https://github.com/owner/repo label:repo-docs
 /ingest url:https://github.com/owner/repo/tree/branch-name
@@ -1303,6 +1416,7 @@ The `/ingest` command supports both regular URLs and GitHub repository URLs:
 - Default: Standard preset if not specified
 
 **Example:**
+
 ```
 /ingest url:https://github.com/cosmology-tech/interchain label:interchain-docs doc_type:documentation
 ```
@@ -1350,7 +1464,7 @@ Each Discord thread maintains its own conversation session:
 ### gRPC Management RPCs
 
 | RPC Method | Purpose |
-|------------|---------|
+| ------------ | --------- |
 | `ListGateways` | List all registered gateways with status |
 | `GetGatewayStatus` | Get detailed gateway status |
 | `EnableGateway` | Enable a gateway |
@@ -1362,6 +1476,62 @@ Each Discord thread maintains its own conversation session:
 
 ---
 
+## Sentinel Commands
+
+Bootstrap a remote sentinel node with encrypted transport. All secrets are entered interactively (hidden input) and encrypted end-to-end via X25519 + ChaCha20Poly1305.
+
+### Bootstrap
+
+Orchestrates the full sentinel handshake: init → api-keys → activate.
+
+```bash
+ergors sentinel bootstrap <SENTINEL_URL> [--admin-privkey-hex <HEX>]
+```
+
+| Argument | Description | Required |
+| ---------- | ------------- | ---------- |
+| `<SENTINEL_URL>` | Sentinel HTTP endpoint (e.g. `http://host:8080`) | Yes |
+| `--admin-privkey-hex` | Raw Ed25519 private key (64 hex chars / 32 bytes). Bypasses local custody loading. | No |
+
+**Interactive Prompts (hidden input):**
+
+1. **Local custody password** — unlocks your admin Ed25519 key for signing (or set `ERGORS_CUSTODY_PASSWORD` env var). Skipped when `--admin-privkey-hex` is provided.
+2. **Remote custody password** — sent encrypted to the sentinel for identity creation (min 8 chars)
+3. **Mnemonic** — BIP-39 seed phrase for deterministic key derivation (press Enter to generate new)
+4. **API keys** — per-provider keys (Anthropic, OpenAI, Akash ML, xAI) plus custom providers
+
+**Security:**
+
+- Secrets never appear in shell history or terminal output
+- Request bodies are encrypted to the sentinel's ephemeral X25519 session key
+- Ed25519 signature headers authenticate the admin identity
+- The Akash provider proxy sees only ciphertext
+
+**Flow:**
+
+1. `GET /sentinel/health` — fetch session pubkey and verify phase
+2. `POST /sentinel/init` — encrypted custody password + optional mnemonic
+3. `POST /sentinel/api-keys` — encrypted API key map
+4. `POST /sentinel/activate` — trigger handoff to full server
+
+**Example:**
+
+```bash
+# Bootstrap a sentinel deployed on Akash
+ergors sentinel bootstrap http://provider.akash.network:31234
+
+# With custody password from env (skips local password prompt)
+ERGORS_CUSTODY_PASSWORD=mypassword ergors sentinel bootstrap http://host:8080
+
+# Automation: pipe inputs via stdin (one value per line)
+printf '%s\n' "remote-pw" "mnemonic words..." "sk-ant-key" "" "" "" "" \
+  | ERGORS_CUSTODY_PASSWORD=local-pw ergors sentinel bootstrap http://host:8080
+```
+
+The command is idempotent — it checks the current sentinel phase and skips completed steps.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -1370,10 +1540,12 @@ ergors init new
 
 # 2. (Optional) Import Akash funding key for deployments
 # Mnemonic is entered interactively (hidden input, never in shell history)
+# --prefix determines bech32 address format (akash1, cosmos1, ergo1)
+# --coin-type determines BIP-44 derivation path (118=Cosmos/Akash, 60=EVM)
 ergors keys import-mnemonic \
   --label "Akash Main" \
-  --chain-id akashnet-2 \
-  --make-default
+  --prefix akash \
+  --default
 
 # 3. Start the engine
 ergors start
@@ -1425,7 +1597,7 @@ When enabled, automatically deposits funds to deployments with low escrow balanc
 **Cache Operations:**
 
 | Operation | Trigger | Description |
-|-----------|---------|-------------|
+| ----------- | --------- | ------------- |
 | Add deployment | Workflow completion | Adds deployment to cache for inference routing |
 | Remove deployment | Lease closed/inactive | Removes from cache |
 | Refresh | Every 30s | Verifies all cached deployments |
@@ -1435,7 +1607,7 @@ When enabled, automatically deposits funds to deployments with low escrow balanc
 ## Files Created
 
 | File | Description | Permissions |
-|------|-------------|-------------|
+| ------ | ------------- | ------------- |
 | `$HOME/config.toml` | Main configuration file | 0644 |
 | `$HOME/.env` | Environment template (from `templates/example.env`) | 0644 |
 | `$HOME/identity.enc` | Encrypted node identity (custody) | 0600 |

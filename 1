@@ -1,0 +1,90 @@
+[0;35m[22:01:22] [V][0m ERGORS_BIN=/Users/returniflost/CW-AGENT/e2e-improvements/target/release/ergors
+[0;35m[22:01:23] [V][0m Binary sizes: 62M /Users/returniflost/CW-AGENT/e2e-improvements/target/release/ergors 
+[0;35m[22:01:24] [V][0m Starting mock provider on port 11434...
+[0;35m[22:01:25] [V][0m Generated openai API key: sk-mock-openai-00000...
+[0;35m[22:01:25] [V][0m Generated anthropic API key: sk-mock-anthropic-00...
+[0;35m[22:01:25] [V][0m Generated ollama API key: sk-mock-ollama-00000...
+[0;35m[22:01:25] [V][0m   OpenAI: sk-mock-openai-00000...
+[0;35m[22:01:25] [V][0m   Anthropic: sk-mock-anthropic-00...
+[0;35m[22:01:25] [V][0m   Ollama: sk-mock-ollama-00000...
+[0;35m[22:01:30] [V][0m coordinator key imported: ergo13fwv4ldlqgxp0dyyqv9hrkdfzrmy6mx6x7almh
+[0;35m[22:01:36] [V][0m executor key imported: ergo13fwv4ldlqgxp0dyyqv9hrkdfzrmy6mx6x7almh
+[0;35m[22:01:39] [V][0m Configuring local chain: rpc=http://127.0.0.1:26657, grpc=http://127.0.0.1:9090
+[0;35m[22:01:39] [V][0m Coordinator config:
+[0;36mhome = "/var/folders/yy/3jrghjlx7tbc4yfzgpvvqv3m0000gp/T//ergors-e2e-test/coordinator"
+
+[network]
+node_type = 1
+bootstrap_peers = []
+known_peers = []
+listen_port = 50102
+listen_address = "0.0.0.0"
+connection_timeout_ms = 5000
+enable_discovery = false
+
+[network.channels]
+discovery_buffer = 100
+task_buffer = 100
+state_buffer = 100
+health_buffer = 50
+key_sharing_buffer = 50
+
+[identity]
+host = "127.0.0.1"
+p2p_port = 50102
+api_port = 50100
+user = "e2e-test"
+os = 1
+ssh_port = 22
+node_type = "Coordinator"
+
+[storage]
+data_dir = "/var/folders/yy/3jrghjlx7tbc4yfzgpvvqv3m0000gp/T//ergors-e2e-test/coordinator/data"
+max_size_mb = 1024[0m
+[0;35m[22:01:39] [V][0m Node PIDs: 8908 8934
+[0;35m[22:01:39] [V][0m Test directory: /var/folders/yy/3jrghjlx7tbc4yfzgpvvqv3m0000gp/T//ergors-e2e-test
+[0;35m[22:01:39] [V][0m 
+[0;35m[22:01:39] [V][0m === Initial Engine Logs ===
+[0;35m[22:01:39] [V][0m --- Coordinator startup log ---
+[0;35m[22:01:39] [V][0m --- Executor startup log ---
+[0;35m[22:01:39] [V][0m === End Initial Logs ===
+[0;35m[22:01:39] [V][0m 
+[0;35m[22:01:39] [V][0m   OpenAI: sk-mock-openai-000000000000000000000000 → http://127.0.0.1:11434/v1
+[0;35m[22:01:39] [V][0m   Anthropic: sk-mock-anthropic-000000000000000000000001 → http://127.0.0.1:11434/v1
+[0;35m[22:01:39] [V][0m   Ollama: sk-mock-ollama-000000000000000000000002 → http://127.0.0.1:11434
+[0;35m[22:01:39] [V][0m Adding OpenAI provider...
+[0;35m[22:01:39] [V][0m Adding Anthropic provider...
+[0;35m[22:01:39] [V][0m Adding Ollama provider...
+[0;35m[22:01:39] [V][0m Coordinator node info response:
+[0;36m{
+  "api_address": "127.0.0.1:50100",
+  "bech32_address": "ergors1js339hlepwd05sflq9nfs9wjjuz2q6k3mj3v5c",
+  "node_id": "d6b84702fed235e84a0fbb78a4cbb51f7378a17339bdc4f02df7879e5afd0330",
+  "node_type": "Coordinator",
+  "p2p_address": "127.0.0.1:50102"
+}[0m
+[0;35m[22:01:39] [V][0m Executor node info response:
+[0;36m{
+  "api_address": "127.0.0.1:50110",
+  "bech32_address": "ergors16733kwfm6a9g3s8wudrxj7t7r8697y4lrxtfcf",
+  "node_id": "9d3ed62bc9c9021d80f49eb2e890031ef7760c29fc966f17ac236ed2a10d5494",
+  "node_type": "Executor",
+  "p2p_address": "127.0.0.1:50112"
+}[0m
+[0;35m[22:01:39] [V][0m Executor address response:
+[0;36m{"address": "ergors19d3ed62bc9c9021d80f49eb2e890031ef7760c"}[0m
+[0;35m[22:01:39] [V][0m Coordinator cosmos-prefixed address:
+[0;36m{"address": "cosmos1d6b84702fed235e84a0fbb78a4cbb51f7378a1"}[0m
+[0;35m[22:01:39] [V][0m Verifying WASM magic bytes...
+[0;36mMagic bytes: 0061736d[0m
+[0;35m[22:01:39] [V][0m Scanning artifacts directory...
+[0;35m[22:01:39] [V][0m API keys from infrastructure:
+[0;35m[22:01:39] [V][0m   OPENAI_API_KEY: sk-mock-openai-00000...
+[0;35m[22:01:39] [V][0m   ANTHROPIC_API_KEY: sk-mock-anthropic-00...
+[0;35m[22:01:39] [V][0m   OLLAMA_API_KEY: sk-mock-ollama-00000...
+[0;35m[22:01:39] [V][0m Stopping mock provider (PID 8842)...
+[0;35m[22:01:39] [V][0m Anvil stopped
+[0;35m[22:01:39] [V][0m Stopping ERGORS node PID: 8908
+[0;35m[22:01:41] [V][0m Stopping ERGORS node PID: 8934
+[0;35m[22:01:47] [V][0m Process cleanup complete
+error: Recipe `e2e` failed with exit code 1

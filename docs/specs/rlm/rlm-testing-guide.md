@@ -132,7 +132,7 @@ export RUST_LOG=info
 
 Check sub-LLM call count in logs:
 
-```
+```sh
 [DEBUG] RLM response: 3 iterations, 5 sub-LLM calls
 ```
 
@@ -144,7 +144,7 @@ Estimated cost: ~$0.01-0.05 per query (vs $0.001 for static RAG)
 
 Try a query that might cause Python errors:
 
-```
+```sh
 /prompt Calculate the square root of -1
 ```
 
@@ -154,7 +154,7 @@ Expected: Graceful error handling, fallback to RAG in hybrid mode
 
 Set low iteration limit:
 
-```
+```sh
 /rlmconfig max_iterations:2
 /prompt <complex query requiring many iterations>
 ```
@@ -165,7 +165,7 @@ Expected: "Failed to converge after 2 iterations" message
 
 Set low sub-LLM call limit:
 
-```
+```sh
 /rlmconfig max_sub_calls:3
 /prompt <query requiring many LLM calls>
 ```

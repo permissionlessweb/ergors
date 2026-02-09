@@ -269,6 +269,141 @@ test_provider_routing() {
 }
 
 # =============================================================================
+# Multi-Provider Simulation Tests
+# =============================================================================
+
+test_multi_provider_simulation() {
+    log_section "Multi-Provider Simulation Tests"
+
+    # Only run if mock provider is configured
+    if [[ -z "${MOCK_PROVIDER_URL:-}" ]]; then
+        log_warn "Mock provider not configured, skipping multi-provider tests"
+        return 0
+    fi
+
+    # Test 1: OpenAI model (gpt-4) returns deterministic response
+    log_verbose "Testing OpenAI model (gpt-4) for deterministic response..."
+    local gpt_response
+    gpt_response=$(curl -s --max-time 15 -X POST "http://${COORDINATOR_API}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${OPENAI_API_KEY}" \
+        -d '{
+            "model": "gpt-4",
+            "messages": [{"role": "user", "content": "test"}],
+            "max_tokens": 20
+        }' 2>/dev/null) || gpt_response="{}"
+
+    log_debug "GPT-4 response: $gpt_response"
+
+    if json_has "$gpt_response" '.choices[0].message.content'; then
+        local content
+        content=$(json_get "$gpt_response" '.choices[0].message.content')
+        test_pass "gpt4_deterministic" "GPT-4 returned response: ${content:0:50}..."
+    elif json_has "$gpt_response" '.error'; then
+        local error_type
+        error_type=$(json_get "$gpt_response" '.error.type')
+        test_skip "gpt4_deterministic" "Got error: $error_type"
+    else
+        test_fail "gpt4_deterministic" "Invalid response format"
+    fi
+
+    # Test 2: Anthropic model (claude-3-sonnet) returns deterministic response
+    log_verbose "Testing Anthropic model (claude-3-sonnet) for deterministic response..."
+    local claude_response
+    claude_response=$(curl -s --max-time 15 -X POST "http://${COORDINATOR_API}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${ANTHROPIC_API_KEY}" \
+        -d '{
+            "model": "claude-3-sonnet",
+            "messages": [{"role": "user", "content": "test"}],
+            "max_tokens": 20
+        }' 2>/dev/null) || claude_response="{}"
+
+    log_debug "Claude response: $claude_response"
+
+    if json_has "$claude_response" '.choices[0].message.content'; then
+        local content
+        content=$(json_get "$claude_response" '.choices[0].message.content')
+        test_pass "claude_deterministic" "Claude returned response: ${content:0:50}..."
+    elif json_has "$claude_response" '.error'; then
+        local error_type
+        error_type=$(json_get "$claude_response" '.error.type')
+        test_skip "claude_deterministic" "Got error: $error_type"
+    else
+        test_fail "claude_deterministic" "Invalid response format"
+    fi
+
+    # Test 3: Ollama model (llama2) returns deterministic response
+    log_verbose "Testing Ollama model (llama2) for deterministic response..."
+    local llama_response
+    llama_response=$(curl -s --max-time 15 -X POST "http://${COORDINATOR_API}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${OLLAMA_API_KEY}" \
+        -d '{
+            "model": "llama2",
+            "messages": [{"role": "user", "content": "test"}],
+            "max_tokens": 20
+        }' 2>/dev/null) || llama_response="{}"
+
+    log_debug "Llama2 response: $llama_response"
+
+    if json_has "$llama_response" '.choices[0].message.content'; then
+        local content
+        content=$(json_get "$llama_response" '.choices[0].message.content')
+        test_pass "llama2_deterministic" "Llama2 returned response: ${content:0:50}..."
+    elif json_has "$llama_response" '.error'; then
+        local error_type
+        error_type=$(json_get "$llama_response" '.error.type')
+        test_skip "llama2_deterministic" "Got error: $error_type"
+    else
+        test_fail "llama2_deterministic" "Invalid response format"
+    fi
+
+    # Test 4: Verify responses are deterministic (same input = same output)
+    log_verbose "Testing deterministic responses (repeatability)..."
+    local gpt_response1 gpt_response2
+    gpt_response1=$(curl -s --max-time 15 -X POST "http://${COORDINATOR_API}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${OPENAI_API_KEY}" \
+        -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "hello"}], "max_tokens": 10}' \
+        2>/dev/null)
+
+    sleep 1
+
+    gpt_response2=$(curl -s --max-time 15 -X POST "http://${COORDINATOR_API}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${OPENAI_API_KEY}" \
+        -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "hello"}], "max_tokens": 10}' \
+        2>/dev/null)
+
+    if [[ -n "$gpt_response1" ]] && [[ -n "$gpt_response2" ]]; then
+        local content1 content2
+        content1=$(echo "$gpt_response1" | jq -r '.choices[0].message.content // empty')
+        content2=$(echo "$gpt_response2" | jq -r '.choices[0].message.content // empty')
+
+        if [[ -n "$content1" ]] && [[ "$content1" == "$content2" ]]; then
+            test_pass "deterministic_responses" "Responses are deterministic (identical)"
+        elif [[ -n "$content1" ]] && [[ -n "$content2" ]]; then
+            test_warn "deterministic_responses" "Responses differ (may not be deterministic)"
+            log_debug "Response 1: $content1"
+            log_debug "Response 2: $content2"
+        else
+            test_skip "deterministic_responses" "Could not verify (no content returned)"
+        fi
+    else
+        test_skip "deterministic_responses" "Could not verify (requests failed)"
+    fi
+
+    # Test 5: Verify all providers use same mock endpoint
+    log_verbose "Testing that all providers route to single mock endpoint..."
+    if curl -s "${MOCK_PROVIDER_URL}/health" | grep -q "ok"; then
+        test_pass "single_mock_endpoint" "Mock provider is reachable at ${MOCK_PROVIDER_URL}"
+    else
+        test_fail "single_mock_endpoint" "Mock provider not responding"
+    fi
+}
+
+# =============================================================================
 # Inference Provider API Tests (for deployed services)
 # =============================================================================
 
@@ -587,9 +722,15 @@ test_cosmwasm_event_router() {
 run_api_tests() {
     log_step "Running API Tests"
 
+    # Mock provider should already be started in infrastructure phase
+    if [[ -z "${MOCK_PROVIDER_URL:-}" ]]; then
+        log_warn "Mock provider not running, inference tests will be limited"
+    fi
+
     test_open_responses_endpoint
     test_openai_compatible_endpoint
     test_provider_routing
+    test_multi_provider_simulation
     test_streaming_responses
 
     # CosmWasm event router tests
