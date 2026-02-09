@@ -1,8 +1,9 @@
 # Multi-stage build for minimal production image
-FROM rust:1.88-slim AS builder
+FROM rust:1.88-slim AS builder 
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
+    build-essential \
     pkg-config \
     libssl-dev \
     ca-certificates \
@@ -44,6 +45,15 @@ COPY --from=builder /build/templates /home/ergors/templates
 
 # Set ownership
 RUN chown -R ergors:ergors /usr/local/bin/ergors /home/ergors/templates
+
+# Setup RLM Python venv
+RUN python3 -m venv /opt/rlm-venv
+COPY packages/ergors-rlm/python/requirements.txt /tmp/rlm-requirements.txt
+RUN /opt/rlm-venv/bin/pip install --no-cache-dir -r /tmp/rlm-requirements.txt && rm /tmp/rlm-requirements.txt
+COPY packages/ergors-rlm/python/ /opt/rlm/
+RUN chown -R ergors:ergors /opt/rlm-venv /opt/rlm
+ENV RLM_PYTHON_PATH=/opt/rlm-venv/bin/python3
+ENV RLM_SCRIPT_DIR=/opt/rlm
 
 # Switch to non-root user
 USER ergors
