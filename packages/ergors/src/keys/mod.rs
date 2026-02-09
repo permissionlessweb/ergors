@@ -45,7 +45,7 @@ pub enum KeysSubCmd {
     ///
     /// The mnemonic is entered interactively (hidden input) for security.
     /// It is never stored in shell history or visible in process listings.
-    /// Keys are stored chain-agnostic — use `ergors node address` to derive
+    /// Keys are stored with public key + default address, can derive
     /// chain-specific addresses at usage time.
     #[clap(display_order = 100)]
     ImportMnemonic {
@@ -56,6 +56,10 @@ pub enum KeysSubCmd {
         /// Mark this key as the default for deployments
         #[arg(long)]
         default: bool,
+
+        /// Bech32 address prefix (ergo=Ergors, akash=Akash, cosmos=Cosmos Hub, etc.)
+        #[arg(long, default_value = "ergo")]
+        prefix: String,
     },
 
     /// List all stored keys (shows labels, addresses, default status)
