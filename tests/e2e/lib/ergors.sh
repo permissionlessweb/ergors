@@ -14,6 +14,10 @@ _E2E_ERGORS_LOADED=1
 ERGORS_BIN="${ERGORS_BIN:-${ROOT_DIR}/target/release/ergors}"
 TEST_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD:-e2e-test-password-12345}"
 
+# Deterministic test mnemonic for executor (different from faucet, so granter != grantee)
+# This is a throwaway key used only in E2E tests — never holds real funds
+EXECUTOR_TEST_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+
 # Network config
 BASE_PORT="${BASE_PORT:-50100}"
 COORDINATOR_GRPC=""
@@ -230,6 +234,36 @@ _ergors_import_keys_to_node() {
     fi
 }
 
+# Import a separate test key into the executor node (different from faucet)
+# This ensures the executor has a distinct akash address for grantee operations
+# Usage: _ergors_import_executor_key <home_dir> <node_name>
+_ergors_import_executor_key() {
+    local home_dir="$1"
+    local node_name="$2"
+
+    local import_output
+    import_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        ERGORS_MNEMONIC="$EXECUTOR_TEST_MNEMONIC" \
+        "$ERGORS_BIN" --home "$home_dir" keys import-mnemonic \
+        --label "E2E Executor Key" \
+        --prefix akash \
+        --default 2>&1) || true
+
+    if echo "$import_output" | grep -Eq "akash1[a-z0-9]+"; then
+        local addr
+        addr=$(echo "$import_output" | grep -oE "akash1[a-z0-9]+" | head -1)
+        log_verbose "$node_name: Imported executor key: $addr"
+        return 0
+    elif echo "$import_output" | grep -qi "already exists"; then
+        log_verbose "$node_name: Executor key already imported (skipping)"
+        return 0
+    else
+        log_warn "$node_name: Executor key import may have issues"
+        log_debug "$import_output"
+        return 0  # Non-fatal
+    fi
+}
+
 # =============================================================================
 # Network Start/Stop
 # =============================================================================
@@ -290,7 +324,7 @@ ergors_start_network() {
 
     _ergors_init_node "$exec_home" "executor_0"
     _ergors_generate_config "executor_0" "executor" "$exec_http" "$exec_p2p" "$exec_home"
-    _ergors_import_keys_to_node "$exec_home" "executor"
+    _ergors_import_executor_key "$exec_home" "executor"
 
     # Note: LLM provider configuration will happen AFTER nodes start
     # via ergors_configure_providers_via_grpc() using gRPC commands
@@ -691,7 +725,10 @@ _ergors_cw_query_api() {
 # Identity Management
 # =============================================================================
 
-# Get and cache node addresses
+# Get and cache node addresses for Akash chain operations.
+# Coordinator: uses the imported faucet key's akash address (has funds, acts as granter)
+# Executor: uses its node identity re-derived with akash prefix (acts as grantee)
+# These must be DIFFERENT addresses for grant/feegrant operations.
 ergors_get_addresses() {
     if [[ -n "$COORDINATOR_ADDRESS" ]] && [[ -n "$EXECUTOR_ADDRESS" ]]; then
         return 0  # Already cached
@@ -699,20 +736,52 @@ ergors_get_addresses() {
 
     log "Querying node addresses..."
 
-    local coord_info
-    coord_info=$(ergors_cli node info 2>&1) || true
-    log_verbose "Coordinator node info: $coord_info"
-    COORDINATOR_ADDRESS=$(json_get "$coord_info" '.cosmos_address')
+    # Coordinator: use the faucet key (has funds on Akash chain)
+    # Use coordinator's gRPC addr so keys list queries the coordinator's daemon
+    if [[ -z "$COORDINATOR_ADDRESS" ]]; then
+        local coord_addr
+        coord_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+            ERGORS_GRPC_ADDR="http://${COORDINATOR_GRPC}" \
+            "$ERGORS_BIN" --home "$TEST_DIR/coordinator" keys list \
+            --prefix akash --label "E2E Faucet Key" -a 2>&1) || true
+        coord_addr=$(echo "$coord_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
+
+        if [[ -n "$coord_addr" ]]; then
+            COORDINATOR_ADDRESS="$coord_addr"
+        else
+            # Fallback: node identity with akash prefix from topology
+            local coord_info
+            coord_info=$(ergors_cli node info 2>&1) || true
+            log_verbose "Coordinator node info: $coord_info"
+            COORDINATOR_ADDRESS=$(json_get "$coord_info" '.bech32_address')
+        fi
+    fi
 
     if [[ -z "$COORDINATOR_ADDRESS" ]]; then
         log_error "Failed to get coordinator address"
         return 1
     fi
 
-    local exec_info
-    exec_info=$(ergors_cli_executor node info 2>&1) || true
-    log_verbose "Executor node info: $exec_info"
-    EXECUTOR_ADDRESS=$(json_get "$exec_info" '.cosmos_address')
+    # Executor: use the executor's own test key (different from faucet, acts as grantee)
+    # Use executor's gRPC addr so keys list queries the executor's daemon
+    if [[ -z "$EXECUTOR_ADDRESS" ]]; then
+        local exec_addr
+        exec_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+            ERGORS_GRPC_ADDR="http://${EXECUTOR_GRPC}" \
+            "$ERGORS_BIN" --home "$TEST_DIR/executor_0" keys list \
+            --prefix akash --label "E2E Executor Key" -a 2>&1) || true
+        exec_addr=$(echo "$exec_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
+
+        if [[ -n "$exec_addr" ]]; then
+            EXECUTOR_ADDRESS="$exec_addr"
+        else
+            # Fallback: try bech32_address from node topology
+            local exec_info
+            exec_info=$(ergors_cli_executor node info 2>&1) || true
+            log_verbose "Executor node info: $exec_info"
+            EXECUTOR_ADDRESS=$(json_get "$exec_info" '.bech32_address')
+        fi
+    fi
 
     if [[ -z "$EXECUTOR_ADDRESS" ]]; then
         log_error "Failed to get executor address"
@@ -727,37 +796,35 @@ ergors_get_addresses() {
 # Import the Akash faucet mnemonic into the coordinator node
 # This gives the coordinator a pre-funded key (10B AKT from genesis)
 # Uses: ergors keys import-mnemonic --prefix akash
-# If a faucet key already exists (e.g., "E2E Faucet Key"), use that instead of importing again
+# If a faucet key already exists (e.g., "E2E Faucet Key"), re-derive its akash address
 ergors_import_faucet_key() {
     local key_name="${1:-faucet}"
     local home_dir="${2:-$TEST_DIR/coordinator}"
 
-    # Check if a faucet key already exists (may have been imported during node startup)
-    local keys_output
-    keys_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        "$ERGORS_BIN" --home "$home_dir" keys list 2>&1) || true
+    # First, try to get the akash-prefixed address directly using --prefix and -a flags
+    # This re-derives the bech32 address from the stored pubkey with akash prefix
+    local akash_addr
+    akash_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$home_dir" keys list \
+        --prefix akash --label "E2E Faucet Key" -a 2>&1) || true
+    akash_addr=$(echo "$akash_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
 
-    log_verbose "Checking existing keys..."
-    log_verbose "Keys list: $keys_output"
-
-    # Check if the requested key already exists
-    if echo "$keys_output" | grep -q "$key_name"; then
-        local addr
-        addr=$(echo "$keys_output" | grep "$key_name" | grep -oE "(akash1|ergo1)[a-z0-9]{38,}" | head -1)
-        if [[ -n "$addr" ]]; then
-            log_success "Faucet key already exists: $addr (label: $key_name)"
-            export FAUCET_ADDRESS="$addr"
-            return 0
-        fi
+    if [[ -n "$akash_addr" ]]; then
+        log_success "Using existing E2E Faucet Key: $akash_addr"
+        export FAUCET_ADDRESS="$akash_addr"
+        return 0
     fi
 
-    # Check if "E2E Faucet Key" exists (imported during node startup)
-    if echo "$keys_output" | grep -q "E2E Faucet Key"; then
-        local addr
-        addr=$(echo "$keys_output" | grep "E2E Faucet Key" | grep -oE "(akash1|ergo1)[a-z0-9]{38,}" | head -1)
-        if [[ -n "$addr" ]]; then
-            log_success "Using existing E2E Faucet Key: $addr"
-            export FAUCET_ADDRESS="$addr"
+    # Also check with the requested label name
+    if [[ "$key_name" != "E2E Faucet Key" ]]; then
+        akash_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+            "$ERGORS_BIN" --home "$home_dir" keys list \
+            --prefix akash --label "$key_name" -a 2>&1) || true
+        akash_addr=$(echo "$akash_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
+
+        if [[ -n "$akash_addr" ]]; then
+            log_success "Faucet key already exists: $akash_addr (label: $key_name)"
+            export FAUCET_ADDRESS="$akash_addr"
             return 0
         fi
     fi
@@ -784,33 +851,25 @@ ergors_import_faucet_key() {
 
     log_verbose "Import output: $import_output"
 
-    # Verify key was imported by listing keys again
-    keys_output=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        "$ERGORS_BIN" --home "$home_dir" keys list 2>&1) || true
+    # Extract akash address from import output
+    akash_addr=$(echo "$import_output" | grep -oE "akash1[a-z0-9]+" | head -1)
 
-    log_verbose "Keys list after import: $keys_output"
-
-    # Extract faucet address from keys list output
-    if echo "$keys_output" | grep -q "$key_name"; then
-        local addr
-        addr=$(echo "$keys_output" | grep "$key_name" | grep -oE "(akash1|ergo1)[a-z0-9]{38,}" | head -1)
-
-        if [[ -n "$addr" ]]; then
-            log_success "Faucet key imported: $addr"
-            export FAUCET_ADDRESS="$addr"
-            return 0
-        fi
+    if [[ -n "$akash_addr" ]]; then
+        log_success "Faucet key imported: $akash_addr"
+        export FAUCET_ADDRESS="$akash_addr"
+        return 0
     fi
 
-    # Fallback: check if import message contains address with either prefix
-    if echo "$import_output" | grep -Eq "akash1|ergo1"; then
-        local addr
-        addr=$(echo "$import_output" | grep -oE "(akash1|ergo1)[a-z0-9]*" | head -1)
-        if [[ -n "$addr" ]]; then
-            log_success "Faucet key imported: $addr"
-            export FAUCET_ADDRESS="$addr"
-            return 0
-        fi
+    # Final fallback: list keys and re-derive with akash prefix
+    akash_addr=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
+        "$ERGORS_BIN" --home "$home_dir" keys list \
+        --prefix akash -a 2>&1) || true
+    akash_addr=$(echo "$akash_addr" | grep -oE "akash1[a-z0-9]+" | head -1)
+
+    if [[ -n "$akash_addr" ]]; then
+        log_success "Faucet key imported: $akash_addr"
+        export FAUCET_ADDRESS="$akash_addr"
+        return 0
     fi
 
     log_error "Failed to verify imported key"
@@ -1564,48 +1623,51 @@ ergors_sdl_render() {
 }
 
 # Import keys into running nodes (post-startup)
+# Uses --prefix akash since these keys are for Akash chain operations
 ergors_import_keys_post_startup() {
     log_section "Importing Keys into Running Nodes"
-    
+
     local coord_home="$TEST_DIR/coordinator"
     local exec_home="$TEST_DIR/executor_0"
-    
+
     # Get faucet mnemonic
     local mnemonic
     mnemonic=$(akash_get_faucet_mnemonic 2>/dev/null) || {
         log_warn "Could not get faucet mnemonic, skipping key import"
         return 0
     }
-    
+
     log "Importing faucet key into coordinator..."
     local coord_import
     coord_import=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
         ERGORS_MNEMONIC="$mnemonic" \
         "$ERGORS_BIN" --home "$coord_home" keys import-mnemonic \
         --label "E2E Faucet Key" \
+        --prefix akash \
         --default 2>&1) || true
 
-    if echo "$coord_import" | grep -q "ergo1"; then
+    if echo "$coord_import" | grep -qE "akash1[a-z0-9]+"; then
         local addr
-        addr=$(echo "$coord_import" | grep -o "ergo1[a-z0-9]*" | head -1)
+        addr=$(echo "$coord_import" | grep -oE "akash1[a-z0-9]+" | head -1)
         log_success "Coordinator key imported: $addr"
         export COORDINATOR_ADDRESS="$addr"
     else
         log_warn "Coordinator key import may have failed"
         log_debug "$coord_import"
     fi
-    
-    log "Importing faucet key into executor..."
+
+    log "Importing executor test key..."
     local exec_import
     exec_import=$(ERGORS_CUSTODY_PASSWORD="${TEST_CUSTODY_PASSWORD}" \
-        ERGORS_MNEMONIC="$mnemonic" \
+        ERGORS_MNEMONIC="$EXECUTOR_TEST_MNEMONIC" \
         "$ERGORS_BIN" --home "$exec_home" keys import-mnemonic \
-        --label "E2E Faucet Key" \
+        --label "E2E Executor Key" \
+        --prefix akash \
         --default 2>&1) || true
 
-    if echo "$exec_import" | grep -q "ergo1"; then
+    if echo "$exec_import" | grep -qE "akash1[a-z0-9]+"; then
         local addr
-        addr=$(echo "$exec_import" | grep -o "ergo1[a-z0-9]*" | head -1)
+        addr=$(echo "$exec_import" | grep -oE "akash1[a-z0-9]+" | head -1)
         log_success "Executor key imported: $addr"
         export EXECUTOR_ADDRESS="$addr"
     else
