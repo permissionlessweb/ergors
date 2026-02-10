@@ -314,5 +314,6 @@ We have ported into this workspace existing designs from the following code-base
 * [penumbra](https://github.com/penumbra-zone/penumbra)
 * [commonware](https://commonware.xyz/)
 * [cosmwasm](https://github.com/cosmwasm/cosmwasm)
+* [githem](https://github.com/rotkonetworks/githem)
 
 THANK YOU to the contributors of these, go show some support to their projects
