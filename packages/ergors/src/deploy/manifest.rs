@@ -274,29 +274,47 @@ fn parse_lease_status_endpoints_v2(json_str: &str) -> Result<HashMap<String, Ser
                 service.get("name").and_then(|n| n.as_str()),
                 service.get("uris").and_then(|u| u.as_array()),
             ) {
-                if let Some(uri) = uris.first().and_then(|u| u.as_str()) {
-                    // Extract port from URI
-                    let (external_port, protocol) = if uri.starts_with("https://") {
-                        (443, "TCP".to_string())
-                    } else if uri.starts_with("http://") {
-                        if let Some(port_str) = uri.split(':').nth(2) {
-                            (port_str.parse().unwrap_or(80), "TCP".to_string())
+                // Handle multiple URIs per service
+                for (idx, uri_value) in uris.iter().enumerate() {
+                    if let Some(uri) = uri_value.as_str() {
+                        // Build full URI with protocol if not present
+                        let full_uri = if uri.starts_with("http://") || uri.starts_with("https://") {
+                            uri.to_string()
+                        } else {
+                            // Default to https for domain names without protocol
+                            format!("https://{}", uri)
+                        };
+
+                        // Extract port from URI
+                        let (external_port, protocol) = if full_uri.starts_with("https://") {
+                            (443, "TCP".to_string())
+                        } else if full_uri.starts_with("http://") {
+                            if let Some(port_str) = full_uri.split(':').nth(2) {
+                                (port_str.parse().unwrap_or(80), "TCP".to_string())
+                            } else {
+                                (80, "TCP".to_string())
+                            }
                         } else {
                             (80, "TCP".to_string())
-                        }
-                    } else {
-                        (80, "TCP".to_string())
-                    };
+                        };
 
-                    endpoints.insert(
-                        name.to_string(),
-                        ServiceEndpoint {
-                            external_uri: uri.to_string(),
-                            internal_port: external_port,
-                            external_port,
-                            protocol,
-                        },
-                    );
+                        // Create label: first URI uses service name, additional URIs get suffix
+                        let endpoint_name = if idx == 0 {
+                            name.to_string()
+                        } else {
+                            format!("{}-alt{}", name, idx)
+                        };
+
+                        endpoints.insert(
+                            endpoint_name,
+                            ServiceEndpoint {
+                                external_uri: full_uri,
+                                internal_port: external_port,
+                                external_port,
+                                protocol,
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -306,33 +324,52 @@ fn parse_lease_status_endpoints_v2(json_str: &str) -> Result<HashMap<String, Ser
     if endpoints.is_empty() {
         if let Some(ports) = status.get("forwarded_ports").and_then(|p| p.as_object()) {
             for (service_name, port_info) in ports {
-                if let Some(port_obj) = port_info.as_object() {
-                    if let (Some(host), Some(port)) = (
-                        port_obj.get("host").and_then(|h| h.as_str()),
-                        port_obj.get("port").and_then(|p| p.as_u64()),
-                    ) {
-                        let uri = if port == 443 {
-                            format!("https://{}", host)
-                        } else if port == 80 {
-                            format!("http://{}", host)
-                        } else {
-                            format!("http://{}:{}", host, port)
-                        };
-                        let proto = port_obj
-                            .get("proto")
-                            .and_then(|p| p.as_str())
-                            .unwrap_or("TCP")
-                            .to_uppercase();
+                // Handle both array format and object format
+                let port_obj = if let Some(arr) = port_info.as_array() {
+                    // New format: forwarded_ports.service = [{...}]
+                    arr.first().and_then(|v| v.as_object())
+                } else {
+                    // Old format: forwarded_ports.service = {...}
+                    port_info.as_object()
+                };
 
-                        endpoints.insert(
-                            service_name.clone(),
-                            ServiceEndpoint {
-                                external_uri: uri,
-                                internal_port: port as u32,
-                                external_port: port as u32,
-                                protocol: proto,
-                            },
-                        );
+                if let Some(port_obj) = port_obj {
+                    if let Some(host) = port_obj.get("host").and_then(|h| h.as_str()) {
+                        // Try externalPort first (new format), fallback to port (old format)
+                        let external_port = port_obj
+                            .get("externalPort")
+                            .and_then(|p| p.as_u64())
+                            .or_else(|| port_obj.get("port").and_then(|p| p.as_u64()));
+
+                        let internal_port = port_obj
+                            .get("port")
+                            .and_then(|p| p.as_u64())
+                            .unwrap_or(external_port.unwrap_or(80));
+
+                        if let Some(ext_port) = external_port {
+                            let uri = if ext_port == 443 {
+                                format!("https://{}", host)
+                            } else if ext_port == 80 {
+                                format!("http://{}", host)
+                            } else {
+                                format!("http://{}:{}", host, ext_port)
+                            };
+                            let proto = port_obj
+                                .get("proto")
+                                .and_then(|p| p.as_str())
+                                .unwrap_or("TCP")
+                                .to_uppercase();
+
+                            endpoints.insert(
+                                service_name.clone(),
+                                ServiceEndpoint {
+                                    external_uri: uri,
+                                    internal_port: internal_port as u32,
+                                    external_port: ext_port as u32,
+                                    protocol: proto,
+                                },
+                            );
+                        }
                     }
                 }
             }
@@ -435,5 +472,93 @@ deployment:
         assert_eq!(ep.external_uri, "http://example.com");
         assert_eq!(ep.external_port, 80);
         assert_eq!(ep.protocol, "TCP");
+    }
+
+    #[test]
+    fn test_parse_endpoints_array_format_with_external_port() {
+        // Real-world format from Akash provider lease status
+        let json = r#"{
+            "forwarded_ports": {
+                "glm-flash": [
+                    {
+                        "host": "provider.a100.kci.val.akash.pub",
+                        "port": 8000,
+                        "externalPort": 30518,
+                        "proto": "TCP",
+                        "name": "glm-flash"
+                    }
+                ],
+                "qwen-coder": [
+                    {
+                        "host": "provider.a100.kci.val.akash.pub",
+                        "port": 8000,
+                        "externalPort": 30865,
+                        "proto": "TCP",
+                        "name": "qwen-coder"
+                    }
+                ]
+            }
+        }"#;
+
+        let endpoints = parse_lease_status_endpoints_v2(json).unwrap();
+
+        let glm = endpoints.get("glm-flash").unwrap();
+        assert_eq!(glm.external_uri, "http://provider.a100.kci.val.akash.pub:30518");
+        assert_eq!(glm.internal_port, 8000);
+        assert_eq!(glm.external_port, 30518);
+        assert_eq!(glm.protocol, "TCP");
+
+        let qwen = endpoints.get("qwen-coder").unwrap();
+        assert_eq!(qwen.external_uri, "http://provider.a100.kci.val.akash.pub:30865");
+        assert_eq!(qwen.internal_port, 8000);
+        assert_eq!(qwen.external_port, 30865);
+        assert_eq!(qwen.protocol, "TCP");
+    }
+
+    #[test]
+    fn test_parse_endpoints_multiple_uris_per_service() {
+        // Real-world format with multiple public URIs (Akash ingress + custom domains)
+        let json = r#"{
+            "services": [
+                {
+                    "name": "web",
+                    "available": 1,
+                    "total": 1,
+                    "uris": [
+                        "enh09hkegd9217s8rfhkrio5ck.ingress.akashprovid.com",
+                        "terp.network",
+                        "www.terp.network"
+                    ],
+                    "observed_generation": 9,
+                    "replicas": 1,
+                    "updated_replicas": 1,
+                    "ready_replicas": 1,
+                    "available_replicas": 1
+                }
+            ],
+            "forwarded_ports": null,
+            "ips": null
+        }"#;
+
+        let endpoints = parse_lease_status_endpoints_v2(json).unwrap();
+
+        // Should create 3 endpoints: one primary + 2 alternates
+        assert_eq!(endpoints.len(), 3);
+
+        // Primary endpoint (first URI)
+        let primary = endpoints.get("web").unwrap();
+        assert_eq!(primary.external_uri, "https://enh09hkegd9217s8rfhkrio5ck.ingress.akashprovid.com");
+        assert_eq!(primary.external_port, 443);
+        assert_eq!(primary.protocol, "TCP");
+
+        // Alternate endpoint 1 (second URI)
+        let alt1 = endpoints.get("web-alt1").unwrap();
+        assert_eq!(alt1.external_uri, "https://terp.network");
+        assert_eq!(alt1.external_port, 443);
+
+        // Alternate endpoint 2 (third URI)
+        let alt2 = endpoints.get("web-alt2").unwrap();
+        assert_eq!(alt2.external_uri, "https://www.terp.network");
+        assert_eq!(alt2.external_port, 443);
     }
 }

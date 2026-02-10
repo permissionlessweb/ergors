@@ -96,6 +96,9 @@ use ho_std::types::ergors::management::v1::{
     // RLM config types
     RlmGetConfigRequest,
     RlmGetConfigResponse,
+    // Provider registration types
+    RegisterDeploymentProvidersRequest,
+    RegisterDeploymentProvidersResponse,
     // Cosmos key management types
     ListCosmosKeysResponse,
     // Gateway management types
@@ -2330,6 +2333,7 @@ impl ManagementService for ManagementServiceImpl {
                 nanos: 0,
             }),
             is_trusted_provider: false,
+            provider_uri: String::new(), // Will be populated when endpoints are queried
         });
 
         workflow.current_step = AkashWorkflowStep::LeaseCreate as i32;
@@ -3047,6 +3051,111 @@ impl ManagementService for ManagementServiceImpl {
             endpoints: workflow.service_endpoints,
             balance_remaining_uakt: 0, // TODO: Query from chain
             deployment_status: deployment_status.to_string(),
+        }))
+    }
+
+    /// Register deployment service endpoints as LLM providers
+    async fn register_deployment_providers(
+        &self,
+        request: Request<RegisterDeploymentProvidersRequest>,
+    ) -> Result<Response<RegisterDeploymentProvidersResponse>, Status> {
+        use ho_std::types::ergors::orch::v1::{InferenceProviderConfig, InferenceProviderType};
+
+        let req = request.into_inner();
+
+        // Get workflow
+        let workflow = self
+            .state
+            .s
+            .get_akash_workflow_by_id_or_label(&req.session_id)
+            .await
+            .map_err(|e| Status::not_found(format!("Workflow not found: {}", e)))?;
+
+        if workflow.service_endpoints.is_empty() {
+            return Ok(Response::new(RegisterDeploymentProvidersResponse {
+                success: false,
+                message: "No service endpoints available in deployment. Deploy and wait for endpoints first.".to_string(),
+                provider_labels: vec![],
+                registered_count: 0,
+            }));
+        }
+
+        // Get current provider config
+        let mut router_config = self
+            .state
+            .s
+            .get_proxy_router_config()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to load router config: {}", e)))?
+            .unwrap_or_default();
+
+        let mut registered_labels = Vec::new();
+        let mut errors = Vec::new();
+
+        for endpoint in &workflow.service_endpoints {
+            // Build provider label
+            let label = if req.label_prefix.is_empty() {
+                endpoint.service_name.clone()
+            } else {
+                format!("{}-{}", req.label_prefix, endpoint.service_name)
+            };
+
+            // Check if label already exists
+            if router_config.providers.contains_key(&label) {
+                errors.push(format!("Provider '{}' already exists", label));
+                continue;
+            }
+
+            // Create provider config
+            let provider_config = InferenceProviderConfig {
+                provider_id: label.clone(),
+                base_url: endpoint.external_uri.clone(),
+                api_key_ref: String::new(), // Keyless provider
+                enabled: true,
+                provider_type: InferenceProviderType::Custom as i32,
+                ..Default::default()
+            };
+
+            router_config.providers.insert(label.clone(), provider_config);
+
+            // Add catch-all model route for this provider
+            let wildcard_pattern = format!("{}/*", label);
+            router_config.model_routes.insert(wildcard_pattern, label.clone());
+
+            registered_labels.push(label);
+        }
+
+        // Save updated config
+        if !registered_labels.is_empty() {
+            self.state
+                .s
+                .put_proxy_router_config(&router_config)
+                .await
+                .map_err(|e| Status::internal(format!("Failed to save router config: {}", e)))?;
+
+            tracing::info!(
+                "Registered {} providers from deployment {}: {:?}",
+                registered_labels.len(),
+                req.session_id,
+                registered_labels
+            );
+        }
+
+        let message = if !errors.is_empty() {
+            format!(
+                "Registered {} providers. Warnings: {}",
+                registered_labels.len(),
+                errors.join(", ")
+            )
+        } else {
+            format!("Successfully registered {} providers", registered_labels.len())
+        };
+
+        Ok(Response::new(RegisterDeploymentProvidersResponse {
+            success: !registered_labels.is_empty(),
+            message,
+            provider_labels: registered_labels.clone(),
+            registered_count: registered_labels.len() as u32,
         }))
     }
 

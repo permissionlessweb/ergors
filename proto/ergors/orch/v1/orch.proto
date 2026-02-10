@@ -1311,6 +1311,7 @@ message AkashProviderSelection {
   uint32 total_bids_received = 4;
   google.protobuf.Timestamp selected_at = 5;
   bool is_trusted_provider = 6;
+  string provider_uri = 7;  // Provider's public URI (e.g., "https://provider.akash1xyz.com")
 }
 
 // Endpoint test result

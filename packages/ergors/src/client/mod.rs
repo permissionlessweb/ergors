@@ -103,6 +103,9 @@ use ho_std::types::ergors::management::v1::{
     // RLM config types
     RlmGetConfigRequest,
     RlmGetConfigResponse,
+    // Provider registration types
+    RegisterDeploymentProvidersRequest,
+    RegisterDeploymentProvidersResponse,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
 use ho_std::types::ergors::orch::v1::{
@@ -919,6 +922,24 @@ impl ManagementClient {
             })
             .await
             .context("Failed to get lease status")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Register deployment service endpoints as LLM providers
+    pub async fn register_deployment_providers(
+        &mut self,
+        session_id: &str,
+        label_prefix: Option<&str>,
+    ) -> Result<RegisterDeploymentProvidersResponse> {
+        let response = self
+            .inner
+            .register_deployment_providers(RegisterDeploymentProvidersRequest {
+                session_id: session_id.to_string(),
+                label_prefix: label_prefix.unwrap_or_default().to_string(),
+            })
+            .await
+            .context("Failed to register deployment providers")?;
 
         Ok(response.into_inner())
     }

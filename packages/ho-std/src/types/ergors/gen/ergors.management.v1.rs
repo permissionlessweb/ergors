@@ -3652,6 +3652,51 @@ impl ::prost::Name for RlmGetConfigResponse {
         "/ergors.management.v1.RlmGetConfigResponse".into()
     }
 }
+/// Register deployment service endpoints as LLM providers
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterDeploymentProvidersRequest {
+    /// Deployment session ID or label
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// Optional: prefix for provider labels (empty = use service names)
+    #[prost(string, tag = "2")]
+    pub label_prefix: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RegisterDeploymentProvidersRequest {
+    const NAME: &'static str = "RegisterDeploymentProvidersRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RegisterDeploymentProvidersRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RegisterDeploymentProvidersRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterDeploymentProvidersResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    /// List of registered provider labels
+    #[prost(string, repeated, tag = "3")]
+    pub provider_labels: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Number of providers successfully registered
+    #[prost(uint32, tag = "4")]
+    pub registered_count: u32,
+}
+impl ::prost::Name for RegisterDeploymentProvidersResponse {
+    const NAME: &'static str = "RegisterDeploymentProvidersResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RegisterDeploymentProvidersResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RegisterDeploymentProvidersResponse".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -5820,6 +5865,36 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Register deployment service endpoints as LLM providers
+        pub async fn register_deployment_providers(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RegisterDeploymentProvidersRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RegisterDeploymentProvidersResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RegisterDeploymentProviders",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RegisterDeploymentProviders",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Add trusted provider
         pub async fn add_trusted_provider(
             &mut self,
@@ -7511,6 +7586,14 @@ pub mod management_service_server {
             request: tonic::Request<super::super::super::orch::v1::GetLeaseStatusRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::super::orch::v1::LeaseStatusResponse>,
+            tonic::Status,
+        >;
+        /// Register deployment service endpoints as LLM providers
+        async fn register_deployment_providers(
+            &self,
+            request: tonic::Request<super::RegisterDeploymentProvidersRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RegisterDeploymentProvidersResponse>,
             tonic::Status,
         >;
         /// Add trusted provider
@@ -10584,6 +10667,60 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetLeaseStatusSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RegisterDeploymentProviders" => {
+                    #[allow(non_camel_case_types)]
+                    struct RegisterDeploymentProvidersSvc<T: ManagementService>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::RegisterDeploymentProvidersRequest,
+                    > for RegisterDeploymentProvidersSvc<T> {
+                        type Response = super::RegisterDeploymentProvidersResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::RegisterDeploymentProvidersRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::register_deployment_providers(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RegisterDeploymentProvidersSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

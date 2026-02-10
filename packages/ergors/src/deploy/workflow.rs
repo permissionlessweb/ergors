@@ -240,6 +240,7 @@ impl AkashWorkflowManager {
             total_bids_received: 1,
             selected_at: Some(current_timestamp()),
             is_trusted_provider: is_trusted,
+            provider_uri: String::new(), // Will be populated when endpoints are queried
         });
         workflow.updated_at = Some(current_timestamp());
 

@@ -3044,6 +3044,9 @@ pub struct AkashProviderSelection {
     pub selected_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(bool, tag = "6")]
     pub is_trusted_provider: bool,
+    /// Provider's public URI (e.g., "<https://provider.akash1xyz.com">)
+    #[prost(string, tag = "7")]
+    pub provider_uri: ::prost::alloc::string::String,
 }
 impl ::prost::Name for AkashProviderSelection {
     const NAME: &'static str = "AkashProviderSelection";

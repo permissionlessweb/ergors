@@ -142,6 +142,8 @@ service ManagementService {
   rpc TopupAkashEscrow(ergors.orch.v1.TopupAkashEscrowRequest) returns (OperationResult);
   // Get lease status
   rpc GetLeaseStatus(ergors.orch.v1.GetLeaseStatusRequest) returns (ergors.orch.v1.LeaseStatusResponse);
+  // Register deployment service endpoints as LLM providers
+  rpc RegisterDeploymentProviders(RegisterDeploymentProvidersRequest) returns (RegisterDeploymentProvidersResponse);
   // Add trusted provider
   rpc AddTrustedProvider(ergors.orch.v1.AddTrustedProviderRequest) returns (OperationResult);
   // Remove trusted provider
@@ -1581,4 +1583,17 @@ message RlmGetConfigRequest {}
 message RlmGetConfigResponse {
   bool configured = 1;
   ergors.orch.v1.RlmConfig config = 2;
+}
+
+// Register deployment service endpoints as LLM providers
+message RegisterDeploymentProvidersRequest {
+  string session_id = 1;  // Deployment session ID or label
+  string label_prefix = 2;  // Optional: prefix for provider labels (empty = use service names)
+}
+
+message RegisterDeploymentProvidersResponse {
+  bool success = 1;
+  string message = 2;
+  repeated string provider_labels = 3;  // List of registered provider labels
+  uint32 registered_count = 4;  // Number of providers successfully registered
 }
