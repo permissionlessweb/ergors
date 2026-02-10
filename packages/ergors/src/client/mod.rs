@@ -1513,6 +1513,14 @@ impl ManagementClient {
 
         Ok(response.into_inner())
     }
+
+    /// Create a mock client for testing (panics if called)
+    #[cfg(test)]
+    pub fn mock() -> Self {
+        // This is a placeholder for tests that don't actually call client methods
+        // If a test tries to use this client, it will panic
+        panic!("Mock client called - this should not be used in actual test execution");
+    }
 }
 
 /// Helper to format engine state for display

@@ -588,16 +588,16 @@ pub enum ProviderCmd {
     Assign {
         /// Provider name
         name: String,
-        /// Engine role (orchestration, sub-agent, embeddings, tool-calling)
-        #[arg(long)]
+        /// Engine role
+        #[arg(long, value_parser = ["orchestration", "sub-agent", "embeddings", "tool-calling"])]
         role: String,
     },
     /// Unassign a provider from an engine role
     Unassign {
         /// Provider name
         name: String,
-        /// Engine role (orchestration, sub-agent, embeddings, tool-calling)
-        #[arg(long)]
+        /// Engine role
+        #[arg(long, value_parser = ["orchestration", "sub-agent", "embeddings", "tool-calling"])]
         role: String,
     },
     /// List all engine role assignments
@@ -607,11 +607,11 @@ pub enum ProviderCmd {
 /// Parse a CLI role string into an EngineRole enum value
 fn parse_engine_role(s: &str) -> Result<ho_std::types::ergors::orch::v1::EngineRole> {
     use ho_std::types::ergors::orch::v1::EngineRole;
-    match s.to_lowercase().replace('_', "-").as_str() {
+    match s {
         "orchestration" => Ok(EngineRole::Orchestration),
-        "sub-agent" | "subagent" => Ok(EngineRole::SubAgent),
+        "sub-agent" => Ok(EngineRole::SubAgent),
         "embeddings" => Ok(EngineRole::Embeddings),
-        "tool-calling" | "toolcalling" => Ok(EngineRole::ToolCalling),
+        "tool-calling" => Ok(EngineRole::ToolCalling),
         _ => anyhow::bail!(
             "Unknown engine role '{}'. Valid roles: orchestration, sub-agent, embeddings, tool-calling",
             s
@@ -620,7 +620,7 @@ fn parse_engine_role(s: &str) -> Result<ho_std::types::ergors::orch::v1::EngineR
 }
 
 /// Format an EngineRole enum value for display
-fn format_engine_role(role: i32) -> &'static str {
+pub(crate) fn format_engine_role(role: i32) -> &'static str {
     use ho_std::types::ergors::orch::v1::EngineRole;
     match EngineRole::try_from(role) {
         Ok(EngineRole::Orchestration) => "orchestration",

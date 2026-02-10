@@ -141,8 +141,8 @@ ergors call "Hello" --api-addr http://remote-node:8080
 | `provider add <NAME>` | Register an API key for a provider | `<NAME>` - Provider name (openai, anthropic, etc.) `--api-key <KEY>` - API key (prompts with hidden input if omitted) `--default` - Set as default provider | `ergors provider add openai` |
 | `provider test [NAME]` | Test provider connectivity | `[NAME]` - Provider name (tests all if omitted). Reports latency in ms. | `ergors provider test openai` |
 | `provider default <NAME>` | Set the default provider | `<NAME>` - Provider name | `ergors provider default anthropic` |
-| `provider assign <NAME>` | Assign provider to an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role: `orchestration`, `sub-agent`, `embeddings`, `tool-calling` | `ergors provider assign local-sglang --role orchestration` |
-| `provider unassign <NAME>` | Unassign provider from an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role to unassign from | `ergors provider unassign local-sglang --role orchestration` |
+| `provider assign <NAME>` | Assign provider to an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role (possible values shown in `--help`): `orchestration`, `sub-agent`, `embeddings`, `tool-calling` | `ergors provider assign local-sglang --role orchestration` |
+| `provider unassign <NAME>` | Unassign provider from an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role (possible values shown in `--help`) | `ergors provider unassign local-sglang --role orchestration` |
 | `provider roles` | List all engine role assignments | Shows role mappings with priority order (first = primary, rest = fallback). Use `--json` for machine-readable output. | `ergors provider roles` |
 
 **Provider Add Details:**
@@ -594,6 +594,8 @@ ergors deploy run <session-id-or-label> [OPTIONS]
 ```bash
 ergors deploy list [--status <STATUS>] [--limit <N>]
 ```
+
+Shows full session ID, label, status, account, service endpoints (port mappings), and engine role assignments for each deployment. Use `--json` for machine-readable output including all fields.
 
 ### Get Deployment
 
@@ -1439,6 +1441,84 @@ The `/ingest` command supports both regular URLs and GitHub repository URLs:
 - User must have RAG admin role for the guild
 - RAG must be configured globally (`ergors rag configure`)
 - GitHub ingestion requires `--features github-ingest` at compile time (enabled by default)
+
+#### Test Mode
+
+The Discord gateway includes a test mode for validating integration without requiring LLM providers or actual document ingestion. This is useful for:
+
+- Testing bot connectivity and command reception
+- Validating admin role permissions
+- Confirming authentication flows
+- Debugging gateway configuration issues
+- Development and staging environments
+
+**Enable Test Mode:**
+
+```bash
+export ERGORS_GATEWAY_TEST_MODE=1
+ergors gateway start discord
+```
+
+**Test Mode Behavior:**
+
+| Command | Test Mode Response |
+| ------- | ------------------ |
+| `/prompt <message>` | Returns canned response confirming message reception, session management, and context retrieval (no LLM call) |
+| `/ingest <url>` | **Actually performs document ingestion** - validates admin auth, fetches URL, stores in RAG system (no LLM required) |
+| All admin commands | Still enforce permission checks (key feature for testing auth) |
+
+**Example Test Session:**
+
+```bash
+# Terminal 1: Start gateway in test mode
+export ERGORS_GATEWAY_TEST_MODE=1
+ergors gateway start discord
+
+# Output shows:
+# 🧪 Discord Gateway TEST MODE enabled - LLM calls will be bypassed with test responses
+
+# Terminal 2: In Discord, run:
+# /prompt message:Hello, bot!
+# Response:
+# 🧪 **TEST MODE RESPONSE**
+#
+# ✅ Message received: "Hello, bot!"
+# ✅ Session: `thread-123456789`
+# ✅ Context: No RAG/RLM context (direct LLM call would occur)
+#
+# **What was tested:**
+# • Guild authorization ✓
+# • Session management ✓
+# • Context retrieval ✓
+# • Message processing ✓
+#
+# In production, this would call the LLM provider.
+#
+# 📚 Learn more: https://github.com/commonwarexyz/ergors
+
+# /ingest url:https://github.com/commonwarexyz/monorepo
+# Response:
+# Cloning repository: commonwarexyz/monorepo
+# Processing 42 files...
+# ✓ Ingested **commonwarexyz/monorepo** (42 files, 127 chunks)
+#
+# Note: In test mode, document ingestion happens normally!
+#       Only LLM inference calls are bypassed.
+```
+
+**What Test Mode Does NOT Test:**
+
+- Actual LLM provider integration (separate team responsibility)
+- LLM inference calls for `/prompt` command
+
+**What Test Mode DOES Test:**
+
+- Document ingestion (GitHub repos, URLs)
+- RAG storage and embedding generation
+- Admin authorization for document operations
+- Guild authorization and session management
+
+**Security Note:** Test mode still enforces all authentication and authorization checks. Non-admin users will correctly fail permission checks for `/ingest` and other admin commands.
 
 ### Discord Setup Workflow
 
