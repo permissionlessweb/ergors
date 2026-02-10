@@ -151,7 +151,7 @@ impl ManifestSender {
         keypair: &CosmosKeyPair,
     ) -> Result<()> {
         // Provider recomputes SHA256(manifest_json) and compares to on-chain hash
-        use crate::deploy::deployment_builder::to_canonical_json;
+        use super::deployment_builder::to_canonical_json;
         let manifest_json = to_canonical_json(manifest)?;
 
         tracing::debug!(

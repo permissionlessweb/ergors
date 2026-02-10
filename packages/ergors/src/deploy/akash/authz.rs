@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::{Duration, SystemTime};
 
-use super::akash::msg_types;
+use super::messages::msg_types;
 
 /// Default authz expiration (24 hours)
 pub const DEFAULT_AUTHZ_EXPIRATION_HOURS: u64 = 24;

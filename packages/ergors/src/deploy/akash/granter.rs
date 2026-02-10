@@ -1109,7 +1109,7 @@ mod tests {
     /// Integration test: granter + requester pipeline in simulated mode
     #[tokio::test]
     async fn test_granter_requester_pipeline() {
-        use crate::deploy::requester::GrantRequesterService;
+        use crate::deploy::akash::requester::GrantRequesterService;
 
         let storage = test_storage().await;
         // Set up granter

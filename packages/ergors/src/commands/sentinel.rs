@@ -25,7 +25,7 @@ use rand::RngCore;
 use serde::Deserialize;
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519Secret};
 
-use crate::sentinel::SENTINEL_KDF_CONTEXT;
+use crate::client::sentinel::SENTINEL_KDF_CONTEXT;
 
 // =============================================================================
 // CLI types
@@ -430,7 +430,7 @@ fn build_envelope(plaintext: &[u8], server_pubkey: &X25519PublicKey) -> Result<V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sentinel::SENTINEL_KDF_CONTEXT;
+    use crate::client::sentinel::SENTINEL_KDF_CONTEXT;
 
     #[test]
     fn build_envelope_decryptable_by_server() {

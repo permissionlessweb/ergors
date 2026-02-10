@@ -22,7 +22,6 @@ pub mod git;
 pub mod languages;
 pub mod llm;
 pub mod network;
-pub mod server;
 pub mod storage;
 pub mod traits;
 pub mod transports;

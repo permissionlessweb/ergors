@@ -15,10 +15,11 @@ use prost::Name;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::akash::broadcast_akash_msg;
-use super::climb_signer::create_signing_client_with_failover;
-use super::cosmos_client::{CosmosClient, LeaseState};
+use super::messages::broadcast_akash_msg;
+use super::types::LeaseState;
+use super::client::AkashClient;
 use super::deployment_builder::build_escrow_deposit_msg;
+use crate::deploy::climb_signer::create_signing_client_with_failover;
 use crate::storage::ErgorsStorage;
 
 /// Default escrow balance threshold for auto top-up (20% of initial deposit).
@@ -48,7 +49,7 @@ pub struct RefreshResult {
 /// Deployment cache refresher with chain verification.
 pub struct DeploymentCacheRefresher {
     storage: Arc<ErgorsStorage>,
-    cosmos: Arc<CosmosClient>,
+    cosmos: Arc<AkashClient>,
     cache: Arc<DeploymentProviderCache>,
     /// Threshold percentage for auto top-up (0-100)
     top_up_threshold_percent: u64,
@@ -68,7 +69,7 @@ impl DeploymentCacheRefresher {
     /// Create a new cache refresher.
     pub fn new(
         storage: Arc<ErgorsStorage>,
-        cosmos: Arc<CosmosClient>,
+        cosmos: Arc<AkashClient>,
         cache: Arc<DeploymentProviderCache>,
     ) -> Self {
         Self {
@@ -427,7 +428,7 @@ impl DeploymentCacheRefresher {
 /// without requiring individual workflow lookup.
 pub async fn refresh_cache_for_owner(
     storage: &Arc<ErgorsStorage>,
-    cosmos: &Arc<CosmosClient>,
+    cosmos: &Arc<AkashClient>,
     cache: &DeploymentProviderCache,
     owner: &str,
 ) -> Result<usize> {

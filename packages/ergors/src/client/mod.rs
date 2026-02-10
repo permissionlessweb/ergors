@@ -1393,6 +1393,7 @@ pub use ho_std::types::ergors::network::v1::NodeType as NodeTypeProto;
 
 pub mod grpc;
 pub mod rlm;
+pub mod sentinel;
 
 // Re-export key types and functions
 pub use crate::auth::grpc::{create_grpc_auth_interceptor, AuthorizedCliKeys};

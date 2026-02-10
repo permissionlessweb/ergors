@@ -23,7 +23,7 @@ use ergors::{
     keys::KeysCmd,
     client::grpc::{start_grpc_server, ManagementServiceImpl},
     client::RlmDocService,
-    sentinel::SentinelServer,
+    client::sentinel::SentinelServer,
     server::Server as CwHoServer,
 };
 use ho_std::{

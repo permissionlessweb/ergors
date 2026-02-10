@@ -6,8 +6,8 @@
 //! - Persists workflow state to Cnidarium storage
 //! - Supports concurrent workflows via HD path derivation
 
-use crate::deploy::authz::AkashAuthzManager;
-use crate::deploy::sdl::SdlTemplateManager;
+use super::authz::AkashAuthzManager;
+use super::sdl::SdlTemplateManager;
 use crate::storage::ErgorsStorage;
 use anyhow::{anyhow, Result};
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;

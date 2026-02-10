@@ -2,7 +2,7 @@
 //!
 //! Provides the server-side implementation of the management gRPC service.
 
-use crate::deploy::cosmos_client::{CosmosClient, CosmosEndpoints};
+use crate::deploy::akash::client::AkashClient;
 use crate::gateway::crypto::{encrypt_gateway_secret, GATEWAY_SECRET_ENCRYPTION_METHOD};
 use crate::session_manager::{SessionManager, SessionManagerConfig};
 use crate::ErgorsAppState;
@@ -3937,17 +3937,16 @@ impl ManagementService for ManagementServiceImpl {
 
         // Get endpoints from config (uses mainnet defaults if not configured)
         let akash_config = self.state.c.akash();
-        let endpoints = CosmosEndpoints::from_akash_config(&akash_config);
+
+        let client = AkashClient::from_akash_config(&akash_config)
+            .map_err(|e| Status::internal(format!("Failed to create client: {}", e)))?;
 
         tracing::debug!(
             "Querying balance for {} (denom: {}) via {}",
             req.address,
             req.denom,
-            endpoints.rest
+            client.rest_endpoint()
         );
-
-        let client = CosmosClient::new(endpoints)
-            .map_err(|e| Status::internal(format!("Failed to create client: {}", e)))?;
 
         let coin = client
             .query_balance(&req.address, &req.denom)

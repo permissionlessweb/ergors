@@ -3,22 +3,22 @@ pub mod client;
 pub mod commands;
 pub mod config;
 pub mod consensus;
+pub mod chains;
 #[cfg(feature = "cw")]
 pub mod contracts;
-pub mod daemon;
 pub mod deploy;
 pub mod gateway;
 pub mod headstash;
 pub mod keys;
-pub mod network;
 pub mod proxy;
-pub mod sentinel;
 pub mod server;
-pub mod session_manager;
-pub mod storage;
 pub mod traits;
 
+// Re-export modules that moved into server/ for backward compat
+pub use server::{daemon,network,session_manager,storage};
+
 #[cfg(feature = "cw")]
+#[path = "contracts/cosmwasm/cosmwasm.rs"]
 pub mod cosmwasm;
 #[cfg(feature = "cw")]
 use ho_std::wasm::WasmRuntime;
@@ -26,7 +26,7 @@ use ho_std::wasm::WasmRuntime;
 // Re-export the macro for external use
 use crate::{
     config::ErgorsConfig,
-    deploy::{automated::AutomatedDeployer, cosmos_client::CosmosClient},
+    deploy::akash::{client::AkashClient, deployer::AutomatedDeployer},
     network::PeerInfo,
     proxy::ProxyRouter,
     storage::ErgorsStorage,
@@ -74,8 +74,8 @@ pub struct ErgorsNetworkManifold {
 /// Uses JWT authentication for provider communication (no mTLS certificates required).
 #[derive(Clone)]
 pub struct AkashDeploymentContext {
-    /// CosmosClient for chain queries
-    pub cosmos: Arc<CosmosClient>,
+    /// AkashClient for chain queries
+    pub cosmos: Arc<AkashClient>,
     /// Key manager (unlocked with password)
     pub key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
     /// Key store

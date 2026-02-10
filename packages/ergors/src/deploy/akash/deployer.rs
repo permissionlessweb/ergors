@@ -22,14 +22,15 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use super::akash::broadcast_akash_msg;
-use super::climb_signer::create_signing_client_with_failover;
-use super::cosmos_client::{BidInfo, CosmosClient};
+use super::messages::broadcast_akash_msg;
+use super::types::BidInfo;
+use super::client::AkashClient;
+use crate::deploy::climb_signer::create_signing_client_with_failover;
 use super::deployment_builder::{
     build_close_deployment_msg, build_create_lease_msg, get_next_dseq, DeploymentBuilder,
     DEFAULT_DEPOSIT_UAKT,
 };
-use super::endpoint_manager::{EndpointManager, EndpointType};
+use crate::deploy::endpoint_manager::{EndpointManager, EndpointType};
 use super::manifest::{query_service_endpoints, ManifestSender};
 use crate::storage::ErgorsStorage;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
@@ -56,7 +57,7 @@ const MAX_BID_POLL_ATTEMPTS: u32 = 10;
 /// Uses JWT authentication for provider communication (no mTLS certificates required).
 pub struct AutomatedDeployer {
     storage: Arc<ErgorsStorage>,
-    cosmos: Arc<CosmosClient>,
+    cosmos: Arc<AkashClient>,
     /// Key manager (for decrypting mnemonics)
     key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
     /// Key store (for retrieving encrypted keys)
@@ -73,7 +74,7 @@ impl AutomatedDeployer {
     /// Uses JWT authentication for provider communication (no certificates needed).
     pub fn new(
         storage: Arc<ErgorsStorage>,
-        cosmos: Arc<CosmosClient>,
+        cosmos: Arc<AkashClient>,
         key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
         key_store: Arc<RwLock<CosmosKeyStore>>,
         akash_config: AkashDeployConfig,

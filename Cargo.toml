@@ -45,7 +45,6 @@ license    = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 akash-deploy-rs  = "0.0.4"
-# akash-deploy-rs = { path = "../../akash-deploy-rs"}
 anybuf = "1.0.0"
 anyhow = "1.0"
 argon2 = "0.5"

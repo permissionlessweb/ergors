@@ -1,102 +1,96 @@
-//! Direct Cosmos blockchain query client.
+//! Akash-specific blockchain query client.
 //!
-//! REST-based queries to Cosmos SDK chains. No magic, just functions.
+//! Wraps CosmosBaseClient with Akash Network query endpoints for
+//! certificates, deployments, bids, leases, escrow, and providers.
 
 use anyhow::{anyhow, Result};
 use base64::prelude::{Engine, BASE64_STANDARD};
 use ho_std::types::akash::cert::v1::{Certificate, CertificateResponse, State};
-use ho_std::types::ergors::cosmos::base::v1beta1::Coin;
 use ho_std::types::ergors::orch::v1::AkashDeployConfig;
 use reqwest::Client as HttpClient;
-use std::time::Duration;
 
-/// Cosmos blockchain endpoints
-#[derive(Debug, Clone)]
-pub struct CosmosEndpoints {
-    pub rest: String,
-    pub chain_id: String,
-    pub timeout: Duration,
+use crate::chains::cosmos::{ChainConfig, CosmosBaseClient};
+use super::types::*;
+
+/// Akash-specific blockchain client.
+///
+/// Composes a `CosmosBaseClient` for generic queries and adds Akash-specific
+/// REST endpoints for deployments, bids, leases, escrow, and certificates.
+pub struct AkashClient {
+    base: CosmosBaseClient,
+    http: HttpClient,
 }
 
-impl CosmosEndpoints {
-    /// Akash mainnet defaults
-    pub fn akash_mainnet() -> Self {
-        Self {
-            rest: "https://rest-akash.ecostake.com".into(),
-            chain_id: "akashnet-2".into(),
-            timeout: Duration::from_secs(30),
-        }
+impl AkashClient {
+    /// Create a new AkashClient with Akash mainnet defaults.
+    pub fn new() -> Result<Self> {
+        let config = ChainConfig::akash();
+        let http = HttpClient::builder().timeout(config.timeout).build()?;
+        let base = CosmosBaseClient::new(config)?;
+        Ok(Self { base, http })
     }
 
-    /// From config proto
-    pub fn from_akash_config(config: &AkashDeployConfig) -> Self {
+    /// Create from an existing CosmosBaseClient.
+    pub fn from_base(base: CosmosBaseClient) -> Result<Self> {
+        let http = HttpClient::builder()
+            .timeout(base.config().timeout)
+            .build()?;
+        Ok(Self { base, http })
+    }
+
+    /// Create from AkashDeployConfig proto.
+    pub fn from_akash_config(config: &AkashDeployConfig) -> Result<Self> {
         // Use first endpoint from rest_endpoints array
         let rest = if !config.rest_endpoints.is_empty() {
             config.rest_endpoints[0].clone()
         } else if !config.rpc_endpoints.is_empty() {
-            // Derive from rpc by replacing rpc-> rest (convention)
-            config.rpc_endpoints[0].replace("rpc-", "rest-").replace(":443", "")
+            config.rpc_endpoints[0]
+                .replace("rpc-", "rest-")
+                .replace(":443", "")
         } else {
             String::new()
         };
 
-        Self {
-            rest: if rest.is_empty() {
-                "https://rest-akash.ecostake.com".into()
-            } else {
-                rest
-            },
-            chain_id: if config.chain_id.is_empty() {
-                "akashnet-2".into()
-            } else {
-                config.chain_id.clone()
-            },
-            timeout: Duration::from_secs(30),
-        }
-    }
+        let rest_endpoint = if rest.is_empty() {
+            "https://rest-akash.ecostake.com".to_string()
+        } else {
+            rest
+        };
 
-    /// Override with CLI flags
-    pub fn with_overrides(mut self, rest: Option<&str>, chain_id: Option<&str>) -> Self {
-        if let Some(r) = rest {
-            if !r.is_empty() {
-                self.rest = r.into();
-            }
-        }
-        if let Some(c) = chain_id {
-            if !c.is_empty() {
-                self.chain_id = c.into();
-            }
-        }
-        self
-    }
-}
+        let chain_id = if config.chain_id.is_empty() {
+            "akashnet-2".to_string()
+        } else {
+            config.chain_id.clone()
+        };
 
-/// Direct Cosmos blockchain client
-pub struct CosmosClient {
-    endpoints: CosmosEndpoints,
-    http: HttpClient,
-}
+        let chain_config = ChainConfig::akash()
+            .with_endpoints(Some(rest_endpoint), None)
+            .with_chain_id(chain_id);
 
-impl CosmosClient {
-    pub fn new(endpoints: CosmosEndpoints) -> Result<Self> {
         let http = HttpClient::builder()
-            .timeout(endpoints.timeout)
+            .timeout(chain_config.timeout)
             .build()?;
-        Ok(Self { endpoints, http })
+        let base = CosmosBaseClient::new(chain_config)?;
+        Ok(Self { base, http })
     }
 
+    /// Get reference to the underlying CosmosBaseClient.
+    pub fn base(&self) -> &CosmosBaseClient {
+        &self.base
+    }
+
+    /// Get chain ID.
     pub fn chain_id(&self) -> &str {
-        &self.endpoints.chain_id
+        self.base.chain_id()
     }
 
+    /// Get REST endpoint.
     pub fn rest_endpoint(&self) -> &str {
-        &self.endpoints.rest
+        self.base.rest_endpoint()
     }
 
-    // ===== Centralized REST Endpoint Builders =====
-    // All Akash API endpoints defined here for easy maintenance when APIs change
+    // ===== Centralized Akash REST Endpoint Builders =====
 
-    /// Certificate list endpoint (v1)
     fn cert_list_endpoint(rest: &str, owner: &str) -> String {
         format!(
             "{}/akash/cert/v1/certificates/list?filter.owner={}&pagination.limit=1000&filter.state=valid&pagination.count_total=true",
@@ -105,7 +99,6 @@ impl CosmosClient {
         )
     }
 
-    /// Deployment info endpoint (v1beta4)
     fn deployment_info_endpoint(rest: &str, owner: &str, dseq: u64) -> String {
         format!(
             "{}/akash/deployment/v1beta4/deployments/info?id.owner={}&id.dseq={}",
@@ -115,7 +108,6 @@ impl CosmosClient {
         )
     }
 
-    /// Deployment list endpoint (v1beta4)
     fn deployment_list_endpoint(rest: &str, owner: &str, state: &str) -> String {
         format!(
             "{}/akash/deployment/v1beta4/deployments/list?filters.owner={}&filters.state={}&pagination.limit=1000&pagination.count_total=true",
@@ -125,7 +117,6 @@ impl CosmosClient {
         )
     }
 
-    /// Bid list endpoint (v1beta5)
     fn bid_list_endpoint(rest: &str, owner: &str, dseq: u64) -> String {
         format!(
             "{}/akash/market/v1beta5/bids/list?filters.owner={}&filters.dseq={}",
@@ -135,7 +126,6 @@ impl CosmosClient {
         )
     }
 
-    /// Lease info endpoint (v1beta5)
     fn lease_info_endpoint(
         rest: &str,
         owner: &str,
@@ -155,7 +145,6 @@ impl CosmosClient {
         )
     }
 
-    /// Lease list endpoint (v1beta5)
     fn lease_list_endpoint(rest: &str, owner: &str) -> String {
         format!(
             "{}/akash/market/v1beta5/leases/list?filters.owner={}",
@@ -164,7 +153,6 @@ impl CosmosClient {
         )
     }
 
-    /// Escrow accounts endpoint (v1)
     fn escrow_accounts_endpoint(rest: &str, scope: &str, xid: &str) -> String {
         format!(
             "{}/akash/escrow/v1/accounts/list?scope={}&xid={}",
@@ -174,124 +162,14 @@ impl CosmosClient {
         )
     }
 
-    /// Query balance for specific denom
-    ///
-    /// REST: /cosmos/bank/v1beta1/balances/{address}/by_denom?denom={denom}
-    pub async fn query_balance(&self, address: &str, denom: &str) -> Result<Coin> {
-        let url = format!(
-            "{}/cosmos/bank/v1beta1/balances/{}/by_denom?denom={}",
-            self.endpoints.rest.trim_end_matches('/'),
-            address,
-            denom
-        );
-
-        tracing::debug!("Querying balance: {}", url);
-
-        let resp = self.http.get(&url).send().await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(anyhow!("Balance query failed ({}): {}", status, body));
-        }
-
-        let json: serde_json::Value = resp.json().await?;
-        let bal = json
-            .get("balance")
-            .ok_or_else(|| anyhow!("Missing 'balance' in response"))?;
-
-        Ok(Coin {
-            denom: bal["denom"].as_str().unwrap_or(denom).into(),
-            amount: bal["amount"].as_str().unwrap_or("0").into(),
-        })
-    }
-
-    /// Query all balances for an address
-    ///
-    /// REST: /cosmos/bank/v1beta1/balances/{address}
-    pub async fn query_all_balances(&self, address: &str) -> Result<Vec<Coin>> {
-        let url = format!(
-            "{}/cosmos/bank/v1beta1/balances/{}",
-            self.endpoints.rest.trim_end_matches('/'),
-            address
-        );
-
-        tracing::debug!("Querying all balances: {}", url);
-
-        let resp = self.http.get(&url).send().await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(anyhow!("All balances query failed ({}): {}", status, body));
-        }
-
-        let json: serde_json::Value = resp.json().await?;
-        let balances = json
-            .get("balances")
-            .and_then(|b| b.as_array())
-            .ok_or_else(|| anyhow!("Missing 'balances' array in response"))?;
-
-        balances
-            .iter()
-            .map(|b| {
-                Ok(Coin {
-                    denom: b["denom"].as_str().unwrap_or("").into(),
-                    amount: b["amount"].as_str().unwrap_or("0").into(),
-                })
-            })
-            .collect()
-    }
-
-    /// Query spendable balance (excludes locked/vesting)
-    ///
-    /// REST: /cosmos/bank/v1beta1/spendable_balances/{address}/by_denom?denom={denom}
-    pub async fn query_spendable_balance(&self, address: &str, denom: &str) -> Result<Coin> {
-        let url = format!(
-            "{}/cosmos/bank/v1beta1/spendable_balances/{}/by_denom?denom={}",
-            self.endpoints.rest.trim_end_matches('/'),
-            address,
-            denom
-        );
-
-        tracing::debug!("Querying spendable balance: {}", url);
-
-        let resp = self.http.get(&url).send().await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(anyhow!(
-                "Spendable balance query failed ({}): {}",
-                status,
-                body
-            ));
-        }
-
-        let json: serde_json::Value = resp.json().await?;
-        let bal = json
-            .get("balance")
-            .ok_or_else(|| anyhow!("Missing 'balance' in response"))?;
-
-        Ok(Coin {
-            denom: bal["denom"].as_str().unwrap_or(denom).into(),
-            amount: bal["amount"].as_str().unwrap_or("0").into(),
-        })
-    }
-
-    // ===== Akash Certificate Queries =====
+    // ===== Certificate Queries =====
 
     /// Query certificates for an owner address.
-    ///
-    /// REST: /akash/cert/v1/certificates/list?filter.owner={owner}
-    /// Returns prost-generated CertificateResponse types from Akash chain.
     pub async fn query_certificates(&self, owner: &str) -> Result<Vec<CertificateResponse>> {
-        let url = Self::cert_list_endpoint(&self.endpoints.rest, owner);
-
+        let url = Self::cert_list_endpoint(self.rest_endpoint(), owner);
         tracing::debug!("Querying certificates: {}", url);
 
         let resp = self.http.get(&url).send().await?;
-
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -311,7 +189,6 @@ impl CosmosClient {
                 cert_json.get("serial").and_then(|s| s.as_str()),
                 cert_json.get("certificate"),
             ) {
-                // Parse state from string to enum
                 let state_str = cert_data
                     .get("state")
                     .and_then(|s| s.as_str())
@@ -322,8 +199,6 @@ impl CosmosClient {
                     _ => State::Invalid as i32,
                 };
 
-                // Get cert and pubkey bytes (Base64-decode from JSON)
-                // The chain returns bytes fields as Base64-encoded strings in JSON
                 let cert_bytes = cert_data
                     .get("cert")
                     .and_then(|c| c.as_str())
@@ -346,16 +221,12 @@ impl CosmosClient {
                 });
             }
         }
-
         Ok(result)
     }
 
     /// Query valid certificate for an owner (first valid cert found).
-    /// Returns the actual Certificate type from Akash chain.
     pub async fn query_valid_certificate(&self, owner: &str) -> Result<Option<Certificate>> {
         let responses = self.query_certificates(owner).await?;
-
-        // Find first valid certificate
         for cert_response in responses {
             if let Some(cert) = cert_response.certificate {
                 if cert.state == State::Valid as i32 {
@@ -363,22 +234,17 @@ impl CosmosClient {
                 }
             }
         }
-
         Ok(None)
     }
 
-    // ===== Akash Deployment Queries =====
+    // ===== Deployment Queries =====
 
     /// Query deployment by owner and dseq.
-    ///
-    /// REST: /akash/deployment/v1beta4/deployments/info?id.owner={owner}&id.dseq={dseq}
     pub async fn query_deployment(&self, owner: &str, dseq: u64) -> Result<DeploymentInfo> {
-        let url = Self::deployment_info_endpoint(&self.endpoints.rest, owner, dseq);
-
+        let url = Self::deployment_info_endpoint(self.rest_endpoint(), owner, dseq);
         tracing::debug!("Querying deployment: {}", url);
 
         let resp = self.http.get(&url).send().await?;
-
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -407,15 +273,15 @@ impl CosmosClient {
     }
 
     /// Query deployments for an owner filtered by state.
-    ///
-    /// REST: /akash/deployment/v1beta4/deployments/list?filters.owner={owner}&filters.state={state}
-    pub async fn query_deployments(&self, owner: &str, state: &str) -> Result<Vec<DeploymentInfo>> {
-        let url = Self::deployment_list_endpoint(&self.endpoints.rest, owner, state);
-
+    pub async fn query_deployments(
+        &self,
+        owner: &str,
+        state: &str,
+    ) -> Result<Vec<DeploymentInfo>> {
+        let url = Self::deployment_list_endpoint(self.rest_endpoint(), owner, state);
         tracing::debug!("Querying deployments: {}", url);
 
         let resp = self.http.get(&url).send().await?;
-
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -435,8 +301,8 @@ impl CosmosClient {
             if let Some(d) = deployment {
                 let deployment_id = d.get("deployment_id");
                 if let Some(id) = deployment_id {
-                    let state_str = d.get("state").and_then(|s| s.as_str()).unwrap_or("invalid");
-
+                    let state_str =
+                        d.get("state").and_then(|s| s.as_str()).unwrap_or("invalid");
                     result.push(DeploymentInfo {
                         owner: id
                             .get("owner")
@@ -457,7 +323,6 @@ impl CosmosClient {
                 }
             }
         }
-
         Ok(result)
     }
 
@@ -466,18 +331,14 @@ impl CosmosClient {
         self.query_deployments(owner, "active").await
     }
 
-    // ===== Akash Bid Queries =====
+    // ===== Bid Queries =====
 
     /// Query bids for a deployment.
-    ///
-    /// REST: /akash/market/v1beta5/bids/list?filters.owner={owner}&filters.dseq={dseq}
     pub async fn query_bids(&self, owner: &str, dseq: u64) -> Result<Vec<BidInfo>> {
-        let url = Self::bid_list_endpoint(&self.endpoints.rest, owner, dseq);
-
+        let url = Self::bid_list_endpoint(self.rest_endpoint(), owner, dseq);
         tracing::debug!("Querying bids: {}", url);
 
         let resp = self.http.get(&url).send().await?;
-
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -495,13 +356,12 @@ impl CosmosClient {
         for bid_entry in bids {
             let bid = bid_entry.get("bid");
             if let Some(b) = bid {
-                // FIX: API returns "id", not "bid_id"
                 let bid_id = b.get("id");
                 let price = b.get("price");
 
                 if let (Some(id), Some(p)) = (bid_id, price) {
-                    let state_str = b.get("state").and_then(|s| s.as_str()).unwrap_or("invalid");
-
+                    let state_str =
+                        b.get("state").and_then(|s| s.as_str()).unwrap_or("invalid");
                     result.push(BidInfo {
                         owner: id
                             .get("owner")
@@ -551,21 +411,21 @@ impl CosmosClient {
                 }
             }
         }
-
         Ok(result)
     }
 
-    /// Query open bids for a deployment (filtered to only open bids).
+    /// Query open bids for a deployment.
     pub async fn query_open_bids(&self, owner: &str, dseq: u64) -> Result<Vec<BidInfo>> {
         let bids = self.query_bids(owner, dseq).await?;
-        Ok(bids.into_iter().filter(|b| b.state == BidState::Open).collect())
+        Ok(bids
+            .into_iter()
+            .filter(|b| b.state == BidState::Open)
+            .collect())
     }
 
-    // ===== Akash Lease Queries =====
+    // ===== Lease Queries =====
 
     /// Query lease by ID.
-    ///
-    /// REST: /akash/market/v1beta5/leases/info?id.owner={owner}&id.dseq={dseq}&id.gseq={gseq}&id.oseq={oseq}&id.provider={provider}
     pub async fn query_lease(
         &self,
         owner: &str,
@@ -574,12 +434,11 @@ impl CosmosClient {
         oseq: u32,
         provider: &str,
     ) -> Result<LeaseInfo> {
-        let url = Self::lease_info_endpoint(&self.endpoints.rest, owner, dseq, gseq, oseq, provider);
-
+        let url =
+            Self::lease_info_endpoint(self.rest_endpoint(), owner, dseq, gseq, oseq, provider);
         tracing::debug!("Querying lease: {}", url);
 
         let resp = self.http.get(&url).send().await?;
-
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -630,15 +489,11 @@ impl CosmosClient {
     }
 
     /// Query leases for an owner.
-    ///
-    /// REST: /akash/market/v1beta5/leases/list?filters.owner={owner}
     pub async fn query_leases(&self, owner: &str) -> Result<Vec<LeaseInfo>> {
-        let url = Self::lease_list_endpoint(&self.endpoints.rest, owner);
-
+        let url = Self::lease_list_endpoint(self.rest_endpoint(), owner);
         tracing::debug!("Querying leases: {}", url);
 
         let resp = self.http.get(&url).send().await?;
-
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -660,7 +515,8 @@ impl CosmosClient {
                 let price = l.get("price");
 
                 if let Some(id) = lease_id {
-                    let state_str = l.get("state").and_then(|s| s.as_str()).unwrap_or("invalid");
+                    let state_str =
+                        l.get("state").and_then(|s| s.as_str()).unwrap_or("invalid");
 
                     let (price_denom, price_amount) = if let Some(p) = price {
                         (
@@ -713,7 +569,6 @@ impl CosmosClient {
                 }
             }
         }
-
         Ok(result)
     }
 
@@ -726,18 +581,18 @@ impl CosmosClient {
             .collect())
     }
 
-    // ===== Akash Provider Queries =====
+    // ===== Provider Queries =====
 
     /// Query provider information by address.
-    ///
-    /// REST: /akash/provider/v1beta4/providers/{owner}
     pub async fn query_provider(&self, owner: &str) -> Result<ProviderInfo> {
-        let url = format!("{}/akash/provider/v1beta4/providers/{}", self.endpoints.rest, owner);
-
+        let url = format!(
+            "{}/akash/provider/v1beta4/providers/{}",
+            self.rest_endpoint(),
+            owner
+        );
         tracing::debug!("Querying provider: {}", url);
 
         let resp = self.http.get(&url).send().await?;
-
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -777,24 +632,19 @@ impl CosmosClient {
         })
     }
 
-    // ===== Akash Escrow Queries =====
+    // ===== Escrow Queries =====
 
     /// Query escrow account for a deployment.
-    ///
-    /// REST: /akash/escrow/v1/accounts/list?scope=deployment&xid={owner}/{dseq}
     pub async fn query_deployment_escrow(
         &self,
         owner: &str,
         dseq: u64,
     ) -> Result<Option<EscrowAccountInfo>> {
-        // Build xid in format: owner/dseq
         let xid = format!("{}/{}", owner, dseq);
-        let url = Self::escrow_accounts_endpoint(&self.endpoints.rest, "deployment", &xid);
-
+        let url = Self::escrow_accounts_endpoint(self.rest_endpoint(), "deployment", &xid);
         tracing::debug!("Querying escrow account: {}", url);
 
         let resp = self.http.get(&url).send().await?;
-
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -808,7 +658,6 @@ impl CosmosClient {
             .and_then(|a| a.as_array())
             .unwrap_or(&empty_vec);
 
-        // Should only be one account for a deployment
         if let Some(account) = accounts.first() {
             let state = account.get("state");
             if let Some(s) = state {
@@ -817,7 +666,6 @@ impl CosmosClient {
                     .and_then(|st| st.as_str())
                     .unwrap_or("invalid");
 
-                // Get funds (array of balances)
                 let funds = s
                     .get("funds")
                     .and_then(|f| f.as_array())
@@ -860,104 +708,18 @@ impl CosmosClient {
                 }));
             }
         }
-
         Ok(None)
     }
 }
 
-// ===== Query Result Types =====
+// ===== Delegating methods to base client =====
 
-/// Deployment information.
-#[derive(Debug, Clone)]
-pub struct DeploymentInfo {
-    pub owner: String,
-    pub dseq: u64,
-    pub state: DeploymentState,
-}
+impl std::ops::Deref for AkashClient {
+    type Target = CosmosBaseClient;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DeploymentState {
-    Invalid,
-    Active,
-    Closed,
-}
-
-/// Bid information.
-#[derive(Debug, Clone)]
-pub struct BidInfo {
-    pub owner: String,
-    pub dseq: u64,
-    pub gseq: u32,
-    pub oseq: u32,
-    pub provider: String,
-    pub bseq: u32,
-    pub price_denom: String,
-    pub price_amount: String,
-    pub state: BidState,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BidState {
-    Invalid,
-    Open,
-    Active,
-    Lost,
-    Closed,
-}
-
-/// Lease information.
-#[derive(Debug, Clone)]
-pub struct LeaseInfo {
-    pub owner: String,
-    pub dseq: u64,
-    pub gseq: u32,
-    pub oseq: u32,
-    pub provider: String,
-    pub state: LeaseState,
-    pub price_denom: String,
-    pub price_amount: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LeaseState {
-    Invalid,
-    Active,
-    InsufficientFunds,
-    Closed,
-}
-
-/// Escrow account information.
-#[derive(Debug, Clone)]
-pub struct EscrowAccountInfo {
-    pub owner: String,
-    pub dseq: u64,
-    pub state: EscrowState,
-    pub balances: Vec<EscrowBalance>,
-    pub total_uakt: u64,
-}
-
-/// Escrow balance entry.
-#[derive(Debug, Clone)]
-pub struct EscrowBalance {
-    pub denom: String,
-    pub amount: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EscrowState {
-    Invalid,
-    Open,
-    Closed,
-    Overdrawn,
-}
-
-/// Provider information from chain query.
-#[derive(Debug, Clone)]
-pub struct ProviderInfo {
-    pub owner: String,
-    pub host_uri: String,
-    pub email: String,
-    pub website: String,
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
 }
 
 #[cfg(test)]
@@ -965,24 +727,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_akash_mainnet_defaults() {
-        let endpoints = CosmosEndpoints::akash_mainnet();
-        assert_eq!(endpoints.rest, "https://rest-akash.ecostake.com");
-        assert_eq!(endpoints.chain_id, "akashnet-2");
-    }
-
-    #[test]
-    fn test_with_overrides() {
-        let endpoints = CosmosEndpoints::akash_mainnet()
-            .with_overrides(Some("https://custom.endpoint"), Some("testnet-1"));
-        assert_eq!(endpoints.rest, "https://custom.endpoint");
-        assert_eq!(endpoints.chain_id, "testnet-1");
-    }
-
-    #[test]
-    fn test_empty_overrides_ignored() {
-        let endpoints = CosmosEndpoints::akash_mainnet().with_overrides(Some(""), None);
-        assert_eq!(endpoints.rest, "https://rest-akash.ecostake.com");
-        assert_eq!(endpoints.chain_id, "akashnet-2");
+    fn test_akash_client_creation() {
+        let client = AkashClient::new().unwrap();
+        assert_eq!(client.chain_id(), "akashnet-2");
+        assert!(client.rest_endpoint().contains("akash"));
     }
 }
