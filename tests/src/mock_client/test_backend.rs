@@ -271,6 +271,7 @@ impl AkashBackend for TestBackend {
 
         // Store cert in our in-memory store
         let cert_info = CertificateInfo {
+            owner: owner.to_string(),
             cert_pem: cert_pem.to_vec(),
             serial: format!("mock-serial-{}", owner),
         };

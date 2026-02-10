@@ -68,6 +68,8 @@ use ho_std::types::ergors::management::v1::{
     NodeTypeRequest,
     OperationResult,
     PeerAddress,
+    AssignProviderRoleRequest,
+    UnassignProviderRoleRequest,
     ProviderConfig,
     ProviderList,
     ProviderName,
@@ -109,6 +111,8 @@ use ho_std::types::ergors::management::v1::{
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
 use ho_std::types::ergors::orch::v1::{
+    EngineRole,
+    EngineRoleConfig,
     AddTrustedProviderRequest,
     AkashWorkflowOptions,
     CloseAkashDeploymentRequest,
@@ -189,14 +193,23 @@ pub struct ManagementClient {
 impl ManagementClient {
     /// Connect to the engine gRPC server with optional signing key for remote auth
     pub async fn connect(addr: &str, signing_key: Option<NodePrivKey>) -> Result<Self> {
-        let channel = Channel::from_shared(addr.to_string())
+        tracing::debug!("Configuring gRPC client with 100MB message/window limits");
+
+        // Configure endpoint with larger initial window sizes for HTTP/2
+        let endpoint = Channel::from_shared(addr.to_string())
             .context("Invalid gRPC address")?
+            .initial_stream_window_size(100 * 1024 * 1024) // 100MB
+            .initial_connection_window_size(100 * 1024 * 1024); // 100MB
+
+        let channel = endpoint
             .connect()
             .await
             .context("Failed to connect to engine. Is it running?")?;
 
         let interceptor = ClientAuthInterceptor { signing_key };
-        let inner = ProtoClient::with_interceptor(channel, interceptor);
+        let inner = ProtoClient::with_interceptor(channel, interceptor)
+            .max_decoding_message_size(100 * 1024 * 1024) // 100MB limit
+            .max_encoding_message_size(100 * 1024 * 1024); // 100MB limit
         Ok(Self { inner })
     }
 
@@ -455,6 +468,55 @@ impl ManagementClient {
             })
             .await
             .context("Failed to test provider")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ Provider Role Assignments ============
+
+    /// Assign a provider to an engine role
+    pub async fn assign_provider_role(
+        &mut self,
+        provider_name: &str,
+        role: EngineRole,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .assign_provider_role(AssignProviderRoleRequest {
+                provider_name: provider_name.to_string(),
+                role: role as i32,
+            })
+            .await
+            .context("Failed to assign provider role")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Unassign a provider from an engine role
+    pub async fn unassign_provider_role(
+        &mut self,
+        provider_name: &str,
+        role: EngineRole,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .unassign_provider_role(UnassignProviderRoleRequest {
+                provider_name: provider_name.to_string(),
+                role: role as i32,
+            })
+            .await
+            .context("Failed to unassign provider role")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// List all provider role assignments
+    pub async fn list_provider_roles(&mut self) -> Result<EngineRoleConfig> {
+        let response = self
+            .inner
+            .list_provider_roles(Empty {})
+            .await
+            .context("Failed to list provider roles")?;
 
         Ok(response.into_inner())
     }
@@ -1204,6 +1266,99 @@ impl ManagementClient {
             .context("Failed to get RLM config")?;
 
         Ok(response.into_inner())
+    }
+
+    // ============ Document Storage (Non-RAG) ============
+
+    /// Ingest a document into storage
+    pub async fn ingest_document(
+        &mut self,
+        content: Vec<u8>,
+        name: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Result<String> {
+        use ho_std::types::ergors::orch::v1::IngestDocumentRequest;
+
+        let response = self
+            .inner
+            .ingest_document(IngestDocumentRequest {
+                content,
+                name: name.into(),
+                source: source.into(),
+            })
+            .await
+            .context("Failed to ingest document")?;
+
+        Ok(response.into_inner().document_id)
+    }
+
+    /// Retrieve a document by ID
+    pub async fn retrieve_document(
+        &mut self,
+        document_id: &str,
+    ) -> Result<(Vec<u8>, ho_std::document::DocumentMetadata)> {
+        use ho_std::types::ergors::orch::v1::RetrieveDocumentRequest;
+
+        let response = self
+            .inner
+            .retrieve_document(RetrieveDocumentRequest {
+                document_id: document_id.to_string(),
+            })
+            .await
+            .context("Mgmt: Failed to retrieve document")?;
+
+        let inner = response.into_inner();
+
+        // Deserialize metadata
+        let metadata: ho_std::document::DocumentMetadata =
+            serde_json::from_slice(&inner.metadata_json)
+                .context("Failed to deserialize metadata")?;
+
+        Ok((inner.content, metadata))
+    }
+
+    /// List all documents with pagination
+    pub async fn list_documents(
+        &mut self,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<(ho_std::document::DocumentId, ho_std::document::DocumentMetadata)>> {
+        use ho_std::types::ergors::orch::v1::ListDocumentsRequest;
+
+        let response = self
+            .inner
+            .list_documents(ListDocumentsRequest {
+                limit: limit.map(|l| l as u32),
+                offset: offset.map(|o| o as u32),
+            })
+            .await
+            .context("Failed to list documents")?;
+
+        let mut documents = Vec::new();
+        for doc in response.into_inner().documents {
+            let doc_id = ho_std::document::DocumentId::from_hex(doc.document_id)
+                .context("Invalid document ID in response")?;
+            let metadata: ho_std::document::DocumentMetadata =
+                serde_json::from_slice(&doc.metadata_json)
+                    .context("Failed to deserialize metadata")?;
+            documents.push((doc_id, metadata));
+        }
+
+        Ok(documents)
+    }
+
+    /// Delete a document by ID
+    pub async fn delete_document(&mut self, document_id: &str) -> Result<()> {
+        use ho_std::types::ergors::orch::v1::DeleteDocumentRequest;
+
+        self.inner
+            .delete_document(DeleteDocumentRequest {
+                document_id: document_id.to_string(),
+            })
+            .await
+            .context("Failed to delete document")?;
+
+        Ok(())
     }
 
     // ============ Gateway Management ============

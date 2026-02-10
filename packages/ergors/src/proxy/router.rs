@@ -520,6 +520,7 @@ pub struct RouteTarget {
 #[derive(Clone)]
 pub struct ProxyRouter {
     config: ProxyRouterConfig,
+    engine_role_config: Option<EngineRoleConfig>,
     client: Client,
     key_accessor: Option<Arc<tokio::sync::RwLock<dyn ApiKeyMethod>>>,
 }
@@ -528,6 +529,7 @@ impl std::fmt::Debug for ProxyRouter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ProxyRouter")
             .field("config", &self.config)
+            .field("engine_role_config", &self.engine_role_config.is_some())
             .field("key_accessor", &self.key_accessor.is_some())
             .finish()
     }
@@ -543,6 +545,7 @@ impl ProxyRouter {
 
         Self {
             config,
+            engine_role_config: None,
             client,
             key_accessor,
         }
@@ -827,6 +830,30 @@ impl ProxyRouter {
     /// Get current configuration
     pub fn config(&self) -> &ProxyRouterConfig {
         &self.config
+    }
+
+    /// Set the engine role configuration
+    pub fn set_engine_role_config(&mut self, config: Option<EngineRoleConfig>) {
+        self.engine_role_config = config;
+    }
+
+    /// Get a route target for an engine role.
+    /// Returns the first enabled provider from the role's priority list.
+    pub async fn get_provider_for_role(&self, role: EngineRole) -> Option<RouteTarget> {
+        let role_config = self.engine_role_config.as_ref()?;
+        let role_i32 = role as i32;
+
+        let mapping = role_config.mappings.iter().find(|m| m.role == role_i32)?;
+
+        for provider_id in &mapping.provider_ids {
+            if let Some(provider) = self.get_enabled_provider(provider_id) {
+                if let Ok(target) = self.provider_to_route_target(provider).await {
+                    return Some(target);
+                }
+            }
+        }
+
+        None
     }
 }
 

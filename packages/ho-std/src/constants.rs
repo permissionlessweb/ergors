@@ -4,22 +4,17 @@ use {
     std::{env, path::PathBuf},
 };
 
-// TODO: model-cost rate metric constants map. Store, update, & export versioned cost mappings in very optimized manner (bitwise mapping w vecotrized & encoded format)
-//
+pub const DEFAULT_GRPC_ADDR: &str = "http://localhost:50051";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 pub const LLM_API_KEYS_FILE: &str = "api-keys.json";
 pub const ENCRYPTED_API_KEYS_FILE: &str = "api-keys.enc";
 pub const ENV_VARIABLES_FILE: &str = ".env";
 pub const DATA_FOLDER_NAME: &str = "memories";
-
-pub const OPENAI_API_KEY: &str = "OPENAI_API_KEY";
-pub const ANTHROPIC_API_KEY: &str = "ANTHROPIC_API_KEY";
-pub const GROK_API_KEY: &str = "GROK_API_KEY";
-pub const AKASHML_KEY: &str = "AKASHML_KEY";
-pub const KIMI_API_KEY: &str = "KIMI_API_KEY";
-pub const QWEN_API_KEY: &str = "QWEN_API_KEY";
-pub const VENICE_API_KEY: &str = "VENICE_API_KEY";
-
+pub const CNIDARIUM_STORAGE: &str = "./data/cnidarium";
+pub const WORKSPACE: &str = "../../src";
+pub const WORKSPACE_HOME: &str = "~/ergors";
+pub const WORKSPACE_ARCHIVE_PATH: &str = "./workspace.tar.gz";
+ 
 pub const OPEN_AI: &str = "openai";
 pub const ANTHROPIC: &str = "anthropic";
 pub const GROK: &str = "grok";
@@ -31,15 +26,7 @@ pub const VENICE: &str = "venice";
 pub const KIMI_RESEARCH_MODELS: &[&str] = &["kimi_research"];
 pub const OLLAMA_LOCAL_MODELS: &[&str] = &["ollama_local"];
 
-pub const ENV_KEYS: &[&(&str, &str)] = &[
-    &(OPEN_AI, OPENAI_API_KEY),
-    &(ANTHROPIC, ANTHROPIC_API_KEY),
-    &(VENICE, VENICE_API_KEY),
-    &(QUEN, QWEN_API_KEY),
-    &(VENICE, VENICE_API_KEY),
-    &(KIMI, KIMI_API_KEY),
-];
-
+ 
 // ORCHESTRATION RELATED
 pub const AKASH_CHAT_BASE_URL: &str = "https://api.akash.network/chat/v1";
 pub const KIMI_RESEARCH_BASE_URL: &str = "https://api.moonshot.cn/v1";
@@ -61,10 +48,7 @@ pub const PROTOCOL_VERSION: u8 = 1;
 pub const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024; // 10 MiB;
 
 // WORKSPACE RELATED
-pub const CNIDARIUM_STORAGE: &str = "./data/cnidarium";
-pub const WORKSPACE: &str = "../../src";
-pub const WORKSPACE_HOME: &str = "~/ergors";
-pub const WORKSPACE_ARCHIVE_PATH: &str = "./workspace.tar.gz";
+
 
 // TOOLS RELATED
 pub const TOOLS_LINUX_CONFIGURE: &str = "tools/linux/configure.sh";
@@ -135,7 +119,6 @@ pub const NODE_DATA_PATH: &str = "data";
 
 pub const ALL_ENV_VARS: &[&[&str]] = &[
     CONFIG_ENV_VARS,
-    LLM_ENV_VARS,
     ORCHESTRATION_ENV_VARS,
     PLUGIN_ENV_VARS,
 ];
@@ -146,23 +129,13 @@ pub const CONFIG_ENV_VARS: &[&str] = &[
     "RUST_LOG",
     "DEBUG_ENV",
     "CONFIG_PATH",
-    "API_KEYS_PATH",
     "ENV_PATH",
     "SSH_CONFIG_PATH",
 ];
 
-pub const LLM_ENV_VARS: &[&str] = &[
-    "AKASHML_KEY",
-    "KIMI_API_KEY",
-    "GROK_API_KEY",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "OLLAMA_PRIMARY_HOST",
-    "OLLAMA_SECONDARY_HOST",
-];
+ 
 
 pub const ORCHESTRATION_ENV_VARS: &[&str] = &[
-    "SECRET_KEY",
     "ALLOWED_HOSTS",
     "CORS_ORIGINS",
     "MAX_CONCURRENT_TASKS",

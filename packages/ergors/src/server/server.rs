@@ -21,7 +21,6 @@ use ho_std::{
     traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityCustodyBackend, NodeIdentityTrait},
     types::ergors::{orch::v1::*, storage::v1::*},
 };
-use std::collections::HashMap;
 use std::io::{IsTerminal as _, Read};
 use std::{ops::Deref, sync::Arc, time::Instant};
 use tokio::net::TcpListener;
@@ -343,6 +342,47 @@ impl Server {
             }
         };
 
+        // Build proxy router with engine role config
+        let proxy_router = {
+            let mut pr = crate::proxy::ProxyRouter::new(
+                proxy_router_config,
+                key_accessor,
+            );
+
+            // Load engine role config and warn about unassigned roles
+            match storage_arc.get_engine_role_config().await {
+                Ok(Some(role_config)) => {
+                    use ho_std::types::ergors::orch::v1::EngineRole;
+                    let roles = [
+                        (EngineRole::Orchestration, "orchestration"),
+                        (EngineRole::SubAgent, "sub-agent"),
+                        (EngineRole::Embeddings, "embeddings"),
+                        (EngineRole::ToolCalling, "tool-calling"),
+                    ];
+                    for (role, name) in &roles {
+                        let has_provider = role_config.mappings.iter().any(|m| {
+                            m.role == *role as i32 && !m.provider_ids.is_empty()
+                        });
+                        if !has_provider {
+                            tracing::warn!(
+                                "Engine role '{}' has no assigned provider — will fall back to model-pattern routing",
+                                name
+                            );
+                        }
+                    }
+                    pr.set_engine_role_config(Some(role_config));
+                }
+                Ok(None) => {
+                    tracing::info!("No engine role config found — using model-pattern routing for all requests");
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load engine role config: {} — continuing without role assignments", e);
+                }
+            }
+
+            Arc::new(tokio::sync::RwLock::new(pr))
+        };
+
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
@@ -356,10 +396,7 @@ impl Server {
                 // c == config
                 c.clone(),
                 // pr == proxy router (loaded from storage or default, with custody key accessor)
-                Arc::new(tokio::sync::RwLock::new(crate::proxy::ProxyRouter::new(
-                    proxy_router_config,
-                    key_accessor,
-                ))),
+                proxy_router,
                 // akash == Akash deployment context (optional)
                 akash_context,
                 // gm == gateway manager (optional)

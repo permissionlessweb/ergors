@@ -31,6 +31,7 @@ bech32 = { workspace = true }
 bip32 = "0.5"
 bip39 = { version = "2.1", features = ["rand"] }
 blake2b_simd = { workspace = true }
+blake3 = { workspace = true }
 bytes = { workspace = true }
 camino = { workspace = true }
 chrono = { workspace = true }

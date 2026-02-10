@@ -6,7 +6,7 @@
 #[cfg(feature = "cw")]
 use {
     crate::wasm::{
-        state_ext::WasmStorageState, WasmVmCnidariumStateRead,
+        state_ext::WasmStorageState,  
     },
     cosmwasm_std::{
         Api, Binary, ContractResult, SystemResult,

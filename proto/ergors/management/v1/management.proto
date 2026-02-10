@@ -48,6 +48,11 @@ service ManagementService {
   rpc ConfigureProvider(ProviderConfig) returns (OperationResult);
   rpc TestProvider(ProviderName) returns (ProviderTestResult);
 
+  // Provider Role Assignments
+  rpc AssignProviderRole(AssignProviderRoleRequest) returns (OperationResult);
+  rpc UnassignProviderRole(UnassignProviderRoleRequest) returns (OperationResult);
+  rpc ListProviderRoles(Empty) returns (ergors.orch.v1.EngineRoleConfig);
+
   // Auth Tokens
   rpc RegisterAuthToken(TokenLabel) returns (TokenResponse);
   rpc RevokeAuthToken(TokenIdRequest) returns (OperationResult);
@@ -188,6 +193,19 @@ service ManagementService {
   rpc RlmConfigure(ergors.orch.v1.RlmConfigureRequest) returns (ergors.orch.v1.RagOperationResult);
   // Get current RLM configuration
   rpc RlmGetConfig(RlmGetConfigRequest) returns (RlmGetConfigResponse);
+
+  // ============================================
+  // Document Storage (Non-RAG)
+  // ============================================
+
+  // Ingest a document into storage
+  rpc IngestDocument(ergors.orch.v1.IngestDocumentRequest) returns (ergors.orch.v1.IngestDocumentResponse);
+  // Retrieve a document by ID
+  rpc RetrieveDocument(ergors.orch.v1.RetrieveDocumentRequest) returns (ergors.orch.v1.RetrieveDocumentResponse);
+  // List all documents with pagination
+  rpc ListDocuments(ergors.orch.v1.ListDocumentsRequest) returns (ergors.orch.v1.ListDocumentsResponse);
+  // Delete a document by ID
+  rpc DeleteDocument(ergors.orch.v1.DeleteDocumentRequest) returns (ergors.orch.v1.DeleteDocumentResponse);
 
   // ============================================
   // Communication Gateway Management
@@ -478,6 +496,17 @@ message ProviderTestResult {
   bool success = 1;
   uint32 latency_ms = 2;
   string error_message = 3;
+}
+
+// Provider role assignment requests
+message AssignProviderRoleRequest {
+  string provider_name = 1;
+  ergors.orch.v1.EngineRole role = 2;
+}
+
+message UnassignProviderRoleRequest {
+  string provider_name = 1;
+  ergors.orch.v1.EngineRole role = 2;
 }
 
 // Auth token types

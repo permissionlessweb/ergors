@@ -144,12 +144,12 @@ pub async fn ingest_github_repo(
         let mut total_chunks = 0;
         let file_count = files.len();
 
-        for (file_path, content) in files {
+        for (file_path, content) in &files {
             let source_uri = format!("github:{}/{}", repo_name, file_path);
             let detected_type = detect_file_type(&file_path);
 
             let doc = ergors_rag::Document {
-                content,
+                content: content.clone(),
                 uri: source_uri,
                 doc_type: detected_type,
                 tags: vec![

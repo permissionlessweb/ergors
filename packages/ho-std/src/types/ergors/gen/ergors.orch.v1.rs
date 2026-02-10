@@ -2917,6 +2917,47 @@ impl ::prost::Name for InferenceProviderConfig {
         "/ergors.orch.v1.InferenceProviderConfig".into()
     }
 }
+/// Maps a single engine role to its assigned providers (ordered by priority)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct EngineRoleMapping {
+    #[prost(enumeration = "EngineRole", tag = "1")]
+    pub role: i32,
+    /// ordered by priority: first = primary
+    #[prost(string, repeated, tag = "2")]
+    pub provider_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for EngineRoleMapping {
+    const NAME: &'static str = "EngineRoleMapping";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.EngineRoleMapping".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.EngineRoleMapping".into()
+    }
+}
+/// Full engine role configuration (versioned, stored in cnidarium)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EngineRoleConfig {
+    #[prost(message, repeated, tag = "1")]
+    pub mappings: ::prost::alloc::vec::Vec<EngineRoleMapping>,
+    #[prost(message, optional, tag = "2")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(uint64, tag = "3")]
+    pub version: u64,
+}
+impl ::prost::Name for EngineRoleConfig {
+    const NAME: &'static str = "EngineRoleConfig";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.EngineRoleConfig".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.EngineRoleConfig".into()
+    }
+}
 /// Authz grant tracking for workflow permissions
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -4873,6 +4914,173 @@ impl ::prost::Name for InboxMessage {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IngestDocumentRequest {
+    /// Document content
+    #[prost(bytes = "vec", tag = "1")]
+    pub content: ::prost::alloc::vec::Vec<u8>,
+    /// Document name/title
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+    /// Source of document (file path, URL, etc.)
+    #[prost(string, tag = "3")]
+    pub source: ::prost::alloc::string::String,
+}
+impl ::prost::Name for IngestDocumentRequest {
+    const NAME: &'static str = "IngestDocumentRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.IngestDocumentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.IngestDocumentRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IngestDocumentResponse {
+    /// Document ID (content hash)
+    #[prost(string, tag = "1")]
+    pub document_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for IngestDocumentResponse {
+    const NAME: &'static str = "IngestDocumentResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.IngestDocumentResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.IngestDocumentResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RetrieveDocumentRequest {
+    /// Document ID to retrieve
+    #[prost(string, tag = "1")]
+    pub document_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RetrieveDocumentRequest {
+    const NAME: &'static str = "RetrieveDocumentRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RetrieveDocumentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RetrieveDocumentRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RetrieveDocumentResponse {
+    /// Document content
+    #[prost(bytes = "vec", tag = "1")]
+    pub content: ::prost::alloc::vec::Vec<u8>,
+    /// Serialized JSON metadata
+    #[prost(bytes = "vec", tag = "2")]
+    pub metadata_json: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for RetrieveDocumentResponse {
+    const NAME: &'static str = "RetrieveDocumentResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.RetrieveDocumentResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.RetrieveDocumentResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListDocumentsRequest {
+    /// Maximum number of documents to return
+    #[prost(uint32, optional, tag = "1")]
+    pub limit: ::core::option::Option<u32>,
+    /// Number of documents to skip
+    #[prost(uint32, optional, tag = "2")]
+    pub offset: ::core::option::Option<u32>,
+}
+impl ::prost::Name for ListDocumentsRequest {
+    const NAME: &'static str = "ListDocumentsRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ListDocumentsRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ListDocumentsRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListDocumentsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub documents: ::prost::alloc::vec::Vec<DocumentInfo>,
+}
+impl ::prost::Name for ListDocumentsResponse {
+    const NAME: &'static str = "ListDocumentsResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.ListDocumentsResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.ListDocumentsResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DocumentInfo {
+    /// Document ID
+    #[prost(string, tag = "1")]
+    pub document_id: ::prost::alloc::string::String,
+    /// Serialized JSON metadata
+    #[prost(bytes = "vec", tag = "2")]
+    pub metadata_json: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for DocumentInfo {
+    const NAME: &'static str = "DocumentInfo";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DocumentInfo".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DocumentInfo".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteDocumentRequest {
+    /// Document ID to delete
+    #[prost(string, tag = "1")]
+    pub document_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DeleteDocumentRequest {
+    const NAME: &'static str = "DeleteDocumentRequest";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeleteDocumentRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeleteDocumentRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteDocumentResponse {
+    /// Success indicator
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+}
+impl ::prost::Name for DeleteDocumentResponse {
+    const NAME: &'static str = "DeleteDocumentResponse";
+    const PACKAGE: &'static str = "ergors.orch.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.orch.v1.DeleteDocumentResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.orch.v1.DeleteDocumentResponse".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum OrchestrateTask {
@@ -5196,6 +5404,47 @@ impl InferenceProviderType {
             "INFERENCE_PROVIDER_TYPE_TGI" => Some(Self::Tgi),
             "INFERENCE_PROVIDER_TYPE_VLLM" => Some(Self::Vllm),
             "INFERENCE_PROVIDER_TYPE_CUSTOM" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+}
+/// Roles that inference providers can serve within the engine
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum EngineRole {
+    Unspecified = 0,
+    /// Primary reasoning/orchestration LLM
+    Orchestration = 1,
+    /// Sub-agent task execution
+    SubAgent = 2,
+    /// Embedding generation (RAG, search)
+    Embeddings = 3,
+    /// Tool-calling specialized model
+    ToolCalling = 4,
+}
+impl EngineRole {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ENGINE_ROLE_UNSPECIFIED",
+            Self::Orchestration => "ENGINE_ROLE_ORCHESTRATION",
+            Self::SubAgent => "ENGINE_ROLE_SUB_AGENT",
+            Self::Embeddings => "ENGINE_ROLE_EMBEDDINGS",
+            Self::ToolCalling => "ENGINE_ROLE_TOOL_CALLING",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ENGINE_ROLE_UNSPECIFIED" => Some(Self::Unspecified),
+            "ENGINE_ROLE_ORCHESTRATION" => Some(Self::Orchestration),
+            "ENGINE_ROLE_SUB_AGENT" => Some(Self::SubAgent),
+            "ENGINE_ROLE_EMBEDDINGS" => Some(Self::Embeddings),
+            "ENGINE_ROLE_TOOL_CALLING" => Some(Self::ToolCalling),
             _ => None,
         }
     }

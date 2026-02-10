@@ -8,6 +8,7 @@
 
 ## OPTIMIZATIONS
 
+- ALL Actions responses should be json formatted for effective parsing with tools and in logs. we do not need fancy formatting for displaying, this will be wired in front ends
 - session reference and loading: should be able to name, list , create new sessions, referenced by the location of the project specified (similar to claude code,opencode etc)
 - refactor codebase: improve the location of logic, managed by separation of concern more effectively. lots of akash-sepcifc code scattered through out deploy
 

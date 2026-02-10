@@ -73,6 +73,8 @@ const PROXY_SESSION_PREFIX: &str = "proxy_sessions";
 const PROXY_CLIENT_INDEX_PREFIX: &str = "proxy_sessions_by_client";
 const PROXY_ROUTER_CONFIG_PREFIX: &str = "proxy_router_config";
 const PROXY_ROUTER_CONFIG_KEY: &str = "proxy_router_config/current";
+const ENGINE_ROLE_CONFIG_PREFIX: &str = "engine_role_config";
+const ENGINE_ROLE_CONFIG_KEY: &str = "engine_role_config/current";
 
 // Git Workspace Storage Prefixes
 pub const WORKSPACE_PREFIX: &str = "workspaces";
@@ -961,7 +963,27 @@ impl ErgorsStorage {
                 Ok((_, data)) => {
                     match serde_json::from_slice::<AkashDeploymentWorkflow>(&data) {
                         Ok(workflow) => workflows.push(workflow),
-                        Err(e) => warn!("Failed to deserialize Akash workflow: {}", e),
+                        Err(e) => {
+                            // Try to migrate old workflow format (missing provider_uri field)
+                            if let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&data) {
+                                // Add missing provider_uri field to provider selection if needed
+                                if let Some(provider) = value.get_mut("provider") {
+                                    if provider.get("provider_uri").is_none() {
+                                        provider.as_object_mut().map(|p| p.insert("provider_uri".to_string(), serde_json::Value::String(String::new())));
+                                    }
+                                }
+                                // Try to deserialize again
+                                match serde_json::from_value::<AkashDeploymentWorkflow>(value) {
+                                    Ok(workflow) => {
+                                        workflows.push(workflow);
+                                        debug!("Migrated old workflow format");
+                                    }
+                                    Err(e2) => warn!("Failed to deserialize Akash workflow: {} (migration also failed: {})", e, e2),
+                                }
+                            } else {
+                                warn!("Failed to deserialize Akash workflow: {}", e);
+                            }
+                        }
                     }
                 }
                 Err(e) => {
@@ -1481,6 +1503,53 @@ impl ErgorsStorage {
         // Sort by version descending (newest first)
         configs.sort_by(|a, b| b.version.cmp(&a.version));
         Ok(configs)
+    }
+
+    // ========================================
+    // Engine Role Configuration Storage
+    // ========================================
+
+    /// Store engine role configuration (versioned audit log)
+    pub async fn put_engine_role_config(
+        &self,
+        config: &ho_std::types::ergors::orch::v1::EngineRoleConfig,
+    ) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+
+        let data = serde_json::to_vec(config)?;
+        delta.put_raw(ENGINE_ROLE_CONFIG_KEY.to_string(), data.clone());
+
+        // Versioned history entry for audit trail
+        let version_key = storage_key(ENGINE_ROLE_CONFIG_PREFIX, &format!("v{}", config.version));
+        delta.put_raw(version_key, data);
+
+        self.commit_delta(delta).await?;
+        info!(
+            "🔧 Stored engine role config version {} ({} role mappings)",
+            config.version,
+            config.mappings.len()
+        );
+        Ok(())
+    }
+
+    /// Get the current engine role configuration
+    pub async fn get_engine_role_config(
+        &self,
+    ) -> HoResult<Option<ho_std::types::ergors::orch::v1::EngineRoleConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+
+        match snapshot.get_raw(ENGINE_ROLE_CONFIG_KEY).await {
+            Ok(Some(data)) => {
+                let config: ho_std::types::ergors::orch::v1::EngineRoleConfig =
+                    serde_json::from_slice(&data)?;
+                Ok(Some(config))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Failed to get engine role config: {}", e);
+                Err(ho_std::error::HoError::Anyhow(e))
+            }
+        }
     }
 
     // ========================================
@@ -3506,4 +3575,201 @@ pub async fn handle_prune(
         Err(_e) => return Json(error_json("ErgorsStorage prune failed", "STORAGE_ERROR")),
     };
     Json(error_json("Currently unimplemented", "INVALID_PROMPT"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ho_std::types::ergors::orch::v1::AkashProviderSelection;
+
+    #[test]
+    fn test_migrate_workflow_missing_provider_uri() {
+        // Simulate old workflow JSON without provider_uri field
+        let old_workflow_json = r#"{
+            "session_id": "test-session-123",
+            "current_step": 0,
+            "status": 0,
+            "selected_key_name": "default",
+            "account_address": "akash1test",
+            "hd_account_index": 0,
+            "authz_grants": [],
+            "feegrants": [],
+            "endpoints": {},
+            "test_results": [],
+            "last_error": "",
+            "retry_count": 0,
+            "chain_id": "local",
+            "node_endpoint": "http://localhost:26657",
+            "max_retries": 3,
+            "timeout_seconds": 3600,
+            "provider": {
+                "provider_address": "akash1xyz",
+                "reputation_score": 100,
+                "bid_price_uakt": 1000,
+                "total_bids_received": 5,
+                "is_trusted_provider": true
+            },
+            "service_endpoints": []
+        }"#;
+
+        // Parse as generic value
+        let mut value: serde_json::Value = serde_json::from_str(old_workflow_json).unwrap();
+
+        // Verify provider is missing provider_uri
+        assert!(value["provider"]["provider_uri"].is_null());
+
+        // Apply migration
+        if let Some(provider) = value.get_mut("provider") {
+            if provider.get("provider_uri").is_none() {
+                provider
+                    .as_object_mut()
+                    .map(|p| p.insert("provider_uri".to_string(), serde_json::Value::String(String::new())));
+            }
+        }
+
+        // Verify provider_uri was added
+        assert_eq!(value["provider"]["provider_uri"], "");
+
+        // Verify it deserializes to AkashProviderSelection
+        let provider: AkashProviderSelection = serde_json::from_value(value["provider"].clone()).unwrap();
+        assert_eq!(provider.provider_address, "akash1xyz");
+        assert_eq!(provider.provider_uri, "");
+        assert_eq!(provider.reputation_score, 100);
+        assert_eq!(provider.bid_price_uakt, 1000);
+        assert_eq!(provider.is_trusted_provider, true);
+    }
+
+    #[test]
+    fn test_workflow_with_provider_uri() {
+        // New workflow JSON with provider_uri field
+        let new_workflow_json = r#"{
+            "provider_address": "akash1abc",
+            "reputation_score": 95,
+            "bid_price_uakt": 2000,
+            "total_bids_received": 3,
+            "is_trusted_provider": false,
+            "provider_uri": "https://provider.akash1abc.com"
+        }"#;
+
+        // Should deserialize directly without migration
+        let provider: AkashProviderSelection = serde_json::from_str(new_workflow_json).unwrap();
+        assert_eq!(provider.provider_address, "akash1abc");
+        assert_eq!(provider.provider_uri, "https://provider.akash1abc.com");
+        assert_eq!(provider.reputation_score, 95);
+    }
+
+    #[test]
+    fn test_workflow_empty_provider_uri() {
+        // Workflow with empty provider_uri (valid)
+        let workflow_json = r#"{
+            "provider_address": "akash1def",
+            "reputation_score": 80,
+            "bid_price_uakt": 1500,
+            "total_bids_received": 2,
+            "is_trusted_provider": true,
+            "provider_uri": ""
+        }"#;
+
+        let provider: AkashProviderSelection = serde_json::from_str(workflow_json).unwrap();
+        assert_eq!(provider.provider_address, "akash1def");
+        assert_eq!(provider.provider_uri, "");
+    }
+
+    // ========== Engine Role Config Tests ==========
+
+    use ho_std::types::ergors::orch::v1::{EngineRole, EngineRoleConfig, EngineRoleMapping};
+
+    #[test]
+    fn test_engine_role_config_roundtrip() {
+        let config = EngineRoleConfig {
+            mappings: vec![
+                EngineRoleMapping {
+                    role: EngineRole::Orchestration as i32,
+                    provider_ids: vec!["openai".into(), "anthropic".into()],
+                },
+                EngineRoleMapping {
+                    role: EngineRole::Embeddings as i32,
+                    provider_ids: vec!["local-sglang".into()],
+                },
+            ],
+            version: 1,
+            ..Default::default()
+        };
+
+        let serialized = serde_json::to_vec(&config).unwrap();
+        let deserialized: EngineRoleConfig = serde_json::from_slice(&serialized).unwrap();
+
+        assert_eq!(deserialized.mappings.len(), 2);
+        assert_eq!(deserialized.version, 1);
+        assert_eq!(deserialized.mappings[0].role, EngineRole::Orchestration as i32);
+        assert_eq!(deserialized.mappings[0].provider_ids, vec!["openai", "anthropic"]);
+        assert_eq!(deserialized.mappings[1].role, EngineRole::Embeddings as i32);
+        assert_eq!(deserialized.mappings[1].provider_ids, vec!["local-sglang"]);
+    }
+
+    #[test]
+    fn test_assign_duplicate_idempotent() {
+        let mut config = EngineRoleConfig::default();
+
+        // First assign
+        let role_i32 = EngineRole::Orchestration as i32;
+        config.mappings.push(EngineRoleMapping {
+            role: role_i32,
+            provider_ids: vec!["openai".into()],
+        });
+
+        // Duplicate assign — should skip
+        let mapping = config.mappings.iter_mut().find(|m| m.role == role_i32).unwrap();
+        if !mapping.provider_ids.contains(&"openai".to_string()) {
+            mapping.provider_ids.push("openai".into());
+        }
+
+        assert_eq!(mapping.provider_ids.len(), 1);
+        assert_eq!(mapping.provider_ids[0], "openai");
+    }
+
+    #[test]
+    fn test_unassign_removes_provider() {
+        let mut config = EngineRoleConfig {
+            mappings: vec![EngineRoleMapping {
+                role: EngineRole::SubAgent as i32,
+                provider_ids: vec!["openai".into(), "anthropic".into()],
+            }],
+            ..Default::default()
+        };
+
+        let role_i32 = EngineRole::SubAgent as i32;
+        if let Some(mapping) = config.mappings.iter_mut().find(|m| m.role == role_i32) {
+            if let Some(pos) = mapping.provider_ids.iter().position(|id| id == "openai") {
+                mapping.provider_ids.remove(pos);
+            }
+        }
+
+        assert_eq!(config.mappings[0].provider_ids, vec!["anthropic"]);
+    }
+
+    #[test]
+    fn test_priority_ordering_preserved() {
+        let mut config = EngineRoleConfig::default();
+
+        let role_i32 = EngineRole::ToolCalling as i32;
+        config.mappings.push(EngineRoleMapping {
+            role: role_i32,
+            provider_ids: vec![],
+        });
+
+        let mapping = config.mappings.iter_mut().find(|m| m.role == role_i32).unwrap();
+        mapping.provider_ids.push("first-provider".into());
+        mapping.provider_ids.push("second-provider".into());
+        mapping.provider_ids.push("third-provider".into());
+
+        // Verify order is preserved (first = primary)
+        assert_eq!(mapping.provider_ids[0], "first-provider");
+        assert_eq!(mapping.provider_ids[1], "second-provider");
+        assert_eq!(mapping.provider_ids[2], "third-provider");
+
+        // Remove first — second becomes primary
+        mapping.provider_ids.remove(0);
+        assert_eq!(mapping.provider_ids[0], "second-provider");
+    }
 }

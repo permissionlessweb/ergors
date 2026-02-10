@@ -5,7 +5,6 @@
 //! of the workspace for interoperability and effectiveness in organization.
 
 use crate::{
-    constants::ENV_KEYS,
     error::{HoError, HoResult},
     traits::file_ops::{ConfigLoaderTrait, FileOptsTrait},
 };
@@ -61,23 +60,6 @@ impl ConfigLoaderTrait for DefaultFileOps {
         let content = serde_json::to_string_pretty(config)
             .map_err(|e| HoError::Cfg(format!("Failed to serialize config to JSON: {}", e)))?;
         DefaultFileOps::write_string(path, &content)
-    }
-
-    /// Load API keys from JSON file or environment variables
-    fn load_api_keys(path: &str) -> HoResult<HashMap<String, String>> {
-        if DefaultFileOps::exists(path) {
-            Self::from_json_file(path)
-        } else {
-            // Fallback to environment variables
-            let mut keys = HashMap::new();
-            for env_keys in ENV_KEYS {
-                if let Ok(value) = std::env::var(env_keys.1) {
-                    keys.insert(env_keys.0.to_string(), value);
-                }
-            }
-
-            Ok(keys)
-        }
     }
 }
 
@@ -242,9 +224,8 @@ impl SdlConverter {
     /// assert!(yaml_sdl.contains("version:"));
     /// ```
     pub fn json_to_yaml(json_value: &serde_json::Value) -> HoResult<String> {
-        serde_yaml::to_string(json_value).map_err(|e| {
-            HoError::Cfg(format!("Failed to convert JSON to YAML: {}", e))
-        })
+        serde_yaml::to_string(json_value)
+            .map_err(|e| HoError::Cfg(format!("Failed to convert JSON to YAML: {}", e)))
     }
 
     /// Convert JSON string to YAML string (SDL format)
@@ -268,9 +249,8 @@ impl SdlConverter {
     /// # Returns
     /// Result containing the JSON value or an error
     pub fn yaml_to_json(yaml_str: &str) -> HoResult<serde_json::Value> {
-        serde_yaml::from_str(yaml_str).map_err(|e| {
-            HoError::Cfg(format!("Failed to convert YAML to JSON: {}", e))
-        })
+        serde_yaml::from_str(yaml_str)
+            .map_err(|e| HoError::Cfg(format!("Failed to convert YAML to JSON: {}", e)))
     }
 
     /// Convert YAML string (SDL format) to JSON string
@@ -294,10 +274,7 @@ impl SdlConverter {
     ///
     /// # Returns
     /// Result indicating success or error
-    pub fn write_sdl_yaml<P: AsRef<Path>>(
-        json_value: &serde_json::Value,
-        path: P,
-    ) -> HoResult<()> {
+    pub fn write_sdl_yaml<P: AsRef<Path>>(json_value: &serde_json::Value, path: P) -> HoResult<()> {
         let yaml_content = Self::json_to_yaml(json_value)?;
         DefaultFileOps::write_string(path, &yaml_content)
     }
@@ -339,7 +316,6 @@ mod tests {
         fs::remove_file(&test_path).ok();
 
         async fn demonstrate_file_operations() -> HoResult<()> {
-            
             // Create a test file
             let test_content = r#" "#;
 
@@ -449,7 +425,10 @@ profiles:
         // Verify JSON structure
         assert_eq!(json_result["version"], "2.0");
         assert_eq!(json_result["services"]["web"]["image"], "nginx:latest");
-        assert_eq!(json_result["profiles"]["compute"]["web"]["resources"]["cpu"]["units"], "1.0");
+        assert_eq!(
+            json_result["profiles"]["compute"]["web"]["resources"]["cpu"]["units"],
+            "1.0"
+        );
     }
 
     #[test]
@@ -474,7 +453,10 @@ profiles:
 
         // Verify they match
         assert_eq!(original_json["version"], roundtrip_json["version"]);
-        assert_eq!(original_json["services"]["app"]["image"], roundtrip_json["services"]["app"]["image"]);
+        assert_eq!(
+            original_json["services"]["app"]["image"],
+            roundtrip_json["services"]["app"]["image"]
+        );
     }
 
     #[test]

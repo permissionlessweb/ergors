@@ -29,6 +29,7 @@ ergors [OPTIONS] <COMMAND>
 | `gateway` | Communication gateway management | list, status, enable, disable, discord |
 | `sentinel` | Sentinel node bootstrap (encrypted) | bootstrap |
 | `ask` | Document ingestion and querying (RAG + RLM) | ingest-file, rag, rlm, status, list, delete |
+| `document` | Document storage (non-RAG) | ingest, get, list, delete, verify |
 | `call` | Make inference calls through the node | - |
 
 ---
@@ -140,6 +141,9 @@ ergors call "Hello" --api-addr http://remote-node:8080
 | `provider add <NAME>` | Register an API key for a provider | `<NAME>` - Provider name (openai, anthropic, etc.) `--api-key <KEY>` - API key (prompts with hidden input if omitted) `--default` - Set as default provider | `ergors provider add openai` |
 | `provider test [NAME]` | Test provider connectivity | `[NAME]` - Provider name (tests all if omitted). Reports latency in ms. | `ergors provider test openai` |
 | `provider default <NAME>` | Set the default provider | `<NAME>` - Provider name | `ergors provider default anthropic` |
+| `provider assign <NAME>` | Assign provider to an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role: `orchestration`, `sub-agent`, `embeddings`, `tool-calling` | `ergors provider assign local-sglang --role orchestration` |
+| `provider unassign <NAME>` | Unassign provider from an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role to unassign from | `ergors provider unassign local-sglang --role orchestration` |
+| `provider roles` | List all engine role assignments | Shows role mappings with priority order (first = primary, rest = fallback). Use `--json` for machine-readable output. | `ergors provider roles` |
 
 **Provider Add Details:**
 
@@ -147,6 +151,14 @@ ergors call "Hello" --api-addr http://remote-node:8080
 - Key is encrypted with the custody password and stored in Cnidarium as `custody://<name>`
 - Requires custody to be initialized (via `ergors sentinel bootstrap` or `ergors init new`)
 - The proxy resolves `custody://<name>` references immediately without restart
+
+**Engine Role Assignments:**
+
+- Roles: `orchestration` (primary LLM), `sub-agent` (task execution), `embeddings` (RAG/search), `tool-calling` (function calling)
+- A provider can serve multiple roles; a role can have multiple providers (ordered by priority)
+- First assigned provider = primary; additional providers = fallback
+- Unassigned roles fall back to model-pattern routing (no error)
+- Role config persists in cnidarium with versioned audit trail
 
 ---
 
@@ -1718,4 +1730,116 @@ ergors ask list [--limit <N>]
 
 # Delete source by URI
 ergors ask delete <SOURCE_URI>
+```
+
+---
+
+## Document Commands
+
+Direct document storage without RAG-specific features (no embeddings, no chunking). Documents are content-addressed using Blake3 hashing for idempotency.
+
+### Ingest Document
+
+```bash
+# Ingest a file
+ergors document ingest <FILE>
+
+# Ingest from stdin
+echo "content" | ergors document ingest --stdin --name "doc-name"
+
+# Ingest GitHub repository (placeholder - requires githem integration)
+ergors document ingest --github https://github.com/owner/repo
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `<FILE>` | Path to file to ingest | Required (unless --stdin or --github) |
+| `--stdin` | Read content from stdin | `false` |
+| `--name <NAME>` | Document name (required with --stdin) | Filename for files |
+| `--github <URL>` | GitHub repository URL to ingest | - |
+
+**Output**: `Document ingested: <document-id>`
+
+### Retrieve Document
+
+```bash
+# Get document content
+ergors document get <DOCUMENT_ID>
+
+# Save to file
+ergors document get <DOCUMENT_ID> --output result.txt
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `<DOCUMENT_ID>` | Document ID (hex hash) | Required |
+| `-o, --output <FILE>` | Output to file instead of stdout | stdout |
+
+### List Documents
+
+```bash
+# List all documents
+ergors document list
+
+# List with pagination
+ergors document list --limit 10 --offset 0
+
+# JSON output
+ergors document list --format json
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-l, --limit <N>` | Maximum number of documents to return | All |
+| `-o, --offset <N>` | Number of documents to skip | `0` |
+| `--format <FMT>` | Output format: `table` or `json` | `table` |
+
+### Delete Document
+
+**Security**: Requires custody password verification. Provide via `ERGORS_CUSTODY_PASSWORD` env var or interactive prompt.
+
+```bash
+# Delete with confirmation (will prompt for custody password)
+ergors document delete <DOCUMENT_ID>
+
+# Delete without confirmation
+ergors document delete <DOCUMENT_ID> --yes
+
+# Non-interactive (automation)
+ERGORS_CUSTODY_PASSWORD="your-password" ergors document delete <DOCUMENT_ID> --yes
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `<DOCUMENT_ID>` | Document ID (hex hash) | Required |
+| `-y, --yes` | Skip confirmation prompt (still requires password) | `false` |
+
+### Verify Document Integrity
+
+```bash
+# Verify content hash matches metadata
+ergors document verify <DOCUMENT_ID>
+```
+
+**Output**:
+- `OK: Document integrity verified` (exit code 0)
+- `CORRUPT: Content hash mismatch` (exit code 1)
+- `ERROR: Document not found` (exit code 1)
+
+### Examples
+
+```bash
+# Basic workflow
+DOC_ID=$(ergors document ingest myfile.txt | grep -oP 'Document ingested: \K.*')
+ergors document get "$DOC_ID"
+ergors document list
+ergors document delete "$DOC_ID" --yes
+
+# Stdin ingestion
+cat largefile.txt | ergors document ingest --stdin --name "large-doc"
+
+# Batch operations
+for file in docs/*.txt; do
+    ergors document ingest "$file"
+done
 ```

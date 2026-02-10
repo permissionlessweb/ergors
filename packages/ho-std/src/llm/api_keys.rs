@@ -81,12 +81,12 @@ impl ApiKeysJson {
 
         for model in ALL_LLM_MODELS {
             let key = get_provider_key(*model);
-            let api_key = get_api_key_template(*model);
+        
 
             providers.insert(
                 key.to_string(),
                 ProviderWithAuth {
-                    api_key,
+                    api_key: "".to_string(),
                     entity: Some(model.default_entity()),
                 },
             );
@@ -156,30 +156,6 @@ impl ApiKeysJson {
         }
 
         Ok(())
-    }
-}
-
-/// Get environment variable name for a provider
-fn get_env_var_name(provider: LlmModel) -> &'static str {
-    use crate::constants::*;
-
-    match provider {
-        LlmModel::OpenAi => OPENAI_API_KEY,
-        LlmModel::Anthropic => ANTHROPIC_API_KEY,
-        LlmModel::Grok => GROK_API_KEY,
-        LlmModel::AkashMl => AKASHML_KEY,
-        LlmModel::KimiResearch => KIMI_API_KEY,
-        LlmModel::OllamaLocal => "OLLAMA_HOST",
-        LlmModel::Custom => "CUSTOM_API_KEY",
-    }
-}
-
-/// Get the API key template string for a provider.
-/// Returns empty string for local providers, env var reference for others.
-fn get_api_key_template(provider: LlmModel) -> String {
-    match provider {
-        LlmModel::OllamaLocal => String::new(), // No API key needed
-        _ => format!("${{{}}}", get_env_var_name(provider)),
     }
 }
 
@@ -545,30 +521,6 @@ fn draw_configure_provider<W: Write>(
 
     let needs_api_key = !matches!(provider.model, LlmModel::OllamaLocal);
 
-    if needs_api_key {
-        write!(
-            stdout,
-            "{}API Key: {}Use environment variable ${{{}}}{}\r\n",
-            style::Bold,
-            color::Fg(color::Green),
-            get_env_var_name(provider.model),
-            style::Reset
-        )?;
-        write!(
-            stdout,
-            "{}(Recommended for security){}\r\n",
-            color::Fg(color::LightBlack),
-            style::Reset
-        )?;
-    } else {
-        write!(
-            stdout,
-            "{}No API key needed - Local provider{}\r\n",
-            color::Fg(color::Green),
-            style::Reset
-        )?;
-    }
-
     write!(stdout, "\r\n")?;
 
     let (default_model, models) = provider.model.models();
@@ -709,19 +661,8 @@ fn save_configuration(config: &mut ApiKeysJson, providers: &[ProviderMenuItem]) 
 
         // Create configuration for selected providers
         let key = get_provider_key(provider.model);
-
-        let api_key = if !matches!(provider.model, LlmModel::OllamaLocal) {
-            format!("${{{}}}", get_env_var_name(provider.model))
-        } else {
-            "".into()
-        };
-
-        let provider_config = ProviderWithAuth {
-            api_key,
-            entity: Some(provider.model.default_entity()),
-        };
-
-        config.providers.insert(key.to_string(), provider_config);
+ 
+ 
     }
 
     Ok(())

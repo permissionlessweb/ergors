@@ -7,7 +7,7 @@ description = "Minimal prompt capture service with Cnidarium storage"
 license = "MIT"
 
 [features]
-default = ["cw","discord","rlm"]
+default = ["cw","discord","rlm","github-ingest"]
 cw = []
 testing = []
 discord = ["serenity", "poise", "html2text"]
