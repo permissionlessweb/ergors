@@ -584,9 +584,21 @@ impl ProxyRouter {
         }
 
         // Resolve API key: custody:// via accessor, env:// via env var
-        // Empty api_key_ref = explicitly keyless (no-key provider)
+        // Empty api_key_ref with accessor = try accessor lookup by provider_id
+        // Empty api_key_ref without accessor = explicitly keyless (no-key provider)
         let api_key = if provider.api_key_ref.is_empty() {
-            Some(String::new())
+            // Empty ref - try accessor if available, otherwise keyless
+            if let Some(accessor) = &self.key_accessor {
+                accessor
+                    .read().await
+                    .get_key(&provider.provider_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .or(Some(String::new())) // Fall back to keyless if not in accessor
+            } else {
+                Some(String::new()) // No accessor = keyless provider
+            }
         } else if let Some(custody_id) = provider.api_key_ref.strip_prefix("custody://") {
             // Custody-backed key resolution
             if let Some(accessor) = &self.key_accessor {
@@ -601,8 +613,8 @@ impl ProxyRouter {
         } else if let Some(env_ref) = provider.api_key_ref.strip_prefix("env://") {
             // Legacy env var fallback
             std::env::var(env_ref).ok()
-        } else if !provider.api_key_ref.is_empty() {
-            // Bare provider_id — try accessor lookup by provider_id
+        } else {
+            // Bare non-empty provider_id — try accessor lookup by provider_id
             if let Some(accessor) = &self.key_accessor {
                 accessor
                     .read().await
@@ -613,8 +625,6 @@ impl ProxyRouter {
             } else {
                 None
             }
-        } else {
-            None
         };
 
         Ok(RouteTarget {

@@ -142,6 +142,10 @@ We can update how we keep track of the following values to a dedicated layer in 
 
 **Issues**: [#13 Embedding & RAG](https://github.com/permissionlessweb/ergors/issues/13)
 
+## RLM
+
+- <https://pypi.org/project/langextract/>
+
 ## REVIEWS
 
 - SERVER. can we improve how:
@@ -162,6 +166,7 @@ We can update how we keep track of the following values to a dedicated layer in 
 - review the configuration layer.
 - review the bootstrapping layer.
 
+- review <https://github.com/nearai/ironclaw>, implementation of dynamic tool building, always availablility support, workspace filesystem & hybrid search fusion
 - review <https://github.com/jgarzik/brainpro> implementation of agent loops, defining permissions for each agent policy, built in protections, rules, ZDR registry, Resilience Architecture, Persona system, and review how well we would be able to implement these features into our engine
 
 - remove depreceated

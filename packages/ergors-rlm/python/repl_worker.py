@@ -48,6 +48,10 @@ def main():
             sys.stdout.write(json.dumps(response) + "\n")
             sys.stdout.flush()
 
+        except (KeyboardInterrupt, EOFError):
+            # Parent process shutting down — exit cleanly
+            break
+
         except Exception as e:
             error_response = {
                 "jsonrpc": "2.0",
