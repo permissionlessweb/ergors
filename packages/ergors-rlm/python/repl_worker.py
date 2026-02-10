@@ -76,31 +76,50 @@ def execute_rlm_query(params: Dict[str, Any]) -> Dict[str, Any]:
     sys.stderr.write(f"RLM: Starting query with {len(documents)} documents\n")
     sys.stderr.flush()
 
-    # Create callback for sub-LLM calls (call back to Rust parent)
-    def llm_query_callback(prompt: str, model: str = "claude-3-5-sonnet") -> str:
-        """Send sub-LLM request to parent process via JSON-RPC."""
+    # JSON-RPC callback helper — shared by all Rust callbacks
+    def _call_rust(method: str, params: dict = None) -> Any:
+        """Send JSON-RPC method call to Rust parent and return result."""
         request = {
             "jsonrpc": "2.0",
-            "method": "llm_query",
-            "params": {"prompt": prompt, "model": model},
-            "id": "sub-llm-call"
+            "method": method,
+            "params": params or {},
+            "id": method
         }
         sys.stdout.write(json.dumps(request) + "\n")
         sys.stdout.flush()
 
-        # Read response from parent
         response_line = sys.stdin.readline()
         response = json.loads(response_line)
 
-        if "error" in response:
-            raise Exception(f"Sub-LLM error: {response['error']['message']}")
+        if "error" in response and response["error"]:
+            raise Exception(f"{method} error: {response['error']['message']}")
 
         return response["result"]
+
+    # Create callback for sub-LLM calls
+    def llm_query_callback(prompt: str, model: str = "claude-3-5-sonnet") -> str:
+        return _call_rust("llm_query", {"prompt": prompt, "model": model})
+
+    # Document access callbacks
+    def list_documents_callback(limit: int = 100, offset: int = 0) -> list:
+        return _call_rust("list_documents", {"limit": limit, "offset": offset})
+
+    def get_document_section_callback(doc_id: str, offset: int, length: int) -> str:
+        return _call_rust("get_document_section", {"doc_id": doc_id, "offset": offset, "length": length})
+
+    def search_in_document_callback(doc_id: str, query: str, max_results: int = 5) -> list:
+        return _call_rust("search_in_document", {"doc_id": doc_id, "query": query, "max_results": max_results})
+
+    doc_fns = {
+        "list": list_documents_callback,
+        "get_section": get_document_section_callback,
+        "search": search_in_document_callback,
+    }
 
     # Initialize REPL engine
     sys.stderr.write("RLM: Initializing REPL engine\n")
     sys.stderr.flush()
-    engine = ReplEngine(documents=documents, llm_query_fn=llm_query_callback)
+    engine = ReplEngine(documents=documents, llm_query_fn=llm_query_callback, doc_fns=doc_fns)
 
     # Execute query
     sys.stderr.write("RLM: Executing query\n")

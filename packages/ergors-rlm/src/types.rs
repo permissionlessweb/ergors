@@ -32,6 +32,24 @@ pub struct RlmResponse {
     pub latency_ms: u64,
 }
 
+/// Document metadata returned by list_documents (no content).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentMeta {
+    pub doc_id: String,
+    pub name: String,
+    pub source: String,
+    pub size: usize,
+}
+
+/// Search excerpt from a document.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentExcerpt {
+    pub doc_id: String,
+    pub offset: usize,
+    pub content: String,
+    pub match_count: usize,
+}
+
 /// JSON-RPC request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {

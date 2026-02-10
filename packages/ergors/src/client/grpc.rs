@@ -3791,22 +3791,9 @@ impl ManagementService for ManagementServiceImpl {
                 Status::failed_precondition("RLM not configured. Use 'ergors ask rlm configure'")
             })?;
 
-        // Load documents by prefix
-        let documents = crate::client::load_documents_by_prefix(
-            &self.state.s,
-            &req.source_uri_prefix,
-            req.limit as usize,
-            None,
-        )
-        .await
-        .map_err(|e| Status::internal(format!("Failed to load documents: {}", e)))?;
-
-        if documents.is_empty() {
-            return Err(Status::not_found(format!(
-                "No documents found with prefix: {}",
-                req.source_uri_prefix
-            )));
-        }
+        // Documents are now accessed on-demand via callbacks (DocumentAccessTrait).
+        // The Python REPL discovers documents via list_documents() / search_document().
+        let documents: Vec<ho_std::types::ergors::orch::v1::Document> = vec![];
 
         // Get RLM service from ErgorsAppState
         #[cfg(not(feature = "rlm"))]
@@ -3837,19 +3824,7 @@ impl ManagementService for ManagementServiceImpl {
                 },
             };
 
-            // Convert proto documents to RLM documents
-            let rlm_docs: Vec<ergors_rlm::Document> = documents
-                .into_iter()
-                .map(|d| ergors_rlm::Document {
-                    source_uri: d.source_uri,
-                    content: d.content,
-                    doc_type: d.doc_type,
-                    tags: d.tags,
-                    ingested_at: d.ingested_at,
-                })
-                .collect();
-
-            match rlm_service.query(rlm_query, rlm_docs).await {
+            match rlm_service.query(rlm_query, documents.into_iter().map(ergors_rlm::Document::from).collect()).await {
                 Ok(response) => Ok(Response::new(RlmQueryResponse {
                     answer: response.answer,
                     source_uris: response.source_uris,

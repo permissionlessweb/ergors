@@ -12,9 +12,9 @@ pub mod pool;
 pub mod process;
 pub mod types;
 
-pub use llm_trait::LlmRouterTrait;
+pub use llm_trait::{DocumentAccessTrait, LlmRouterTrait};
 
-pub use types::{Document, RlmQuery, RlmResponse};
+pub use types::{Document, DocumentExcerpt, DocumentMeta, RlmQuery, RlmResponse};
 
 use pool::ReplPool;
 
@@ -22,11 +22,16 @@ use pool::ReplPool;
 pub struct RlmService {
     pool: Arc<ReplPool>,
     router: Arc<dyn LlmRouterTrait>,
+    docs: Option<Arc<dyn DocumentAccessTrait>>,
 }
 
 impl RlmService {
     /// Create new RLM service with subprocess pool
-    pub async fn new(pool_size: usize, router: Arc<dyn LlmRouterTrait>) -> Result<Self> {
+    pub async fn new(
+        pool_size: usize,
+        router: Arc<dyn LlmRouterTrait>,
+        docs: Option<Arc<dyn DocumentAccessTrait>>,
+    ) -> Result<Self> {
         info!("Initializing RLM service with pool size {}", pool_size);
 
         let pool = ReplPool::new(pool_size).await?;
@@ -34,6 +39,7 @@ impl RlmService {
         Ok(Self {
             pool: Arc::new(pool),
             router,
+            docs,
         })
     }
 
@@ -50,7 +56,7 @@ impl RlmService {
 
         // Execute in subprocess
         let result = worker
-            .execute(query, documents, Arc::clone(&self.router))
+            .execute(query, documents, Arc::clone(&self.router), self.docs.clone())
             .await;
 
         // Only return worker to pool if execution succeeded

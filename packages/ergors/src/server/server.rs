@@ -331,14 +331,18 @@ impl Server {
         #[cfg(feature = "rlm")]
         const RLM_WORKER_POOL_SIZE: usize = 2;
         #[cfg(feature = "rlm")]
-        let rlm_service = match ergors_rlm::RlmService::new(RLM_WORKER_POOL_SIZE, llm_router.clone()).await {
-            Ok(svc) => {
-                tracing::info!("RLM service initialized");
-                Some(Arc::new(svc))
-            }
-            Err(e) => {
-                tracing::warn!("RLM init failed: {}", e);
-                None
+        let rlm_service = {
+            let doc_access: Option<Arc<dyn ergors_rlm::DocumentAccessTrait>> =
+                Some(Arc::new(crate::proxy::doc_access::EngineDocumentAccess::new(storage_arc.clone())));
+            match ergors_rlm::RlmService::new(RLM_WORKER_POOL_SIZE, llm_router.clone(), doc_access).await {
+                Ok(svc) => {
+                    tracing::info!("RLM service initialized with document access");
+                    Some(Arc::new(svc))
+                }
+                Err(e) => {
+                    tracing::warn!("RLM init failed: {}", e);
+                    None
+                }
             }
         };
 
