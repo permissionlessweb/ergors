@@ -685,7 +685,7 @@ impl AutomatedDeployer {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("  Query failed: {}", e);
+                    tracing::warn!(" Bid Query failed: {}", e);
                 }
             }
 
