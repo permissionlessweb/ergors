@@ -674,6 +674,7 @@ mod tests {
             dseq: 1,
             gseq: 1,
             oseq: 1,
+            bseq: 1,
             provider: "akash1provider0testxyz".to_string(),
         };
 

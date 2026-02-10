@@ -498,19 +498,35 @@ impl DeployCmd {
                     .unwrap_or(0);
 
                 let response = client.list_akash_deployments(status_filter, *limit).await?;
+                let role_config = client.list_provider_roles().await.unwrap_or_default();
+
+                let build_summary = |wf: &ho_std::types::ergors::orch::v1::AkashDeploymentWorkflow| {
+                    let endpoints: Vec<EndpointEntry> = wf
+                        .service_endpoints
+                        .iter()
+                        .map(|ep| EndpointEntry {
+                            service: ep.service_name.clone(),
+                            uri: ep.external_uri.clone(),
+                            internal_port: ep.internal_port,
+                            external_port: ep.external_port,
+                            protocol: ep.protocol.clone(),
+                        })
+                        .collect();
+                    let roles = get_roles_for_provider(&role_config, &wf.label);
+                    WorkflowSummary {
+                        session_id: wf.session_id.clone(),
+                        label: wf.label.clone(),
+                        status: format_status(wf.status).to_string(),
+                        current_step: format_step(wf.current_step).to_string(),
+                        account_address: wf.account_address.clone(),
+                        endpoints,
+                        roles,
+                    }
+                };
 
                 if ctx.json {
                     let resp = DeployListResponse {
-                        workflows: response
-                            .workflows
-                            .iter()
-                            .map(|wf| WorkflowSummary {
-                                session_id: wf.session_id.clone(),
-                                status: format_status(wf.status).to_string(),
-                                current_step: format_step(wf.current_step).to_string(),
-                                account_address: wf.account_address.clone(),
-                            })
-                            .collect(),
+                        workflows: response.workflows.iter().map(build_summary).collect(),
                         total_count: response.total_count,
                     };
                     println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -522,13 +538,34 @@ impl DeployCmd {
                         println!("No deployment workflows found.");
                     } else {
                         for wf in &response.workflows {
+                            let summary = build_summary(wf);
+                            let title = if summary.label.is_empty() {
+                                format!("  {}", summary.session_id)
+                            } else {
+                                format!("  {} ({})", summary.label, summary.session_id)
+                            };
+                            println!("\n{}", title);
                             println!(
-                                "  {} | {} | {} | {}",
-                                &wf.session_id[..8.min(wf.session_id.len())],
-                                format_status(wf.status),
-                                format_step(wf.current_step),
-                                wf.account_address,
+                                "    Status:    {} | {}",
+                                summary.status, summary.current_step,
                             );
+                            println!("    Account:   {}", summary.account_address);
+                            if !summary.endpoints.is_empty() {
+                                println!("    Endpoints:");
+                                for ep in &summary.endpoints {
+                                    println!(
+                                        "      {}: {} ({}→{}/{})",
+                                        ep.service,
+                                        ep.uri,
+                                        ep.internal_port,
+                                        ep.external_port,
+                                        ep.protocol,
+                                    );
+                                }
+                            }
+                            if !summary.roles.is_empty() {
+                                println!("    Roles:     {}", summary.roles.join(", "));
+                            }
                         }
                     }
                 }
@@ -1665,6 +1702,26 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     }
 }
 
+/// Cross-reference a provider/label against the EngineRoleConfig to find which roles it serves.
+fn get_roles_for_provider(
+    config: &ho_std::types::ergors::orch::v1::EngineRoleConfig,
+    provider_name: &str,
+) -> Vec<String> {
+    let mut roles = Vec::new();
+    for mapping in &config.mappings {
+        if let Some(pos) = mapping
+            .provider_ids
+            .iter()
+            .position(|id| id == provider_name)
+        {
+            let role_name = super::format_engine_role(mapping.role);
+            let priority = if pos == 0 { "primary" } else { "fallback" };
+            roles.push(format!("{} [{}]", role_name, priority));
+        }
+    }
+    roles
+}
+
 fn format_step(step: i32) -> &'static str {
     match step {
         0 => "unspecified",
@@ -1709,5 +1766,107 @@ fn truncate_or_pad(s: &str, len: usize) -> String {
         format!("{}...", &s[..len - 3])
     } else {
         format!("{:width$}", s, width = len)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ho_std::types::ergors::orch::v1::{EngineRole, EngineRoleConfig, EngineRoleMapping};
+
+    fn make_mapping(role: EngineRole, providers: &[&str]) -> EngineRoleMapping {
+        EngineRoleMapping {
+            role: role as i32,
+            provider_ids: providers.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn test_get_roles_for_provider_primary() {
+        let config = EngineRoleConfig {
+            mappings: vec![make_mapping(EngineRole::Orchestration, &["qwen-coder"])],
+            ..Default::default()
+        };
+        let roles = get_roles_for_provider(&config, "qwen-coder");
+        assert_eq!(roles, vec!["orchestration [primary]"]);
+    }
+
+    #[test]
+    fn test_get_roles_for_provider_fallback() {
+        let config = EngineRoleConfig {
+            mappings: vec![make_mapping(
+                EngineRole::SubAgent,
+                &["primary-model", "qwen-coder"],
+            )],
+            ..Default::default()
+        };
+        let roles = get_roles_for_provider(&config, "qwen-coder");
+        assert_eq!(roles, vec!["sub-agent [fallback]"]);
+    }
+
+    #[test]
+    fn test_get_roles_for_provider_multiple_roles() {
+        let config = EngineRoleConfig {
+            mappings: vec![
+                make_mapping(EngineRole::Orchestration, &["qwen-coder"]),
+                make_mapping(EngineRole::Embeddings, &["qwen-coder"]),
+            ],
+            ..Default::default()
+        };
+        let roles = get_roles_for_provider(&config, "qwen-coder");
+        assert_eq!(
+            roles,
+            vec!["orchestration [primary]", "embeddings [primary]"]
+        );
+    }
+
+    #[test]
+    fn test_get_roles_for_provider_not_found() {
+        let config = EngineRoleConfig {
+            mappings: vec![make_mapping(EngineRole::Orchestration, &["other-model"])],
+            ..Default::default()
+        };
+        let roles = get_roles_for_provider(&config, "qwen-coder");
+        assert!(roles.is_empty());
+    }
+
+    #[test]
+    fn test_get_roles_for_provider_empty_config() {
+        let config = EngineRoleConfig::default();
+        let roles = get_roles_for_provider(&config, "qwen-coder");
+        assert!(roles.is_empty());
+    }
+
+    #[test]
+    fn test_workflow_summary_serialization() {
+        let summary = WorkflowSummary {
+            session_id: "52fe324a-1234-5678-abcd-ef0123456789".to_string(),
+            label: "qwen-coder".to_string(),
+            status: "running".to_string(),
+            current_step: "manifest_sent".to_string(),
+            account_address: "akash1abc".to_string(),
+            endpoints: vec![EndpointEntry {
+                service: "inference".to_string(),
+                uri: "http://provider.example.com:31234".to_string(),
+                internal_port: 8080,
+                external_port: 31234,
+                protocol: "tcp".to_string(),
+            }],
+            roles: vec![
+                "orchestration [primary]".to_string(),
+                "sub-agent [primary]".to_string(),
+            ],
+        };
+        let json = serde_json::to_value(&summary).unwrap();
+        assert_eq!(json["label"], "qwen-coder");
+        assert_eq!(
+            json["session_id"],
+            "52fe324a-1234-5678-abcd-ef0123456789"
+        );
+        assert!(json["endpoints"].is_array());
+        assert_eq!(json["endpoints"].as_array().unwrap().len(), 1);
+        assert_eq!(json["endpoints"][0]["service"], "inference");
+        assert!(json["roles"].is_array());
+        assert_eq!(json["roles"].as_array().unwrap().len(), 2);
     }
 }

@@ -98,6 +98,8 @@ pub struct DiscordData {
     /// RLM service for agentic document exploration (optional)
     #[cfg(feature = "rlm")]
     pub rlm_service: Option<Arc<ergors_rlm::RlmService>>,
+    /// Test mode enabled (bypasses LLM calls, validates auth and document ops)
+    pub test_mode: bool,
 }
 
 pub(crate) type Context<'a> = poise::Context<'a, DiscordData, anyhow::Error>;
@@ -258,6 +260,15 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
             }
         };
 
+        // Check for test mode (env var: ERGORS_GATEWAY_TEST_MODE=1)
+        let test_mode = std::env::var("ERGORS_GATEWAY_TEST_MODE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        if test_mode {
+            info!("🧪 Discord Gateway TEST MODE enabled - LLM calls will be bypassed with test responses");
+        }
+
         let data = DiscordData {
             storage,
             router,
@@ -267,6 +278,7 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
             rag_client,
             #[cfg(feature = "rlm")]
             rlm_service,
+            test_mode,
         };
 
         let framework = Framework::builder()
@@ -404,6 +416,29 @@ async fn prompt(
         .storage
         .get_or_create_gateway_session("discord", &thread_id)
         .await?;
+
+    // === TEST MODE: Skip LLM, return test response ===
+    if ctx.data().test_mode {
+        // Still retrieve context to test that path
+        let context_result = retrieve_guild_context(ctx.data(), &guild_id, &message).await;
+        let context_info = match context_result {
+            Some(ContextResult::FinalAnswer(_)) => "RLM returned final answer (would skip LLM)",
+            Some(ContextResult::AugmentedPrompt(_)) => "RAG context retrieved and augmented prompt",
+            None => "No RAG/RLM context (direct LLM call would occur)",
+        };
+
+        let response_content = generate_test_prompt_response(&message, &session_id, Some(context_info));
+        ctx.say(&response_content).await?;
+
+        // Notify manager for metrics tracking
+        let _ = ctx.data().event_tx.send(GatewayEvent::MessageProcessed {
+            gateway_id: "discord".to_string(),
+            session_id,
+            user_id,
+        });
+
+        return Ok(());
+    }
 
     // === UNIFIED CONTEXT INJECTION (RAG or RLM) ===
     let context_result = retrieve_guild_context(ctx.data(), &guild_id, &message).await;
@@ -1132,6 +1167,29 @@ fn is_private_or_loopback(ip: IpAddr) -> bool {
     }
 }
 
+/// Generate test mode response for prompt command.
+fn generate_test_prompt_response(
+    message: &str,
+    session_id: &str,
+    context_info: Option<&str>,
+) -> String {
+    let context_str = context_info.unwrap_or("No RAG/RLM context retrieved");
+    format!(
+        "🧪 **TEST MODE RESPONSE**\n\n\
+        ✅ Message received: \"{}\"\n\
+        ✅ Session: `{}`\n\
+        ✅ Context: {}\n\n\
+        **What was tested:**\n\
+        • Guild authorization ✓\n\
+        • Session management ✓\n\
+        • Context retrieval ✓\n\
+        • Message processing ✓\n\n\
+        In production, this would call the LLM provider.\n\n\
+        📚 Learn more: https://github.com/commonwarexyz/ergors",
+        message, session_id, context_str
+    )
+}
+
 /// Check if user has RAG admin role for this guild.
 async fn check_rag_admin_role(ctx: &Context<'_>) -> Result<(), anyhow::Error> {
     let guild_id = ctx
@@ -1700,4 +1758,147 @@ fn detect_doc_type(url: &str) -> String {
 
     // Default to text - let the content speak for itself
     "text".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_test_prompt_response_basic() {
+        let response = generate_test_prompt_response(
+            "Hello, world!",
+            "session-123",
+            None,
+        );
+
+        assert!(response.contains("🧪 **TEST MODE RESPONSE**"));
+        assert!(response.contains("Hello, world!"));
+        assert!(response.contains("session-123"));
+        assert!(response.contains("Guild authorization ✓"));
+        assert!(response.contains("Session management ✓"));
+    }
+
+    #[test]
+    fn test_generate_test_prompt_response_with_context() {
+        let response = generate_test_prompt_response(
+            "Test message",
+            "session-456",
+            Some("RAG context retrieved and augmented prompt"),
+        );
+
+        assert!(response.contains("RAG context retrieved"));
+        assert!(response.contains("Test message"));
+        assert!(response.contains("session-456"));
+    }
+
+    #[test]
+    fn test_generate_test_prompt_response_no_context() {
+        let response = generate_test_prompt_response(
+            "Another test",
+            "session-789",
+            None,
+        );
+
+        assert!(response.contains("No RAG/RLM context retrieved"));
+    }
+
+    #[test]
+    fn test_test_mode_env_var_detection() {
+        // Test "1" value
+        std::env::set_var("ERGORS_GATEWAY_TEST_MODE", "1");
+        let result = std::env::var("ERGORS_GATEWAY_TEST_MODE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        assert!(result);
+
+        // Test "true" value
+        std::env::set_var("ERGORS_GATEWAY_TEST_MODE", "true");
+        let result = std::env::var("ERGORS_GATEWAY_TEST_MODE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        assert!(result);
+
+        // Test "TRUE" value (case insensitive)
+        std::env::set_var("ERGORS_GATEWAY_TEST_MODE", "TRUE");
+        let result = std::env::var("ERGORS_GATEWAY_TEST_MODE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        assert!(result);
+
+        // Test "0" value (should be false)
+        std::env::set_var("ERGORS_GATEWAY_TEST_MODE", "0");
+        let result = std::env::var("ERGORS_GATEWAY_TEST_MODE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        assert!(!result);
+
+        // Test empty value (should be false)
+        std::env::set_var("ERGORS_GATEWAY_TEST_MODE", "");
+        let result = std::env::var("ERGORS_GATEWAY_TEST_MODE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        assert!(!result);
+
+        // Clean up
+        std::env::remove_var("ERGORS_GATEWAY_TEST_MODE");
+    }
+
+    #[test]
+    fn test_detect_doc_type_markdown() {
+        assert_eq!(detect_doc_type("README.md"), "markdown");
+        assert_eq!(detect_doc_type("docs/guide.mdx"), "markdown");
+        assert_eq!(detect_doc_type("/path/to/file.md"), "markdown");
+    }
+
+    #[test]
+    fn test_detect_doc_type_code() {
+        assert_eq!(detect_doc_type("src/main.rs"), "code");
+        assert_eq!(detect_doc_type("app.py"), "code");
+        assert_eq!(detect_doc_type("index.js"), "code");
+        assert_eq!(detect_doc_type("main.go"), "code");
+        assert_eq!(detect_doc_type("App.java"), "code");
+    }
+
+    #[test]
+    fn test_detect_doc_type_config() {
+        assert_eq!(detect_doc_type("config.json"), "config");
+        assert_eq!(detect_doc_type("settings.yaml"), "config");
+        assert_eq!(detect_doc_type("Cargo.toml"), "config");
+        assert_eq!(detect_doc_type("app.ini"), "config");
+    }
+
+    #[test]
+    fn test_detect_doc_type_text() {
+        assert_eq!(detect_doc_type("notes.txt"), "text");
+        assert_eq!(detect_doc_type("README"), "text");
+        assert_eq!(detect_doc_type("LICENSE"), "text");
+        assert_eq!(detect_doc_type("unknown.xyz"), "text");
+    }
+
+    #[test]
+    fn test_detect_doc_type_html() {
+        assert_eq!(detect_doc_type("index.html"), "html");
+        assert_eq!(detect_doc_type("page.htm"), "html");
+    }
+
+    #[test]
+    fn test_message_chunking_boundary() {
+        // Test message exactly at limit
+        let msg = "a".repeat(DISCORD_MSG_LIMIT);
+        assert_eq!(msg.len(), DISCORD_MSG_LIMIT);
+
+        // Test message over limit
+        let msg_over = "a".repeat(DISCORD_MSG_LIMIT + 100);
+        assert!(msg_over.len() > DISCORD_MSG_LIMIT);
+    }
+
+    #[test]
+    fn test_constants() {
+        // Verify important constants
+        assert_eq!(DISCORD_MSG_LIMIT, 1990);
+        assert_eq!(MAX_INGEST_BYTES, 1_000_000);
+        assert_eq!(MAX_CONTEXT_CHUNKS_LIMIT, 10);
+        assert_eq!(URL_FETCH_TIMEOUT_SECS, 30);
+    }
 }

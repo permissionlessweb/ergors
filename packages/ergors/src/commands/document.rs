@@ -359,3 +359,69 @@ impl DocumentCmd {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_size_bytes() {
+        assert_eq!(DocumentCmd::format_size(0), "0 B");
+        assert_eq!(DocumentCmd::format_size(500), "500 B");
+        assert_eq!(DocumentCmd::format_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_size_kilobytes() {
+        assert_eq!(DocumentCmd::format_size(1024), "1.00 KB");
+        assert_eq!(DocumentCmd::format_size(1536), "1.50 KB");
+        assert_eq!(DocumentCmd::format_size(10240), "10.00 KB");
+    }
+
+    #[test]
+    fn test_format_size_megabytes() {
+        assert_eq!(DocumentCmd::format_size(1_048_576), "1.00 MB");
+        assert_eq!(DocumentCmd::format_size(5_242_880), "5.00 MB");
+        assert_eq!(DocumentCmd::format_size(7_340_032), "7.00 MB");
+    }
+
+    #[test]
+    fn test_format_size_gigabytes() {
+        assert_eq!(DocumentCmd::format_size(1_073_741_824), "1.00 GB");
+        assert_eq!(DocumentCmd::format_size(2_147_483_648), "2.00 GB");
+    }
+
+    #[test]
+    fn test_github_url_detection() {
+        // Valid GitHub URLs
+        assert!(is_github_url("https://github.com/owner/repo"));
+        assert!(is_github_url("http://github.com/owner/repo"));
+        assert!(is_github_url("https://github.com/owner/repo/tree/branch"));
+        assert!(is_github_url("https://github.com/owner/repo.git"));
+
+        // Invalid URLs (should use regular ingestion)
+        assert!(!is_github_url("https://gitlab.com/owner/repo"));
+        assert!(!is_github_url("https://example.com"));
+        assert!(!is_github_url("not-a-url"));
+        assert!(!is_github_url("github.com/no-protocol"));
+    }
+
+    #[cfg(feature = "github-ingest")]
+    #[test]
+    fn test_githem_parse_url() {
+        use githem_core::parse_github_url;
+
+        // Valid GitHub URLs should parse
+        assert!(parse_github_url("https://github.com/owner/repo").is_some());
+        assert!(parse_github_url("https://github.com/owner/repo/tree/branch").is_some());
+
+        // Invalid URLs should not parse
+        assert!(parse_github_url("not-a-url").is_none());
+        assert!(parse_github_url("https://example.com").is_none());
+    }
+}
+
+/// Helper function to detect GitHub URLs
+fn is_github_url(url: &str) -> bool {
+    url.starts_with("https://github.com/") || url.starts_with("http://github.com/")
+}

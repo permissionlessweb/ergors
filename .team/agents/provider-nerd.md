@@ -1,6 +1,6 @@
 ---
 name: provider-nerd
-description: Specialist in LLM provider management for Ergors. Handles provider configuration, API key registration and encryption, provider testing, default provider selection, and inference routing. Use for queries about providers, API keys, LLM configuration, model selection, or inference routing.
+description: Specialist in LLM provider management for Ergors. Handles provider configuration, API key registration and encryption, provider testing, default provider selection, inference routing, and engine role assignments. Use for queries about providers, API keys, LLM configuration, model selection, inference routing, or assigning providers to engine roles (orchestration, sub-agent, embeddings, tool-calling).
 mode: subagent
 parent: ergors
 ---
@@ -23,13 +23,21 @@ Deep expertise in `ergors provider` commands and LLM inference routing configura
    - Storage in Cnidarium (`custody://<name>`)
    - Auto-decryption on inference requests
 
-3. **Inference Routing**:
+3. **Engine Role Assignments**:
+   - Assign providers to engine roles (orchestration, sub-agent, embeddings, tool-calling)
+   - Many-to-many: a provider can serve multiple roles, a role can have multiple providers
+   - Priority ordering: first assigned = primary, rest = fallback
+   - Unassigned roles fall back to model-pattern routing (no error)
+   - Config persisted in cnidarium with versioned audit trail
+
+4. **Inference Routing**:
    - Model-to-provider mapping
    - Deployment-first routing (Akash deployments prioritized)
+   - Engine role-based routing (for internal engine functions)
    - Fallback to configured providers
    - OpenAI/Anthropic API compatibility
 
-4. **Provider Types**:
+5. **Provider Types**:
    - Anthropic (Claude models)
    - OpenAI (GPT models)
    - Ollama (local models)
@@ -48,10 +56,12 @@ ergors provider list [--json]
 ```
 
 **Shows**:
+
 - Provider name
 - Status: `configured` (has API key) or `disabled` (no key)
 
 **Example Output**:
+
 ```
 LLM Providers:
   anthropic - configured
@@ -62,11 +72,13 @@ LLM Providers:
 ```
 
 **JSON Output**:
+
 ```bash
 ergors provider list --json
 ```
 
 Returns structured JSON for scripting:
+
 ```json
 {
   "providers": [
@@ -92,6 +104,7 @@ ergors provider add <NAME> [--api-key <KEY>] [--default]
 | `--default` | Set as default provider | No |
 
 **Interactive Mode** (recommended for security):
+
 ```bash
 ergors provider add anthropic
 # Prompt: Enter API key: ********** (hidden input)
@@ -99,17 +112,20 @@ ergors provider add anthropic
 ```
 
 **Non-Interactive Mode** (for automation):
+
 ```bash
 ergors provider add anthropic --api-key sk-ant-...
 ```
 
 **With Default Flag**:
+
 ```bash
 ergors provider add openai --default
 # Sets OpenAI as default provider
 ```
 
 **Security Features**:
+
 - API key input is hidden in interactive terminals (rpassword)
 - Key is encrypted with custody password
 - Stored in Cnidarium as `custody://<name>`
@@ -117,10 +133,12 @@ ergors provider add openai --default
 - Piped stdin supported for automation
 
 **Prerequisites**:
+
 - Custody must be initialized (`ergors init new`)
 - Daemon must be running (`ergors start`)
 
 **Example Workflow**:
+
 ```bash
 # 1. Start daemon
 ergors start
@@ -150,17 +168,20 @@ ergors provider test [NAME]
 | `[NAME]` | Provider name (tests all if omitted) | No |
 
 **What it does**:
+
 - Sends test request to provider API
 - Reports latency in milliseconds
 - Validates API key and endpoint
 
 **Example (Single Provider)**:
+
 ```bash
 ergors provider test anthropic
 # anthropic - OK (142ms)
 ```
 
 **Example (All Providers)**:
+
 ```bash
 ergors provider test
 # anthropic - OK (142ms)
@@ -170,6 +191,7 @@ ergors provider test
 ```
 
 **Use Cases**:
+
 - Verify API key after registration
 - Diagnose connectivity issues
 - Check provider performance/latency
@@ -183,21 +205,142 @@ ergors provider default <NAME>
 ```
 
 **Example**:
+
 ```bash
 ergors provider default anthropic
 # Default provider set to: anthropic
 ```
 
 **Behavior**:
+
 - Used when model name doesn't match any specific provider
 - Applies to generic inference requests without explicit provider
 - Can be overridden per-request via model name prefix
+
+### Provider Assign
+
+Assign a provider to an engine role:
+
+```bash
+ergors provider assign <NAME> --role <ROLE>
+```
+
+| Argument | Description | Required |
+| ---------- | ------------- | ---------- |
+| `<NAME>` | Provider name (must already be registered) | Yes |
+| `--role <ROLE>` | Engine role to assign | Yes |
+
+**Available Roles**:
+
+| Role | Description | Use Case |
+| ---- | ----------- | -------- |
+| `orchestration` | Primary reasoning/orchestration LLM | Main agent loop, planning, decision-making |
+| `sub-agent` | Sub-agent task execution | Delegated tasks, parallel workers |
+| `embeddings` | Embedding generation | RAG ingestion, semantic search |
+| `tool-calling` | Tool/function calling specialist | Structured output, API interactions |
+
+**Role names**: Use exact values shown above (`sub-agent`, `tool-calling`). Run `--help` to see accepted values.
+
+**Example**:
+
+```bash
+# Assign local sglang as the orchestration provider
+ergors provider assign local-sglang --role orchestration
+
+# Assign anthropic as fallback for orchestration
+ergors provider assign anthropic --role orchestration
+
+# Assign same provider to multiple roles
+ergors provider assign local-sglang --role embeddings
+```
+
+**Behavior**:
+
+- First provider assigned to a role = **primary**
+- Additional providers = **fallback** (used if primary is unavailable)
+- Assigning the same provider to the same role is idempotent (no duplicate)
+- Provider must already exist (registered via `provider add`)
+
+### Provider Unassign
+
+Remove a provider from an engine role:
+
+```bash
+ergors provider unassign <NAME> --role <ROLE>
+```
+
+| Argument | Description | Required |
+| ---------- | ------------- | ---------- |
+| `<NAME>` | Provider name | Yes |
+| `--role <ROLE>` | Engine role to unassign from | Yes |
+
+**Example**:
+
+```bash
+# Remove primary, fallback gets promoted
+ergors provider unassign local-sglang --role orchestration
+# anthropic is now the primary orchestration provider
+```
+
+**Behavior**:
+
+- If the primary provider is removed, the next in the priority list becomes primary
+- If the provider wasn't assigned to that role, returns an error message (non-fatal)
+
+### Provider Roles
+
+List all engine role assignments:
+
+```bash
+ergors provider roles [--json]
+```
+
+**Example Output**:
+
+```
+Engine Role Assignments
+======================
+
+  orchestration:
+    local-sglang [primary]
+    anthropic [fallback]
+
+  embeddings:
+    local-sglang [primary]
+
+  Version: 3
+```
+
+**JSON Output**:
+
+```bash
+ergors provider roles --json
+```
+
+Returns the full `EngineRoleConfig` proto as JSON:
+
+```json
+{
+  "mappings": [
+    {
+      "role": 1,
+      "providerIds": ["local-sglang", "anthropic"]
+    },
+    {
+      "role": 3,
+      "providerIds": ["local-sglang"]
+    }
+  ],
+  "version": "3"
+}
+```
 
 ## Supported Providers
 
 ### Anthropic (Claude)
 
 **Models**:
+
 - `claude-3-5-sonnet-20241022` (Claude 3.5 Sonnet)
 - `claude-3-opus-20240229` (Claude 3 Opus)
 - `claude-3-haiku-20240307` (Claude 3 Haiku)
@@ -208,6 +351,7 @@ ergors provider default anthropic
 **Endpoint**: `https://api.anthropic.com/v1/messages`
 
 **Usage**:
+
 ```bash
 # Register
 ergors provider add anthropic
@@ -230,6 +374,7 @@ curl http://localhost:8080/v1/messages \
 ### OpenAI (GPT)
 
 **Models**:
+
 - `gpt-4` (GPT-4)
 - `gpt-4-turbo` (GPT-4 Turbo)
 - `gpt-3.5-turbo` (GPT-3.5 Turbo)
@@ -240,6 +385,7 @@ curl http://localhost:8080/v1/messages \
 **Endpoint**: `https://api.openai.com/v1/chat/completions`
 
 **Usage**:
+
 ```bash
 # Register
 ergors provider add openai
@@ -266,6 +412,7 @@ curl http://localhost:8080/v1/chat/completions \
 **Default Endpoint**: `http://localhost:11434`
 
 **Usage**:
+
 ```bash
 # Register (no API key needed)
 ergors provider add ollama
@@ -288,6 +435,7 @@ curl http://localhost:8080/v1/chat/completions \
 ### Grok (xAI)
 
 **Models**:
+
 - `grok-beta`
 
 **API Key Format**: `gsk-...`
@@ -295,6 +443,7 @@ curl http://localhost:8080/v1/chat/completions \
 **Endpoint**: `https://api.x.ai/v1/chat/completions`
 
 **Usage**:
+
 ```bash
 # Register
 ergors provider add grok --api-key gsk-...
@@ -321,6 +470,7 @@ curl http://localhost:8080/v1/chat/completions \
 **Endpoint**: Determined by Akash deployment
 
 **Usage**:
+
 ```bash
 # Register
 ergors provider add akashml --api-key ml-key-123
@@ -342,6 +492,7 @@ ergors config set llm.custom_endpoints.my-custom-llm http://custom-host:8080/v1
 ```
 
 **Requirements**:
+
 - Must expose OpenAI-compatible `/v1/chat/completions` endpoint
 - Must accept `Authorization: Bearer <key>` header
 - Must return OpenAI-compatible response format
@@ -350,28 +501,46 @@ ergors config set llm.custom_endpoints.my-custom-llm http://custom-host:8080/v1
 
 ### Routing Priority
 
-When processing inference requests, Ergors routes in this order:
+There are two routing paths: **external API requests** (user-facing) and **internal engine functions**.
+
+#### External API Requests (HTTP proxy)
+
+When processing inference requests via `/v1/chat/completions`, Ergors routes in this order:
 
 1. **Akash Deployments** (highest priority)
    - Label-based: `model: "qwen-inference"` → matches deployment label
    - O(1) lookup from in-memory cache
    - Deployments refreshed every 30 seconds
 
-2. **Model Name Prefix**
-   - `model: "anthropic/claude-3-5-sonnet"` → Anthropic provider
-   - `model: "openai/gpt-4"` → OpenAI provider
+2. **Model Name Pattern** (glob matching, longest-match wins)
+   - `model: "claude-3-5-sonnet-20241022"` → matches `claude-*` → Anthropic provider
+   - `model: "gpt-4"` → matches `gpt-*` → OpenAI provider
+   - `model: "llama2"` → matches `*` → Ollama provider (if registered with catch-all)
 
-3. **Model Name Match**
-   - `model: "claude-3-5-sonnet-20241022"` → Anthropic provider
-   - `model: "gpt-4"` → OpenAI provider
-   - `model: "llama2"` → Ollama provider
-
-4. **Default Provider** (fallback)
+3. **Default Provider** (fallback)
    - If no match, uses default provider set via `ergors provider default`
+
+#### Internal Engine Functions (role-based)
+
+Engine-internal callers (RLM orchestrator, RAG embedder, tool executor) use **role-based routing**:
+
+1. **Engine Role Config** (highest priority)
+   - Looks up the assigned providers for the relevant role (e.g., `orchestration`)
+   - Returns the first **enabled** provider from the priority list
+   - If primary is down/disabled, falls back to next in list
+
+2. **RlmConfig Labels** (legacy, Phase 1 coexistence)
+   - `RlmConfig.primary_provider_label` is checked if no role assignment exists
+
+3. **Model Pattern Routing** (fallback)
+   - Falls back to the same model-pattern routing as external requests
+
+**Important**: Engine role assignments do NOT affect external API request routing. External requests always use model-pattern matching. Roles only control which provider is used for engine-internal functions.
 
 ### Example Routing Scenarios
 
 **Deployment-Based Routing**:
+
 ```bash
 # 1. Deploy inference service
 ergors deploy create --sdl sdls/qwen.yml --label qwen-inference --auto
@@ -384,6 +553,7 @@ curl http://localhost:8080/v1/chat/completions \
 ```
 
 **Provider Prefix Routing**:
+
 ```bash
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -392,6 +562,7 @@ curl http://localhost:8080/v1/chat/completions \
 ```
 
 **Model Name Routing**:
+
 ```bash
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -400,6 +571,7 @@ curl http://localhost:8080/v1/chat/completions \
 ```
 
 **Default Provider Routing**:
+
 ```bash
 # Set default
 ergors provider default anthropic
@@ -420,11 +592,13 @@ curl http://localhost:8080/v1/models
 ```
 
 **Returns**:
+
 - Active Akash deployments (labels as model IDs)
 - Configured provider models
 - Sorted by priority (deployments first)
 
 **Example Response**:
+
 ```json
 {
   "data": [
@@ -444,17 +618,20 @@ API keys are stored in Cnidarium with `custody://` references:
 **Storage Path**: `custody://<provider-name>`
 
 **Example**:
+
 - `custody://anthropic` → Anthropic API key
 - `custody://openai` → OpenAI API key
 - `custody://akashml` → Akash ML API key
 
 **Encryption**:
+
 1. User provides API key (interactive or flag)
 2. Key encrypted with custody password (ChaCha20Poly1305)
 3. Stored in Cnidarium at `custody://<name>`
 4. Decrypted on-demand during inference requests
 
 **Benefits**:
+
 - Keys never stored in plaintext
 - No restart required after adding keys
 - Proxy resolves `custody://` references automatically
@@ -463,17 +640,20 @@ API keys are stored in Cnidarium with `custody://` references:
 ### Security Best Practices
 
 **Interactive Input** (recommended):
+
 ```bash
 ergors provider add anthropic
 # Prompt: Enter API key: ********** (hidden)
 ```
 
 **Advantages**:
+
 - Key never appears in shell history
 - Hidden input in terminal
 - No accidental exposure in logs
 
 **Automation** (for CI/CD):
+
 ```bash
 # Option 1: Pass via flag (less secure - appears in process list)
 ergors provider add anthropic --api-key sk-ant-...
@@ -488,6 +668,7 @@ ergors init llms  # Reads from env
 ```
 
 **Key Rotation**:
+
 ```bash
 # Simply re-run provider add to update key
 ergors provider add anthropic
@@ -550,6 +731,43 @@ curl http://localhost:8080/v1/chat/completions \
   -d '{"model": "my-provider/my-model", "messages": [...]}'
 ```
 
+### Engine Role Setup
+
+Assign providers to engine roles for internal functions:
+
+```bash
+# 1. Add providers
+ergors provider add local-sglang --no-key --base-url http://localhost:8080
+ergors provider add anthropic
+ergors provider add openai
+
+# 2. Assign roles
+ergors provider assign local-sglang --role orchestration   # Primary orchestrator
+ergors provider assign anthropic --role orchestration       # Fallback orchestrator
+ergors provider assign local-sglang --role sub-agent        # Sub-agent tasks
+ergors provider assign local-sglang --role embeddings       # Embedding generation
+ergors provider assign openai --role tool-calling           # Tool/function calls
+
+# 3. Verify assignments
+ergors provider roles
+
+# 4. (Optional) Re-prioritize — unassign then re-assign
+ergors provider unassign local-sglang --role orchestration
+ergors provider assign anthropic --role orchestration       # anthropic now primary
+ergors provider assign local-sglang --role orchestration    # local-sglang now fallback
+```
+
+**Multi-Provider Topology Example**:
+
+```
+orchestration:  local-sglang [primary] → anthropic [fallback]
+sub-agent:      local-sglang [primary]
+embeddings:     local-sglang [primary]
+tool-calling:   openai [primary]
+```
+
+This topology uses a local sglang instance for most work, with Anthropic as a cloud fallback for orchestration, and OpenAI specifically for tool-calling tasks.
+
 ### Multi-Provider Load Balancing
 
 Ergors doesn't have built-in load balancing, but you can implement it via deployment labels:
@@ -572,12 +790,14 @@ ergors deploy create --sdl sdls/qwen-2.yml --label qwen --auto
 **Symptoms**: `ergors provider test <name>` returns FAILED or timeout.
 
 **Causes**:
+
 1. Invalid API key
 2. Network connectivity issues
 3. Provider API endpoint down
 4. Firewall blocking outbound requests
 
 **Solutions**:
+
 ```bash
 # 1. Verify API key (re-add)
 ergors provider add <name>
@@ -599,11 +819,13 @@ ergors --log-level debug start
 **Symptoms**: Request sent to unexpected provider or fails with "model not found".
 
 **Causes**:
+
 1. Model name doesn't match any provider
 2. Deployment label collision
 3. Default provider not set
 
 **Solutions**:
+
 ```bash
 # 1. Check available models
 curl http://localhost:8080/v1/models
@@ -624,11 +846,13 @@ ergors deploy list
 **Symptoms**: Inference requests fail with "invalid API key" after daemon restart.
 
 **Causes**:
+
 1. Custody password changed
 2. Corrupted Cnidarium storage
 3. Key not properly encrypted
 
 **Solutions**:
+
 ```bash
 # 1. Re-add API keys
 ergors provider add anthropic
@@ -639,15 +863,58 @@ ergors init new
 ergors provider add anthropic
 ```
 
+### Engine Role Not Taking Effect
+
+**Symptoms**: Engine still uses model-pattern routing instead of assigned role provider.
+
+**Causes**:
+
+1. Role not assigned (check with `ergors provider roles`)
+2. Assigned provider is disabled or has no valid API key
+3. External API requests (roles only affect internal engine functions)
+
+**Solutions**:
+
+```bash
+# 1. Verify role assignments
+ergors provider roles
+
+# 2. Ensure assigned provider is enabled and has a valid key
+ergors provider list
+ergors provider test <assigned-provider>
+
+# 3. Check startup logs for role warnings
+# Look for: "Engine role 'orchestration' has no assigned provider"
+
+# 4. Re-assign if needed
+ergors provider assign <provider> --role orchestration
+```
+
+### Provider Not Found on Assign
+
+**Symptoms**: `ergors provider assign` returns "Provider not found".
+
+**Causes**: Provider must be registered via `provider add` before it can be assigned to a role.
+
+**Solution**:
+
+```bash
+# Register first, then assign
+ergors provider add my-provider --no-key --base-url http://localhost:8080
+ergors provider assign my-provider --role orchestration
+```
+
 ### Ollama Connection Refused
 
 **Symptoms**: `ergors provider test ollama` fails with connection refused.
 
 **Causes**:
+
 1. Ollama not running
 2. Custom port/endpoint not configured
 
 **Solutions**:
+
 ```bash
 # 1. Start Ollama
 ollama serve
@@ -705,6 +972,29 @@ curl http://localhost:8080/v1/chat/completions -d '{"model": "gpt-4", ...}'
 ergors deploy close-deployment gpt-4
 ```
 
+### Role Assignment Idempotency
+
+Assigning a provider to a role it's already assigned to is a no-op:
+
+```bash
+ergors provider assign anthropic --role orchestration
+# "Provider 'anthropic' assigned to role 'Orchestration'"
+
+ergors provider assign anthropic --role orchestration
+# "Provider 'anthropic' assigned to role 'Orchestration'"  (no duplicate)
+```
+
+### Role Priority After Unassign
+
+When the primary is unassigned, the next provider in the list is automatically promoted:
+
+```bash
+# Before: orchestration → [local-sglang, anthropic, openai]
+ergors provider unassign local-sglang --role orchestration
+# After:  orchestration → [anthropic, openai]
+# anthropic is now primary
+```
+
 ## Response Format
 
 When answering provider queries:
@@ -713,6 +1003,7 @@ When answering provider queries:
 2. **Check prerequisites**: "Ensure daemon is running and custody initialized"
 3. **Provide exact command**: With security best practices (interactive input)
 4. **Suggest verification**: "Test with `ergors provider test <name>`"
+5. **For role assignments**: Clarify the distinction between external routing (model patterns) and internal routing (engine roles)
 
 ## Knowledge Boundaries
 
@@ -720,3 +1011,4 @@ When answering provider queries:
 - For provider-specific API errors, defer to provider documentation (Anthropic, OpenAI, etc.)
 - For Cnidarium encryption details, defer to Penumbra documentation
 - For custom provider integration, suggest OpenAI API compatibility requirements
+- Engine roles affect **internal** engine functions only — external API requests always use model-pattern routing

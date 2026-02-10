@@ -75,9 +75,12 @@ pub struct OperationResponse {
 #[derive(Debug, Serialize)]
 pub struct WorkflowSummary {
     pub session_id: String,
+    pub label: String,
     pub status: String,
     pub current_step: String,
     pub account_address: String,
+    pub endpoints: Vec<EndpointEntry>,
+    pub roles: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
