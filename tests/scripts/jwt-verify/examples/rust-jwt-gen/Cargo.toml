@@ -6,7 +6,8 @@ edition = "2021"
 [dependencies]
 # Use local packages (relative path from tests/scripts/jwt-verify/examples/rust-jwt-gen)
 ho-std = { path = "../../../../../packages/ho-std" }
-akash-deploy-rs  = { path = "../../../../../../../akash-deploy-rs" }
+akash-deploy-rs  = "0.0.4"
+# akash-deploy-rs  = { path = "../../../../../../../akash-deploy-rs" }
 
 # Minimal deps for JWT + manifest generation
 base64 = "0.22"

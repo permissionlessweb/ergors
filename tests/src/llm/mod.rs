@@ -379,7 +379,6 @@ mod router_with_custody_accessor {
             .unwrap();
         manager.load_store(&store).unwrap();
         let accessor: Arc<tokio::sync::RwLock<dyn ApiKeyMethod>> = Arc::new(tokio::sync::RwLock::new(manager));
-
         let mut providers = HashMap::new();
         providers.insert(
             "ollama".to_string(),
