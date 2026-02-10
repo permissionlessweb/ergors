@@ -17,6 +17,7 @@ pub use prost::{Message, Name};
 
 pub mod config;
 pub mod constants;
+pub mod document;
 pub mod error;
 pub mod git;
 pub mod languages;

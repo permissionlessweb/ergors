@@ -237,7 +237,7 @@ pub async fn query_service_endpoints(
 ) -> Result<HashMap<String, ServiceEndpoint>> {
     let mut auth = JwtAuthClient::new(provider_uri);
 
-    let path = format!("/lease/{}/{}/{}/{}/status", owner, dseq, gseq, oseq);
+    let path = format!("/lease/{}/{}/{}/status", dseq, gseq, oseq);
 
     tracing::info!("Querying endpoints from {}{}", provider_uri, path);
 

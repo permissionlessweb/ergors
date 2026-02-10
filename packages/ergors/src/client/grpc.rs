@@ -123,6 +123,8 @@ use ho_std::types::ergors::management::v1::{
     PauseSessionRequest,
     PauseSessionResponse,
     PeerAddress,
+    AssignProviderRoleRequest,
+    UnassignProviderRoleRequest,
     ProviderConfig,
     ProviderInfo,
     ProviderList,
@@ -219,6 +221,20 @@ use ho_std::types::ergors::orch::v1::{
     RlmConfigureRequest,
     RlmQueryRequest,
     RlmQueryResponse,
+    // Document Storage types
+    DeleteDocumentRequest,
+    DeleteDocumentResponse,
+    DocumentInfo,
+    IngestDocumentRequest,
+    IngestDocumentResponse,
+    ListDocumentsRequest,
+    ListDocumentsResponse,
+    RetrieveDocumentRequest,
+    RetrieveDocumentResponse,
+    // Engine Role types
+    EngineRole,
+    EngineRoleConfig,
+    EngineRoleMapping,
     RemoveTrustedProviderRequest,
     RevokeAkashCertificateRequest,
     // Automated workflow types
@@ -1373,6 +1389,183 @@ impl ManagementService for ManagementServiceImpl {
             latency_ms: 100,
             error_message: String::new(),
         }))
+    }
+
+    // ============ Provider Role Assignments ============
+
+    async fn assign_provider_role(
+        &self,
+        request: Request<AssignProviderRoleRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+        let provider_name = req.provider_name.to_lowercase();
+        let role = EngineRole::try_from(req.role)
+            .map_err(|_| Status::invalid_argument("Invalid engine role"))?;
+
+        if role == EngineRole::Unspecified {
+            return Err(Status::invalid_argument("Engine role must be specified"));
+        }
+
+        // Validate provider exists
+        {
+            let pr = self.state.pr.read().await;
+            if pr.get_provider(&provider_name).is_none() {
+                return Err(Status::not_found(format!(
+                    "Provider '{}' not found",
+                    provider_name
+                )));
+            }
+        }
+
+        // Load or create EngineRoleConfig
+        let mut config = self
+            .state
+            .s
+            .get_engine_role_config()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to load engine role config: {}", e)))?
+            .unwrap_or_default();
+
+        // Find or create mapping for this role
+        let role_i32 = role as i32;
+        let mapping = config
+            .mappings
+            .iter_mut()
+            .find(|m| m.role == role_i32);
+
+        match mapping {
+            Some(m) => {
+                // Skip if already assigned (idempotent)
+                if !m.provider_ids.contains(&provider_name) {
+                    m.provider_ids.push(provider_name.clone());
+                }
+            }
+            None => {
+                config.mappings.push(EngineRoleMapping {
+                    role: role_i32,
+                    provider_ids: vec![provider_name.clone()],
+                });
+            }
+        }
+
+        config.version += 1;
+        config.updated_at = Some({
+            let d = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
+            pbjson_types::Timestamp {
+                seconds: d.as_secs() as i64,
+                nanos: 0,
+            }
+        });
+
+        self.state
+            .s
+            .put_engine_role_config(&config)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to persist engine role config: {}", e)))?;
+
+        // Update in-memory proxy router
+        {
+            let mut pr = self.state.pr.write().await;
+            pr.set_engine_role_config(Some(config));
+        }
+
+        let role_name = format!("{:?}", role);
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!(
+                "Provider '{}' assigned to role '{}'",
+                provider_name, role_name
+            ),
+        }))
+    }
+
+    async fn unassign_provider_role(
+        &self,
+        request: Request<UnassignProviderRoleRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+        let provider_name = req.provider_name.to_lowercase();
+        let role = EngineRole::try_from(req.role)
+            .map_err(|_| Status::invalid_argument("Invalid engine role"))?;
+
+        if role == EngineRole::Unspecified {
+            return Err(Status::invalid_argument("Engine role must be specified"));
+        }
+
+        let mut config = self
+            .state
+            .s
+            .get_engine_role_config()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to load engine role config: {}", e)))?
+            .unwrap_or_default();
+
+        let role_i32 = role as i32;
+        let mut found = false;
+        if let Some(mapping) = config.mappings.iter_mut().find(|m| m.role == role_i32) {
+            if let Some(pos) = mapping.provider_ids.iter().position(|id| id == &provider_name) {
+                mapping.provider_ids.remove(pos);
+                found = true;
+            }
+        }
+
+        if !found {
+            return Ok(Response::new(OperationResult {
+                success: false,
+                message: format!(
+                    "Provider '{}' was not assigned to role '{:?}'",
+                    provider_name, role
+                ),
+            }));
+        }
+
+        config.version += 1;
+        config.updated_at = Some({
+            let d = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
+            pbjson_types::Timestamp {
+                seconds: d.as_secs() as i64,
+                nanos: 0,
+            }
+        });
+
+        self.state
+            .s
+            .put_engine_role_config(&config)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to persist engine role config: {}", e)))?;
+
+        // Update in-memory proxy router
+        {
+            let mut pr = self.state.pr.write().await;
+            pr.set_engine_role_config(Some(config));
+        }
+
+        Ok(Response::new(OperationResult {
+            success: true,
+            message: format!(
+                "Provider '{}' unassigned from role '{:?}'",
+                provider_name, role
+            ),
+        }))
+    }
+
+    async fn list_provider_roles(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<EngineRoleConfig>, Status> {
+        let config = self
+            .state
+            .s
+            .get_engine_role_config()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to load engine role config: {}", e)))?
+            .unwrap_or_default();
+
+        Ok(Response::new(config))
     }
 
     // ============ Auth Tokens ============
@@ -3776,6 +3969,174 @@ impl ManagementService for ManagementServiceImpl {
         }
     }
 
+    // ============ Document Storage (Non-RAG) ============
+
+    /// Ingest a document into storage
+    async fn ingest_document(
+        &self,
+        request: Request<IngestDocumentRequest>,
+    ) -> Result<Response<IngestDocumentResponse>, Status> {
+        use ho_std::document::DocumentStorage;
+
+        let req = request.into_inner();
+
+        tracing::info!("Ingesting document: name={}, size={} bytes", req.name, req.content.len());
+
+        // Store document
+        let snapshot = self.state.s.cs.latest_snapshot();
+        let mut state_delta = cnidarium::StateDelta::new(snapshot);
+
+        let doc_id = DocumentStorage::store_document(
+            &mut state_delta,
+            &req.content,
+            req.name,
+            req.source,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to store document: {}", e);
+            Status::internal(format!("Failed to store document: {}", e))
+        })?;
+
+        // Commit state changes
+        self.state.s.cs.commit(state_delta).await.map_err(|e| {
+            tracing::error!("Failed to commit document: {}", e);
+            Status::internal(format!("Failed to commit document: {}", e))
+        })?;
+
+        tracing::info!("Document ingested: id={}", doc_id);
+
+        Ok(Response::new(IngestDocumentResponse {
+            document_id: doc_id.to_string(),
+        }))
+    }
+
+    /// Retrieve a document by ID
+    async fn retrieve_document(
+        &self,
+        request: Request<RetrieveDocumentRequest>,
+    ) -> Result<Response<RetrieveDocumentResponse>, Status> {
+        use ho_std::document::{DocumentId, DocumentStorage};
+
+        let req = request.into_inner();
+
+        tracing::debug!("Retrieving document: id={}", req.document_id);
+
+        let doc_id = DocumentId::from_hex(req.document_id.clone()).map_err(|e| {
+            tracing::warn!("Invalid document ID: {}", e);
+            Status::invalid_argument(format!("Invalid document ID: {}", e))
+        })?;
+
+        let snapshot = self.state.s.cs.latest_snapshot();
+
+        let (content, metadata) = DocumentStorage::retrieve_document(&snapshot, &doc_id)
+            .await
+            .map_err(|e| {
+                if e.to_string().contains("not found") {
+                    Status::not_found(format!("Document not found: {}", req.document_id))
+                } else {
+                    tracing::error!("DocumentStorage: Failed to retrieve document: {}", e);
+                    Status::internal(format!("DocumentStorage: Failed to retrieve document: {}", e))
+                }
+            })?;
+
+        let metadata_json = serde_json::to_vec(&metadata).map_err(|e| {
+            tracing::error!("Failed to serialize metadata: {}", e);
+            Status::internal(format!("Failed to serialize metadata: {}", e))
+        })?;
+
+        tracing::debug!("Document retrieved: id={}, size={} bytes", req.document_id, content.len());
+
+        Ok(Response::new(RetrieveDocumentResponse {
+            content,
+            metadata_json,
+        }))
+    }
+
+    /// List all documents with pagination
+    async fn list_documents(
+        &self,
+        request: Request<ListDocumentsRequest>,
+    ) -> Result<Response<ListDocumentsResponse>, Status> {
+        use ho_std::document::DocumentStorage;
+        use ho_std::types::ergors::orch::v1::DocumentInfo;
+
+        let req = request.into_inner();
+
+        let limit = req.limit.map(|l| l as usize);
+        let offset = req.offset.map(|o| o as usize);
+
+        tracing::debug!("Listing documents: limit={:?}, offset={:?}", limit, offset);
+
+        let snapshot = self.state.s.cs.latest_snapshot();
+
+        let documents = DocumentStorage::list_documents(&snapshot, limit, offset)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to list documents: {}", e);
+                Status::internal(format!("Failed to list documents: {}", e))
+            })?;
+
+        let document_infos: Vec<DocumentInfo> = documents
+            .into_iter()
+            .filter_map(|(doc_id, metadata)| {
+                match serde_json::to_vec(&metadata) {
+                    Ok(metadata_json) => Some(DocumentInfo {
+                        document_id: doc_id.to_string(),
+                        metadata_json,
+                    }),
+                    Err(e) => {
+                        tracing::warn!("Failed to serialize metadata for {}: {}", doc_id, e);
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        tracing::debug!("Listed {} documents", document_infos.len());
+
+        Ok(Response::new(ListDocumentsResponse {
+            documents: document_infos,
+        }))
+    }
+
+    /// Delete a document by ID
+    async fn delete_document(
+        &self,
+        request: Request<DeleteDocumentRequest>,
+    ) -> Result<Response<DeleteDocumentResponse>, Status> {
+        use ho_std::document::{DocumentId, DocumentStorage};
+
+        let req = request.into_inner();
+
+        tracing::info!("Deleting document: id={}", req.document_id);
+
+        let doc_id = DocumentId::from_hex(req.document_id.clone()).map_err(|e| {
+            tracing::warn!("Invalid document ID: {}", e);
+            Status::invalid_argument(format!("Invalid document ID: {}", e))
+        })?;
+
+        let snapshot = self.state.s.cs.latest_snapshot();
+        let mut state_delta = cnidarium::StateDelta::new(snapshot);
+
+        DocumentStorage::delete_document(&mut state_delta, &doc_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to delete document: {}", e);
+                Status::internal(format!("Failed to delete document: {}", e))
+            })?;
+
+        // Commit state changes
+        self.state.s.cs.commit(state_delta).await.map_err(|e| {
+            tracing::error!("Failed to commit document deletion: {}", e);
+            Status::internal(format!("Failed to commit deletion: {}", e))
+        })?;
+
+        tracing::info!("Document deleted: id={}", req.document_id);
+
+        Ok(Response::new(DeleteDocumentResponse { success: true }))
+    }
+
     /// Request authz grant from coordinator
     async fn request_grant(
         &self,
@@ -4866,13 +5227,28 @@ pub async fn start_grpc_server(
 
     let interceptor = crate::auth::grpc::create_grpc_auth_interceptor(authorized_keys);
 
+    // Configure message size limits BEFORE applying interceptor (100MB)
+    let configured_service = ManagementServiceServer::new(service)
+        .max_decoding_message_size(100 * 1024 * 1024) // 100MB limit
+        .max_encoding_message_size(100 * 1024 * 1024); // 100MB limit
+
+    // Manually apply interceptor using InterceptedService
+    use tonic::codegen::InterceptedService;
+    let intercepted_service = InterceptedService::new(configured_service, interceptor);
+
+    // Configure server with larger HTTP/2 window sizes
     let mut server = tonic::transport::Server::builder()
-        .add_service(ManagementServiceServer::with_interceptor(service, interceptor));
+        .initial_stream_window_size(100 * 1024 * 1024) // 100MB
+        .initial_connection_window_size(100 * 1024 * 1024) // 100MB
+        .add_service(intercepted_service);
 
     // Add RLM document service if provided
     if let Some(rlm_svc) = rlm_service {
         tracing::info!("Registering RLM document service");
-        server = server.add_service(rlm_svc.into_server());
+        let rlm_server = rlm_svc.into_server()
+            .max_decoding_message_size(100 * 1024 * 1024) // 100MB limit
+            .max_encoding_message_size(100 * 1024 * 1024); // 100MB limit
+        server = server.add_service(rlm_server);
     }
 
     server.serve(addr).await?;

@@ -13,7 +13,6 @@ pub trait ConfigLoaderTrait {
     fn to_toml_file<T: Serialize, P: AsRef<Path>>(config: &T, path: P) -> HoResult<()>;
     fn from_json_file<T: DeserializeOwned, P: AsRef<Path>>(path: P) -> HoResult<T>;
     fn to_json_file<T: Serialize, P: AsRef<Path>>(config: &T, path: P) -> HoResult<()>;
-    fn load_api_keys(path: &str) -> HoResult<HashMap<String, String>>;
 }
 
 pub trait FileOptsTrait {

@@ -9,6 +9,7 @@ pub mod bootstrap;
 pub mod call;
 pub mod config;
 pub mod deploy;
+pub mod document;
 pub mod gateway;
 pub mod init;
 pub mod responses;
@@ -33,6 +34,7 @@ pub struct CliContext {
 pub use ask::AskCmd;
 pub use bootstrap::BootstrapCmd;
 pub use deploy::DeployCmd;
+pub use document::DocumentCmd;
 pub use gateway::GatewayCmd;
 pub use workspace::WorkspaceCmd;
 
@@ -582,6 +584,51 @@ pub enum ProviderCmd {
         /// Provider name
         name: String,
     },
+    /// Assign a provider to an engine role
+    Assign {
+        /// Provider name
+        name: String,
+        /// Engine role (orchestration, sub-agent, embeddings, tool-calling)
+        #[arg(long)]
+        role: String,
+    },
+    /// Unassign a provider from an engine role
+    Unassign {
+        /// Provider name
+        name: String,
+        /// Engine role (orchestration, sub-agent, embeddings, tool-calling)
+        #[arg(long)]
+        role: String,
+    },
+    /// List all engine role assignments
+    Roles,
+}
+
+/// Parse a CLI role string into an EngineRole enum value
+fn parse_engine_role(s: &str) -> Result<ho_std::types::ergors::orch::v1::EngineRole> {
+    use ho_std::types::ergors::orch::v1::EngineRole;
+    match s.to_lowercase().replace('_', "-").as_str() {
+        "orchestration" => Ok(EngineRole::Orchestration),
+        "sub-agent" | "subagent" => Ok(EngineRole::SubAgent),
+        "embeddings" => Ok(EngineRole::Embeddings),
+        "tool-calling" | "toolcalling" => Ok(EngineRole::ToolCalling),
+        _ => anyhow::bail!(
+            "Unknown engine role '{}'. Valid roles: orchestration, sub-agent, embeddings, tool-calling",
+            s
+        ),
+    }
+}
+
+/// Format an EngineRole enum value for display
+fn format_engine_role(role: i32) -> &'static str {
+    use ho_std::types::ergors::orch::v1::EngineRole;
+    match EngineRole::try_from(role) {
+        Ok(EngineRole::Orchestration) => "orchestration",
+        Ok(EngineRole::SubAgent) => "sub-agent",
+        Ok(EngineRole::Embeddings) => "embeddings",
+        Ok(EngineRole::ToolCalling) => "tool-calling",
+        _ => "unknown",
+    }
 }
 
 impl ProviderCmd {
@@ -713,6 +760,60 @@ impl ProviderCmd {
                     println!("Default provider set to: {}", name_lower);
                 } else {
                     println!("Failed to set default: {}", result.message);
+                }
+                Ok(())
+            }
+            ProviderCmd::Assign { name, role } => {
+                let name_lower = name.to_lowercase();
+                let engine_role = parse_engine_role(role)?;
+                let result = client.assign_provider_role(&name_lower, engine_role).await?;
+
+                if result.success {
+                    println!("{}", result.message);
+                } else {
+                    eprintln!("Error: {}", result.message);
+                    std::process::exit(1);
+                }
+                Ok(())
+            }
+            ProviderCmd::Unassign { name, role } => {
+                let name_lower = name.to_lowercase();
+                let engine_role = parse_engine_role(role)?;
+                let result = client.unassign_provider_role(&name_lower, engine_role).await?;
+
+                if result.success {
+                    println!("{}", result.message);
+                } else {
+                    eprintln!("Error: {}", result.message);
+                    std::process::exit(1);
+                }
+                Ok(())
+            }
+            ProviderCmd::Roles => {
+                let config = client.list_provider_roles().await?;
+
+                if ctx.json {
+                    println!("{}", serde_json::to_string_pretty(&config)?);
+                } else {
+                    println!("Engine Role Assignments");
+                    println!("======================");
+
+                    if config.mappings.is_empty() {
+                        println!("  No roles assigned. Use 'ergors provider assign <name> --role <role>' to assign.");
+                    } else {
+                        for mapping in &config.mappings {
+                            let role_name = format_engine_role(mapping.role);
+                            println!("\n  {}:", role_name);
+                            for (i, provider_id) in mapping.provider_ids.iter().enumerate() {
+                                let label = if i == 0 { "primary" } else { "fallback" };
+                                println!("    {} [{}]", provider_id, label);
+                            }
+                        }
+                    }
+
+                    if config.version > 0 {
+                        println!("\n  Version: {}", config.version);
+                    }
                 }
                 Ok(())
             }

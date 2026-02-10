@@ -10,24 +10,24 @@ use commonware_runtime::{
     Runner as _,
 };
 use ergors::{
-    auth::AuthCmd,
     auth::grpc::AuthorizedCliKeys,
+    auth::AuthCmd,
+    client::grpc::{start_grpc_server, ManagementServiceImpl},
+    client::sentinel::SentinelServer,
     client::ManagementClient,
+    client::RlmDocService,
     commands::{
         call::CallCmd, config::ConfigCmd, init::InitCmd, sentinel::SentinelCmd, AskCmd,
-        BootstrapCmd, CliContext, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd,
-        RemoteConfigCmd, SdlCmd, WorkspaceCmd,
+        BootstrapCmd, CliContext, DeployCmd, DocumentCmd, EngineCmd, NetworkCmd, NodeCmd,
+        ProviderCmd, RemoteConfigCmd, SdlCmd, WorkspaceCmd,
     },
     config::ErgorsConfig,
     daemon::{Daemon, SignalHandler},
     keys::KeysCmd,
-    client::grpc::{start_grpc_server, ManagementServiceImpl},
-    client::RlmDocService,
-    client::sentinel::SentinelServer,
     server::Server as CwHoServer,
 };
 use ho_std::{
-    constants::{default_home, init_env, CONFIG_FILE_NAME},
+    constants::{default_home, init_env, CONFIG_FILE_NAME,DEFAULT_GRPC_ADDR},
     error::HoResult,
     traits::HoConfigTrait,
 };
@@ -37,9 +37,6 @@ use std::net::SocketAddr;
 use tracing::{error, info};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-
-/// Default gRPC address for the engine
-const DEFAULT_GRPC_ADDR: &str = "http://localhost:50051";
 
 /// Install a panic hook to restore terminal state on crash.
 ///
@@ -153,6 +150,9 @@ pub enum Commands {
     /// Ask: Document ingestion and querying (RAG + RLM)
     #[command(subcommand)]
     Ask(AskCmd),
+    /// Document storage (non-RAG): ingest, retrieve, list, delete
+    #[command(subcommand)]
+    Document(DocumentCmd),
     /// Runtime configuration (via daemon)
     #[command(subcommand)]
     RuntimeConfig(RemoteConfigCmd),
@@ -226,8 +226,9 @@ fn resolve_signing_key(
     match (is_local, key_hex) {
         (true, _) => Ok(None),
         (false, Some(hex)) => {
-            let key = ho_std::keys::commonware::NodePrivKey::from_hex(hex)
-                .ok_or_else(|| anyhow::anyhow!("Invalid --signing-key-hex (expected 64 hex chars)"))?;
+            let key = ho_std::keys::commonware::NodePrivKey::from_hex(hex).ok_or_else(|| {
+                anyhow::anyhow!("Invalid --signing-key-hex (expected 64 hex chars)")
+            })?;
             Ok(Some(key))
         }
         (false, None) => {
@@ -296,6 +297,7 @@ async fn execute_grpc_command(cli: &Cli) -> Result<()> {
         Commands::Deploy(cmd) => cmd.execute(&ctx, client?).await?,
         Commands::Sdl(cmd) => cmd.execute(&ctx, client?).await?,
         Commands::Ask(cmd) => cmd.execute(&ctx, client?).await?,
+        Commands::Document(cmd) => cmd.execute(&ctx, client).await?,
         Commands::RuntimeConfig(cmd) => cmd.execute(&ctx, client?).await?,
 
         // Local commands handled in main()
@@ -396,7 +398,10 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
         if let Ok(stored) = app_state.s.get_authorized_cli_keys().await {
             authorized_keys.load_from(&stored.keys);
             if !stored.keys.is_empty() {
-                info!("Loaded {} authorized CLI keys from storage", stored.keys.len());
+                info!(
+                    "Loaded {} authorized CLI keys from storage",
+                    stored.keys.len()
+                );
             }
         }
 
@@ -416,7 +421,9 @@ pub fn start(cli: &Cli, grpc_port: u16) -> HoResult<()> {
             .expect("Invalid gRPC address");
 
         let grpc_handle = tokio::spawn(async move {
-            if let Err(e) = start_grpc_server(grpc_addr, grpc_service, rlm_service, authorized_keys).await {
+            if let Err(e) =
+                start_grpc_server(grpc_addr, grpc_service, rlm_service, authorized_keys).await
+            {
                 error!("gRPC server error: {}", e);
             }
         });

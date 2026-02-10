@@ -14,7 +14,7 @@
 #   --skip-inference   Skip mock inference provider (Docker)
 #   --skip-ethereum   Skip Ethereum/Anvil setup
 #   --verbose          Enable verbose output
-#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|sdl-storage|chain-config|sentinel|all)
+#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|sdl-storage|chain-config|sentinel|document|provider-roles|all)
 #   --akash-home PATH  Set Akash repo location
 #   --help             Show this help message
 #
@@ -68,6 +68,10 @@ source "${SCRIPT_DIR}/tests/sdl_storage.sh"
 source "${SCRIPT_DIR}/tests/chain_config.sh"
 # shellcheck source=tests/sentinel.sh
 source "${SCRIPT_DIR}/tests/sentinel.sh"
+# shellcheck source=tests/document.sh
+source "${SCRIPT_DIR}/tests/document.sh"
+# shellcheck source=tests/provider_roles.sh
+source "${SCRIPT_DIR}/tests/provider_roles.sh"
 
 # =============================================================================
 # Configuration
@@ -113,7 +117,7 @@ export VERBOSE
 
 # Auto-skip heavy infrastructure for suites that only need the ERGORS network
 case "$TEST_SUITE" in
-    chain-config|network|contracts|api|sdl-storage)
+    chain-config|network|contracts|api|sdl-storage|document|provider-roles)
         SKIP_AKASH=true
         SKIP_ETHEREUM=true
         SKIP_INFERENCE=true
@@ -428,6 +432,14 @@ run_tests() {
         sentinel)
             run_sentinel_tests
             ;;
+        document)
+            run_network_tests  # Ensure nodes are up
+            run_document_tests
+            ;;
+        provider-roles)
+            run_network_tests  # Ensure nodes are up
+            run_provider_roles_tests
+            ;;
         all)
             # Phase 1: Network tests
             run_network_tests
@@ -465,12 +477,15 @@ run_tests() {
             # Phase 11: Chain config CRUD tests
             run_chain_config_tests
 
-            # Phase 12: Sentinel mode tests (standalone, no network needed)
+            # Phase 12: Provider role assignment tests
+            run_provider_roles_tests
+
+            # Phase 13: Sentinel mode tests (standalone, no network needed)
             run_sentinel_tests
             ;;
         *)
             log_error "Unknown test suite: $TEST_SUITE"
-            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, chain-config, sentinel, all"
+            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, chain-config, sentinel, document, provider-roles, all"
             exit 1
             ;;
     esac

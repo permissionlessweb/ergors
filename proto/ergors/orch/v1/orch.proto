@@ -1230,6 +1230,32 @@ enum InferenceProviderType {
   INFERENCE_PROVIDER_TYPE_CUSTOM = 99;     // Custom/unknown protocol
 }
 
+// ==============================================
+// Engine Role Assignments
+// ==============================================
+
+// Roles that inference providers can serve within the engine
+enum EngineRole {
+  ENGINE_ROLE_UNSPECIFIED = 0;
+  ENGINE_ROLE_ORCHESTRATION = 1;   // Primary reasoning/orchestration LLM
+  ENGINE_ROLE_SUB_AGENT = 2;      // Sub-agent task execution
+  ENGINE_ROLE_EMBEDDINGS = 3;     // Embedding generation (RAG, search)
+  ENGINE_ROLE_TOOL_CALLING = 4;   // Tool-calling specialized model
+}
+
+// Maps a single engine role to its assigned providers (ordered by priority)
+message EngineRoleMapping {
+  EngineRole role = 1;
+  repeated string provider_ids = 2;  // ordered by priority: first = primary
+}
+
+// Full engine role configuration (versioned, stored in cnidarium)
+message EngineRoleConfig {
+  repeated EngineRoleMapping mappings = 1;
+  google.protobuf.Timestamp updated_at = 2;
+  uint64 version = 3;
+}
+
 // Workflow step enumeration for Akash deployment wizard
 // NOTE: Step ordering is handled in code, not by enum values.
 // CONNECTIVITY_CHECK runs first regardless of its numeric value.
@@ -2123,5 +2149,63 @@ message InboxMessage {
   string result = 9;
   google.protobuf.Timestamp created_at = 10;
   google.protobuf.Timestamp updated_at = 11;
+}
+
+// ============================================
+// Document Storage (Non-RAG)
+// ============================================
+
+message IngestDocumentRequest {
+  // Document content
+  bytes content = 1;
+  // Document name/title
+  string name = 2;
+  // Source of document (file path, URL, etc.)
+  string source = 3;
+}
+
+message IngestDocumentResponse {
+  // Document ID (content hash)
+  string document_id = 1;
+}
+
+message RetrieveDocumentRequest {
+  // Document ID to retrieve
+  string document_id = 1;
+}
+
+message RetrieveDocumentResponse {
+  // Document content
+  bytes content = 1;
+  // Serialized JSON metadata
+  bytes metadata_json = 2;
+}
+
+message ListDocumentsRequest {
+  // Maximum number of documents to return
+  optional uint32 limit = 1;
+  // Number of documents to skip
+  optional uint32 offset = 2;
+}
+
+message ListDocumentsResponse {
+  repeated DocumentInfo documents = 1;
+}
+
+message DocumentInfo {
+  // Document ID
+  string document_id = 1;
+  // Serialized JSON metadata
+  bytes metadata_json = 2;
+}
+
+message DeleteDocumentRequest {
+  // Document ID to delete
+  string document_id = 1;
+}
+
+message DeleteDocumentResponse {
+  // Success indicator
+  bool success = 1;
 }
 

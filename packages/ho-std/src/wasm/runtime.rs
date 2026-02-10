@@ -23,7 +23,6 @@ use {
         call_execute, call_instantiate, call_query, capabilities_from_csv, Backend, Cache,
         CacheOptions, InstanceOptions, Size,
     },
-    sha2::Digest,
     std::path::PathBuf,
     std::sync::Arc,
     tracing::{debug, info, warn},
