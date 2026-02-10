@@ -3,22 +3,22 @@ pub mod client;
 pub mod commands;
 pub mod config;
 pub mod consensus;
+pub mod chains;
 #[cfg(feature = "cw")]
 pub mod contracts;
-pub mod daemon;
 pub mod deploy;
 pub mod gateway;
 pub mod headstash;
 pub mod keys;
-pub mod network;
 pub mod proxy;
-pub mod sentinel;
 pub mod server;
-pub mod session_manager;
-pub mod storage;
 pub mod traits;
 
+// Re-export modules that moved into server/ for backward compat
+pub use server::{daemon,network,session_manager,storage};
+
 #[cfg(feature = "cw")]
+#[path = "contracts/cosmwasm/cosmwasm.rs"]
 pub mod cosmwasm;
 #[cfg(feature = "cw")]
 use ho_std::wasm::WasmRuntime;
@@ -26,7 +26,7 @@ use ho_std::wasm::WasmRuntime;
 // Re-export the macro for external use
 use crate::{
     config::ErgorsConfig,
-    deploy::{automated::AutomatedDeployer, cosmos_client::CosmosClient},
+    deploy::akash::{client::AkashClient, deployer::AutomatedDeployer},
     network::PeerInfo,
     proxy::ProxyRouter,
     storage::ErgorsStorage,
@@ -74,8 +74,8 @@ pub struct ErgorsNetworkManifold {
 /// Uses JWT authentication for provider communication (no mTLS certificates required).
 #[derive(Clone)]
 pub struct AkashDeploymentContext {
-    /// CosmosClient for chain queries
-    pub cosmos: Arc<CosmosClient>,
+    /// AkashClient for chain queries
+    pub cosmos: Arc<AkashClient>,
     /// Key manager (unlocked with password)
     pub key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
     /// Key store
@@ -128,6 +128,9 @@ pub struct ErgorsAppState {
     pub akash: Option<AkashDeploymentContext>,
     /// gm = gateway manager (when discord or other gateway features enabled)
     pub gm: Option<Arc<gateway::GatewayManager>>,
+    /// rlm = RLM service (when rlm feature is enabled)
+    #[cfg(feature = "rlm")]
+    pub rlm: Option<Arc<ergors_rlm::RlmService>>,
     /// wasm = WASM runtime (when cw feature is enabled)
     #[cfg(feature = "cw")]
     pub wasm: Arc<WasmRuntime>,
@@ -143,6 +146,7 @@ impl ErgorsAppState {
         pr: Arc<RwLock<ProxyRouter>>,
         akash: Option<AkashDeploymentContext>,
         gm: Option<Arc<gateway::GatewayManager>>,
+        #[cfg(feature = "rlm")] rlm: Option<Arc<ergors_rlm::RlmService>>,
         #[cfg(feature = "cw")] wasm: Arc<WasmRuntime>,
     ) -> Self {
         Self {
@@ -154,6 +158,8 @@ impl ErgorsAppState {
             pr,
             akash,
             gm,
+            #[cfg(feature = "rlm")]
+            rlm,
             #[cfg(feature = "cw")]
             wasm,
         }

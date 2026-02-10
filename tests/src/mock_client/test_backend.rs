@@ -171,14 +171,17 @@ impl AkashBackend for TestBackend {
 
         // Look up from configured providers
         let configs = self.provider_configs.read().unwrap();
-        let info = configs.iter().find(|p| p.address == provider).map(|p| ProviderInfo {
-            address: p.address.clone(),
-            host_uri: p.host_uri.clone(),
-            email: format!("provider@{}.test", p.address),
-            website: String::new(),
-            attributes: Vec::new(),
-            cached_at: 0,
-        });
+        let info = configs
+            .iter()
+            .find(|p| p.address == provider)
+            .map(|p| ProviderInfo {
+                address: p.address.clone(),
+                host_uri: p.host_uri.clone(),
+                email: format!("provider@{}.test", p.address),
+                website: String::new(),
+                attributes: Vec::new(),
+                cached_at: 0,
+            });
 
         Ok(info)
     }
@@ -230,6 +233,7 @@ impl AkashBackend for TestBackend {
         dseq: u64,
         _gseq: u32,
         _oseq: u32,
+        _bseq: u32,
         _provider: &str,
     ) -> Result<LeaseInfo, DeployError> {
         self.check_failure("query_lease")?;
@@ -276,7 +280,10 @@ impl AkashBackend for TestBackend {
             .insert(owner.to_string(), cert_info);
 
         Ok(TxResult {
-            hash: format!("CERT_TX_{}", hex::encode(&owner.as_bytes()[..8.min(owner.len())])),
+            hash: format!(
+                "CERT_TX_{}",
+                hex::encode(&owner.as_bytes()[..8.min(owner.len())])
+            ),
             code: 0,
             raw_log: String::new(),
             height: 100,
@@ -423,10 +430,7 @@ impl AkashBackend for TestBackend {
     // STATE PERSISTENCE
     // ═══════════════════════════════════════════════════════════════
 
-    async fn load_state(
-        &self,
-        session_id: &str,
-    ) -> Result<Option<DeploymentState>, DeployError> {
+    async fn load_state(&self, session_id: &str) -> Result<Option<DeploymentState>, DeployError> {
         let states = self.states.read().unwrap();
         Ok(states.get(session_id).cloned())
     }
@@ -515,7 +519,10 @@ mod tests {
     #[tokio::test]
     async fn test_broadcast_create_deployment() {
         let (backend, chain) = make_backend();
-        chain.write().unwrap().fund_account("akash1owner", 1_000_000);
+        chain
+            .write()
+            .unwrap()
+            .fund_account("akash1owner", 1_000_000);
 
         let signer = TestSigner;
         let (tx, dseq) = backend
@@ -571,7 +578,11 @@ mod tests {
     async fn test_cert_key_roundtrip() {
         let (backend, _chain) = make_backend();
 
-        assert!(backend.load_cert_key("akash1owner").await.unwrap().is_none());
+        assert!(backend
+            .load_cert_key("akash1owner")
+            .await
+            .unwrap()
+            .is_none());
 
         backend
             .save_cert_key("akash1owner", b"secret-key")
@@ -582,7 +593,11 @@ mod tests {
         assert_eq!(key, Some(b"secret-key".to_vec()));
 
         backend.delete_cert_key("akash1owner").await.unwrap();
-        assert!(backend.load_cert_key("akash1owner").await.unwrap().is_none());
+        assert!(backend
+            .load_cert_key("akash1owner")
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -661,7 +676,10 @@ mod tests {
             provider: "akash1provider0testxyz".to_string(),
         };
 
-        let tx = backend.broadcast_create_lease(&signer, &bid_id).await.unwrap();
+        let tx = backend
+            .broadcast_create_lease(&signer, &bid_id)
+            .await
+            .unwrap();
         assert!(tx.is_success());
 
         // Verify lease exists on chain

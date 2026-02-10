@@ -3620,6 +3620,83 @@ impl ::prost::Name for CliKeyEntry {
         "/ergors.management.v1.CliKeyEntry".into()
     }
 }
+/// RLM configuration status
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RlmGetConfigRequest {}
+impl ::prost::Name for RlmGetConfigRequest {
+    const NAME: &'static str = "RlmGetConfigRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RlmGetConfigRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RlmGetConfigRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RlmGetConfigResponse {
+    #[prost(bool, tag = "1")]
+    pub configured: bool,
+    #[prost(message, optional, tag = "2")]
+    pub config: ::core::option::Option<super::super::orch::v1::RlmConfig>,
+}
+impl ::prost::Name for RlmGetConfigResponse {
+    const NAME: &'static str = "RlmGetConfigResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RlmGetConfigResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RlmGetConfigResponse".into()
+    }
+}
+/// Register deployment service endpoints as LLM providers
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterDeploymentProvidersRequest {
+    /// Deployment session ID or label
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// Optional: prefix for provider labels (empty = use service names)
+    #[prost(string, tag = "2")]
+    pub label_prefix: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RegisterDeploymentProvidersRequest {
+    const NAME: &'static str = "RegisterDeploymentProvidersRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RegisterDeploymentProvidersRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RegisterDeploymentProvidersRequest".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterDeploymentProvidersResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    /// List of registered provider labels
+    #[prost(string, repeated, tag = "3")]
+    pub provider_labels: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Number of providers successfully registered
+    #[prost(uint32, tag = "4")]
+    pub registered_count: u32,
+}
+impl ::prost::Name for RegisterDeploymentProvidersResponse {
+    const NAME: &'static str = "RegisterDeploymentProvidersResponse";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RegisterDeploymentProvidersResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RegisterDeploymentProvidersResponse".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -5788,6 +5865,36 @@ pub mod management_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Register deployment service endpoints as LLM providers
+        pub async fn register_deployment_providers(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RegisterDeploymentProvidersRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RegisterDeploymentProvidersResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RegisterDeploymentProviders",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RegisterDeploymentProviders",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Add trusted provider
         pub async fn add_trusted_provider(
             &mut self,
@@ -6169,6 +6276,100 @@ pub mod management_service_client {
                     GrpcMethod::new(
                         "ergors.management.v1.ManagementService",
                         "RagConfigure",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// # ============================================
+        /// RLM (Recursive Language Model) Management
+        ///
+        /// Execute RLM query with agentic code execution
+        pub async fn rlm_query(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RlmQueryRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RlmQueryResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RlmQuery",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("ergors.management.v1.ManagementService", "RlmQuery"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Configure RLM provider selection
+        pub async fn rlm_configure(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::super::orch::v1::RlmConfigureRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagOperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RlmConfigure",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RlmConfigure",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get current RLM configuration
+        pub async fn rlm_get_config(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RlmGetConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RlmGetConfigResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RlmGetConfig",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RlmGetConfig",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -7387,6 +7588,14 @@ pub mod management_service_server {
             tonic::Response<super::super::super::orch::v1::LeaseStatusResponse>,
             tonic::Status,
         >;
+        /// Register deployment service endpoints as LLM providers
+        async fn register_deployment_providers(
+            &self,
+            request: tonic::Request<super::RegisterDeploymentProvidersRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RegisterDeploymentProvidersResponse>,
+            tonic::Status,
+        >;
         /// Add trusted provider
         async fn add_trusted_provider(
             &self,
@@ -7488,6 +7697,33 @@ pub mod management_service_server {
             request: tonic::Request<super::super::super::orch::v1::RagConfigureRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::super::orch::v1::RagOperationResult>,
+            tonic::Status,
+        >;
+        /// # ============================================
+        /// RLM (Recursive Language Model) Management
+        ///
+        /// Execute RLM query with agentic code execution
+        async fn rlm_query(
+            &self,
+            request: tonic::Request<super::super::super::orch::v1::RlmQueryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RlmQueryResponse>,
+            tonic::Status,
+        >;
+        /// Configure RLM provider selection
+        async fn rlm_configure(
+            &self,
+            request: tonic::Request<super::super::super::orch::v1::RlmConfigureRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::super::orch::v1::RagOperationResult>,
+            tonic::Status,
+        >;
+        /// Get current RLM configuration
+        async fn rlm_get_config(
+            &self,
+            request: tonic::Request<super::RlmGetConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RlmGetConfigResponse>,
             tonic::Status,
         >;
         /// List all registered gateways with their status
@@ -10446,6 +10682,60 @@ pub mod management_service_server {
                     };
                     Box::pin(fut)
                 }
+                "/ergors.management.v1.ManagementService/RegisterDeploymentProviders" => {
+                    #[allow(non_camel_case_types)]
+                    struct RegisterDeploymentProvidersSvc<T: ManagementService>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::RegisterDeploymentProvidersRequest,
+                    > for RegisterDeploymentProvidersSvc<T> {
+                        type Response = super::RegisterDeploymentProvidersResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::RegisterDeploymentProvidersRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::register_deployment_providers(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RegisterDeploymentProvidersSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/ergors.management.v1.ManagementService/AddTrustedProvider" => {
                     #[allow(non_camel_case_types)]
                     struct AddTrustedProviderSvc<T: ManagementService>(pub Arc<T>);
@@ -11033,6 +11323,149 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RagConfigureSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RlmQuery" => {
+                    #[allow(non_camel_case_types)]
+                    struct RlmQuerySvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RlmQueryRequest,
+                    > for RlmQuerySvc<T> {
+                        type Response = super::super::super::orch::v1::RlmQueryResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RlmQueryRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::rlm_query(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RlmQuerySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RlmConfigure" => {
+                    #[allow(non_camel_case_types)]
+                    struct RlmConfigureSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<
+                        super::super::super::orch::v1::RlmConfigureRequest,
+                    > for RlmConfigureSvc<T> {
+                        type Response = super::super::super::orch::v1::RagOperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::super::orch::v1::RlmConfigureRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::rlm_configure(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RlmConfigureSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RlmGetConfig" => {
+                    #[allow(non_camel_case_types)]
+                    struct RlmGetConfigSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RlmGetConfigRequest>
+                    for RlmGetConfigSvc<T> {
+                        type Response = super::RlmGetConfigResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RlmGetConfigRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::rlm_get_config(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RlmGetConfigSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

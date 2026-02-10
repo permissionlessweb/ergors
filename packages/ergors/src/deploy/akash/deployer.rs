@@ -22,14 +22,15 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use super::akash::broadcast_akash_msg;
-use super::climb_signer::create_signing_client_with_failover;
-use super::cosmos_client::{BidInfo, CosmosClient};
+use super::messages::broadcast_akash_msg;
+use super::types::BidInfo;
+use super::client::AkashClient;
+use crate::deploy::climb_signer::create_signing_client_with_failover;
 use super::deployment_builder::{
     build_close_deployment_msg, build_create_lease_msg, get_next_dseq, DeploymentBuilder,
     DEFAULT_DEPOSIT_UAKT,
 };
-use super::endpoint_manager::{EndpointManager, EndpointType};
+use crate::deploy::endpoint_manager::{EndpointManager, EndpointType};
 use super::manifest::{query_service_endpoints, ManifestSender};
 use crate::storage::ErgorsStorage;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
@@ -56,7 +57,7 @@ const MAX_BID_POLL_ATTEMPTS: u32 = 10;
 /// Uses JWT authentication for provider communication (no mTLS certificates required).
 pub struct AutomatedDeployer {
     storage: Arc<ErgorsStorage>,
-    cosmos: Arc<CosmosClient>,
+    cosmos: Arc<AkashClient>,
     /// Key manager (for decrypting mnemonics)
     key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
     /// Key store (for retrieving encrypted keys)
@@ -73,7 +74,7 @@ impl AutomatedDeployer {
     /// Uses JWT authentication for provider communication (no certificates needed).
     pub fn new(
         storage: Arc<ErgorsStorage>,
-        cosmos: Arc<CosmosClient>,
+        cosmos: Arc<AkashClient>,
         key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
         key_store: Arc<RwLock<CosmosKeyStore>>,
         akash_config: AkashDeployConfig,
@@ -215,6 +216,7 @@ impl AutomatedDeployer {
         self.step_send_manifest(workflow).await?;
         let endpoints = self.step_retrieve_endpoints(workflow).await?;
         self.step_save_endpoints(workflow, endpoints).await?;
+        self.step_register_providers(workflow).await?;
 
         // Mark completed
         workflow.status = AkashWorkflowStatus::Completed as i32;
@@ -237,10 +239,14 @@ impl AutomatedDeployer {
         tracing::info!("Session:  {}", workflow.session_id);
         tracing::info!("DSEQ:     {}", dseq);
         tracing::info!("Provider: {}", selected_bid.provider);
-        tracing::info!("Endpoints:");
+        tracing::info!("");
+        tracing::info!("Service Endpoints:");
         for ep in &workflow.service_endpoints {
-            tracing::info!("  {} -> {}", ep.service_name, ep.external_uri);
+            tracing::info!("  {} → {}", ep.service_name, ep.external_uri);
         }
+        tracing::info!("");
+        tracing::info!("To register these endpoints as LLM providers:");
+        tracing::info!("  ergors deploy register-providers {}", workflow.session_id);
         tracing::info!("═══════════════════════════════════════════════════════════════");
 
         Ok(DeploymentResult {
@@ -903,6 +909,7 @@ impl AutomatedDeployer {
             total_bids_received: bids.len() as u32,
             selected_at: Some(current_timestamp()),
             is_trusted_provider: is_trusted,
+            provider_uri: provider_info.host_uri.clone(),
         });
 
         // Store provider host_uri in the deployment runtime for future use
@@ -1072,7 +1079,7 @@ impl AutomatedDeployer {
         &self,
         workflow: &mut AkashDeploymentWorkflow,
     ) -> Result<Vec<AkashServiceEndpoint>> {
-        tracing::info!("[Step 10/11] Retrieve Endpoints");
+        tracing::info!("[Step 10/12] Retrieve Endpoints");
         workflow.current_step = AkashWorkflowStep::EndpointRetrieval as i32;
         self.save_workflow(workflow).await?;
 
@@ -1183,7 +1190,7 @@ impl AutomatedDeployer {
         workflow: &mut AkashDeploymentWorkflow,
         endpoints: Vec<AkashServiceEndpoint>,
     ) -> Result<()> {
-        tracing::info!("[Step 11/11] Save Endpoints");
+        tracing::info!("[Step 11/12] Save Endpoints");
 
         // Store in workflow
         workflow.service_endpoints = endpoints.clone();
@@ -1227,6 +1234,75 @@ impl AutomatedDeployer {
         }
         tracing::info!("  OK: Endpoints persisted to storage");
 
+        Ok(())
+    }
+
+    /// Step 12: Automatically register service endpoints as LLM providers.
+    async fn step_register_providers(&self, workflow: &AkashDeploymentWorkflow) -> Result<()> {
+        use ho_std::types::ergors::orch::v1::{InferenceProviderConfig, InferenceProviderType};
+
+        if workflow.service_endpoints.is_empty() {
+            tracing::info!("[Step 12/12] Register Providers - Skipped (no endpoints)");
+            return Ok(());
+        }
+
+        tracing::info!("[Step 12/12] Register Providers");
+        tracing::info!("  Auto-registering {} service(s) as LLM providers...", workflow.service_endpoints.len());
+
+        // Get current provider config
+        let mut router_config = self
+            .storage
+            .get_proxy_router_config()
+            .await?
+            .unwrap_or_default();
+
+        let mut registered = Vec::new();
+        let mut skipped = Vec::new();
+
+        for endpoint in &workflow.service_endpoints {
+            let label = endpoint.service_name.clone();
+
+            // Skip if provider already exists
+            if router_config.providers.contains_key(&label) {
+                tracing::debug!("  Provider '{}' already exists, skipping", label);
+                skipped.push(label);
+                continue;
+            }
+
+            // Create provider config
+            let provider_config = InferenceProviderConfig {
+                provider_id: label.clone(),
+                base_url: endpoint.external_uri.clone(),
+                api_key_ref: String::new(), // Keyless
+                enabled: true,
+                provider_type: InferenceProviderType::Custom as i32,
+                ..Default::default()
+            };
+
+            router_config.providers.insert(label.clone(), provider_config);
+
+            // Add model route: service-name/* → service-name
+            let wildcard_pattern = format!("{}/*", label);
+            router_config.model_routes.insert(wildcard_pattern, label.clone());
+
+            registered.push(label);
+        }
+
+        // Save updated config if any providers were registered
+        if !registered.is_empty() {
+            self.storage.put_proxy_router_config(&router_config).await?;
+
+            tracing::info!("  ✓ Registered {} provider(s):", registered.len());
+            for label in &registered {
+                tracing::info!("    - {}", label);
+            }
+        }
+
+        if !skipped.is_empty() {
+            tracing::info!("  ⊘ Skipped {} existing provider(s)", skipped.len());
+        }
+
+        tracing::info!("  OK: Providers registered and ready for inference");
         Ok(())
     }
 

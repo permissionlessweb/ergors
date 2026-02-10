@@ -1,7 +1,6 @@
-//! Transaction signing for Cosmos SDK chains.
+//! Generic transaction signing for Cosmos SDK chains.
 //!
-//! Uses cosmrs for transaction building and signing with keys from
-//! the encrypted KeyStore (ho-std).
+//! Parameterized by chain configuration (denom, prefix, chain_id).
 
 use anyhow::{anyhow, Result};
 use cosmrs::tx::{Body, Fee, Raw, SignDoc, SignerInfo};
@@ -9,55 +8,43 @@ use cosmrs::{Any, Coin};
 use ho_std::keys::cosmos::CosmosKeyPair;
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
 use ho_std::types::ergors::orch::v1::CosmosKeyStore;
-use reqwest::Client as HttpClient;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::RwLock;
 
-/// Transaction signer using KeyStore.
-pub struct TxSigner {
+use super::client::CosmosBaseClient;
+
+/// Generic transaction signer for any Cosmos SDK chain.
+pub struct CosmosSigner {
     /// Key manager (locked by default, unlocked with password)
     key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
     /// Key store containing encrypted keys
     key_store: Arc<RwLock<CosmosKeyStore>>,
-    /// Chain ID for signing
-    chain_id: String,
-    /// REST endpoint for account queries
-    rest_endpoint: String,
-    /// HTTP client
-    http: HttpClient,
+    /// Cosmos base client for account queries
+    base_client: CosmosBaseClient,
 }
 
-impl TxSigner {
-    /// Create a new signer.
+impl CosmosSigner {
+    /// Create a new signer with the given base client.
     pub fn new(
         key_manager: Arc<RwLock<EncryptedCosmosKeyManager>>,
         key_store: Arc<RwLock<CosmosKeyStore>>,
-        chain_id: String,
-        rest_endpoint: String,
+        base_client: CosmosBaseClient,
     ) -> Self {
-        let http = HttpClient::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .expect("http client");
-
         Self {
             key_manager,
             key_store,
-            chain_id,
-            rest_endpoint,
-            http,
+            base_client,
         }
     }
 
-    /// Sign a message and return the signed transaction bytes (base64 encoded).
+    /// Sign a single message and return the signed transaction bytes (base64 encoded).
     ///
     /// # Arguments
     /// * `key_name` - Name of the key in the store
     /// * `account_index` - HD account index (0 for default)
     /// * `msg` - The protobuf-encoded message (Any)
     /// * `gas_limit` - Gas limit for the transaction
-    /// * `gas_price_uakt` - Gas price in uakt
+    /// * `gas_price_amount` - Gas price in native denom (e.g., uakt, uosmo)
     /// * `memo` - Optional memo
     pub async fn sign_msg(
         &self,
@@ -65,35 +52,18 @@ impl TxSigner {
         account_index: u32,
         msg: Any,
         gas_limit: u64,
-        gas_price_uakt: u64,
+        gas_price_amount: u64,
         memo: Option<&str>,
     ) -> Result<String> {
-        // Get the keypair
-        let keypair = self.get_keypair(key_name, account_index).await?;
-        let address = keypair.akash_address()?;
-
-        // Query account info (number and sequence)
-        let (account_number, sequence) = self.query_account_info(&address).await?;
-
-        // Build the transaction
-        let signed_tx = self.build_and_sign_tx(
-            &keypair,
-            msg,
-            account_number,
-            sequence,
+        self.sign_msgs(
+            key_name,
+            account_index,
+            vec![msg],
             gas_limit,
-            gas_price_uakt,
-            memo.unwrap_or(""),
-        )?;
-
-        // Encode to base64
-        let tx_bytes = signed_tx
-            .to_bytes()
-            .map_err(|e| anyhow!("Failed to encode tx: {:?}", e))?;
-        Ok(base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &tx_bytes,
-        ))
+            gas_price_amount,
+            memo,
+        )
+        .await
     }
 
     /// Sign multiple messages in a single transaction.
@@ -103,23 +73,30 @@ impl TxSigner {
         account_index: u32,
         msgs: Vec<Any>,
         gas_limit: u64,
-        gas_price_uakt: u64,
+        gas_price_amount: u64,
         memo: Option<&str>,
     ) -> Result<String> {
+        // Get the keypair
         let keypair = self.get_keypair(key_name, account_index).await?;
-        let address = keypair.akash_address()?;
-        let (account_number, sequence) = self.query_account_info(&address).await?;
 
-        let signed_tx = self.build_and_sign_multi_tx(
+        // Generate address using the chain's bech32 prefix
+        let address = keypair.address(self.base_client.bech32_prefix())?;
+
+        // Query account info (number and sequence)
+        let (account_number, sequence) = self.base_client.query_account_info(&address).await?;
+
+        // Build and sign the transaction
+        let signed_tx = self.build_and_sign_tx(
             &keypair,
             msgs,
             account_number,
             sequence,
             gas_limit,
-            gas_price_uakt,
+            gas_price_amount,
             memo.unwrap_or(""),
         )?;
 
+        // Encode to base64
         let tx_bytes = signed_tx
             .to_bytes()
             .map_err(|e| anyhow!("Failed to encode tx: {:?}", e))?;
@@ -144,94 +121,15 @@ impl TxSigner {
         manager.get_keypair(encrypted_key, account_index)
     }
 
-    /// Query account info from chain (account_number, sequence).
-    pub async fn query_account_info(&self, address: &str) -> Result<(u64, u64)> {
-        let url = format!(
-            "{}/cosmos/auth/v1beta1/accounts/{}",
-            self.rest_endpoint.trim_end_matches('/'),
-            address
-        );
-
-        tracing::debug!("Querying account info: {}", url);
-
-        let resp = self.http.get(&url).send().await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-
-            // Check if account doesn't exist (new account)
-            if status.as_u16() == 404 || body.contains("account") && body.contains("not found") {
-                tracing::info!("Account {} not found on chain, using 0/0", address);
-                return Ok((0, 0));
-            }
-
-            return Err(anyhow!("Account query failed ({}): {}", status, body));
-        }
-
-        let json: serde_json::Value = resp.json().await?;
-
-        // Parse account info from response
-        // The response structure varies by account type, but we need account_number and sequence
-        let account = json
-            .get("account")
-            .ok_or_else(|| anyhow!("Missing 'account' in response"))?;
-
-        // Handle BaseAccount directly or wrapped in other account types
-        let base_account = if account.get("base_account").is_some() {
-            account.get("base_account").unwrap()
-        } else {
-            account
-        };
-
-        let account_number = base_account
-            .get("account_number")
-            .and_then(|v| v.as_str())
-            .unwrap_or("0")
-            .parse::<u64>()
-            .unwrap_or(0);
-
-        let sequence = base_account
-            .get("sequence")
-            .and_then(|v| v.as_str())
-            .unwrap_or("0")
-            .parse::<u64>()
-            .unwrap_or(0);
-
-        Ok((account_number, sequence))
-    }
-
-    /// Build and sign a single-message transaction.
-    fn build_and_sign_tx(
-        &self,
-        keypair: &CosmosKeyPair,
-        msg: Any,
-        account_number: u64,
-        sequence: u64,
-        gas_limit: u64,
-        gas_price_uakt: u64,
-        memo: &str,
-    ) -> Result<Raw> {
-        self.build_and_sign_multi_tx(
-            keypair,
-            vec![msg],
-            account_number,
-            sequence,
-            gas_limit,
-            gas_price_uakt,
-            memo,
-        )
-    }
-
     /// Build and sign a multi-message transaction.
-    fn build_and_sign_multi_tx(
+    fn build_and_sign_tx(
         &self,
         keypair: &CosmosKeyPair,
         msgs: Vec<Any>,
         account_number: u64,
         sequence: u64,
         gas_limit: u64,
-        gas_price_uakt: u64,
+        gas_price_amount: u64,
         memo: &str,
     ) -> Result<Raw> {
         use cosmrs::crypto::secp256k1::SigningKey;
@@ -245,11 +143,11 @@ impl TxSigner {
         // Build transaction body
         let body = Body::new(msgs, memo, 0u32); // timeout_height = 0 (no timeout)
 
-        // Calculate fee (gas_limit * gas_price)
-        let fee_amount = gas_limit * gas_price_uakt;
+        // Calculate fee (gas_limit * gas_price) using chain's native denom
+        let fee_amount = gas_limit * gas_price_amount;
         let fee = Fee::from_amount_and_gas(
             Coin {
-                denom: "uakt".parse().expect("valid denom"),
+                denom: self.base_client.denom().parse().expect("valid denom"),
                 amount: fee_amount.into(),
             },
             gas_limit,
@@ -263,7 +161,8 @@ impl TxSigner {
 
         // Create sign doc
         let chain_id = self
-            .chain_id
+            .base_client
+            .chain_id()
             .parse()
             .map_err(|_| anyhow!("Invalid chain_id"))?;
 
@@ -278,10 +177,15 @@ impl TxSigner {
         Ok(raw_tx)
     }
 
-    /// Get the address for a key.
+    /// Get the address for a key using the chain's bech32 prefix.
     pub async fn get_address(&self, key_name: &str, account_index: u32) -> Result<String> {
         let keypair = self.get_keypair(key_name, account_index).await?;
-        keypair.akash_address()
+        keypair.address(self.base_client.bech32_prefix())
+    }
+
+    /// Get reference to the base client
+    pub fn base_client(&self) -> &CosmosBaseClient {
+        &self.base_client
     }
 }
 
@@ -299,7 +203,6 @@ mod tests {
 
     #[test]
     fn test_msg_to_any() {
-        // Simple test that msg_to_any works
         use ho_std::types::ergors::cosmos::base::v1beta1::Coin;
 
         let coin = Coin {

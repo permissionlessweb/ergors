@@ -4,13 +4,13 @@
 //! For local operations (without daemon), use the direct command modules
 //! (e.g., config_cmd, keys, init).
 
+pub mod ask;
 pub mod bootstrap;
 pub mod call;
 pub mod config;
 pub mod deploy;
 pub mod gateway;
 pub mod init;
-pub mod rag;
 pub mod responses;
 pub mod sentinel;
 pub mod workspace;
@@ -30,10 +30,10 @@ pub struct CliContext {
     pub signing_key: Option<ho_std::keys::commonware::NodePrivKey>,
 }
 
+pub use ask::AskCmd;
 pub use bootstrap::BootstrapCmd;
 pub use deploy::DeployCmd;
 pub use gateway::GatewayCmd;
-pub use rag::RagCmd;
 pub use workspace::WorkspaceCmd;
 
 // ============ Engine Commands ============

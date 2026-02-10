@@ -3,7 +3,7 @@
 //! Drives the complete bootstrap workflow from start to finish.
 //! Integrates all components: Akash deployment, config generation, P2P transport.
 
-use super::state_machine::{BootstrapState, BootstrapStep, StepResult};
+use crate::deploy::state_machine::{BootstrapState, BootstrapStep, StepResult};
 use crate::deploy::akash::deployer::AutomatedDeployer;
 use crate::deploy::akash::node_sdl::{NodeBootstrapConfig, NodeSdlGenerator};
 use crate::storage::ErgorsStorage;

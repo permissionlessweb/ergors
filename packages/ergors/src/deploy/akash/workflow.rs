@@ -6,8 +6,8 @@
 //! - Persists workflow state to Cnidarium storage
 //! - Supports concurrent workflows via HD path derivation
 
-use crate::deploy::authz::AkashAuthzManager;
-use crate::deploy::sdl::SdlTemplateManager;
+use super::authz::AkashAuthzManager;
+use super::sdl::SdlTemplateManager;
 use crate::storage::ErgorsStorage;
 use anyhow::{anyhow, Result};
 use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
@@ -240,6 +240,7 @@ impl AkashWorkflowManager {
             total_bids_received: 1,
             selected_at: Some(current_timestamp()),
             is_trusted_provider: is_trusted,
+            provider_uri: String::new(), // Will be populated when endpoints are queried
         });
         workflow.updated_at = Some(current_timestamp());
 

@@ -100,6 +100,12 @@ use ho_std::types::ergors::management::v1::{
     ListCliKeysResponse,
     RegisterCliKeyRequest,
     RevokeCliKeyRequest,
+    // RLM config types
+    RlmGetConfigRequest,
+    RlmGetConfigResponse,
+    // Provider registration types
+    RegisterDeploymentProvidersRequest,
+    RegisterDeploymentProvidersResponse,
 };
 use ho_std::types::ergors::network::v1::{NetworkTopology, NodeIdentity, NodeType};
 use ho_std::types::ergors::orch::v1::{
@@ -128,6 +134,10 @@ use ho_std::types::ergors::orch::v1::{
     RagQueryResponse,
     RagStatusRequest,
     RagStatusResponse,
+    // RLM types
+    RlmConfigureRequest,
+    RlmQueryRequest,
+    RlmQueryResponse,
     RemoveTrustedProviderRequest,
     RevokeAkashCertificateRequest,
     // Automated workflow types
@@ -916,6 +926,24 @@ impl ManagementClient {
         Ok(response.into_inner())
     }
 
+    /// Register deployment service endpoints as LLM providers
+    pub async fn register_deployment_providers(
+        &mut self,
+        session_id: &str,
+        label_prefix: Option<&str>,
+    ) -> Result<RegisterDeploymentProvidersResponse> {
+        let response = self
+            .inner
+            .register_deployment_providers(RegisterDeploymentProvidersRequest {
+                session_id: session_id.to_string(),
+                label_prefix: label_prefix.unwrap_or_default().to_string(),
+            })
+            .await
+            .context("Failed to register deployment providers")?;
+
+        Ok(response.into_inner())
+    }
+
     /// Add trusted provider
     pub async fn add_trusted_provider(
         &mut self,
@@ -1027,6 +1055,7 @@ impl ManagementClient {
         uri: &str,
         doc_type: &str,
         tags: Vec<String>,
+        skip_embeddings: bool,
     ) -> Result<RagIngestResponse> {
         let response = self
             .inner
@@ -1035,6 +1064,7 @@ impl ManagementClient {
                 uri: uri.to_string(),
                 doc_type: doc_type.to_string(),
                 tags,
+                skip_embeddings,
             })
             .await
             .context("Failed to ingest document")?;
@@ -1113,6 +1143,65 @@ impl ManagementClient {
             })
             .await
             .context("Failed to configure embedder")?;
+
+        Ok(response.into_inner())
+    }
+
+    // ============ RLM (Recursive Language Model) ============
+
+    /// Execute RLM query with agentic code execution
+    pub async fn rlm_query(
+        &mut self,
+        query: &str,
+        source_prefix: &str,
+        limit: usize,
+    ) -> Result<RlmQueryResponse> {
+        let response = self
+            .inner
+            .rlm_query(RlmQueryRequest {
+                query: query.to_string(),
+                source_uri_prefix: source_prefix.to_string(),
+                limit: limit as u32,
+                guild_id: String::new(), // Not used for CLI
+                max_iterations: 0, // Use server defaults
+                max_sub_calls: 0,
+                allowed_models: vec![],
+            })
+            .await
+            .context("Failed to execute RLM query")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Configure RLM provider selection
+    pub async fn rlm_configure(
+        &mut self,
+        primary: &str,
+        secondary: Option<&str>,
+        max_iterations: Option<u32>,
+        max_sub_calls: Option<u32>,
+    ) -> Result<RagOperationResult> {
+        let response = self
+            .inner
+            .rlm_configure(RlmConfigureRequest {
+                primary_provider_label: primary.to_string(),
+                secondary_provider_label: secondary.unwrap_or_default().to_string(),
+                max_iterations,
+                max_sub_calls,
+            })
+            .await
+            .context("Failed to configure RLM")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Get current RLM configuration
+    pub async fn rlm_get_config(&mut self) -> Result<RlmGetConfigResponse> {
+        let response = self
+            .inner
+            .rlm_get_config(RlmGetConfigRequest {})
+            .await
+            .context("Failed to get RLM config")?;
 
         Ok(response.into_inner())
     }
@@ -1304,6 +1393,7 @@ pub use ho_std::types::ergors::network::v1::NodeType as NodeTypeProto;
 
 pub mod grpc;
 pub mod rlm;
+pub mod sentinel;
 
 // Re-export key types and functions
 pub use crate::auth::grpc::{create_grpc_auth_interceptor, AuthorizedCliKeys};

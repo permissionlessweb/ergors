@@ -68,8 +68,6 @@ pub async fn handle_bootstrap(
     // Handle based on method
     match &bootstrap_method.method {
         Some(Method::Cloud(_cloud)) => {
-            // Check if it's Akash provider
-            // Provider is an Option<i32> enum value
             handle_akash_bootstrap(state, node_type, request, start_time).await
         }
         Some(Method::Ssh(_ssh)) => {

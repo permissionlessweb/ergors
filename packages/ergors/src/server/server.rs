@@ -1,5 +1,5 @@
 use crate::{
-    deploy::cosmos_client::CosmosClient, storage::ErgorsStorage, AkashDeploymentContext,
+    deploy::akash::client::AkashClient, storage::ErgorsStorage, AkashDeploymentContext,
     ErgorsAppState, ErgorsConfig, ErgorsNetworkManifold, LlmRouter,
 };
 use axum::{
@@ -81,7 +81,7 @@ impl Server {
 
                     // Use chain-verified refresh if Akash context available
                     if let Some(ref ctx) = akash_ctx {
-                        use crate::deploy::cache_refresher::DeploymentCacheRefresher;
+                        use crate::deploy::akash::cache_refresher::DeploymentCacheRefresher;
 
                         let refresher = DeploymentCacheRefresher::new(
                             storage.clone(),
@@ -327,6 +327,22 @@ impl Server {
         // Initialize gateway manager (for Discord, Nostr, etc.)
         let gateway_manager = Self::init_gateway_manager(&llm_router, &storage_arc, &c).await;
 
+        // Initialize RLM service (for agentic document queries)
+        // Pool size: number of Python REPL workers for concurrent RLM queries
+        #[cfg(feature = "rlm")]
+        const RLM_WORKER_POOL_SIZE: usize = 2;
+        #[cfg(feature = "rlm")]
+        let rlm_service = match ergors_rlm::RlmService::new(RLM_WORKER_POOL_SIZE, llm_router.clone()).await {
+            Ok(svc) => {
+                tracing::info!("RLM service initialized");
+                Some(Arc::new(svc))
+            }
+            Err(e) => {
+                tracing::warn!("RLM init failed: {}", e);
+                None
+            }
+        };
+
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
@@ -348,6 +364,9 @@ impl Server {
                 akash_context,
                 // gm == gateway manager (optional)
                 gateway_manager,
+                // rlm == RLM service (optional)
+                #[cfg(feature = "rlm")]
+                rlm_service,
                 // wasm == WASM runtime
                 #[cfg(feature = "cw")]
                 wasm_runtime,
@@ -408,7 +427,7 @@ impl Server {
         storage: &Arc<ErgorsStorage>,
         custody_password: Option<&str>,
     ) -> Option<AkashDeploymentContext> {
-        use crate::deploy::cosmos_client::CosmosEndpoints;
+        use crate::deploy::akash::client::AkashClient;
         use ho_std::keys::encrypted_cosmos::EncryptedCosmosKeyManager;
         use tokio::sync::RwLock;
 
@@ -466,16 +485,11 @@ impl Server {
             "🔐 Cosmos key manager initialized (locked - will unlock during deployment)"
         );
 
-        // Get endpoints from config
-        let endpoints = CosmosEndpoints::from_akash_config(&akash_config);
-        let _rest_endpoint = endpoints.rest.clone();
-        let _chain_id = akash_config.chain_id.clone();
-
-        // Create CosmosClient
-        let cosmos = match CosmosClient::new(endpoints) {
+        // Create AkashClient from config
+        let cosmos = match AkashClient::from_akash_config(&akash_config) {
             Ok(client) => Arc::new(client),
             Err(e) => {
-                tracing::warn!("⚠️  Failed to create CosmosClient: {}", e);
+                tracing::warn!("⚠️  Failed to create AkashClient: {}", e);
                 return None;
             }
         };

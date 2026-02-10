@@ -16,6 +16,7 @@ use ho_std::types::ergors::akash::deployment::v1beta4::{
 use ho_std::types::ergors::akash::market::{v1::BidId, v1beta5::MsgCreateLease};
 use ho_std::types::ergors::cosmos::base::v1beta1::{Coin, DecCoin};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 // Re-export from akash-deploy-rs library
 pub use akash_deploy_rs::to_canonical_json;
@@ -118,8 +119,13 @@ impl DeploymentBuilder {
     }
 
     /// Parse deployment groups from SDL YAML.
+    /// Services sharing the same placement name are merged into a single group.
+    /// Resources are sorted alphabetically by service name within each group
+    /// to match the manifest's service ordering (provider cross-validates by index).
     fn parse_groups(&self, yaml: &serde_yaml::Value) -> Result<Vec<GroupSpec>> {
-        let mut groups = Vec::new();
+        // Track (service_name, ResourceUnit) per group for sorting
+        let mut group_resources: HashMap<String, Vec<(String, ResourceUnit)>> = HashMap::new();
+        let mut group_requirements: HashMap<String, PlacementRequirements> = HashMap::new();
 
         // Get deployment section
         let deployment = yaml
@@ -142,7 +148,7 @@ impl DeploymentBuilder {
             .get("services")
             .ok_or_else(|| anyhow!("Missing 'services' section in SDL"))?;
 
-        // Iterate over deployment entries (each creates a group)
+        // Iterate over deployment entries
         let deployment_map = deployment
             .as_mapping()
             .ok_or_else(|| anyhow!("'deployment' must be a mapping"))?;
@@ -177,39 +183,72 @@ impl DeploymentBuilder {
                     )
                 })?;
 
-                // Group name is the placement name (e.g., "dcloud"), not service-placement
-                let group = GroupSpec {
-                    name: placement_name_str.to_string(),
-                    requirements: Some(self.parse_placement_requirements(
+                let resource_unit = ResourceUnit {
+                    resource: Some(self.parse_resources(
+                        compute_profile,
+                        services,
+                        service_name_str,
+                    )?),
+                    count: placement_config
+                        .get("count")
+                        .and_then(|c| c.as_u64())
+                        .unwrap_or(1) as u32,
+                    price: Some(self.parse_price(
                         placement_profiles,
                         placement_name_str,
-                        compute_profile,
+                        service_name_str,
                     )?),
-                    resources: vec![ResourceUnit {
-                        resource: Some(self.parse_resources(
-                            compute_profile,
-                            services,
-                            service_name_str,
-                        )?),
-                        count: placement_config
-                            .get("count")
-                            .and_then(|c| c.as_u64())
-                            .unwrap_or(1) as u32,
-                        price: Some(self.parse_price(
-                            placement_profiles,
-                            placement_name_str,
-                            service_name_str,
-                        )?),
-                    }],
                 };
 
-                groups.push(group);
+                group_resources
+                    .entry(placement_name_str.to_string())
+                    .or_default()
+                    .push((service_name_str.to_string(), resource_unit));
+
+                // Store requirements (first service's placement requirements wins)
+                if !group_requirements.contains_key(placement_name_str) {
+                    group_requirements.insert(
+                        placement_name_str.to_string(),
+                        self.parse_placement_requirements(
+                            placement_profiles,
+                            placement_name_str,
+                            compute_profile,
+                        )?,
+                    );
+                }
             }
         }
 
-        if groups.is_empty() {
+        if group_resources.is_empty() {
             return Err(anyhow!("No deployment groups found in SDL"));
         }
+
+        // Build groups with resources sorted by service name and sequential IDs
+        let groups: Vec<GroupSpec> = group_resources
+            .into_iter()
+            .map(|(name, mut named_resources)| {
+                // Sort resources alphabetically by service name to match manifest order
+                named_resources.sort_by(|a, b| a.0.cmp(&b.0));
+
+                // Assign sequential resource IDs (1-indexed)
+                let resources: Vec<ResourceUnit> = named_resources
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (_, mut ru))| {
+                        if let Some(ref mut res) = ru.resource {
+                            res.id = (i + 1) as u32;
+                        }
+                        ru
+                    })
+                    .collect();
+
+                GroupSpec {
+                    name: name.clone(),
+                    requirements: group_requirements.remove(&name).map(Some).unwrap_or(None),
+                    resources,
+                }
+            })
+            .collect();
 
         Ok(groups)
     }

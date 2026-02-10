@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use super::signer::TxSigner;
-use super::transaction::BroadcastResponse;
+use super::signer::CosmosSigner;
+use super::broadcaster::BroadcastResponse;
 
 /// Default gas limit for transactions.
 pub const DEFAULT_GAS_LIMIT: u64 = 500_000;
@@ -29,7 +29,7 @@ pub const MAX_FINALITY_WAIT_SECS: u64 = 60;
 ///
 /// Provides a single entry point for sign → broadcast → finality → parse.
 pub struct TxLifecycle {
-    signer: Arc<TxSigner>,
+    signer: Arc<CosmosSigner>,
     rest_endpoint: String,
     http: HttpClient,
     /// Poll interval for finality check
@@ -64,7 +64,7 @@ pub struct TxEvent {
 
 impl TxLifecycle {
     /// Create a new transaction lifecycle manager.
-    pub fn new(signer: Arc<TxSigner>, rest_endpoint: String) -> Self {
+    pub fn new(signer: Arc<CosmosSigner>, rest_endpoint: String) -> Self {
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(30))
             .build()

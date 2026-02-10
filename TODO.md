@@ -63,6 +63,7 @@
 - improve labeling of deployments
 - on successful wallet password provision, escape process as workflow has been invoked
 - Do not use REST + polling + “is it done?” endpoints, use async jobs + webhook/callbacks + idempotency keys.
+- prompt to deploy via sdl -> cancel via (ctrl + c) on password prompt == label of deployment workflow still persist in storage instead of removed.
 
 ### STORAGE LAYER ARCHITECTURE
 

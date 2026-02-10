@@ -26,7 +26,7 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 bytemuck = "1.14"
 
 # Protobuf (for timestamps, etc.)
-pbjson-types = "0.7"
+pbjson-types = { workspace = true }
 chrono = "0.4"
 
 # Embeddings (optional, feature-gated)

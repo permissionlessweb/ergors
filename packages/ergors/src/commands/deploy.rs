@@ -277,6 +277,14 @@ pub enum DeployCmd {
         #[arg(long)]
         refresh: bool,
     },
+    /// Register deployment service endpoints as LLM providers
+    RegisterProviders {
+        /// Session ID or label
+        session_id: String,
+        /// Use custom label prefix (default: service names)
+        #[arg(long)]
+        label_prefix: Option<String>,
+    },
 }
 
 /// Certificate management subcommands
@@ -1617,6 +1625,29 @@ impl DeployCmd {
                 );
                 println!();
                 println!("Run 'ergors deploy create' to see provider info during deployment.");
+                Ok(())
+            }
+            DeployCmd::RegisterProviders {
+                session_id,
+                label_prefix,
+            } => {
+                let result = client
+                    .register_deployment_providers(session_id, label_prefix.as_deref())
+                    .await?;
+
+                if ctx.json {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else if result.success {
+                    println!("✓ Registered {} LLM providers from deployment endpoints:", result.registered_count);
+                    for label in &result.provider_labels {
+                        println!("  - {}", label);
+                    }
+                    if !result.message.is_empty() {
+                        println!("\n{}", result.message);
+                    }
+                } else {
+                    eprintln!("✗ Failed to register providers: {}", result.message);
+                }
                 Ok(())
             }
         }

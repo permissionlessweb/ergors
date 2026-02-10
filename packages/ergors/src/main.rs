@@ -14,8 +14,8 @@ use ergors::{
     auth::grpc::AuthorizedCliKeys,
     client::ManagementClient,
     commands::{
-        call::CallCmd, config::ConfigCmd, init::InitCmd, sentinel::SentinelCmd, BootstrapCmd,
-        CliContext, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd, RagCmd,
+        call::CallCmd, config::ConfigCmd, init::InitCmd, sentinel::SentinelCmd, AskCmd,
+        BootstrapCmd, CliContext, DeployCmd, EngineCmd, NetworkCmd, NodeCmd, ProviderCmd,
         RemoteConfigCmd, SdlCmd, WorkspaceCmd,
     },
     config::ErgorsConfig,
@@ -23,7 +23,7 @@ use ergors::{
     keys::KeysCmd,
     client::grpc::{start_grpc_server, ManagementServiceImpl},
     client::RlmDocService,
-    sentinel::SentinelServer,
+    client::sentinel::SentinelServer,
     server::Server as CwHoServer,
 };
 use ho_std::{
@@ -150,9 +150,9 @@ pub enum Commands {
     /// SDL template management
     #[command(subcommand)]
     Sdl(SdlCmd),
-    /// RAG vector database management
+    /// Ask: Document ingestion and querying (RAG + RLM)
     #[command(subcommand)]
-    Rag(RagCmd),
+    Ask(AskCmd),
     /// Runtime configuration (via daemon)
     #[command(subcommand)]
     RuntimeConfig(RemoteConfigCmd),
@@ -295,7 +295,7 @@ async fn execute_grpc_command(cli: &Cli) -> Result<()> {
         Commands::Bootstrap(cmd) => cmd.execute(&ctx).await?,
         Commands::Deploy(cmd) => cmd.execute(&ctx, client?).await?,
         Commands::Sdl(cmd) => cmd.execute(&ctx, client?).await?,
-        Commands::Rag(cmd) => cmd.execute(&ctx, client?).await?,
+        Commands::Ask(cmd) => cmd.execute(&ctx, client?).await?,
         Commands::RuntimeConfig(cmd) => cmd.execute(&ctx, client?).await?,
 
         // Local commands handled in main()

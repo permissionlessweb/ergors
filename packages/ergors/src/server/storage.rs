@@ -107,6 +107,9 @@ const COSMOS_CHAIN_CONFIG_PREFIX: &str = "cosmos_chain_configs";
 // RAG vector database prefixes
 const RAG_CONFIG_PREFIX: &str = "rag_config/";
 
+// RLM configuration key
+const RLM_CONFIG_KEY: &str = "rlm_config";
+
 // Gateway storage prefixes
 const GATEWAY_CONFIG_PREFIX: &str = "gateway/config";
 const GATEWAY_SESSIONS_PREFIX: &str = "gateway/sessions";
@@ -2519,6 +2522,37 @@ impl ErgorsStorage {
         // TODO: Implement actual chunk/source counting from rag_chunks prefix
         // For now, return zeros since we haven't ingested anything yet
         Ok((0, 0))
+    }
+
+    // ===== RLM Configuration Methods =====
+
+    /// Get RLM configuration
+    pub async fn get_rlm_config(&self) -> HoResult<Option<RlmConfig>> {
+        let snapshot = self.cs.latest_snapshot();
+
+        match snapshot.get_raw(RLM_CONFIG_KEY).await {
+            Ok(Some(data)) => {
+                let config: RlmConfig = serde_json::from_slice(&data)?;
+                Ok(Some(config))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                warn!("Error getting RLM config: {}", e);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Set RLM configuration
+    pub async fn set_rlm_config(&self, config: &RlmConfig) -> HoResult<()> {
+        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        delta.put_raw(RLM_CONFIG_KEY.to_string(), serde_json::to_vec(config)?);
+        self.commit_delta(delta).await?;
+
+        info!("RLM configured: primary={}, secondary={:?}",
+            config.primary_provider_label,
+            config.secondary_provider_label);
+        Ok(())
     }
 
     /// List ingested sources
