@@ -1,6 +1,6 @@
 //! Python subprocess wrapper for REPL execution
 
-use crate::{llm_trait::LlmRouterTrait, types::*};
+use crate::{llm_trait::{DocumentAccessTrait, LlmRouterTrait}, types::*};
 use anyhow::{Context, Result};
 use ho_std::types::ergors::orch::v1::{PromptMessage, PromptRequest};
 use serde_json::json;
@@ -67,11 +67,12 @@ impl ReplWorker {
         query: RlmQuery,
         documents: Vec<Document>,
         router: Arc<dyn LlmRouterTrait>,
+        doc_access: Option<Arc<dyn DocumentAccessTrait>>,
     ) -> Result<RlmResponse> {
         debug!("Worker {} executing RLM query: {}", self.id, query.query);
 
         // Wrap entire execution in timeout
-        tokio::time::timeout(QUERY_TIMEOUT, self.execute_inner(query, documents, router))
+        tokio::time::timeout(QUERY_TIMEOUT, self.execute_inner(query, documents, router, doc_access))
             .await
             .unwrap_or_else(|_| {
                 error!("Worker {} query timeout after {:?}", self.id, QUERY_TIMEOUT);
@@ -85,6 +86,7 @@ impl ReplWorker {
         query: RlmQuery,
         documents: Vec<Document>,
         router: Arc<dyn LlmRouterTrait>,
+        doc_access: Option<Arc<dyn DocumentAccessTrait>>,
     ) -> Result<RlmResponse> {
         // Convert documents to JSON
         let docs_json: Vec<serde_json::Value> = documents
@@ -167,6 +169,110 @@ impl ReplWorker {
                         id: response.get("id").cloned().unwrap_or(json!(null)),
                     };
 
+                    self.send_response(&callback_response).await?;
+                } else if method == "list_documents"
+                    || method == "get_document_section"
+                    || method == "search_in_document"
+                {
+                    let req_id = response.get("id").cloned().unwrap_or(json!(null));
+                    let callback_response = match &doc_access {
+                        None => JsonRpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            result: None,
+                            error: Some(JsonRpcError {
+                                code: -32601,
+                                message: "Document access not configured".to_string(),
+                                data: None,
+                            }),
+                            id: req_id,
+                        },
+                        Some(docs) => {
+                            let params = response
+                                .get("params")
+                                .cloned()
+                                .unwrap_or(json!({}));
+                            let result = match method {
+                                "list_documents" => {
+                                    let limit = params
+                                        .get("limit")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(100) as usize;
+                                    let offset = params
+                                        .get("offset")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0) as usize;
+                                    debug!("Worker {} handling list_documents callback (limit={}, offset={})", self.id, limit, offset);
+                                    docs.list_documents(limit, offset)
+                                        .await
+                                        .map(|v| json!(v))
+                                }
+                                "get_document_section" => {
+                                    let Some(doc_id) = params
+                                        .get("doc_id")
+                                        .and_then(|v| v.as_str()) else {
+                                        Err(anyhow::anyhow!("Missing required parameter: doc_id"))
+                                    ?};
+                                    let offset = params
+                                        .get("offset")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0) as usize;
+                                    let length = params
+                                        .get("length")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(2000) as usize;
+                                    debug!(
+                                        "Worker {} handling get_document_section: doc={}, offset={}, len={}",
+                                        self.id, doc_id, offset, length
+                                    );
+                                    docs.get_document_section(doc_id, offset, length)
+                                        .await
+                                        .map(|v| json!(v))
+                                }
+                                "search_in_document" => {
+                                    let Some(doc_id) = params
+                                        .get("doc_id")
+                                        .and_then(|v| v.as_str()) else {
+                                        Err(anyhow::anyhow!("Missing required parameter: doc_id"))
+                                    ?};
+                                    let Some(query) = params
+                                        .get("query")
+                                        .and_then(|v| v.as_str()) else {
+                                        Err(anyhow::anyhow!("Missing required parameter: query"))
+                                    ?};
+                                    let max_results = params
+                                        .get("max_results")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(5) as usize;
+                                    debug!(
+                                        "Worker {} handling search_in_document: doc={}, query={}",
+                                        self.id, doc_id, query
+                                    );
+                                    docs.search_in_document(doc_id, query, max_results)
+                                        .await
+                                        .map(|v| json!(v))
+                                }
+                                _ => unreachable!(),
+                            };
+                            match result {
+                                Ok(val) => JsonRpcResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    result: Some(val),
+                                    error: None,
+                                    id: req_id,
+                                },
+                                Err(e) => JsonRpcResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    result: None,
+                                    error: Some(JsonRpcError {
+                                        code: -32603,
+                                        message: format!("Document access error: {}", e),
+                                        data: None,
+                                    }),
+                                    id: req_id,
+                                },
+                            }
+                        }
+                    };
                     self.send_response(&callback_response).await?;
                 }
             } else if let Some(result) = response.get("result") {

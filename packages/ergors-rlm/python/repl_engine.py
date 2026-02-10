@@ -16,16 +16,19 @@ from RestrictedPython.PrintCollector import PrintCollector
 class ReplEngine:
     """Executes RLM queries using an iterative REPL with a root LLM."""
 
-    def __init__(self, documents: List[Dict[str, Any]], llm_query_fn: Callable[[str, str], str]):
+    def __init__(self, documents: List[Dict[str, Any]], llm_query_fn: Callable[[str, str], str],
+                 doc_fns: Optional[Dict[str, Callable]] = None):
         """
         Initialize REPL engine.
 
         Args:
-            documents: List of Document dicts from Rust
+            documents: List of Document dicts from Rust (legacy, may be empty)
             llm_query_fn: Callback for sub-LLM queries
+            doc_fns: Document access callbacks {"list": fn, "get_section": fn, "search": fn}
         """
         self.documents = documents
         self.llm_query_fn = llm_query_fn
+        self.doc_fns = doc_fns or {}
         self.iterations = 0
         self.sub_llm_calls = 0
         self.total_cost = 0.0  # TODO: track cost from LLM responses
@@ -36,14 +39,23 @@ class ReplEngine:
 
         Returns RlmQueryResponse dict.
         """
-        # Load system prompt
+        # Load system prompt (callback-based if ALL doc_fns are provided, legacy otherwise)
         import os
-        prompt_path = os.path.join(os.path.dirname(__file__), "prompts", "system.txt")
+        required_doc_keys = {'list', 'get_section', 'search'}
+        has_doc_access = required_doc_keys.issubset(self.doc_fns.keys())
+        if has_doc_access:
+            prompt_file = "system_docs.txt"
+        else:
+            prompt_file = "system.txt"
+        prompt_path = os.path.join(os.path.dirname(__file__), "prompts", prompt_file)
         with open(prompt_path, 'r') as f:
-            system_prompt = f.read().format(
-                num_documents=len(self.documents),
-                total_length=sum(len(d['content']) for d in self.documents)
-            )
+            if has_doc_access:
+                system_prompt = f.read()
+            else:
+                system_prompt = f.read().format(
+                    num_documents=len(self.documents),
+                    total_length=sum(len(d['content']) for d in self.documents)
+                )
 
         # Conversation history with root LLM
         messages = [
@@ -81,9 +93,14 @@ class ReplEngine:
                     sys.stderr.flush()
                     # Create fresh globals for each execution to prevent state pollution
                     repl_globals = self._create_safe_globals()
-                    # Provide read-only context via tuple (immutable)
+                    # Provide read-only context via tuple (immutable, backwards compat)
                     repl_globals['context'] = tuple(self.documents)
                     repl_globals['llm_query'] = self._make_llm_query_wrapper(max_sub_calls)
+                    # Expose document access callbacks (all-or-nothing)
+                    if required_doc_keys.issubset(self.doc_fns.keys()):
+                        repl_globals['list_documents'] = self.doc_fns['list']
+                        repl_globals['get_section'] = self.doc_fns['get_section']
+                        repl_globals['search_document'] = self.doc_fns['search']
 
                     output = self._execute_code(code_block, repl_globals)
                     execution_output.append(f"[Code executed successfully]\n{output}")

@@ -248,9 +248,11 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
         // Initialize RLM service if feature is enabled
         #[cfg(feature = "rlm")]
         let rlm_service = {
-            match ergors_rlm::RlmService::new(2, router.clone()).await {
+            let doc_access: Option<Arc<dyn ergors_rlm::DocumentAccessTrait>> =
+                Some(Arc::new(crate::proxy::doc_access::EngineDocumentAccess::new(storage.clone())));
+            match ergors_rlm::RlmService::new(2, router.clone(), doc_access).await {
                 Ok(service) => {
-                    info!("RLM service initialized successfully");
+                    info!("RLM service initialized with document access");
                     Some(Arc::new(service))
                 }
                 Err(e) => {
@@ -1452,36 +1454,9 @@ async fn query_rlm_service(
 
     debug!("Querying RLM service for guild {}", guild_id);
 
-    // Load documents from storage
-    let prefix = format!("discord:guild_{}/", guild_id);
-
-    // Load documents using shared utility (with HTTP client reuse)
-    let proto_documents = match crate::client::load_documents_by_prefix(&data.storage, &prefix, 100, Some(data.rag_client.clone())).await {
-        Ok(docs) => docs,
-        Err(e) => {
-            warn!("Failed to load documents for RLM: {}", e);
-            return None;
-        }
-    };
-
-    if proto_documents.is_empty() {
-        debug!("No documents found for RLM query");
-        return None;
-    }
-
-    debug!("RLM querying {} documents", proto_documents.len());
-
-    // Convert proto documents to RLM documents
-    let documents: Vec<ergors_rlm::Document> = proto_documents
-        .into_iter()
-        .map(|d| ergors_rlm::Document {
-            source_uri: d.source_uri,
-            content: d.content,
-            doc_type: d.doc_type,
-            tags: d.tags,
-            ingested_at: d.ingested_at,
-        })
-        .collect();
+    // Documents are now accessed on-demand via callbacks (DocumentAccessTrait).
+    // The Python REPL discovers documents via list_documents() / search_document().
+    let documents: Vec<ergors_rlm::Document> = vec![];
 
     // Execute RLM query
     let rlm_query = RlmQuery {
