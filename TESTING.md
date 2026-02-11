@@ -79,10 +79,6 @@ just e2e all --verbose
 
 ## TODO
 
-### DEPLOYMENT
-
-- trusted/limited runtime: ensure functionliaty for our minimized trusted runtime so that we can first allow an admin to configure the sensitive information before actually starting the engine.
-
 #### PHASE 1: simple deployment to provider via akash workflow automation
 
 - confirm actual bidding and accepting bid + manifest digest + provider response workflow is occuring (try default workflow first, check provider configurations for local enviroment to ensure provider will actually bid on msgs (wybot))
@@ -96,6 +92,11 @@ just e2e all --verbose
 -
 
 ### COSMWASM
+
+- test address resolution
+- test permission authentication
+- test event attribute action invocation
+- test sdl construction/usage deployment
 
 ### BOOTSTRAPPING
 

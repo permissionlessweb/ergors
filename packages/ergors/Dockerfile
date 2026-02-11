@@ -46,13 +46,14 @@ COPY --from=builder /build/templates /home/ergors/templates
 # Set ownership
 RUN chown -R ergors:ergors /usr/local/bin/ergors /home/ergors/templates
 
-# Setup RLM Python venv
-RUN python3 -m venv /opt/rlm-venv
+# Setup RLM Python dependencies (no venv needed — already isolated in container)
 COPY packages/ergors-rlm/python/requirements.txt /tmp/rlm-requirements.txt
-RUN /opt/rlm-venv/bin/pip install --no-cache-dir -r /tmp/rlm-requirements.txt && rm /tmp/rlm-requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip \
+    && pip3 install --no-cache-dir --break-system-packages -r /tmp/rlm-requirements.txt \
+    && rm -rf /var/lib/apt/lists/* /tmp/rlm-requirements.txt
 COPY packages/ergors-rlm/python/ /opt/rlm/
-RUN chown -R ergors:ergors /opt/rlm-venv /opt/rlm
-ENV RLM_PYTHON_PATH=/opt/rlm-venv/bin/python3
+RUN chown -R ergors:ergors /opt/rlm
 ENV RLM_SCRIPT_DIR=/opt/rlm
 
 # Switch to non-root user
