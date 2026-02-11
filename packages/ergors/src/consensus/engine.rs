@@ -107,11 +107,14 @@ impl Blocker for LogOnlyBlocker {
 /// Handle returned by [`start_consensus()`].
 ///
 /// Background actors (bridge, gossip, engine) run as spawned tasks until shutdown.
+#[derive(Clone)]
 pub struct ConsensusSystem {
     pub height: SharedHeight,
     /// True if this node is the supreme leader running the Simplex engine.
     /// False for observer nodes.
     pub is_leader: bool,
+    /// Shared mempool for commitment submission.
+    pub mempool: Arc<Mempool>,
 }
 
 /// Wire all consensus components and start the Simplex engine.
@@ -231,7 +234,7 @@ pub fn start_consensus(
     // Observer: Simplex channels are unused — gossip provides block content.
     // Phase 5 will add gossip-triggered finalization for observers.
 
-    ConsensusSystem { height, is_leader }
+    ConsensusSystem { height, is_leader, mempool }
 }
 
 #[cfg(test)]

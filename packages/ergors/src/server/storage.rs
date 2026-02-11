@@ -1,3 +1,5 @@
+use crate::consensus::actions::{WriteAction, WriteHandle};
+use crate::consensus::types::CommitmentKind;
 use crate::ErgorsAppState;
 use axum::{extract::State, Json};
 use cnidarium::{StateRead, StateWrite, Storage as CnidariumStorage};
@@ -140,7 +142,11 @@ pub struct ErgorsStorage {
     pub cs: CnidariumStorage,
     /// Mutex to serialize write operations and prevent JMT key/value race conditions.
     /// cnidarium's JMT can get into inconsistent state if concurrent writes happen.
+    /// Used as fallback when write_handle is None (bootstrap path).
     write_lock: tokio::sync::Mutex<()>,
+    /// When set, writes go through the coalescer for batched commits.
+    /// None during bootstrap (before coalescer starts).
+    write_handle: tokio::sync::RwLock<Option<WriteHandle>>,
 }
 
 /// Cached provider info for human-readable display.
@@ -162,6 +168,7 @@ impl ErgorsStorage {
         Ok(Self {
             cs: CnidariumStorage::load(path.to_path_buf(), prefixes).await?,
             write_lock: tokio::sync::Mutex::new(()),
+            write_handle: tokio::sync::RwLock::new(None),
         })
     }
 
@@ -218,6 +225,31 @@ impl ErgorsStorage {
         Ok(())
     }
 
+    /// Set the write handle to route writes through the coalescer.
+    /// Call this after the coalescer is started during server init.
+    pub async fn set_write_handle(&self, handle: WriteHandle) {
+        *self.write_handle.write().await = Some(handle);
+        info!("write coalescer enabled for storage writes");
+    }
+
+    /// Submit a write action through the coalescer if available,
+    /// otherwise fall back to direct locked_commit (bootstrap path).
+    async fn coalesced_write(&self, kind: CommitmentKind, puts: Vec<(String, Vec<u8>)>, deletes: Vec<String>) -> HoResult<()> {
+        if let Some(ref wh) = *self.write_handle.read().await {
+            wh.submit(WriteAction { kind, puts, deletes }).await
+        } else {
+            // Bootstrap path: direct commit
+            self.locked_commit(|delta| {
+                for (k, v) in puts {
+                    delta.put_raw(k, v);
+                }
+                for k in deletes {
+                    delta.delete(k);
+                }
+            }).await
+        }
+    }
+
     pub async fn put_prompt_w_ctx(
         &self,
         prompt: &PromptResponse,
@@ -260,13 +292,15 @@ impl ErgorsStorage {
 
         debug!("Storing prompt {} with timestamp index", id);
 
-        self.locked_commit(|delta| {
-            delta.put_raw(prompt_key.clone(), prompt_data);
-            delta.put_raw(timestamp_key, prompt_id);
-            for (key, value) in context_indexes {
-                delta.put_raw(key, value);
-            }
-        }).await?;
+        let mut puts = vec![
+            (prompt_key.clone(), prompt_data),
+            (timestamp_key, prompt_id),
+        ];
+        for (key, value) in context_indexes {
+            puts.push((key, value));
+        }
+
+        self.coalesced_write(CommitmentKind::Inference, puts, vec![]).await?;
 
         info!(
             "💾 Successfully stored prompt: {} with key: {}",
@@ -405,9 +439,7 @@ impl ErgorsStorage {
         let key = storage_key(OPEN_RESPONSE_PREFIX, response_id);
         let data = serde_json::to_vec(&session_data)?;
 
-        self.locked_commit(|delta| {
-            delta.put_raw(key, data);
-        }).await?;
+        self.coalesced_write(CommitmentKind::Inference, vec![(key, data)], vec![]).await?;
 
         debug!("Stored Open Response session: {}", response_id);
         Ok(())
@@ -1579,13 +1611,15 @@ impl ErgorsStorage {
             )
         });
 
-        self.locked_commit(|delta| {
-            delta.put_raw(session_key.clone(), session_data);
-            delta.put_raw(client_index_key, session_id_bytes.clone());
-            if let Some(ts_key) = ts_index {
-                delta.put_raw(ts_key, session_id_bytes);
-            }
-        }).await?;
+        let mut puts = vec![
+            (session_key.clone(), session_data),
+            (client_index_key, session_id_bytes.clone()),
+        ];
+        if let Some(ts_key) = ts_index {
+            puts.push((ts_key, session_id_bytes));
+        }
+
+        self.coalesced_write(CommitmentKind::Orchestration, puts, vec![]).await?;
 
         info!(
             "💾 Stored proxy session: {} (client: {}, model: {})",
@@ -1685,10 +1719,8 @@ impl ErgorsStorage {
 
     /// Delete a proxy session.
     pub async fn delete_proxy_session(&self, session_id: &str) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let session_key = storage_key(PROXY_SESSION_PREFIX, session_id);
-        delta.delete(session_key);
-        self.commit_delta(delta).await?;
+        self.coalesced_write(CommitmentKind::Orchestration, vec![], vec![session_key]).await?;
         info!("🗑️  Deleted proxy session: {}", session_id);
         Ok(())
     }
@@ -3187,34 +3219,23 @@ impl ErgorsStorage {
 
     /// Save an inbox message with status, sender, and action_type indexes.
     pub async fn save_inbox_message(&self, msg: &InboxMessage) -> HoResult<()> {
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
         let id_str = msg.id.to_string();
         let data = serde_json::to_vec(msg)?;
-
-        // Primary key: inbox/{id}
-        delta.put_raw(storage_key(INBOX_PREFIX, &id_str), data);
-
-        // Status index: inbox_status/{status}:{id}
         let status_val = msg.status.to_string();
-        delta.put_raw(
-            storage_key2(INBOX_STATUS_PREFIX, &status_val, &id_str),
-            id_str.as_bytes().to_vec(),
-        );
-
-        // Sender index: inbox_sender/{hex_pubkey}:{id}
         let sender_hex = hex::encode(&msg.sender_pubkey);
-        delta.put_raw(
-            storage_key2(INBOX_SENDER_PREFIX, &sender_hex, &id_str),
-            id_str.as_bytes().to_vec(),
-        );
 
-        // Action type index: inbox_action/{action_type}:{id}
-        delta.put_raw(
-            storage_key2(INBOX_ACTION_PREFIX, &msg.action_type, &id_str),
-            id_str.as_bytes().to_vec(),
-        );
+        let puts = vec![
+            // Primary key: inbox/{id}
+            (storage_key(INBOX_PREFIX, &id_str), data),
+            // Status index: inbox_status/{status}:{id}
+            (storage_key2(INBOX_STATUS_PREFIX, &status_val, &id_str), id_str.as_bytes().to_vec()),
+            // Sender index: inbox_sender/{hex_pubkey}:{id}
+            (storage_key2(INBOX_SENDER_PREFIX, &sender_hex, &id_str), id_str.as_bytes().to_vec()),
+            // Action type index: inbox_action/{action_type}:{id}
+            (storage_key2(INBOX_ACTION_PREFIX, &msg.action_type, &id_str), id_str.as_bytes().to_vec()),
+        ];
 
-        self.commit_delta(delta).await?;
+        self.coalesced_write(CommitmentKind::Orchestration, puts, vec![]).await?;
         debug!("Saved inbox message {} (action: {})", msg.id, msg.action_type);
         Ok(())
     }
@@ -3353,24 +3374,18 @@ impl ErgorsStorage {
             nanos: now.subsec_nanos() as i32,
         });
 
-        let mut delta = cnidarium::StateDelta::new(self.cs.latest_snapshot());
+        let puts = vec![
+            // Write new status index
+            (storage_key2(INBOX_STATUS_PREFIX, &new_status.to_string(), &id_str), id_str.as_bytes().to_vec()),
+            // Update primary record
+            (storage_key(INBOX_PREFIX, &id_str), serde_json::to_vec(&msg)?),
+        ];
+        let deletes = vec![
+            // Remove old status index
+            storage_key2(INBOX_STATUS_PREFIX, &old_status, &id_str),
+        ];
 
-        // Remove old status index
-        delta.delete(storage_key2(INBOX_STATUS_PREFIX, &old_status, &id_str));
-
-        // Write new status index
-        delta.put_raw(
-            storage_key2(INBOX_STATUS_PREFIX, &new_status.to_string(), &id_str),
-            id_str.as_bytes().to_vec(),
-        );
-
-        // Update primary record
-        delta.put_raw(
-            storage_key(INBOX_PREFIX, &id_str),
-            serde_json::to_vec(&msg)?,
-        );
-
-        self.commit_delta(delta).await?;
+        self.coalesced_write(CommitmentKind::Orchestration, puts, deletes).await?;
         debug!("Updated inbox message {} status to {}", id, new_status);
         Ok(Some(msg))
     }

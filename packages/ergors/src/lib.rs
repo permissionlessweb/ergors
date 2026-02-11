@@ -26,6 +26,7 @@ use ho_std::wasm::WasmRuntime;
 // Re-export the macro for external use
 use crate::{
     config::ErgorsConfig,
+    consensus::{ConsensusSystem, WriteHandle},
     deploy::akash::{client::AkashClient, deployer::AutomatedDeployer},
     network::PeerInfo,
     proxy::ProxyRouter,
@@ -128,6 +129,10 @@ pub struct ErgorsAppState {
     pub akash: Option<AkashDeploymentContext>,
     /// gm = gateway manager (when discord or other gateway features enabled)
     pub gm: Option<Arc<gateway::GatewayManager>>,
+    /// wh = write handle for submitting ordered writes (replaces direct storage writes)
+    pub wh: Option<WriteHandle>,
+    /// consensus = consensus system handle (for height, leader status)
+    pub consensus: Option<ConsensusSystem>,
     /// rlm = RLM service (when rlm feature is enabled)
     #[cfg(feature = "rlm")]
     pub rlm: Option<Arc<ergors_rlm::RlmService>>,
@@ -146,6 +151,8 @@ impl ErgorsAppState {
         pr: Arc<RwLock<ProxyRouter>>,
         akash: Option<AkashDeploymentContext>,
         gm: Option<Arc<gateway::GatewayManager>>,
+        wh: Option<WriteHandle>,
+        consensus: Option<ConsensusSystem>,
         #[cfg(feature = "rlm")] rlm: Option<Arc<ergors_rlm::RlmService>>,
         #[cfg(feature = "cw")] wasm: Arc<WasmRuntime>,
     ) -> Self {
@@ -158,6 +165,8 @@ impl ErgorsAppState {
             pr,
             akash,
             gm,
+            wh,
+            consensus,
             #[cfg(feature = "rlm")]
             rlm,
             #[cfg(feature = "cw")]

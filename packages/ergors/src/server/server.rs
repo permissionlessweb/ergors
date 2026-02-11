@@ -387,6 +387,15 @@ impl Server {
             Arc::new(tokio::sync::RwLock::new(pr))
         };
 
+        // Start write coalescer — batches concurrent writes into single commits.
+        // The commitment channel is optional: only connected when consensus is active.
+        let (coalescer, write_handle) =
+            crate::consensus::WriteCoalescer::new(storage_arc.cs.clone(), None);
+        tokio::spawn(coalescer.run());
+
+        // Wire the write handle into storage so methods route through the coalescer
+        storage_arc.set_write_handle(write_handle.clone()).await;
+
         Ok(Self {
             state: ErgorsAppState::new(
                 // r == llm router (app-layer)
@@ -405,6 +414,10 @@ impl Server {
                 akash_context,
                 // gm == gateway manager (optional)
                 gateway_manager,
+                // wh == write handle for batched storage writes
+                Some(write_handle),
+                // consensus == not yet wired (Phase 5e)
+                None,
                 // rlm == RLM service (optional)
                 #[cfg(feature = "rlm")]
                 rlm_service,

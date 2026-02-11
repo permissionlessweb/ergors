@@ -30,6 +30,7 @@
 //! - [`reporter`] — Finalization reporter (BeginBlock → Commit pipeline)
 //! - [`engine`] — Engine orchestrator (wires all components, starts Simplex)
 
+pub mod actions;
 pub mod app;
 pub mod bridge;
 pub mod engine;
@@ -46,3 +47,4 @@ pub use lifecycle::ConsensusLifecycle;
 pub use mempool::Mempool;
 pub use reporter::FinalizationReporter;
 pub use types::{CommitmentKind, EndBlockResponse, Event, NodeCommitment, ValidatorUpdate};
+pub use actions::{CommittedBatch, CommitmentGenerator, WriteAction, WriteCoalescer, WriteHandle};
