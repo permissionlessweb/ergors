@@ -316,6 +316,16 @@ coverage format="html" *args="--workspace":
         exit 1
     fi
 
+# Coverage excluding generated code and test harness (format: html or json)
+carp:
+    #!/bin/bash
+    rm -rf carp.json 
+    set -e
+    IGNORE="--ignore-filename-regex '(proto/.*|packages/ho-std/src/types/ergors/gen/.*)'"
+    EXCLUDE="--workspace --exclude ergors-proto --exclude ergors-tests"
+    eval cargo carpulin $EXCLUDE $IGNORE >> carp.json
+    echo "Coverage report: carp.json"
+
 # Quick check (faster than full build)
 check:
     cargo chec
