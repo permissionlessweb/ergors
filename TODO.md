@@ -14,6 +14,18 @@
 
 - add model-map -> api-key flag option: give admins an interactive workflow to securely provide api keys given each model-map existing for a provider (they can specify to set api provider as no-api to not inlcude them in iteractive, or if not specified )
 
+#### `ergors deploy`
+
+- merge cancel and close-deployment into one cmd, so that if we are at any part of a deployment workflwo and we want to cancel we ensure that we send the Msgclose command so that we dont have a deplooyment open or are stale at any point in deployment cycle.
+- node flag override (via env variable doesnt persist for entire workflow, shows in depoyment workflow create msg, but not in logs of enginge during automated lifecycle (shows the same defualt provider), caused issues with sequence mismatch after default node lags)
+- interactive session should happen in the same window as the cli, not the engine log window
+- `provider default qwen-coder --no_key=true` does not display flags correctly (display all flags please). Caused by: code: 'Client specified an invalid argument', message: "API key is required (use no_key=true for keyless providers)"
+returniflost@groot e2e-improvements % ergors provider default qwen-coder --no_key=true is the error we wsee
+
+#### `ergors ask rml query`
+
+- terrible simplicity, dont know how to use any of the commands, terrible documnentation/example usage in cli commands
+
 - ALL ACTIONS responses should be json formatted for effective parsing with tools and in logs. we do not need fancy formatting for displaying, this will be wired in front ends
 - session reference and loading: should be able to name, list , create new sessions, referenced by the location of the project specified (similar to claude code,opencode etc)
 - refactor codebase: improve the location of logic, lots of the grpc logic can be isolated and implemented into their respected folders for clear separations of concerns)
@@ -22,20 +34,7 @@
 - ssh into deployments
 - sg-lang cookbooks
 
-> ergors provider default qwen-coder --no_key=true
->
-> - does not display flags correctly (display all flags please)
-
-Caused by: code: 'Client specified an invalid argument', message: "API key is required (use no_key=true for keyless providers)"
-returniflost@groot e2e-improvements % ergors provider default qwen-coder --no_key=true
-
-> match --served-model-name with the service name for continuity and access of it
-
-edgar rlm:
-
-- primary model & sub_model
-  - display list of ccurent available models, and the base_urls
-  - use specific python rlm design // hooks
+- use specific python rlm design // hooks
 
 ## COSMWASM
 
@@ -115,6 +114,7 @@ We can update how we keep track of the following values to a dedicated layer in 
 - <https://models.dev/>
 
 ### BOOTSTRAPPING
+
 - basic ssh bootst
 - implement connection with network node for bootstrapping
 - perform boostrapping functions and report/mitigate/handle results of bootstrapping
@@ -135,6 +135,15 @@ We can update how we keep track of the following values to a dedicated layer in 
 **Issues**: [#11 Agentic Workflow Enhancements](https://github.com/permissionlessweb/ergors/issues/11) | [#12 Tool Integrations](https://github.com/permissionlessweb/ergors/issues/12) | [#10 Benchmarking & Optimization](https://github.com/permissionlessweb/ergors/issues/10) | [#17 UI & Visualization](https://github.com/permissionlessweb/ergors/issues/17)
 
 ### AI TOOLS
+
+- rlm:
+  - <https://github.com/google/langextract>
+  - <https://github.com/joshua-mo-143/rig-rlm>
+- chaining:  <https://github.com/graniet/rllm/>
+
+### RLM
+
+- <https://github.com/zircote/rlm-rs>
 
 **Issues**: [#12 Tool Integrations](https://github.com/permissionlessweb/ergors/issues/12)
 

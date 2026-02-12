@@ -117,10 +117,23 @@ just e2e all --verbose
 ### RLM & DISCORD BOT
 
 - sh script to automate the entire workflow, using multiple discord accounts to simpulate high frequency use and test edge-cases/ sanity cases for admin only access to funtions,multi-threading effectiveness
-- update mock infeence provider to have "mock-rlm" functions, where we
-  - a: ingest a specific piece of code
-  - b: mimic a prompt to the inference provider thorugh the discord gateway to "ask a question about the ingested document"
-  - c: have the mock inference provider perform a deterministic rlm loop with precurated code, to generate a response
-  - d: confirm that we get the reponse back in the discord server gateway
+we are going to setup our wya of e2e testing the rlm loop for an engine. heres the workflow we will dedicated to
+  ensuring our rlm works:
+  1. spin up mock inference provider
+  2. spin up ergors engine node
+  3. configure mock inference api as both primary and secondary rlm-providers by registering it as provider in our
+  engine
+  4. ingest a github uurl via our document ingestion logic we have
+  5. use the endpoint that invokes the rlm response, by proving a specific question being asked about the ingested
+  document
+  6. ensure that the rlm loop works as expected.
+
+  that is the ultimate workflow goal of the e2e loops. we need to :
+  a. add support in our mock-inference provider to deterministacally return responses that minimc the reasoning
+  during an rlm loop. it should be able to return pre-generated python code that we can use to test our repl sandbox
+  for parsing through relevant information in the ingested document, ensure that the response based on the rlm code
+  sent retuyrns whats expected, and then return with a final response.
+
+  this will fleex our rlm workflow loop in our e2e tests, identifying and friction points during the
 
 ### Benchmarking

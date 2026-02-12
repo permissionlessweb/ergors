@@ -4,7 +4,7 @@ Automated integration of Akash deployments into the LLM inference routing system
 
 ## Overview
 
-ERGORS provides seamless integration between Akash deployments and inference routing, enabling deployed services to be used as model endpoints with zero additional configuration. Once a deployment completes, it automatically becomes available as a model for inference requests.
+ERGORS provides integration between Akash deployments and inference routing. Deployed services become usable as LLM providers through explicit registration via `deploy register-providers` or `provider add --model-name`. The `--model-map` flag at deploy time controls which services are inference endpoints and what upstream model name each serves. Registration is intentionally explicit — not all deployment services are inference providers.
 
 ## Architecture
 
@@ -53,16 +53,22 @@ ERGORS provides seamless integration between Akash deployments and inference rou
    User → CLI → gRPC → Workflow Engine → Akash Chain
    ```
 
-2. **Completion & Registration**
+2. **Completion** (deployment endpoints discovered, stored in workflow)
 
    ```
-   Workflow Complete → gRPC Handler → Cache.add_deployment()
+   Workflow Complete → Endpoints Stored (with model_name from model_map)
    ```
 
-3. **Inference Request**
+3. **Explicit Registration** (user invokes `deploy register-providers` or `provider add --model-name`)
 
    ```
-   HTTP Request → LLM Router → Cache Lookup → Forward to Deployment
+   User CLI → gRPC → ProxyRouter (persisted) + LlmRouter (runtime) + default_models (substitution)
+   ```
+
+4. **Inference Request** (model name substituted before upstream call)
+
+   ```
+   HTTP Request → LLM Router → default_models substitution → Forward to Deployment
    ```
 
 4. **Cache Sync**

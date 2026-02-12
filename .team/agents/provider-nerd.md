@@ -35,8 +35,8 @@ Providers live in **two places** and both must be populated for inference to wor
 
 | Source | ProxyRouter | LlmRouter | default_models |
 |--------|:-----------:|:---------:|:--------------:|
-| `provider add` | Yes | Yes | No (empty default_model) |
-| `deploy register-providers` | Yes | Yes | Yes (from endpoint.model_name) |
+| `provider add` | Yes (persisted to storage) | Yes | Yes (if `--model-name` specified) |
+| `deploy register-providers` | Yes (persisted to storage) | Yes | Yes (from model_map or endpoint.model_name) |
 | Engine startup (LlmRouterConfig entities) | — | Yes | Yes (if entity.default_model set) |
 
 **Critical**: If a provider exists in ProxyRouter but NOT in LlmRouter, `call_provider_by_name` will fail with "not found". The `provider test` command catches this gap.
@@ -54,7 +54,7 @@ Shows name, status (`configured`/`disabled`), auth type (keyless/api-key), base 
 ### provider add
 
 ```bash
-ergors provider add <NAME> [--api-key <KEY>] [--base-url <URL>] [--no-key] [--default] [--role <ROLE>]
+ergors provider add <NAME> [--api-key <KEY>] [--base-url <URL>] [--no-key] [--model-name <MODEL>] [--default] [--role <ROLE>]
 ```
 
 | Flag | Description |
@@ -62,16 +62,20 @@ ergors provider add <NAME> [--api-key <KEY>] [--base-url <URL>] [--no-key] [--de
 | `--api-key <KEY>` | API key (prompts with hidden input if omitted) |
 | `--base-url <URL>` | Custom endpoint URL (required for custom/keyless providers) |
 | `--no-key` | Register without API key (requires `--base-url`) |
+| `--model-name <MODEL>` | Upstream model name for request substitution (e.g., `Qwen/Qwen2.5-Coder-7B-Instruct`). Without this, the provider label is sent as the model name. |
 | `--default` | Set as default provider |
 | `--role <ROLE>` | Assign engine role in same command |
 
-Registers in **both** ProxyRouter (cnidarium) and LlmRouter (in-memory).
+Registers in **both** ProxyRouter (persisted to cnidarium storage) and LlmRouter (in-memory). If `--model-name` is provided, also populates `default_models` for upstream model substitution.
 
 **Keyless providers**: `--no-key --base-url <URL>` creates an OpenAI-compatible provider that skips the `Authorization` header. Used for co-deployed inference (sglang, vLLM, Ollama).
 
-**With role shortcut**:
+**Full example with model mapping**:
 ```bash
-ergors provider add glm-flash --no-key --base-url http://host:8000 --role rlm-primary
+ergors provider add qwen1 --no-key \
+  --base-url http://provider.host:30163 \
+  --model-name Qwen/Qwen2.5-Coder-7B-Instruct \
+  --role rlm-primary
 ```
 
 ### provider test
@@ -82,8 +86,8 @@ ergors provider test [NAME]
 
 **Real HTTP test** — not a stub. For each provider:
 
-1. Looks up `base_url` from ProxyRouter config (or LlmEntity)
-2. Verifies provider is registered in LlmRouter (catches registration gaps)
+1. Checks LlmRouter first (runtime source of truth) — if not there, provider can't serve inference
+2. Gets `base_url` from in-memory ProxyRouter config (always in sync with registrations)
 3. Resolves model name: checks `default_models` map, falls back to provider name
 4. POSTs to `{base_url}/v1/chat/completions` with `{"model": "<resolved>", "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}`
 5. Skips `Authorization` header for keyless providers
@@ -97,8 +101,8 @@ glm-flash: OK (243ms)
 ```
 
 **Failure modes**:
-- "not found in config" — provider doesn't exist in ProxyRouter or LlmEntity
-- "exists in config but is not registered in LLM router" — registration gap, run `deploy register-providers` or restart
+- "not found" — provider doesn't exist in LlmRouter. Lists available providers with hint to add or register.
+- "exists in storage but is not loaded" — provider in cnidarium storage but not in runtime LlmRouter. Restart or re-add.
 - "Connection failed" — endpoint unreachable
 - "HTTP 4xx/5xx" — server error with body excerpt
 
@@ -157,14 +161,15 @@ ergors deploy register-providers <session-id-or-label> [--label-prefix <PREFIX>]
 
 Reads the deployment's service endpoints and for each:
 
-1. **Skips** endpoints where `model_name` is empty (not inference)
-2. Creates `InferenceProviderConfig` in ProxyRouter (keyless, custom type)
+1. **Resolves model name** via chain: endpoint.model_name → workflow.model_map[service_name] → workflow.model_name → empty (registers without model substitution)
+2. Creates `InferenceProviderConfig` in ProxyRouter (persisted to cnidarium storage, keyless, custom type)
 3. Creates `LlmEntity` in LlmRouter with:
    - `name` = service label (e.g. `glm-flash`)
    - `models` = `[label]` (provider responds to its own name)
-   - `default_model` = `endpoint.model_name` (e.g. `Qwen/Qwen2.5-Coder-7B-Instruct`)
+   - `default_model` = resolved model name (e.g. `Qwen/Qwen2.5-Coder-7B-Instruct`)
    - `base_url` = endpoint URI
 4. Populates `default_models` map: `"glm-flash" → "Qwen/Qwen2.5-Coder-7B-Instruct"`
+5. When 0 providers register, shows diagnostic: actual service names vs model_map keys
 
 ### Model Substitution in call_provider_by_name
 
@@ -223,6 +228,8 @@ RLM sends model: "rlm-primary"
 
 Custom providers use `OpenAiProvider::new(Some(String::new()))` — the empty key signals keyless mode, skipping the `Authorization` header entirely.
 
+**Response parsing**: The OpenAI joint parses responses as `serde_json::Value` (not a strict struct). This handles null `content`, missing `system_fingerprint`, extra fields, and other variations across sglang, vLLM, TGI, and other OpenAI-compatible servers without deserialization failures.
+
 ## API Key Encryption
 
 Keys stored in Cnidarium as `custody://<provider-name>`:
@@ -272,21 +279,31 @@ ergors provider test                       # Test all
 ergors provider assign anthropic --role rlm-primary
 ```
 
-### Custom Keyless Provider
+### Custom Keyless Provider (self-hosted inference)
 
 ```bash
-ergors provider add my-local-llm --no-key --base-url http://localhost:8000
+ergors provider add my-local-llm --no-key \
+  --base-url http://localhost:8000 \
+  --model-name meta-llama/Llama-3.1-8B-Instruct
 ergors provider test my-local-llm
 ergors provider assign my-local-llm --role orchestration
 ```
 
+`--model-name` ensures the upstream server receives the correct model identifier instead of the provider label.
+
 ## Troubleshooting
 
-### provider test: "not registered in LLM router"
+### provider test: "not found"
 
-Provider exists in ProxyRouter config but wasn't registered in LlmRouter.
+Provider not in LlmRouter (runtime source of truth). Shows available providers.
 
-**Fix**: `ergors deploy register-providers <label>` or restart the engine.
+**Fix**: `ergors provider add <name> --no-key --base-url <url> --model-name <model>` or `ergors deploy register-providers <label>`.
+
+### provider test: "exists in storage but is not loaded"
+
+Provider persisted in cnidarium but not loaded into runtime LlmRouter.
+
+**Fix**: Restart the engine or re-add the provider via `provider add`.
 
 ### provider test: Connection refused
 
@@ -304,12 +321,14 @@ The model name sent to upstream doesn't match what the server hosts.
 
 RLM sends role keyword → resolves to provider name → but upstream gets wrong model.
 
-**Check**: `ergors provider test <name>` shows the model that will be sent. If `default_models` wasn't populated (provider added manually instead of via `register-providers`), re-register:
+**Check**: `ergors provider test <name>` shows the model that will be sent. If the model shown is the provider label (not the actual model name), `default_models` wasn't populated.
 
+**Fix**: Re-add with `--model-name`:
 ```bash
 ergors provider remove <name>
-ergors deploy register-providers <deployment-label>
+ergors provider add <name> --no-key --base-url <url> --model-name <actual-model-name> --role <role>
 ```
+Or re-register from deployment: `ergors deploy register-providers <deployment-label>`
 
 ### API key decryption fails after restart
 
@@ -319,7 +338,7 @@ Re-add the key: `ergors provider add <name>`. If custody corrupted: `ergors init
 
 ### Services without model_map entries
 
-Services in the SDL without a `--model-map` entry AND no `--model-name` fallback get empty `model_name` on their endpoints. `deploy register-providers` **skips** them. This is intentional — not every service is inference (e.g. monitoring sidecars, web UIs).
+Services in the SDL without a `--model-map` entry AND no `--model-name` fallback get empty `model_name` on their endpoints. `deploy register-providers` still registers them as providers (so endpoints are usable), but without model substitution — the provider label is sent as the model name. A warning is logged suggesting to redeploy with `--model-map`. Non-inference services (monitoring sidecars, web UIs) should not be registered as providers — use `--model-map` to explicitly mark which services are inference.
 
 ### Model pattern shadowing
 
@@ -329,9 +348,13 @@ ProxyRouter uses longest-match for model routes. A provider with pattern `gpt-*`
 
 `deploy register-providers` uses the SDL service name as the provider name. If a provider with that name already exists, it's skipped with a warning. Use `--label-prefix` to namespace.
 
-### default_models only set via register-providers
+### default_models and model substitution
 
-`provider add` does NOT populate `default_models` — only `deploy register-providers` does (because only deployment endpoints carry a `model_name`). For manually added providers, `call_provider_by_name` passes `req.model` through unchanged.
+`default_models` is populated when:
+- `provider add --model-name <MODEL>` is used (manual registration with explicit upstream model)
+- `deploy register-providers` resolves a model name from `model_map` or endpoint stamping
+
+Without `--model-name` on `provider add`, `call_provider_by_name` passes `req.model` through unchanged — the upstream server receives whatever the caller sends (e.g., the role keyword `rlm-primary`). **Always use `--model-name` for self-hosted inference providers.**
 
 ## Response Format
 
