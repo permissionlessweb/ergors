@@ -84,7 +84,7 @@ ergors deploy create \
   --key-name default
 ```
 
-`--model-map` maps SDL service names to the actual model name the inference server expects. Services without a mapping are not registered as inference providers.
+`--model-map` maps SDL service names to the actual model name the inference server expects. This is critical — without it, the engine would send the service name (e.g. `glm-flash`) as the model identifier to the upstream server, which it wouldn't understand.
 
 Wait for status `completed`, then register the deployed endpoints as providers:
 
@@ -92,7 +92,23 @@ Wait for status `completed`, then register the deployed endpoints as providers:
 ergors deploy register-providers inference-gpu
 ```
 
-This reads the deployment's service endpoints, skips any without a `model_name`, and registers the rest in both the proxy router and LLM router. Each provider's name matches the service name (`glm-flash`, `qwen-coder`).
+This reads the deployment's service endpoints, resolves model names from the workflow's `model_map`, and registers each in both the proxy router and LLM router. Each provider's name matches the service name (`glm-flash`, `qwen-coder`), but the upstream model name (e.g. `Qwen/Qwen2.5-Coder-7B-Instruct`) is substituted in the actual API calls.
+
+**Alternative — manual registration** (if `register-providers` isn't available or you want more control):
+
+```bash
+ergors provider add glm-flash --no-key \
+  --base-url http://provider.a100.kci.val.akash.pub:31499 \
+  --model-name Qwen/Qwen2.5-Coder-7B-Instruct \
+  --role rlm-primary
+
+ergors provider add qwen-coder --no-key \
+  --base-url http://provider.a100.kci.val.akash.pub:32611 \
+  --model-name Qwen/Qwen2.5-Coder-7B-Instruct \
+  --role rlm-secondary
+```
+
+`--model-name` is essential for self-hosted inference — it tells the engine what model identifier to send upstream.
 
 ---
 
@@ -273,9 +289,11 @@ ergors deploy close-deployment edgar-cayce
 | `/edgar ingest` denied | User needs the configured admin role |
 | `/edgar ask` topic not found | Ingest documents with that label first |
 | RLM returns generic answers | Verify mode is `rlm` via `/edgar rlm mode:rlm` |
-| RLM uses wrong model | Check `ergors provider roles` — assign providers to `rlm-primary` / `rlm-secondary` roles |
-| `provider test` fails with "not registered" | Run `ergors deploy register-providers <label>` to register deployment endpoints |
+| RLM uses wrong model | Check `ergors provider test <name>` — if Model shows the label instead of the actual model, re-add with `--model-name` |
+| `provider test` "not found" | Provider not in runtime — re-add with `provider add --model-name` or `deploy register-providers` |
 | `provider test` connection refused | Deployment may still be starting — check `ergors deploy info <label>` |
+| "error decoding response body" | Upstream returned unexpected JSON shape — update to latest ergors (uses resilient JSON parsing) |
+| `register-providers` registers 0 | `--model-map` keys don't match SDL service names — check diagnostic output for mismatch |
 | No bids on deploy | Raise `amount` in SDL pricing section |
 
 ---
@@ -300,14 +318,18 @@ ergors deploy create \
   --model-map qwen-coder=Qwen/Qwen2.5-Coder-7B-Instruct \
   --interactive-bid --min-balance 1000000 --key-name default
 
-# register deployed endpoints as providers
+# register deployed endpoints as providers (auto model mapping from --model-map)
 ergors deploy register-providers inference-gpu
 
-# test providers are reachable
+# OR manually register with explicit model names
+# ergors provider add glm-flash --no-key --base-url <url> --model-name Qwen/Qwen2.5-Coder-7B-Instruct --role rlm-primary
+# ergors provider add qwen-coder --no-key --base-url <url> --model-name Qwen/Qwen2.5-Coder-7B-Instruct --role rlm-secondary
+
+# test providers are reachable (shows URL, model name, latency)
 ergors provider test glm-flash
 ergors provider test qwen-coder
 
-# assign engine roles
+# assign engine roles (skip if --role was used during add)
 ergors provider assign glm-flash --role rlm-primary
 ergors provider assign qwen-coder --role rlm-secondary
 
@@ -317,6 +339,13 @@ ergors provider roles
 
 ## What is the workflow we want to use?
 
+**heuristic steps**
+
+- determine what specific tool we should use (based on model)
+- load the file (to cache?)
+
+**agentic steps**
 - determine what the question is asking
-- determine what specific tool we should use
-- use the tool
+- use the tool to generate code for interacting with the document
+- 
+
