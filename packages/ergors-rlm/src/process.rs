@@ -111,6 +111,8 @@ impl ReplWorker {
                 "documents": docs_json,
                 "max_iterations": query.max_iterations,
                 "max_sub_calls": query.max_sub_calls,
+                "primary_model": query.primary_model,
+                "sub_model": query.sub_model,
             }),
             id: json!(1),
         };

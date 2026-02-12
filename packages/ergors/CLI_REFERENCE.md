@@ -137,12 +137,13 @@ ergors call "Hello" --api-addr http://remote-node:8080
 
 | Command | Description | Options/Arguments | Example |
 | --------- | ------------- | ------------------- | --------- |
-| `provider list` | List configured LLM providers | Shows name and status (configured/disabled) for each provider. Use `--json` for machine-readable output. | `ergors provider list` |
-| `provider add <NAME>` | Register an API key for a provider | `<NAME>` - Provider name (openai, anthropic, etc.) `--api-key <KEY>` - API key (prompts with hidden input if omitted) `--default` - Set as default provider | `ergors provider add openai` |
-| `provider test [NAME]` | Test provider connectivity | `[NAME]` - Provider name (tests all if omitted). Reports latency in ms. | `ergors provider test openai` |
+| `provider list` | List configured LLM providers | Shows name, status, auth type (keyless/api-key), base URL, and deployment session ID. Use `--json` for machine-readable output. | `ergors provider list` |
+| `provider add <NAME>` | Register an API key for a provider | `<NAME>` - Provider name (openai, anthropic, etc.) `--api-key <KEY>` - API key (prompts with hidden input if omitted) `--default` - Set as default provider `--role <ROLE>` - Assign engine role in same command | `ergors provider add anthropic --role rlm-primary` |
+| `provider test [NAME]` | Test provider connectivity | `[NAME]` - Provider name (tests all if omitted). Makes a real HTTP request to the provider's `/v1/chat/completions` endpoint. Reports latency, URL tested, and model sent. | `ergors provider test openai` |
 | `provider default <NAME>` | Set the default provider | `<NAME>` - Provider name | `ergors provider default anthropic` |
-| `provider assign <NAME>` | Assign provider to an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role (possible values shown in `--help`): `orchestration`, `sub-agent`, `embeddings`, `tool-calling` | `ergors provider assign local-sglang --role orchestration` |
-| `provider unassign <NAME>` | Unassign provider from an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role (possible values shown in `--help`) | `ergors provider unassign local-sglang --role orchestration` |
+| `provider assign <NAME>` | Assign provider to an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role: `orchestration`, `sub-agent`, `embeddings`, `tool-calling`, `rlm-primary`, `rlm-secondary` | `ergors provider assign anthropic --role rlm-primary` |
+| `provider unassign <NAME>` | Unassign provider from an engine role | `<NAME>` - Provider name. `--role <ROLE>` - Engine role: `orchestration`, `sub-agent`, `embeddings`, `tool-calling`, `rlm-primary`, `rlm-secondary` | `ergors provider unassign anthropic --role rlm-primary` |
+| `provider remove <NAME>` | Remove a provider (requires custody password) | `<NAME>` - Provider name. Prompts for custody password. Removes config, API key, model routes, and role assignments. | `ergors provider remove glm-flash` |
 | `provider roles` | List all engine role assignments | Shows role mappings with priority order (first = primary, rest = fallback). Use `--json` for machine-readable output. | `ergors provider roles` |
 
 **Provider Add Details:**
@@ -154,10 +155,11 @@ ergors call "Hello" --api-addr http://remote-node:8080
 
 **Engine Role Assignments:**
 
-- Roles: `orchestration` (primary LLM), `sub-agent` (task execution), `embeddings` (RAG/search), `tool-calling` (function calling)
+- Roles: `orchestration` (primary LLM), `sub-agent` (task execution), `embeddings` (RAG/search), `tool-calling` (function calling), `rlm-primary` (RLM reasoning loop), `rlm-secondary` (RLM sub-agent calls)
 - A provider can serve multiple roles; a role can have multiple providers (ordered by priority)
 - First assigned provider = primary; additional providers = fallback
 - Unassigned roles fall back to model-pattern routing (no error)
+- RLM uses `rlm-primary` role by default; `rlm-secondary` falls back to `rlm-primary` if unset
 - Role config persists in cnidarium with versioned audit trail
 
 ---
@@ -499,6 +501,8 @@ ergors deploy create --sdl <path> [OPTIONS]
 | `--interactive-bid` | Prompt for manual provider selection instead of auto-selecting | - |
 | `--min-balance <UAKT>` | Minimum balance required | `5000000` |
 | `--var <KEY=VALUE>` | SDL template variables | - |
+| `--model-name <NAME>` | Global model name for inference routing (fallback for services without a model_map entry) | - |
+| `--model-map <SVC=MODEL>` | Per-service model name mapping (e.g., `inference=glm-4-flash`). Services without a mapping use `--model-name` as fallback. Services with no model name at all are not registered as inference providers. | - |
 
 **Provider Selection Modes:**
 
@@ -561,6 +565,13 @@ ergors deploy create \
   --auto \
   --auto-select-bid \
   --min-balance 10000000
+
+# Multi-service deployment with per-service model mapping
+ergors deploy create \
+  --sdl sdls/multi-inference.yml \
+  --label multi-gpu \
+  --model-map inference=glm-4-flash \
+  --model-map embeddings=bge-large-en-v1.5
 ```
 
 **Label-Based Access:**
@@ -1329,20 +1340,46 @@ ergors gateway disable <gateway-id>
 
 ### Discord Gateway
 
-Discord bot integration for AI chat via slash commands.
+Discord bot integration for AI chat via `/edgar` slash commands.
+
+#### Quick Setup
+
+One command to configure token, allowlist a guild, and enable the gateway:
+
+```bash
+ergors gateway discord setup <guild-id> [--token <TOKEN>]
+```
+
+If `--token` is not provided, prompts interactively (hidden input, never in shell history).
+
+**Example:**
+
+```bash
+ergors gateway discord setup 123456789012345678
+# Enter Discord bot token: ****
+# Bot token configured (encrypted)
+# Guild 123456789012345678 added to allowlist
+# Discord gateway enabled
+#
+# Setup complete! Next steps:
+#   1. Invite the bot to your server (OAuth2 with bot + applications.commands scopes)
+#   2. Start the engine: ergors start
+#   3. In Discord, set admin role: /edgar config admin_role:@YourRole
+#   4. Test with: /edgar ask topic:MyDocs question:Hello
+```
 
 #### Configure Bot Token
 
-Set the Discord bot token (encrypted via custody):
+Set or update the Discord bot token (encrypted via custody):
 
 ```bash
-ergors gateway discord set-token [--token <TOKEN>]
+ergors gateway discord set-bot-token [--token <TOKEN>]
 ```
 
 **Notes:**
 
 - If `--token` is not provided, prompts interactively (hidden input, never in shell history)
-- Token is encrypted using the custody password
+- Token is encrypted using the node public key
 
 #### Manage Allowed Guilds
 
@@ -1375,7 +1412,6 @@ ergors gateway discord config [--json]
 Discord Gateway Configuration
 =============================
 Token:            configured (encrypted)
-Command Prefix:   !
 Respond to @:     true
 Respond to DMs:   false
 
@@ -1386,32 +1422,34 @@ Allowed Guilds:
 
 #### Available Slash Commands
 
-Once the bot is configured and enabled, users can interact via Discord:
+All Discord bot commands are grouped under `/edgar`:
 
-| Command | Description |
-| --------- | ------------- |
-| `/prompt <message>` | Send a prompt to the AI |
-| `/thread [name]` | Create a new conversation thread |
-| `/clear` | Clear conversation history in current thread |
-| `/ingest <url>` | Ingest URL or GitHub repository into guild knowledge base (admin only) |
-| `/ragsources` | List all ingested sources in guild knowledge base |
-| `/ragstatus` | Show RAG configuration and stats for this guild |
+| Command | Description | Admin |
+| --------- | ------------- | ----- |
+| `/edgar ask <topic> <question>` | Ask a question about ingested documents (topic autocompletes from document labels) | No |
+| `/edgar thread [name]` | Create a new conversation thread | No |
+| `/edgar clear` | Clear conversation history in current thread | No |
+| `/edgar ingest <url> <label> [doc_type]` | Ingest URL or GitHub repo into knowledge base (label sets the topic for `/edgar ask`) | Yes |
+| `/edgar sources [limit]` | List ingested documents | No |
+| `/edgar delete <source>` | Delete a document from knowledge base | Yes |
+| `/edgar config [admin_role] [auto_context] [max_chunks] [min_similarity]` | Configure RAG settings | Yes |
+| `/edgar rlm [mode] [max_iterations] [max_sub_calls] [primary_model] [sub_model]` | Configure RLM mode and models | Yes |
 
-##### `/ingest` - GitHub Repository Support
+##### `/edgar ingest` - GitHub Repository Support
 
-The `/ingest` command supports both regular URLs and GitHub repository URLs:
+The `/edgar ingest` command supports both regular URLs and GitHub repository URLs:
 
 **Regular URLs:**
 
 ```
-/ingest url:https://example.com/docs.html label:example-docs
+/edgar ingest url:https://example.com/docs.html label:example-docs
 ```
 
 **GitHub Repositories:**
 
 ```
-/ingest url:https://github.com/owner/repo label:repo-docs
-/ingest url:https://github.com/owner/repo/tree/branch-name
+/edgar ingest url:https://github.com/owner/repo label:repo-docs
+/edgar ingest url:https://github.com/owner/repo/tree/branch-name
 ```
 
 **GitHub Ingestion Behavior:**
@@ -1419,8 +1457,9 @@ The `/ingest` command supports both regular URLs and GitHub repository URLs:
 - Automatically detects GitHub URLs and uses `githem` for proper git cloning
 - Performs shallow clone (minimal network/disk usage)
 - Filters files using githem presets (excludes binaries, `node_modules`, etc.)
-- Ingests each file individually for better RAG retrieval granularity
-- Stores files in guild-scoped knowledge base with tags: `guild:*`, `repo:*`, `user:*`
+- Stores the entire repo as a **single consolidated document** (one entry in `/edgar sources`)
+- A companion `.index` document maps file paths to char offsets for targeted retrieval
+- `/edgar delete owner/repo` removes both the consolidated doc and its index
 - Supports branches, PRs, and commits via githem's URL parser
 
 **Document Type Options:**
@@ -1433,7 +1472,7 @@ The `/ingest` command supports both regular URLs and GitHub repository URLs:
 **Example:**
 
 ```
-/ingest url:https://github.com/cosmology-tech/interchain label:interchain-docs doc_type:documentation
+/edgar ingest url:https://github.com/cosmology-tech/interchain label:interchain-docs doc_type:documentation
 ```
 
 **Requirements:**
@@ -1444,81 +1483,24 @@ The `/ingest` command supports both regular URLs and GitHub repository URLs:
 
 #### Test Mode
 
-The Discord gateway includes a test mode for validating integration without requiring LLM providers or actual document ingestion. This is useful for:
-
-- Testing bot connectivity and command reception
-- Validating admin role permissions
-- Confirming authentication flows
-- Debugging gateway configuration issues
-- Development and staging environments
+Test mode validates gateway integration without requiring LLM providers. Document ingestion still works normally.
 
 **Enable Test Mode:**
 
 ```bash
 export ERGORS_GATEWAY_TEST_MODE=1
-ergors gateway start discord
+ergors start
 ```
 
 **Test Mode Behavior:**
 
 | Command | Test Mode Response |
 | ------- | ------------------ |
-| `/prompt <message>` | Returns canned response confirming message reception, session management, and context retrieval (no LLM call) |
-| `/ingest <url>` | **Actually performs document ingestion** - validates admin auth, fetches URL, stores in RAG system (no LLM required) |
+| `/edgar ask <topic> <question>` | Returns canned response confirming message reception, session management, and context retrieval (no LLM call) |
+| `/edgar ingest <url>` | **Actually performs document ingestion** - validates admin auth, fetches URL, stores in RAG system (no LLM required) |
 | All admin commands | Still enforce permission checks (key feature for testing auth) |
 
-**Example Test Session:**
-
-```bash
-# Terminal 1: Start gateway in test mode
-export ERGORS_GATEWAY_TEST_MODE=1
-ergors gateway start discord
-
-# Output shows:
-# 🧪 Discord Gateway TEST MODE enabled - LLM calls will be bypassed with test responses
-
-# Terminal 2: In Discord, run:
-# /prompt message:Hello, bot!
-# Response:
-# 🧪 **TEST MODE RESPONSE**
-#
-# ✅ Message received: "Hello, bot!"
-# ✅ Session: `thread-123456789`
-# ✅ Context: No RAG/RLM context (direct LLM call would occur)
-#
-# **What was tested:**
-# • Guild authorization ✓
-# • Session management ✓
-# • Context retrieval ✓
-# • Message processing ✓
-#
-# In production, this would call the LLM provider.
-#
-# 📚 Learn more: https://github.com/commonwarexyz/ergors
-
-# /ingest url:https://github.com/commonwarexyz/monorepo
-# Response:
-# Cloning repository: commonwarexyz/monorepo
-# Processing 42 files...
-# ✓ Ingested **commonwarexyz/monorepo** (42 files, 127 chunks)
-#
-# Note: In test mode, document ingestion happens normally!
-#       Only LLM inference calls are bypassed.
-```
-
-**What Test Mode Does NOT Test:**
-
-- Actual LLM provider integration (separate team responsibility)
-- LLM inference calls for `/prompt` command
-
-**What Test Mode DOES Test:**
-
-- Document ingestion (GitHub repos, URLs)
-- RAG storage and embedding generation
-- Admin authorization for document operations
-- Guild authorization and session management
-
-**Security Note:** Test mode still enforces all authentication and authorization checks. Non-admin users will correctly fail permission checks for `/ingest` and other admin commands.
+**Security Note:** Test mode still enforces all authentication and authorization checks.
 
 ### Discord Setup Workflow
 
@@ -1526,23 +1508,19 @@ ergors gateway start discord
 # 1. Create Discord bot at https://discord.com/developers/applications
 # 2. Enable "Message Content Intent" in Bot settings
 # 3. Copy the bot token
+# 4. Invite bot to server (OAuth2 scopes: bot, applications.commands)
 
-# 4. Configure the gateway
-ergors gateway discord set-token
-# (enter token when prompted)
+# 5. Quick setup (token + guild + enable — bot starts immediately if engine is running)
+ergors gateway discord setup 123456789012345678
 
-# 5. Allow specific guilds (optional)
-ergors gateway discord allow-guild 123456789012345678
-
-# 6. Enable the gateway
-ergors gateway enable discord
-
-# 7. Start the engine (gateways start automatically)
+# 6. If the engine isn't running yet, start it
 ergors start
 
-# 8. Invite bot to your server using OAuth2 URL with scopes:
-#    - bot
-#    - applications.commands
+# 7. In Discord, set admin role:
+#    /edgar config admin_role:@DocumentAdmins
+
+# 8. Test:
+#    /edgar ask topic:MyDocs question:Hello
 ```
 
 ### Session Management
@@ -1550,8 +1528,8 @@ ergors start
 Each Discord thread maintains its own conversation session:
 
 - Sessions are created automatically when a user first interacts in a thread
-- Use `/thread` to create a new Discord thread with a fresh session
-- Use `/clear` to reset the session in the current thread
+- Use `/edgar thread` to create a new Discord thread with a fresh session
+- Use `/edgar clear` to reset the session in the current thread
 - Sessions persist across bot restarts (stored in Cnidarium)
 
 ### gRPC Management RPCs
@@ -1787,15 +1765,15 @@ Requires the `rlm` feature flag at build time.
 ergors ask rlm query <QUERY> [--source-prefix <PREFIX>] [--limit <N>]
 
 # Configure RLM provider selection
-ergors ask rlm configure --primary <LABEL> [--secondary <LABEL>] [--max-iterations <N>] [--max-sub-calls <N>]
+ergors ask rlm configure --primary <LABEL> [--sub-model <LABEL>] [--max-iterations <N>] [--max-sub-calls <N>]
 ```
 
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
 | `--source-prefix <PREFIX>` | Filter documents by URI prefix | `""` (all) |
 | `--limit <N>` | Max documents to load | `10` |
-| `--primary <LABEL>` | Primary provider label | Required |
-| `--secondary <LABEL>` | Fallback provider label | - |
+| `--primary <LABEL>` | Primary model for root RLM reasoning | Required |
+| `--sub-model <LABEL>` | Model for sandboxed llm_query() sub-calls | Same as primary |
 | `--max-iterations <N>` | Max RLM iterations | `10` |
 | `--max-sub-calls <N>` | Max sub-LLM calls | `50` |
 

@@ -50,7 +50,6 @@ message DiscordGatewayConfig {
   string bot_token = 1;       // Encrypted in storage
   repeated string allowed_guild_ids = 2;  // Empty = all guilds
   repeated string allowed_channel_ids = 3;
-  string command_prefix = 4;  // Default: "!"
   bool respond_to_mentions = 5;
   bool respond_to_dms = 6;
 }
@@ -115,7 +114,9 @@ message GuildRagConfig {
   RagMode mode = 10;
   uint32 rlm_max_iterations = 11;      // default: 10
   uint32 rlm_max_sub_calls = 12;       // default: 50
-  repeated string rlm_allowed_models = 13;
+  reserved 13;                         // was rlm_allowed_models
+  string rlm_primary_model = 14;       // Model for root RLM reasoning (e.g. deployment label or "claude-sonnet-4-5-20250929")
+  string rlm_sub_model = 15;           // Model for sandboxed llm_query() sub-calls
 }
 
 // RAG context retrieved for a prompt

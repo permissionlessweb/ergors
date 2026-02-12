@@ -782,7 +782,7 @@ impl ProxyRouter {
             .header("content-type", "application/json")
             .body(body);
 
-        let effective_key = target.api_key.as_deref().or_else(|| {
+        let effective_key = target.api_key.as_deref().or({
             if api_key.is_empty() { None } else { Some(api_key) }
         });
         if let Some(key) = effective_key {

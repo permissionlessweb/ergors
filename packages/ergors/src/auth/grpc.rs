@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tonic::{Request, Status};
 
-use commonware_codec::{DecodeExt, Encode};
+use commonware_codec::DecodeExt;
 use commonware_cryptography::{
     blake3::Blake3,
     ed25519::{PublicKey, Signature},
@@ -20,6 +20,12 @@ use commonware_cryptography::{
 #[derive(Debug, Clone)]
 pub struct AuthorizedCliKeys {
     keys: Arc<std::sync::RwLock<HashSet<String>>>,
+}
+
+impl Default for AuthorizedCliKeys {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AuthorizedCliKeys {

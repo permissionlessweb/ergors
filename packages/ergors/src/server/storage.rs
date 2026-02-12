@@ -167,7 +167,7 @@ impl ErgorsStorage {
 
     /// Commit a delta with write lock to prevent JMT race conditions.
     /// Retries on version conflicts (optimistic concurrency control).
-    async fn commit_delta(&self, delta: cnidarium::StateDelta<cnidarium::Snapshot>) -> HoResult<()> {
+    pub(crate) async fn commit_delta(&self, delta: cnidarium::StateDelta<cnidarium::Snapshot>) -> HoResult<()> {
         let _guard = self.write_lock.lock().await;
 
         match self.cs.commit(delta).await {
@@ -3636,7 +3636,7 @@ mod tests {
         assert_eq!(provider.provider_uri, "");
         assert_eq!(provider.reputation_score, 100);
         assert_eq!(provider.bid_price_uakt, 1000);
-        assert_eq!(provider.is_trusted_provider, true);
+        assert!(provider.is_trusted_provider);
     }
 
     #[test]

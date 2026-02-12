@@ -519,7 +519,7 @@ fn draw_configure_provider<W: Write>(
     )?;
     write!(stdout, "\r\n")?;
 
-    let needs_api_key = !matches!(provider.model, LlmModel::OllamaLocal);
+    let _needs_api_key = !matches!(provider.model, LlmModel::OllamaLocal);
 
     write!(stdout, "\r\n")?;
 
@@ -660,7 +660,7 @@ fn save_configuration(config: &mut ApiKeysJson, providers: &[ProviderMenuItem]) 
         }
 
         // Create configuration for selected providers
-        let key = get_provider_key(provider.model);
+        let _key = get_provider_key(provider.model);
  
  
     }

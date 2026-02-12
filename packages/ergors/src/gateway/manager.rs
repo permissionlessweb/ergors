@@ -69,6 +69,8 @@ pub struct GatewayManager {
     router: Arc<LlmRouter>,
     /// Storage for session and config management
     storage: Arc<ErgorsStorage>,
+    /// Node public key for decrypting gateway secrets (needed for hot-start)
+    node_pubkey: Option<Vec<u8>>,
     /// Channel for receiving gateway events
     event_rx: RwLock<Option<mpsc::UnboundedReceiver<GatewayEvent>>>,
     /// Channel for sending gateway events (cloned to gateways)
@@ -79,7 +81,7 @@ pub struct GatewayManager {
 
 impl GatewayManager {
     /// Create a new gateway manager.
-    pub fn new(router: Arc<LlmRouter>, storage: Arc<ErgorsStorage>) -> Self {
+    pub fn new(router: Arc<LlmRouter>, storage: Arc<ErgorsStorage>, node_pubkey: Option<Vec<u8>>) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
         Self {
@@ -87,6 +89,7 @@ impl GatewayManager {
             metrics: RwLock::new(HashMap::new()),
             router,
             storage,
+            node_pubkey,
             event_rx: RwLock::new(Some(event_rx)),
             event_tx,
             running: RwLock::new(false),
@@ -150,6 +153,89 @@ impl GatewayManager {
         }
 
         *self.running.write().await = true;
+        Ok(())
+    }
+
+    /// Start a single gateway by ID (hot-start while engine is running).
+    ///
+    /// Used by `enable_gateway` to start a gateway without restarting the engine.
+    /// For Discord: reloads config from storage (decrypting token) to pick up
+    /// changes made since engine boot.
+    pub async fn start_one(&self, gateway_id: &str) -> Result<()> {
+        // Check if already connected
+        {
+            let gateways = self.gateways.read().await;
+            if let Some(g) = gateways.get(gateway_id) {
+                if g.is_connected() {
+                    info!("Gateway {} already connected", gateway_id);
+                    return Ok(());
+                }
+            }
+        }
+
+        let config = self
+            .storage
+            .get_gateway_config(gateway_id)
+            .await?
+            .unwrap_or_else(|| GatewayConfig {
+                gateway_id: gateway_id.to_string(),
+                gateway_type: gateway_id.to_string(),
+                enabled: true,
+                settings: HashMap::new(),
+            });
+
+        if !config.enabled {
+            info!("Gateway {} is disabled, skipping hot-start", gateway_id);
+            return Ok(());
+        }
+
+        // Reload gateway from storage to pick up config changes (e.g. newly set token)
+        #[cfg(feature = "discord")]
+        if gateway_id == "discord" {
+            use crate::gateway::discord::DiscordGateway;
+
+            let pubkey = self.node_pubkey.as_deref();
+            let fresh = DiscordGateway::from_storage(&self.storage, pubkey).await?;
+            let fresh = Arc::new(fresh);
+
+            // Replace stale gateway with fresh one
+            self.gateways
+                .write()
+                .await
+                .insert(gateway_id.to_string(), fresh.clone());
+
+            let ctx = GatewayContext {
+                router: Arc::clone(&self.router),
+                storage: Arc::clone(&self.storage),
+                config,
+                event_tx: self.event_tx.clone(),
+            };
+
+            match fresh.start(ctx).await {
+                Ok(_) => info!("Gateway {} hot-started successfully", gateway_id),
+                Err(e) => error!("Failed to hot-start gateway {}: {}", gateway_id, e),
+            }
+            return Ok(());
+        }
+
+        // Generic path for non-Discord gateways
+        let gateways = self.gateways.read().await;
+        if let Some(gateway) = gateways.get(gateway_id) {
+            let ctx = GatewayContext {
+                router: Arc::clone(&self.router),
+                storage: Arc::clone(&self.storage),
+                config,
+                event_tx: self.event_tx.clone(),
+            };
+
+            match gateway.start(ctx).await {
+                Ok(_) => info!("Gateway {} hot-started successfully", gateway_id),
+                Err(e) => error!("Failed to hot-start gateway {}: {}", gateway_id, e),
+            }
+        } else {
+            info!("Gateway {} not registered, skipping hot-start", gateway_id);
+        }
+
         Ok(())
     }
 

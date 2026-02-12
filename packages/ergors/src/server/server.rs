@@ -1,5 +1,5 @@
 use crate::{
-    deploy::akash::client::AkashClient, storage::ErgorsStorage, AkashDeploymentContext,
+    storage::ErgorsStorage, AkashDeploymentContext,
     ErgorsAppState, ErgorsConfig, ErgorsNetworkManifold, LlmRouter,
 };
 use axum::{
@@ -311,20 +311,22 @@ impl Server {
             }
         };
 
-        // Populate proxy router config with LLM entities
-        Self::populate_proxy_config_from_llm_entities(&storage_arc, &mut proxy_router_config)
-            .await?;
-
         // Initialize Akash deployment context if config present and keys available
         let akash_context =
             Self::init_akash_context(&c, &storage_arc, custody_password.as_deref()).await;
 
-        // Create LLM router
+        // Create LLM router (starts empty — providers registered explicitly)
         let llm_router =
             Arc::new(LlmRouter::new(&storage_arc.cs.latest_snapshot(), c.llm().deref()).await?);
 
+        // Re-register custom providers from persisted ProxyRouter config into LlmRouter
+        // This restores deployment providers (glm-flash, qwen-coder, etc.) after engine restart
+        Self::restore_providers_from_proxy_config(&llm_router, &proxy_router_config).await;
+
         // Initialize gateway manager (for Discord, Nostr, etc.)
-        let gateway_manager = Self::init_gateway_manager(&llm_router, &storage_arc, &c).await;
+        // Use pubkey from NetworkManifold (populated after custody unlock), not config (which is None at init)
+        let node_pubkey = nm.identity().public_key.clone();
+        let gateway_manager = Self::init_gateway_manager(&llm_router, &storage_arc, node_pubkey).await;
 
         // Initialize RLM service (for agentic document queries)
         // Pool size: number of Python REPL workers for concurrent RLM queries
@@ -334,7 +336,10 @@ impl Server {
         let rlm_service = {
             let doc_access: Option<Arc<dyn ergors_rlm::DocumentAccessTrait>> =
                 Some(Arc::new(crate::proxy::doc_access::EngineDocumentAccess::new(storage_arc.clone())));
-            match ergors_rlm::RlmService::new(RLM_WORKER_POOL_SIZE, llm_router.clone(), doc_access).await {
+            let rlm_router: Arc<dyn ergors_rlm::LlmRouterTrait> = Arc::new(
+                crate::proxy::role_router::RoleAwareLlmRouter::new(llm_router.clone(), storage_arc.clone()),
+            );
+            match ergors_rlm::RlmService::new(RLM_WORKER_POOL_SIZE, rlm_router, doc_access).await {
                 Ok(svc) => {
                     tracing::info!("RLM service initialized with document access");
                     Some(Arc::new(svc))
@@ -362,6 +367,8 @@ impl Server {
                         (EngineRole::SubAgent, "sub-agent"),
                         (EngineRole::Embeddings, "embeddings"),
                         (EngineRole::ToolCalling, "tool-calling"),
+                        (EngineRole::RlmPrimary, "rlm-primary"),
+                        (EngineRole::RlmSecondary, "rlm-secondary"),
                     ];
                     for (role, name) in &roles {
                         let has_provider = role_config.mappings.iter().any(|m| {
@@ -424,15 +431,11 @@ impl Server {
     async fn init_gateway_manager(
         router: &Arc<LlmRouter>,
         storage: &Arc<ErgorsStorage>,
-        config: &ErgorsConfig,
+        node_pubkey: Option<Vec<u8>>,
     ) -> Option<Arc<crate::gateway::GatewayManager>> {
         use crate::gateway::GatewayManager;
-        use ho_std::traits::HoConfigTrait;
 
-        let manager = Arc::new(GatewayManager::new(router.clone(), storage.clone()));
-
-        // Get node pubkey for decrypting gateway secrets
-        let node_pubkey = config.identity().public_key.clone();
+        let manager = Arc::new(GatewayManager::new(router.clone(), storage.clone(), node_pubkey.clone()));
 
         // Register Discord gateway if feature is enabled
         #[cfg(feature = "discord")]
@@ -895,6 +898,51 @@ impl Server {
     /// Populate proxy router config with LLM entities from storage
     ///
     /// Converts LlmEntity configs to InferenceProviderConfig for the proxy router
+    /// Re-register providers from persisted ProxyRouter config into the in-memory LlmRouter.
+    /// This restores custom/deployment providers after engine restart.
+    async fn restore_providers_from_proxy_config(
+        llm_router: &Arc<LlmRouter>,
+        proxy_config: &ProxyRouterConfig,
+    ) {
+        use ho_std::types::ergors::orch::v1::LlmEntity;
+
+        let mut count = 0u32;
+        for (name, cfg) in &proxy_config.providers {
+            // Skip if already registered (e.g. built-in providers)
+            if llm_router.get_provider(name).await.is_some() {
+                continue;
+            }
+            // Skip disabled providers
+            if !cfg.enabled {
+                continue;
+            }
+
+            let default_model = cfg.metadata.get("default_model").cloned().unwrap_or_default();
+
+            let entity = LlmEntity {
+                name: name.clone(),
+                base_url: cfg.base_url.clone(),
+                models: vec![name.clone()],
+                default_model,
+                priority: 0,
+                enabled: true,
+                default_strategy: 0,
+                timeout_seconds: cfg.timeout_seconds as u64,
+                max_retries: 3,
+            };
+
+            if let Err(e) = llm_router.register_provider(&entity).await {
+                tracing::warn!("Failed to restore provider '{}' from config: {}", name, e);
+            } else {
+                count += 1;
+            }
+        }
+
+        if count > 0 {
+            tracing::info!("Restored {} provider(s) from persisted config", count);
+        }
+    }
+
     async fn populate_proxy_config_from_llm_entities(
         s: &ErgorsStorage,
         config: &mut ProxyRouterConfig,

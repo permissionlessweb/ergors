@@ -26,54 +26,64 @@ impl ApiJoint for OpenAiJoint {
     {
         let api_key = provider.get_api_key().await?;
 
-        let request = OpenAiRequest {
-            model: req.model.to_string(),
-            messages: req
-                .messages
-                .iter()
-                .map(|p| OpenAiMessage {
-                    role: p.role.to_string(),
-                    content: p.content.to_string(),
-                    tool_calls: vec![],
-                    tool_call_id: String::new(),
-                    name: String::new(),
-                })
-                .collect(),
-            temperature: req
-                .llm_config
-                .as_ref().map(|c| c.temperature)
-                .or(Some(1))
-                .unwrap_or_default(),
-            max_tokens: req
-                .llm_config
-                .as_ref().map(|c| c.max_tokens)
-                .unwrap_or_default(),
-            // New AI SDK fields - use defaults for now
-            tools: vec![],
-            tool_choice: String::new(),
-            stream: false,
-            top_p: 0.0,
-            frequency_penalty: 0.0,
-            presence_penalty: 0.0,
-            stop: vec![],
-        };
+        let messages: Vec<serde_json::Value> = req
+            .messages
+            .iter()
+            .map(|p| serde_json::json!({
+                "role": p.role,
+                "content": p.content,
+            }))
+            .collect();
+
+        let temperature = req
+            .llm_config
+            .as_ref().map(|c| c.temperature)
+            .or(Some(1))
+            .unwrap_or_default();
+        let max_tokens = req
+            .llm_config
+            .as_ref().map(|c| c.max_tokens)
+            .unwrap_or_default();
+
+        // Build request body, omitting empty/default fields that strict servers reject
+        let mut body = serde_json::json!({
+            "model": req.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": false,
+        });
+
+        // Only include tool_choice/tools when actually set — empty strings cause
+        // validation errors on strict servers (sglang, vLLM)
+        if !req.tool_choice.is_empty() {
+            body["tool_choice"] = serde_json::Value::String(req.tool_choice.clone());
+        }
+        if !req.tools.is_empty() {
+            body["tools"] = serde_json::to_value(&req.tools).unwrap_or_default();
+        }
 
         let start = std::time::Instant::now();
-        let endpoint = if base_url.ends_with("/chat/completions") || base_url.ends_with("/v1") {
-            if base_url.ends_with("/v1") {
-                format!("{}/chat/completions", base_url)
-            } else {
-                base_url.to_string()
-            }
+        let base = base_url.trim_end_matches('/');
+        let endpoint = if base.ends_with("/chat/completions") {
+            base.to_string()
+        } else if base.ends_with("/v1") {
+            format!("{}/chat/completions", base)
         } else {
-            format!("{}/chat/completions", base_url)
+            format!("{}/v1/chat/completions", base)
         };
 
-        let response = client
+        let mut req_builder = client
             .post(&endpoint)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .json(&request)
+            .header("Content-Type", "application/json");
+
+        // Only add Authorization header if we have a non-empty API key
+        if !api_key.is_empty() {
+            req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
+        }
+
+        let response = req_builder
+            .json(&body)
             .send()
             .await?;
 

@@ -529,6 +529,12 @@ pub struct ProviderInfo {
     pub configured: bool,
     #[prost(bool, tag = "3")]
     pub enabled: bool,
+    #[prost(string, tag = "4")]
+    pub base_url: ::prost::alloc::string::String,
+    #[prost(bool, tag = "5")]
+    pub keyless: bool,
+    #[prost(string, tag = "6")]
+    pub deployment_session_id: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ProviderInfo {
     const NAME: &'static str = "ProviderInfo";
@@ -589,6 +595,10 @@ pub struct ProviderTestResult {
     pub latency_ms: u32,
     #[prost(string, tag = "3")]
     pub error_message: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub base_url: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub model_tested: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ProviderTestResult {
     const NAME: &'static str = "ProviderTestResult";
@@ -598,6 +608,24 @@ impl ::prost::Name for ProviderTestResult {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/ergors.management.v1.ProviderTestResult".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemoveProviderRequest {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub custody_password: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RemoveProviderRequest {
+    const NAME: &'static str = "RemoveProviderRequest";
+    const PACKAGE: &'static str = "ergors.management.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "ergors.management.v1.RemoveProviderRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/ergors.management.v1.RemoveProviderRequest".into()
     }
 }
 /// Provider role assignment requests
@@ -2420,6 +2448,13 @@ pub struct CreateAkashDeploymentRequest {
     /// Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8")
     #[prost(string, tag = "10")]
     pub model_name: ::prost::alloc::string::String,
+    /// Per-service model name mapping (service_name → upstream model name)
+    /// e.g., {"inference": "glm-4-flash", "embeddings": "bge-large-en-v1.5"}
+    #[prost(map = "string, string", tag = "11")]
+    pub model_map: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
 }
 impl ::prost::Name for CreateAkashDeploymentRequest {
     const NAME: &'static str = "CreateAkashDeploymentRequest";
@@ -3354,8 +3389,6 @@ pub struct ConfigureDiscordGatewayRequest {
     /// Will be encrypted
     #[prost(string, tag = "1")]
     pub bot_token: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "2")]
-    pub command_prefix: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(bool, optional, tag = "3")]
     pub respond_to_mentions: ::core::option::Option<bool>,
 }
@@ -3424,8 +3457,6 @@ pub struct GetDiscordConfigResponse {
     pub allowed_guild_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, repeated, tag = "3")]
     pub allowed_channel_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, tag = "4")]
-    pub command_prefix: ::prost::alloc::string::String,
     #[prost(bool, tag = "5")]
     pub respond_to_mentions: bool,
     #[prost(bool, tag = "6")]
@@ -4799,6 +4830,35 @@ pub mod management_service_client {
                     GrpcMethod::new(
                         "ergors.management.v1.ManagementService",
                         "TestProvider",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn remove_provider(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RemoveProviderRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OperationResult>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ergors.management.v1.ManagementService/RemoveProvider",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ergors.management.v1.ManagementService",
+                        "RemoveProvider",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -7570,6 +7630,10 @@ pub mod management_service_server {
             tonic::Response<super::ProviderTestResult>,
             tonic::Status,
         >;
+        async fn remove_provider(
+            &self,
+            request: tonic::Request<super::RemoveProviderRequest>,
+        ) -> std::result::Result<tonic::Response<super::OperationResult>, tonic::Status>;
         /// Provider Role Assignments
         async fn assign_provider_role(
             &self,
@@ -9194,6 +9258,52 @@ pub mod management_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = TestProviderSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ergors.management.v1.ManagementService/RemoveProvider" => {
+                    #[allow(non_camel_case_types)]
+                    struct RemoveProviderSvc<T: ManagementService>(pub Arc<T>);
+                    impl<
+                        T: ManagementService,
+                    > tonic::server::UnaryService<super::RemoveProviderRequest>
+                    for RemoveProviderSvc<T> {
+                        type Response = super::OperationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RemoveProviderRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ManagementService>::remove_provider(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RemoveProviderSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -631,7 +631,7 @@ pub async fn handle_list_models(State(state): State<ErgorsAppState>) -> Json<ser
         .as_secs() as i64;
 
     // Get models from configured providers
-    for provider in state.r.get_providers() {
+    for provider in state.r.get_providers().await {
         for model in provider.supported_models() {
             models.push(serde_json::json!({
                 "id": model,

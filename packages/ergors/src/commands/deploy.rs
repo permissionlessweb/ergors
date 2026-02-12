@@ -72,6 +72,12 @@ pub enum DeployCmd {
         /// The inference server receives this as the "model" field instead of the label.
         #[arg(long)]
         model_name: Option<String>,
+
+        /// Map service names to model names for inference routing.
+        /// Services without a mapping use --model-name as fallback.
+        /// (e.g., --model-map inference=glm-4-flash --model-map embeddings=bge-large)
+        #[arg(long, value_parser = parse_key_val)]
+        model_map: Vec<(String, String)>,
     },
     /// Run automated deployment workflow on existing session
     Run {
@@ -348,6 +354,7 @@ impl DeployCmd {
                 grant_spend_limit,
                 interactive_bid,
                 model_name,
+                model_map,
             } => {
                 // Resolve SDL content
                 let content = match (sdl, sdl_content) {
@@ -375,6 +382,7 @@ impl DeployCmd {
                         true, // auto is always true now
                         label.as_deref().unwrap_or(""),
                         model_name.as_deref().unwrap_or(""),
+                        model_map,
                     )
                     .await?;
 

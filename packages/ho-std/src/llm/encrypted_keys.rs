@@ -4,7 +4,7 @@
 //! Keys are encrypted using Argon2id for key derivation and ChaCha20Poly1305 for encryption,
 //! matching the custody system's security model.
 
-use crate::error::{HoError, HoResult};
+use crate::error::HoResult;
 use crate::traits::ApiKeyMethod;
 use crate::types::ergors::storage::v1::{EncryptedApiKey, EncryptedApiKeyStore};
 use anyhow::{Context, Result};

@@ -26,6 +26,8 @@
 pub mod capture;
 #[cfg(feature = "rlm")]
 pub mod doc_access;
+#[cfg(feature = "rlm")]
+pub mod role_router;
 pub mod endpoints;
 pub mod error;
 pub mod open_responses;

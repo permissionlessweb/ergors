@@ -114,4 +114,13 @@ just e2e all --verbose
 
 - test network state compression: fill up network state with many different various configurations and files. benchmark and
 
+### RLM & DISCORD BOT
+
+- sh script to automate the entire workflow, using multiple discord accounts to simpulate high frequency use and test edge-cases/ sanity cases for admin only access to funtions,multi-threading effectiveness
+- update mock infeence provider to have "mock-rlm" functions, where we
+  - a: ingest a specific piece of code
+  - b: mimic a prompt to the inference provider thorugh the discord gateway to "ask a question about the ingested document"
+  - c: have the mock inference provider perform a deterministic rlm loop with precurated code, to generate a response
+  - d: confirm that we get the reponse back in the discord server gateway
+
 ### Benchmarking

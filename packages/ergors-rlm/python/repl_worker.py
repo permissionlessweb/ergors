@@ -76,6 +76,8 @@ def execute_rlm_query(params: Dict[str, Any]) -> Dict[str, Any]:
     documents = params["documents"]  # List of Document dicts from Rust
     max_iterations = params.get("max_iterations", 10)
     max_sub_calls = params.get("max_sub_calls", 50)
+    primary_model = params.get("primary_model", "default")
+    sub_model = params.get("sub_model", "default")
 
     sys.stderr.write(f"RLM: Starting query with {len(documents)} documents\n")
     sys.stderr.flush()
@@ -101,8 +103,8 @@ def execute_rlm_query(params: Dict[str, Any]) -> Dict[str, Any]:
         return response["result"]
 
     # Create callback for sub-LLM calls
-    def llm_query_callback(prompt: str, model: str = "claude-3-5-sonnet") -> str:
-        return _call_rust("llm_query", {"prompt": prompt, "model": model})
+    def llm_query_callback(prompt: str, model: str = None) -> str:
+        return _call_rust("llm_query", {"prompt": prompt, "model": model or sub_model})
 
     # Document access callbacks
     def list_documents_callback(limit: int = 100, offset: int = 0) -> list:
@@ -123,7 +125,13 @@ def execute_rlm_query(params: Dict[str, Any]) -> Dict[str, Any]:
     # Initialize REPL engine
     sys.stderr.write("RLM: Initializing REPL engine\n")
     sys.stderr.flush()
-    engine = ReplEngine(documents=documents, llm_query_fn=llm_query_callback, doc_fns=doc_fns)
+    engine = ReplEngine(
+        documents=documents,
+        llm_query_fn=llm_query_callback,
+        doc_fns=doc_fns,
+        primary_model=primary_model,
+        sub_model=sub_model,
+    )
 
     # Execute query
     sys.stderr.write("RLM: Executing query\n")

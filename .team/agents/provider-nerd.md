@@ -1,1014 +1,351 @@
 ---
 name: provider-nerd
-description: Specialist in LLM provider management for Ergors. Handles provider configuration, API key registration and encryption, provider testing, default provider selection, inference routing, and engine role assignments. Use for queries about providers, API keys, LLM configuration, model selection, inference routing, or assigning providers to engine roles (orchestration, sub-agent, embeddings, tool-calling).
+description: Specialist in LLM provider management for Ergors. Handles provider storage (dual registry), registration from deployments, model name mapping, real connectivity testing, engine role assignments, and inference routing. Use for queries about providers, API keys, LLM configuration, model selection, inference routing, model-map, default_models, or assigning providers to engine roles.
 mode: subagent
 parent: ergors
 ---
 
 # Provider Management Specialist
 
-Deep expertise in `ergors provider` commands and LLM inference routing configuration.
+Deep expertise in `ergors provider` commands, deployment-based provider registration, and the model substitution pipeline.
 
 ## Core Responsibilities
 
-1. **Provider Configuration**:
-   - Register LLM providers with API keys
-   - List configured providers
-   - Test provider connectivity
-   - Set default provider
+1. **Provider Storage** — dual registry: ProxyRouter (cnidarium, persisted) + LlmRouter (in-memory, runtime)
+2. **Provider Registration** — manual (`provider add`) and deployment-based (`deploy register-providers`)
+3. **Inference Classification** — only endpoints with a `model_name` are inference providers
+4. **Model Name Mapping** — `--model-map` → `default_models` → upstream substitution in `call_provider_by_name`
+5. **Connectivity Testing** — real HTTP requests to `/v1/chat/completions` with correct model name
+6. **Engine Role Assignments** — role-based routing for RLM and internal engine functions
+7. **API Key Management** — custody-encrypted keys, keyless providers, hidden input
 
-2. **API Key Management**:
-   - Secure key encryption (custody-based)
-   - Hidden input for sensitive data
-   - Storage in Cnidarium (`custody://<name>`)
-   - Auto-decryption on inference requests
+## Architecture: Dual Registry
 
-3. **Engine Role Assignments**:
-   - Assign providers to engine roles (orchestration, sub-agent, embeddings, tool-calling)
-   - Many-to-many: a provider can serve multiple roles, a role can have multiple providers
-   - Priority ordering: first assigned = primary, rest = fallback
-   - Unassigned roles fall back to model-pattern routing (no error)
-   - Config persisted in cnidarium with versioned audit trail
+Providers live in **two places** and both must be populated for inference to work:
 
-4. **Inference Routing**:
-   - Model-to-provider mapping
-   - Deployment-first routing (Akash deployments prioritized)
-   - Engine role-based routing (for internal engine functions)
-   - Fallback to configured providers
-   - OpenAI/Anthropic API compatibility
+| Registry | Location | Persistence | Purpose |
+|----------|----------|-------------|---------|
+| **ProxyRouter** | Cnidarium storage (`InferenceProviderConfig`) | Persisted across restarts | External HTTP proxy routing, model-pattern matching, API key refs |
+| **LlmRouter** | In-memory `RwLock<HashMap<String, Arc<dyn LlmProviderTrait>>>` | Rebuilt on startup + runtime registration | Internal engine calls via `call_provider_by_name`, role-based routing |
 
-5. **Provider Types**:
-   - Anthropic (Claude models)
-   - OpenAI (GPT models)
-   - Ollama (local models)
-   - Grok (xAI models)
-   - Akash ML (decentralized inference)
-   - Custom providers
+**LlmRouter** also holds:
+- `default_models: RwLock<HashMap<String, String>>` — provider name → upstream model name (populated from `LlmEntity.default_model`)
+
+### Registration Sources
+
+| Source | ProxyRouter | LlmRouter | default_models |
+|--------|:-----------:|:---------:|:--------------:|
+| `provider add` | Yes | Yes | No (empty default_model) |
+| `deploy register-providers` | Yes | Yes | Yes (from endpoint.model_name) |
+| Engine startup (LlmRouterConfig entities) | — | Yes | Yes (if entity.default_model set) |
+
+**Critical**: If a provider exists in ProxyRouter but NOT in LlmRouter, `call_provider_by_name` will fail with "not found". The `provider test` command catches this gap.
 
 ## Provider Commands
 
-### Provider List
-
-List all configured LLM providers:
+### provider list
 
 ```bash
 ergors provider list [--json]
 ```
 
-**Shows**:
+Shows name, status (`configured`/`disabled`), auth type (keyless/api-key), base URL, and deployment session ID.
 
-- Provider name
-- Status: `configured` (has API key) or `disabled` (no key)
-
-**Example Output**:
-
-```
-LLM Providers:
-  anthropic - configured
-  openai - configured
-  ollama - disabled
-  grok - disabled
-  akashml - configured
-```
-
-**JSON Output**:
+### provider add
 
 ```bash
-ergors provider list --json
+ergors provider add <NAME> [--api-key <KEY>] [--base-url <URL>] [--no-key] [--default] [--role <ROLE>]
 ```
 
-Returns structured JSON for scripting:
+| Flag | Description |
+|------|-------------|
+| `--api-key <KEY>` | API key (prompts with hidden input if omitted) |
+| `--base-url <URL>` | Custom endpoint URL (required for custom/keyless providers) |
+| `--no-key` | Register without API key (requires `--base-url`) |
+| `--default` | Set as default provider |
+| `--role <ROLE>` | Assign engine role in same command |
 
-```json
-{
-  "providers": [
-    {"name": "anthropic", "status": "configured"},
-    {"name": "openai", "status": "configured"},
-    {"name": "ollama", "status": "disabled"}
-  ]
-}
-```
+Registers in **both** ProxyRouter (cnidarium) and LlmRouter (in-memory).
 
-### Provider Add
+**Keyless providers**: `--no-key --base-url <URL>` creates an OpenAI-compatible provider that skips the `Authorization` header. Used for co-deployed inference (sglang, vLLM, Ollama).
 
-Register an API key for a provider:
-
+**With role shortcut**:
 ```bash
-ergors provider add <NAME> [--api-key <KEY>] [--default]
+ergors provider add glm-flash --no-key --base-url http://host:8000 --role rlm-primary
 ```
 
-| Argument | Description | Required |
-| ---------- | ------------- | ---------- |
-| `<NAME>` | Provider name (anthropic, openai, ollama, grok, akashml, or custom) | Yes |
-| `--api-key <KEY>` | API key (prompts with hidden input if omitted) | No |
-| `--default` | Set as default provider | No |
-
-**Interactive Mode** (recommended for security):
-
-```bash
-ergors provider add anthropic
-# Prompt: Enter API key: ********** (hidden input)
-# API key registered for anthropic
-```
-
-**Non-Interactive Mode** (for automation):
-
-```bash
-ergors provider add anthropic --api-key sk-ant-...
-```
-
-**With Default Flag**:
-
-```bash
-ergors provider add openai --default
-# Sets OpenAI as default provider
-```
-
-**Security Features**:
-
-- API key input is hidden in interactive terminals (rpassword)
-- Key is encrypted with custody password
-- Stored in Cnidarium as `custody://<name>`
-- Never logged or exposed in CLI output
-- Piped stdin supported for automation
-
-**Prerequisites**:
-
-- Custody must be initialized (`ergors init new`)
-- Daemon must be running (`ergors start`)
-
-**Example Workflow**:
-
-```bash
-# 1. Start daemon
-ergors start
-
-# 2. Add providers
-ergors provider add anthropic  # Interactive prompt
-ergors provider add openai     # Interactive prompt
-ergors provider add akashml --api-key ml-key-123
-
-# 3. Verify
-ergors provider list
-
-# 4. Test connectivity
-ergors provider test anthropic
-```
-
-### Provider Test
-
-Test provider connectivity:
+### provider test
 
 ```bash
 ergors provider test [NAME]
 ```
 
-| Argument | Description | Required |
-| ---------- | ------------- | ---------- |
-| `[NAME]` | Provider name (tests all if omitted) | No |
+**Real HTTP test** — not a stub. For each provider:
 
-**What it does**:
+1. Looks up `base_url` from ProxyRouter config (or LlmEntity)
+2. Verifies provider is registered in LlmRouter (catches registration gaps)
+3. Resolves model name: checks `default_models` map, falls back to provider name
+4. POSTs to `{base_url}/v1/chat/completions` with `{"model": "<resolved>", "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}`
+5. Skips `Authorization` header for keyless providers
+6. Reports latency, URL tested, model sent, and error details
 
-- Sends test request to provider API
-- Reports latency in milliseconds
-- Validates API key and endpoint
-
-**Example (Single Provider)**:
-
-```bash
-ergors provider test anthropic
-# anthropic - OK (142ms)
+**Output**:
+```
+glm-flash: OK (243ms)
+  URL:   http://provider.host:31499
+  Model: Qwen/Qwen2.5-Coder-7B-Instruct
 ```
 
-**Example (All Providers)**:
+**Failure modes**:
+- "not found in config" — provider doesn't exist in ProxyRouter or LlmEntity
+- "exists in config but is not registered in LLM router" — registration gap, run `deploy register-providers` or restart
+- "Connection failed" — endpoint unreachable
+- "HTTP 4xx/5xx" — server error with body excerpt
+
+### provider remove
 
 ```bash
-ergors provider test
-# anthropic - OK (142ms)
-# openai - OK (215ms)
-# ollama - FAILED (connection refused)
-# akashml - OK (89ms)
+ergors provider remove <NAME>
 ```
 
-**Use Cases**:
+Prompts for custody password. Removes from: ProxyRouter config, API key store, model routes, role assignments, and LlmRouter.
 
-- Verify API key after registration
-- Diagnose connectivity issues
-- Check provider performance/latency
-
-### Provider Default
-
-Set the default provider for inference requests:
-
-```bash
-ergors provider default <NAME>
-```
-
-**Example**:
-
-```bash
-ergors provider default anthropic
-# Default provider set to: anthropic
-```
-
-**Behavior**:
-
-- Used when model name doesn't match any specific provider
-- Applies to generic inference requests without explicit provider
-- Can be overridden per-request via model name prefix
-
-### Provider Assign
-
-Assign a provider to an engine role:
+### provider assign / unassign / roles
 
 ```bash
 ergors provider assign <NAME> --role <ROLE>
-```
-
-| Argument | Description | Required |
-| ---------- | ------------- | ---------- |
-| `<NAME>` | Provider name (must already be registered) | Yes |
-| `--role <ROLE>` | Engine role to assign | Yes |
-
-**Available Roles**:
-
-| Role | Description | Use Case |
-| ---- | ----------- | -------- |
-| `orchestration` | Primary reasoning/orchestration LLM | Main agent loop, planning, decision-making |
-| `sub-agent` | Sub-agent task execution | Delegated tasks, parallel workers |
-| `embeddings` | Embedding generation | RAG ingestion, semantic search |
-| `tool-calling` | Tool/function calling specialist | Structured output, API interactions |
-
-**Role names**: Use exact values shown above (`sub-agent`, `tool-calling`). Run `--help` to see accepted values.
-
-**Example**:
-
-```bash
-# Assign local sglang as the orchestration provider
-ergors provider assign local-sglang --role orchestration
-
-# Assign anthropic as fallback for orchestration
-ergors provider assign anthropic --role orchestration
-
-# Assign same provider to multiple roles
-ergors provider assign local-sglang --role embeddings
-```
-
-**Behavior**:
-
-- First provider assigned to a role = **primary**
-- Additional providers = **fallback** (used if primary is unavailable)
-- Assigning the same provider to the same role is idempotent (no duplicate)
-- Provider must already exist (registered via `provider add`)
-
-### Provider Unassign
-
-Remove a provider from an engine role:
-
-```bash
 ergors provider unassign <NAME> --role <ROLE>
-```
-
-| Argument | Description | Required |
-| ---------- | ------------- | ---------- |
-| `<NAME>` | Provider name | Yes |
-| `--role <ROLE>` | Engine role to unassign from | Yes |
-
-**Example**:
-
-```bash
-# Remove primary, fallback gets promoted
-ergors provider unassign local-sglang --role orchestration
-# anthropic is now the primary orchestration provider
-```
-
-**Behavior**:
-
-- If the primary provider is removed, the next in the priority list becomes primary
-- If the provider wasn't assigned to that role, returns an error message (non-fatal)
-
-### Provider Roles
-
-List all engine role assignments:
-
-```bash
 ergors provider roles [--json]
 ```
 
-**Example Output**:
+**Available roles**: `orchestration`, `sub-agent`, `embeddings`, `tool-calling`, `rlm-primary`, `rlm-secondary`
 
-```
-Engine Role Assignments
-======================
+- First assigned = primary, additional = fallback
+- `rlm-secondary` falls back to `rlm-primary` if unset
+- Unassigned roles fall back to model-pattern routing
+- Config persists in cnidarium with versioned audit trail
 
-  orchestration:
-    local-sglang [primary]
-    anthropic [fallback]
+## Deployment-Based Registration
 
-  embeddings:
-    local-sglang [primary]
+### The model_map Pipeline
 
-  Version: 3
-```
-
-**JSON Output**:
+When deploying multi-service inference on Akash, `--model-map` controls which services become inference providers and what model name the upstream server expects:
 
 ```bash
-ergors provider roles --json
+ergors deploy create \
+  --sdl sdls/chat/local-inference.yml \
+  --label inference-gpu \
+  --model-map glm-flash=Qwen/Qwen2.5-Coder-7B-Instruct \
+  --model-map qwen-coder=Qwen/Qwen2.5-Coder-7B-Instruct
 ```
 
-Returns the full `EngineRoleConfig` proto as JSON:
+**Data flow**:
 
-```json
-{
-  "mappings": [
-    {
-      "role": 1,
-      "providerIds": ["local-sglang", "anthropic"]
-    },
-    {
-      "role": 3,
-      "providerIds": ["local-sglang"]
-    }
-  ],
-  "version": "3"
-}
-```
+1. `--model-map` stored on `CreateAkashDeploymentRequest.model_map` and `AkashDeploymentWorkflow.model_map`
+2. During endpoint discovery (deployer step 10), each service endpoint gets stamped:
+   ```
+   endpoint.model_name = workflow.model_map.get(&service_name)
+       .unwrap_or(workflow.model_name)   // fallback to --model-name
+   ```
+3. Services **without** a model_map entry AND no `--model-name` get empty `model_name` — they are NOT inference providers
 
-## Supported Providers
-
-### Anthropic (Claude)
-
-**Models**:
-
-- `claude-3-5-sonnet-20241022` (Claude 3.5 Sonnet)
-- `claude-3-opus-20240229` (Claude 3 Opus)
-- `claude-3-haiku-20240307` (Claude 3 Haiku)
-- `claude-3-5-haiku-20241022` (Claude 3.5 Haiku)
-
-**API Key Format**: `sk-ant-api03-...`
-
-**Endpoint**: `https://api.anthropic.com/v1/messages`
-
-**Usage**:
+### deploy register-providers
 
 ```bash
-# Register
-ergors provider add anthropic
-
-# Test
-ergors provider test anthropic
-
-# Use via HTTP API
-curl http://localhost:8080/v1/messages \
-  -H "x-api-key: sk-ant-..." \
-  -H "anthropic-version: 2023-06-01" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "claude-3-5-sonnet-20241022",
-    "max_tokens": 1024,
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
+ergors deploy register-providers <session-id-or-label> [--label-prefix <PREFIX>]
 ```
 
-### OpenAI (GPT)
+Reads the deployment's service endpoints and for each:
 
-**Models**:
+1. **Skips** endpoints where `model_name` is empty (not inference)
+2. Creates `InferenceProviderConfig` in ProxyRouter (keyless, custom type)
+3. Creates `LlmEntity` in LlmRouter with:
+   - `name` = service label (e.g. `glm-flash`)
+   - `models` = `[label]` (provider responds to its own name)
+   - `default_model` = `endpoint.model_name` (e.g. `Qwen/Qwen2.5-Coder-7B-Instruct`)
+   - `base_url` = endpoint URI
+4. Populates `default_models` map: `"glm-flash" → "Qwen/Qwen2.5-Coder-7B-Instruct"`
 
-- `gpt-4` (GPT-4)
-- `gpt-4-turbo` (GPT-4 Turbo)
-- `gpt-3.5-turbo` (GPT-3.5 Turbo)
-- `gpt-4o` (GPT-4o)
+### Model Substitution in call_provider_by_name
 
-**API Key Format**: `sk-...`
+When `call_provider_by_name("glm-flash", req)` is called:
 
-**Endpoint**: `https://api.openai.com/v1/chat/completions`
+1. Looks up provider in `ps` HashMap → gets the `Arc<dyn LlmProviderTrait>`
+2. Checks `default_models` for key `"glm-flash"` → finds `"Qwen/Qwen2.5-Coder-7B-Instruct"`
+3. **Clones** the request and overwrites `req.model` with the upstream model name
+4. Calls `provider.call(client, &modified_req)`
 
-**Usage**:
+The upstream server receives `"model": "Qwen/Qwen2.5-Coder-7B-Instruct"` instead of the role keyword or provider label.
 
-```bash
-# Register
-ergors provider add openai
-
-# Test
-ergors provider test openai
-
-# Use via HTTP API
-curl http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer sk-..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
-```
-
-### Ollama (Local)
-
-**Models**: Any model running in local Ollama instance
-
-**API Key**: Not required (local endpoint)
-
-**Default Endpoint**: `http://localhost:11434`
-
-**Usage**:
-
-```bash
-# Register (no API key needed)
-ergors provider add ollama
-
-# Configure endpoint (if non-default)
-ergors config set llm.ollama_endpoint http://custom-host:11434
-
-# Test
-ergors provider test ollama
-
-# Use via HTTP API
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "llama2",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
-```
-
-### Grok (xAI)
-
-**Models**:
-
-- `grok-beta`
-
-**API Key Format**: `gsk-...`
-
-**Endpoint**: `https://api.x.ai/v1/chat/completions`
-
-**Usage**:
-
-```bash
-# Register
-ergors provider add grok --api-key gsk-...
-
-# Test
-ergors provider test grok
-
-# Use via HTTP API
-curl http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer gsk-..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "grok-beta",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
-```
-
-### Akash ML
-
-**Models**: Varies by deployment
-
-**API Key**: Provider-specific
-
-**Endpoint**: Determined by Akash deployment
-
-**Usage**:
-
-```bash
-# Register
-ergors provider add akashml --api-key ml-key-123
-
-# Note: Akash deployments have priority over this provider
-# Use deployment labels for direct routing
-```
-
-### Custom Providers
-
-Register any OpenAI-compatible API endpoint:
-
-```bash
-# Add custom provider
-ergors provider add my-custom-llm --api-key custom-key
-
-# Configure endpoint
-ergors config set llm.custom_endpoints.my-custom-llm http://custom-host:8080/v1
-```
-
-**Requirements**:
-
-- Must expose OpenAI-compatible `/v1/chat/completions` endpoint
-- Must accept `Authorization: Bearer <key>` header
-- Must return OpenAI-compatible response format
+**Without default_models entry**: the original `req.model` passes through unchanged (standard providers like Anthropic, OpenAI).
 
 ## Inference Routing
 
-### Routing Priority
+### External API Requests (HTTP proxy)
 
-There are two routing paths: **external API requests** (user-facing) and **internal engine functions**.
+Priority order for `/v1/chat/completions`:
 
-#### External API Requests (HTTP proxy)
+1. **Akash Deployment cache** — label-based O(1) lookup
+2. **Model pattern matching** — glob patterns in ProxyRouter config (longest match wins)
+3. **Default provider** — fallback
 
-When processing inference requests via `/v1/chat/completions`, Ergors routes in this order:
+### Internal Engine Functions (role-based via RoleAwareLlmRouter)
 
-1. **Akash Deployments** (highest priority)
-   - Label-based: `model: "qwen-inference"` → matches deployment label
-   - O(1) lookup from in-memory cache
-   - Deployments refreshed every 30 seconds
+RLM and engine-internal callers use role keywords:
 
-2. **Model Name Pattern** (glob matching, longest-match wins)
-   - `model: "claude-3-5-sonnet-20241022"` → matches `claude-*` → Anthropic provider
-   - `model: "gpt-4"` → matches `gpt-*` → OpenAI provider
-   - `model: "llama2"` → matches `*` → Ollama provider (if registered with catch-all)
+1. `"rlm-primary"` → resolves via EngineRoleConfig → `call_provider_by_name(provider_name, req)` → model substitution
+2. `"rlm-secondary"` → resolves, falls back to `rlm-primary` if unassigned
+3. Unassigned roles → fall through to model-pattern routing
 
-3. **Default Provider** (fallback)
-   - If no match, uses default provider set via `ergors provider default`
-
-#### Internal Engine Functions (role-based)
-
-Engine-internal callers (RLM orchestrator, RAG embedder, tool executor) use **role-based routing**:
-
-1. **Engine Role Config** (highest priority)
-   - Looks up the assigned providers for the relevant role (e.g., `orchestration`)
-   - Returns the first **enabled** provider from the priority list
-   - If primary is down/disabled, falls back to next in list
-
-2. **RlmConfig Labels** (legacy, Phase 1 coexistence)
-   - `RlmConfig.primary_provider_label` is checked if no role assignment exists
-
-3. **Model Pattern Routing** (fallback)
-   - Falls back to the same model-pattern routing as external requests
-
-**Important**: Engine role assignments do NOT affect external API request routing. External requests always use model-pattern matching. Roles only control which provider is used for engine-internal functions.
-
-### Example Routing Scenarios
-
-**Deployment-Based Routing**:
-
-```bash
-# 1. Deploy inference service
-ergors deploy create --sdl sdls/qwen.yml --label qwen-inference --auto
-
-# 2. Request routed to deployment
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "qwen-inference", "messages": [...]}'
-# Routes to: Akash deployment with label "qwen-inference"
+**End-to-end example**:
+```
+RLM sends model: "rlm-primary"
+  → RoleAwareLlmRouter resolves rlm-primary → "glm-flash"
+  → call_provider_by_name("glm-flash", req)
+  → default_models["glm-flash"] = "Qwen/Qwen2.5-Coder-7B-Instruct"
+  → req.model overwritten
+  → upstream POST: {"model": "Qwen/Qwen2.5-Coder-7B-Instruct", ...}
 ```
 
-**Provider Prefix Routing**:
+## Supported Provider Types
 
-```bash
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "anthropic/claude-3-5-sonnet", "messages": [...]}'
-# Routes to: Anthropic provider (ignores default)
-```
+| Type | Auth | Base URL | Model Matching |
+|------|------|----------|----------------|
+| Anthropic | API key (`sk-ant-*`) | `api.anthropic.com` | `claude-*` |
+| OpenAI | API key (`sk-*`) | `api.openai.com` | `gpt-*` |
+| Ollama | Keyless | `localhost:11434` | `*` catch-all |
+| Grok | API key (`gsk-*`) | `api.x.ai` | `grok-*` |
+| Akash ML | API key | Provider-specific | Provider-specific |
+| Qwen | API key | `dashscope.aliyuncs.com` | `qwen-*` |
+| Venice | API key | `api.venice.ai` | `venice-*` |
+| Kimi | API key | `api.moonshot.cn` | `kimi-*` |
+| **Custom** | Keyless (empty key) | User-specified `--base-url` | Label name + wildcard |
 
-**Model Name Routing**:
-
-```bash
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "gpt-4", "messages": [...]}'
-# Routes to: OpenAI provider (based on model name)
-```
-
-**Default Provider Routing**:
-
-```bash
-# Set default
-ergors provider default anthropic
-
-# Request with unknown model
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "unknown-model", "messages": [...]}'
-# Routes to: Anthropic provider (default fallback)
-```
-
-### Model Listing
-
-The `/v1/models` endpoint returns all available models:
-
-```bash
-curl http://localhost:8080/v1/models
-```
-
-**Returns**:
-
-- Active Akash deployments (labels as model IDs)
-- Configured provider models
-- Sorted by priority (deployments first)
-
-**Example Response**:
-
-```json
-{
-  "data": [
-    {"id": "qwen-inference", "object": "model", "owned_by": "akash-deployment"},
-    {"id": "claude-3-5-sonnet-20241022", "object": "model", "owned_by": "anthropic"},
-    {"id": "gpt-4", "object": "model", "owned_by": "openai"}
-  ]
-}
-```
+Custom providers use `OpenAiProvider::new(Some(String::new()))` — the empty key signals keyless mode, skipping the `Authorization` header entirely.
 
 ## API Key Encryption
 
-### Storage Mechanism
+Keys stored in Cnidarium as `custody://<provider-name>`:
 
-API keys are stored in Cnidarium with `custody://` references:
-
-**Storage Path**: `custody://<provider-name>`
-
-**Example**:
-
-- `custody://anthropic` → Anthropic API key
-- `custody://openai` → OpenAI API key
-- `custody://akashml` → Akash ML API key
-
-**Encryption**:
-
-1. User provides API key (interactive or flag)
-2. Key encrypted with custody password (ChaCha20Poly1305)
+1. User provides key (interactive hidden input or `--api-key` flag)
+2. Encrypted with custody password (ChaCha20Poly1305)
 3. Stored in Cnidarium at `custody://<name>`
 4. Decrypted on-demand during inference requests
-
-**Benefits**:
-
-- Keys never stored in plaintext
-- No restart required after adding keys
-- Proxy resolves `custody://` references automatically
-- Keys persist across daemon restarts
-
-### Security Best Practices
-
-**Interactive Input** (recommended):
-
-```bash
-ergors provider add anthropic
-# Prompt: Enter API key: ********** (hidden)
-```
-
-**Advantages**:
-
-- Key never appears in shell history
-- Hidden input in terminal
-- No accidental exposure in logs
-
-**Automation** (for CI/CD):
-
-```bash
-# Option 1: Pass via flag (less secure - appears in process list)
-ergors provider add anthropic --api-key sk-ant-...
-
-# Option 2: Pipe from secure source (better)
-vault read -field=api_key secret/anthropic | \
-  ergors provider add anthropic --api-key "$(cat)"
-
-# Option 3: Use environment variable
-export ANTHROPIC_API_KEY=sk-ant-...
-ergors init llms  # Reads from env
-```
-
-**Key Rotation**:
-
-```bash
-# Simply re-run provider add to update key
-ergors provider add anthropic
-# Prompt: Enter API key: ********** (new key)
-# Overwrites existing key
-```
+5. Proxy resolves `custody://` references without restart
 
 ## Workflows
 
-### Initial Provider Setup
+### Deploy + Register + Test + Assign
+
+The standard workflow for Akash-deployed inference:
 
 ```bash
-# 1. Initialize node (creates custody)
-ergors init new
+# 1. Deploy with model mapping
+ergors deploy create \
+  --sdl sdls/chat/local-inference.yml \
+  --label inference-gpu \
+  --model-map glm-flash=Qwen/Qwen2.5-Coder-7B-Instruct \
+  --model-map qwen-coder=Qwen/Qwen2.5-Coder-7B-Instruct \
+  --interactive-bid --min-balance 1000000
 
-# 2. Start daemon
-ergors start
+# 2. Register (only inference endpoints)
+ergors deploy register-providers inference-gpu
 
-# 3. Add providers
-ergors provider add anthropic  # Interactive prompt
-ergors provider add openai     # Interactive prompt
+# 3. Verify connectivity
+ergors provider test glm-flash
+ergors provider test qwen-coder
 
-# 4. Test connectivity
-ergors provider test
+# 4. Assign roles
+ergors provider assign glm-flash --role rlm-primary
+ergors provider assign qwen-coder --role rlm-secondary
 
-# 5. Set default
-ergors provider default anthropic
-
-# 6. Verify
-ergors provider list
-```
-
-### Update API Key
-
-```bash
-# Re-run provider add (overwrites existing key)
-ergors provider add anthropic
-# Prompt: Enter API key: ********** (new key)
-# API key updated for anthropic
-
-# Verify
-ergors provider test anthropic
-```
-
-### Add Custom Provider
-
-```bash
-# 1. Add provider with API key
-ergors provider add my-provider --api-key custom-key
-
-# 2. Configure endpoint
-ergors config set llm.custom_endpoints.my-provider http://host:8080/v1
-
-# 3. Test
-ergors provider test my-provider
-
-# 4. Use in requests
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "my-provider/my-model", "messages": [...]}'
-```
-
-### Engine Role Setup
-
-Assign providers to engine roles for internal functions:
-
-```bash
-# 1. Add providers
-ergors provider add local-sglang --no-key --base-url http://localhost:8080
-ergors provider add anthropic
-ergors provider add openai
-
-# 2. Assign roles
-ergors provider assign local-sglang --role orchestration   # Primary orchestrator
-ergors provider assign anthropic --role orchestration       # Fallback orchestrator
-ergors provider assign local-sglang --role sub-agent        # Sub-agent tasks
-ergors provider assign local-sglang --role embeddings       # Embedding generation
-ergors provider assign openai --role tool-calling           # Tool/function calls
-
-# 3. Verify assignments
+# 5. Verify
 ergors provider roles
-
-# 4. (Optional) Re-prioritize — unassign then re-assign
-ergors provider unassign local-sglang --role orchestration
-ergors provider assign anthropic --role orchestration       # anthropic now primary
-ergors provider assign local-sglang --role orchestration    # local-sglang now fallback
 ```
 
-**Multi-Provider Topology Example**:
-
-```
-orchestration:  local-sglang [primary] → anthropic [fallback]
-sub-agent:      local-sglang [primary]
-embeddings:     local-sglang [primary]
-tool-calling:   openai [primary]
-```
-
-This topology uses a local sglang instance for most work, with Anthropic as a cloud fallback for orchestration, and OpenAI specifically for tool-calling tasks.
-
-### Multi-Provider Load Balancing
-
-Ergors doesn't have built-in load balancing, but you can implement it via deployment labels:
+### Manual Provider Setup (API key providers)
 
 ```bash
-# Deploy multiple instances with same label
-ergors deploy create --sdl sdls/qwen-1.yml --label qwen --auto
-ergors deploy create --sdl sdls/qwen-2.yml --label qwen --auto
-
-# Error: label collision (labels must be unique)
-# Use distinct labels and rotate manually, or use external load balancer
+ergors provider add anthropic              # Interactive key prompt
+ergors provider add openai --default       # Set as default
+ergors provider test                       # Test all
+ergors provider assign anthropic --role rlm-primary
 ```
 
-**Alternative**: Use external load balancer (nginx, haproxy) in front of multiple Ergors instances.
+### Custom Keyless Provider
+
+```bash
+ergors provider add my-local-llm --no-key --base-url http://localhost:8000
+ergors provider test my-local-llm
+ergors provider assign my-local-llm --role orchestration
+```
 
 ## Troubleshooting
 
-### Provider Test Fails
+### provider test: "not registered in LLM router"
 
-**Symptoms**: `ergors provider test <name>` returns FAILED or timeout.
+Provider exists in ProxyRouter config but wasn't registered in LlmRouter.
 
-**Causes**:
+**Fix**: `ergors deploy register-providers <label>` or restart the engine.
 
-1. Invalid API key
-2. Network connectivity issues
-3. Provider API endpoint down
-4. Firewall blocking outbound requests
+### provider test: Connection refused
 
-**Solutions**:
+Deployment still starting or endpoint unreachable.
 
-```bash
-# 1. Verify API key (re-add)
-ergors provider add <name>
+**Fix**: Check `ergors deploy info <label>` for status and endpoints. Wait for `completed`.
 
-# 2. Test connectivity manually
-curl https://api.anthropic.com/v1/messages \
-  -H "x-api-key: sk-ant-..." \
-  -H "anthropic-version: 2023-06-01" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-3-5-sonnet-20241022", "max_tokens": 10, "messages": [{"role": "user", "content": "test"}]}'
+### provider test: HTTP 422 / model not found
 
-# 3. Check logs
-ergors --log-level debug start
-# Look for provider-related errors
-```
+The model name sent to upstream doesn't match what the server hosts.
 
-### Inference Request Routing to Wrong Provider
+**Fix**: Check `--model-map` mapping. The test shows which model was sent in output (`Model:` line). Compare with `--served-model-name` or sglang model path.
 
-**Symptoms**: Request sent to unexpected provider or fails with "model not found".
+### Role not taking effect (wrong model in upstream)
 
-**Causes**:
+RLM sends role keyword → resolves to provider name → but upstream gets wrong model.
 
-1. Model name doesn't match any provider
-2. Deployment label collision
-3. Default provider not set
-
-**Solutions**:
+**Check**: `ergors provider test <name>` shows the model that will be sent. If `default_models` wasn't populated (provider added manually instead of via `register-providers`), re-register:
 
 ```bash
-# 1. Check available models
-curl http://localhost:8080/v1/models
-
-# 2. Use explicit provider prefix
-# Instead of: {"model": "my-model", ...}
-# Use: {"model": "anthropic/claude-3-5-sonnet", ...}
-
-# 3. Set default provider
-ergors provider default anthropic
-
-# 4. Check deployment labels
-ergors deploy list
+ergors provider remove <name>
+ergors deploy register-providers <deployment-label>
 ```
 
-### API Key Decryption Fails
+### API key decryption fails after restart
 
-**Symptoms**: Inference requests fail with "invalid API key" after daemon restart.
-
-**Causes**:
-
-1. Custody password changed
-2. Corrupted Cnidarium storage
-3. Key not properly encrypted
-
-**Solutions**:
-
-```bash
-# 1. Re-add API keys
-ergors provider add anthropic
-
-# 2. If custody corrupted, re-initialize
-ergors init unsafe-wipe
-ergors init new
-ergors provider add anthropic
-```
-
-### Engine Role Not Taking Effect
-
-**Symptoms**: Engine still uses model-pattern routing instead of assigned role provider.
-
-**Causes**:
-
-1. Role not assigned (check with `ergors provider roles`)
-2. Assigned provider is disabled or has no valid API key
-3. External API requests (roles only affect internal engine functions)
-
-**Solutions**:
-
-```bash
-# 1. Verify role assignments
-ergors provider roles
-
-# 2. Ensure assigned provider is enabled and has a valid key
-ergors provider list
-ergors provider test <assigned-provider>
-
-# 3. Check startup logs for role warnings
-# Look for: "Engine role 'orchestration' has no assigned provider"
-
-# 4. Re-assign if needed
-ergors provider assign <provider> --role orchestration
-```
-
-### Provider Not Found on Assign
-
-**Symptoms**: `ergors provider assign` returns "Provider not found".
-
-**Causes**: Provider must be registered via `provider add` before it can be assigned to a role.
-
-**Solution**:
-
-```bash
-# Register first, then assign
-ergors provider add my-provider --no-key --base-url http://localhost:8080
-ergors provider assign my-provider --role orchestration
-```
-
-### Ollama Connection Refused
-
-**Symptoms**: `ergors provider test ollama` fails with connection refused.
-
-**Causes**:
-
-1. Ollama not running
-2. Custom port/endpoint not configured
-
-**Solutions**:
-
-```bash
-# 1. Start Ollama
-ollama serve
-
-# 2. Verify Ollama is running
-curl http://localhost:11434/api/tags
-
-# 3. Configure custom endpoint (if needed)
-ergors config set llm.ollama_endpoint http://custom-host:11434
-
-# 4. Test again
-ergors provider test ollama
-```
+Re-add the key: `ergors provider add <name>`. If custody corrupted: `ergors init unsafe-wipe && ergors init new`.
 
 ## Edge Cases
 
-### Provider Name Conflicts
+### Services without model_map entries
 
-Provider names must be unique. Adding a provider with an existing name overwrites the key:
+Services in the SDL without a `--model-map` entry AND no `--model-name` fallback get empty `model_name` on their endpoints. `deploy register-providers` **skips** them. This is intentional — not every service is inference (e.g. monitoring sidecars, web UIs).
 
-```bash
-# First registration
-ergors provider add anthropic --api-key sk-ant-old...
+### Model pattern shadowing
 
-# Second registration (overwrites)
-ergors provider add anthropic --api-key sk-ant-new...
-# Key updated (old key replaced)
-```
+ProxyRouter uses longest-match for model routes. A provider with pattern `gpt-*` won't be shadowed by a catch-all `*` from Ollama. But two providers with identical patterns will conflict — last registered wins.
 
-### Case Sensitivity
+### Provider name = service name
 
-Provider names are case-insensitive:
+`deploy register-providers` uses the SDL service name as the provider name. If a provider with that name already exists, it's skipped with a warning. Use `--label-prefix` to namespace.
 
-```bash
-ergors provider add Anthropic  # Normalized to "anthropic"
-ergors provider add OPENAI     # Normalized to "openai"
-```
+### default_models only set via register-providers
 
-### Deployment Label Priority
-
-Deployments always have priority over providers:
-
-```bash
-# Provider configured
-ergors provider add gpt-4 --api-key custom-key
-
-# Deployment with same label
-ergors deploy create --sdl gpt4.yml --label gpt-4 --auto
-
-# Request with model "gpt-4"
-curl http://localhost:8080/v1/chat/completions -d '{"model": "gpt-4", ...}'
-# Routes to: Deployment (NOT provider)
-
-# To use provider, close deployment
-ergors deploy close-deployment gpt-4
-```
-
-### Role Assignment Idempotency
-
-Assigning a provider to a role it's already assigned to is a no-op:
-
-```bash
-ergors provider assign anthropic --role orchestration
-# "Provider 'anthropic' assigned to role 'Orchestration'"
-
-ergors provider assign anthropic --role orchestration
-# "Provider 'anthropic' assigned to role 'Orchestration'"  (no duplicate)
-```
-
-### Role Priority After Unassign
-
-When the primary is unassigned, the next provider in the list is automatically promoted:
-
-```bash
-# Before: orchestration → [local-sglang, anthropic, openai]
-ergors provider unassign local-sglang --role orchestration
-# After:  orchestration → [anthropic, openai]
-# anthropic is now primary
-```
+`provider add` does NOT populate `default_models` — only `deploy register-providers` does (because only deployment endpoints carry a `model_name`). For manually added providers, `call_provider_by_name` passes `req.model` through unchanged.
 
 ## Response Format
 
 When answering provider queries:
 
-1. **Confirm intent**: "You want to [provider action]"
-2. **Check prerequisites**: "Ensure daemon is running and custody initialized"
-3. **Provide exact command**: With security best practices (interactive input)
-4. **Suggest verification**: "Test with `ergors provider test <name>`"
-5. **For role assignments**: Clarify the distinction between external routing (model patterns) and internal routing (engine roles)
+1. Identify whether this is about **storage** (where things live), **registration** (how they get there), **routing** (how requests find providers), or **testing** (verification)
+2. Specify which registry is involved (ProxyRouter vs LlmRouter vs both)
+3. For deployment providers, trace the full pipeline: `--model-map` → endpoint stamping → register-providers → default_models → call substitution
+4. Always suggest `provider test` as the verification step
 
 ## Knowledge Boundaries
 
-- Base all advice on actual `ergors provider` commands
-- For provider-specific API errors, defer to provider documentation (Anthropic, OpenAI, etc.)
-- For Cnidarium encryption details, defer to Penumbra documentation
-- For custom provider integration, suggest OpenAI API compatibility requirements
-- Engine roles affect **internal** engine functions only — external API requests always use model-pattern routing
+- Base all advice on actual `ergors provider` and `ergors deploy register-providers` commands
+- Provider types and their model patterns are defined in `LlmRouter::build_provider_from_entity`
+- For provider-specific API errors, defer to provider documentation
+- For cnidarium encryption internals, defer to Penumbra docs
+- `default_models` substitution ONLY happens in `call_provider_by_name` (role-based routing), NOT in `handle_request` (model-pattern routing)
