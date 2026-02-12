@@ -135,9 +135,6 @@ pub struct DiscordGatewayConfig {
     pub allowed_guild_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, repeated, tag = "3")]
     pub allowed_channel_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Default: "!"
-    #[prost(string, tag = "4")]
-    pub command_prefix: ::prost::alloc::string::String,
     #[prost(bool, tag = "5")]
     pub respond_to_mentions: bool,
     #[prost(bool, tag = "6")]
@@ -245,8 +242,12 @@ pub struct GuildRagConfig {
     /// default: 50
     #[prost(uint32, tag = "12")]
     pub rlm_max_sub_calls: u32,
-    #[prost(string, repeated, tag = "13")]
-    pub rlm_allowed_models: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Model for root RLM reasoning (e.g. deployment label or "claude-sonnet-4-5-20250929")
+    #[prost(string, tag = "14")]
+    pub rlm_primary_model: ::prost::alloc::string::String,
+    /// Model for sandboxed llm_query() sub-calls
+    #[prost(string, tag = "15")]
+    pub rlm_sub_model: ::prost::alloc::string::String,
 }
 impl ::prost::Name for GuildRagConfig {
     const NAME: &'static str = "GuildRagConfig";

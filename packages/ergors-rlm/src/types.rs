@@ -9,6 +9,8 @@ pub struct RlmQuery {
     pub guild_id: String,
     pub max_iterations: u32,
     pub max_sub_calls: u32,
+    pub primary_model: String,
+    pub sub_model: String,
 }
 
 /// Document for RLM context

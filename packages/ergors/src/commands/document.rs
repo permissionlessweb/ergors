@@ -6,7 +6,6 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Subcommand;
 use ho_std::custody::PasswordEncryptedCustody;
-use ho_std::traits::NodeIdentityCustody;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 
@@ -161,8 +160,8 @@ impl DocumentCmd {
                     }
 
                     println!(
-                        "{:<66} {:<30} {:<40} {}",
-                        "Document ID", "Name", "Source", "Size"
+                        "{:<66} {:<30} {:<40} Size",
+                        "Document ID", "Name", "Source"
                     );
                     println!("{}", "-".repeat(160));
 
@@ -349,7 +348,7 @@ impl DocumentCmd {
         };
 
         // Load and verify custody (already in async context, no need for new runtime)
-        let mut custody = PasswordEncryptedCustody::new(&identity_path);
+        let custody = PasswordEncryptedCustody::new(&identity_path);
 
         custody
             .unlock(&password)
@@ -358,6 +357,11 @@ impl DocumentCmd {
 
         Ok(())
     }
+}
+
+/// Helper function to detect GitHub URLs
+fn is_github_url(url: &str) -> bool {
+    url.starts_with("https://github.com/") || url.starts_with("http://github.com/")
 }
 
 #[cfg(test)]
@@ -419,9 +423,4 @@ mod tests {
         assert!(parse_github_url("not-a-url").is_none());
         assert!(parse_github_url("https://example.com").is_none());
     }
-}
-
-/// Helper function to detect GitHub URLs
-fn is_github_url(url: &str) -> bool {
-    url.starts_with("https://github.com/") || url.starts_with("http://github.com/")
 }

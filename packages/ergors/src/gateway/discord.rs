@@ -16,8 +16,8 @@ use ho_std::{
         orch::v1::{PromptContext, PromptMessage, PromptRequest},
     },
 };
-use poise::serenity_prelude as serenity;
-use poise::{Framework, FrameworkOptions};
+
+use poise::{serenity_prelude as serenity, Framework, FrameworkOptions};
 use std::{
     net::{IpAddr, ToSocketAddrs},
     sync::{
@@ -45,7 +45,7 @@ const DISCORD_MSG_LIMIT: usize = 1990;
 /// Maximum characters for display name truncation
 const SOURCE_DISPLAY_NAME_LEN: usize = 50;
 
-/// Maximum characters for source list display (longer for /ragsources)
+/// Maximum characters for source list display (longer for /sources)
 const SOURCE_LIST_DISPLAY_LEN: usize = 60;
 
 /// html2text line width for rendering
@@ -88,13 +88,11 @@ struct RagChunk {
 /// Shared data for all Poise commands
 pub struct DiscordData {
     pub storage: Arc<ErgorsStorage>,
-    pub router: Arc<LlmRouter>,
+    pub router: Arc<dyn ergors_rlm::LlmRouterTrait>,
     pub allowed_guild_ids: Vec<String>,
     pub event_tx: mpsc::UnboundedSender<GatewayEvent>,
     /// Shared HTTP client for URL fetching (redirects disabled for SSRF protection)
     pub http_client: reqwest::Client,
-    /// Shared HTTP client for RAG embedding API calls (redirects allowed for trusted endpoints)
-    pub rag_client: reqwest::Client,
     /// RLM service for agentic document exploration (optional)
     #[cfg(feature = "rlm")]
     pub rlm_service: Option<Arc<ergors_rlm::RlmService>>,
@@ -127,13 +125,25 @@ impl DiscordGateway {
         // Try to load Discord-specific config
         if let Some(config) = storage.get_gateway_config("discord").await? {
             // Check if token is encrypted
-            let bot_token = if config.settings.get("bot_token_encrypted").map(|s| s == "true").unwrap_or(false) {
+            let bot_token = if config
+                .settings
+                .get("bot_token_encrypted")
+                .map(|s| s == "true")
+                .unwrap_or(false)
+            {
                 // Load encrypted token
                 if let Some(pubkey) = node_pubkey {
-                    match storage.get_encrypted_secret("discord_bot_token", "discord_gateway", "startup").await {
+                    match storage
+                        .get_encrypted_secret("discord_bot_token", "discord_gateway", "startup")
+                        .await
+                    {
                         Ok(Some(secret)) => {
-                            match decrypt_gateway_secret(&secret.encrypted_value, &secret.nonce, pubkey)
-                                .map_err(|e| anyhow::anyhow!(e))
+                            match decrypt_gateway_secret(
+                                &secret.encrypted_value,
+                                &secret.nonce,
+                                pubkey,
+                            )
+                            .map_err(|e| anyhow::anyhow!(e))
                             {
                                 Ok(token) => {
                                     info!("Decrypted Discord bot token from secure storage");
@@ -146,7 +156,9 @@ impl DiscordGateway {
                             }
                         }
                         Ok(None) => {
-                            warn!("Discord token marked as encrypted but not found in secure storage");
+                            warn!(
+                                "Discord token marked as encrypted but not found in secure storage"
+                            );
                             String::new()
                         }
                         Err(e) => {
@@ -160,7 +172,11 @@ impl DiscordGateway {
                 }
             } else {
                 // Backward compatibility: load plaintext token
-                let token = config.settings.get("bot_token").cloned().unwrap_or_default();
+                let token = config
+                    .settings
+                    .get("bot_token")
+                    .cloned()
+                    .unwrap_or_default();
                 if !token.is_empty() {
                     warn!("Loading plaintext Discord token - please reconfigure with encryption for improved security");
                 }
@@ -180,11 +196,6 @@ impl DiscordGateway {
                     .get("allowed_channel_ids")
                     .map(|s| s.split(',').map(|x| x.trim().to_string()).collect())
                     .unwrap_or_default(),
-                command_prefix: config
-                    .settings
-                    .get("command_prefix")
-                    .cloned()
-                    .unwrap_or_else(|| "!".to_string()),
                 respond_to_mentions: config
                     .settings
                     .get("respond_to_mentions")
@@ -213,7 +224,10 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
         "Discord Bot"
     }
 
-    async fn start(&self, ctx: GatewayContext<LlmRouter, ErgorsStorage>) -> ho_std::error::HoResult<()> {
+    async fn start(
+        &self,
+        ctx: GatewayContext<LlmRouter, ErgorsStorage>,
+    ) -> ho_std::error::HoResult<()> {
         let config = self.config.read().await;
 
         if config.bot_token.is_empty() {
@@ -225,38 +239,43 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
         let intents = serenity::GatewayIntents::GUILDS | serenity::GatewayIntents::GUILD_MESSAGES;
 
         let storage = ctx.storage.clone();
-        let router = ctx.router.clone();
+        let raw_router = ctx.router.clone();
         let allowed_guild_ids = config.allowed_guild_ids.clone();
         let event_tx = ctx.event_tx.clone();
 
+        // Wrap LlmRouter with role-aware routing for all LLM calls (RLM + chat)
+        let router: Arc<dyn ergors_rlm::LlmRouterTrait> = Arc::new(
+            crate::proxy::role_router::RoleAwareLlmRouter::new(raw_router, storage.clone()),
+        );
+
         // Create shared HTTP client for URL fetching (reuses TCP connections)
         // SECURITY: Disable redirects to prevent SSRF via redirect chains
+
         let http_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(URL_FETCH_TIMEOUT_SECS))
             .redirect(reqwest::redirect::Policy::none())
             .user_agent("ERGORS-Bot/1.0 (+https://github.com/ho-rs/ergors)")
             .build()
-            .map_err(|e| ho_std::error::HoError::Other(format!("Failed to create HTTP client: {}", e)))?;
-
-        // Create shared HTTP client for RAG embedding API (trusted endpoints)
-        let rag_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(60)) // Embeddings can be slow
-            .user_agent("ERGORS-RAG/1.0")
-            .build()
-            .map_err(|e| ho_std::error::HoError::Other(format!("Failed to create RAG client: {}", e)))?;
+            .map_err(|e| {
+                ho_std::error::HoError::Other(format!("Failed to create HTTP client: {}", e))
+            })?;
 
         // Initialize RLM service if feature is enabled
         #[cfg(feature = "rlm")]
         let rlm_service = {
-            let doc_access: Option<Arc<dyn ergors_rlm::DocumentAccessTrait>> =
-                Some(Arc::new(crate::proxy::doc_access::EngineDocumentAccess::new(storage.clone())));
+            let doc_access: Option<Arc<dyn ergors_rlm::DocumentAccessTrait>> = Some(Arc::new(
+                crate::proxy::doc_access::EngineDocumentAccess::new(storage.clone()),
+            ));
             match ergors_rlm::RlmService::new(2, router.clone(), doc_access).await {
                 Ok(service) => {
                     info!("RLM service initialized with document access");
                     Some(Arc::new(service))
                 }
                 Err(e) => {
-                    warn!("Failed to initialize RLM service: {}. RLM mode will be unavailable.", e);
+                    warn!(
+                        "Failed to initialize RLM service: {}. RLM mode will be unavailable.",
+                        e
+                    );
                     None
                 }
             }
@@ -271,13 +290,19 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
             info!("🧪 Discord Gateway TEST MODE enabled - LLM calls will be bypassed with test responses");
         }
 
+        // Clone guild IDs for registration before moving into DiscordData
+        let registration_guild_ids: Vec<serenity::GuildId> = allowed_guild_ids
+            .iter()
+            .filter_map(|s| s.parse::<u64>().ok())
+            .map(serenity::GuildId::new)
+            .collect();
+
         let data = DiscordData {
             storage,
             router,
             allowed_guild_ids,
             event_tx,
             http_client,
-            rag_client,
             #[cfg(feature = "rlm")]
             rlm_service,
             test_mode,
@@ -285,25 +310,40 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
 
         let framework = Framework::builder()
             .options(FrameworkOptions {
-                commands: vec![
-                    prompt(),
-                    thread(),
-                    clear(),
-                    // RAG commands
-                    ingest(),
-                    ragconfig(),
-                    ragsources(),
-                    ragdelete(),
-                    // RLM commands
-                    rlmconfig(),
-                ],
+                commands: vec![edgar()],
                 ..Default::default()
             })
-            .setup(|ctx, _ready, framework| {
+            .setup(move |ctx, ready, framework| {
                 Box::pin(async move {
-                    // Register slash commands globally
-                    poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                    info!("Discord slash commands registered");
+                    info!("Discord bot connected as: {} (ID: {})", ready.user.name, ready.user.id);
+                    info!(
+                        "Visible guilds: {:?}",
+                        ready.guilds.iter().map(|g| g.id).collect::<Vec<_>>()
+                    );
+
+                    // Log command tree being registered
+                    let commands = &framework.options().commands;
+                    for cmd in commands {
+                        info!("Registering /{} ({} subcommands)", cmd.name, cmd.subcommands.len());
+                        for sub in &cmd.subcommands {
+                            info!("  /{} {}", cmd.name, sub.name);
+                        }
+                    }
+
+                    // Guild-scoped registration (instant) if guild IDs are configured,
+                    // otherwise fall back to global registration (up to 1hr propagation)
+                    if !registration_guild_ids.is_empty() {
+                        for gid in &registration_guild_ids {
+                            info!("Registering slash commands to guild {} (instant)", gid);
+                            poise::builtins::register_in_guild(ctx, commands, *gid).await?;
+                        }
+                        info!("Guild-scoped command registration complete");
+                    } else {
+                        info!("No guild IDs configured — registering slash commands globally (may take up to 1 hour)");
+                        poise::builtins::register_globally(ctx, commands).await?;
+                        info!("Global command registration complete");
+                    }
+
                     Ok(data)
                 })
             })
@@ -315,7 +355,9 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
         let client = serenity::ClientBuilder::new(&bot_token, intents)
             .framework(framework)
             .await
-            .map_err(|e| ho_std::error::HoError::ChannelError(format!("Discord client error: {}", e)))?;
+            .map_err(|e| {
+                ho_std::error::HoError::ChannelError(format!("Discord client error: {}", e))
+            })?;
 
         // Store HTTP client for send_response
         *self.http.write().await = Some(client.http.clone());
@@ -362,16 +404,19 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
 
         // Add reply reference if provided
         if !response.reply_to_id.is_empty() {
-            let msg_id: u64 = response.reply_to_id.parse().map_err(|e| {
-                ho_std::error::HoError::Other(format!("Invalid message ID: {}", e))
-            })?;
+            let msg_id: u64 = response
+                .reply_to_id
+                .parse()
+                .map_err(|e| ho_std::error::HoError::Other(format!("Invalid message ID: {}", e)))?;
             message = message.reference_message((channel, serenity::MessageId::new(msg_id)));
         }
 
         let _ = channel
             .send_message(http.as_ref(), message)
             .await
-            .map_err(|e| ho_std::error::HoError::ChannelError(format!("Failed to send message: {}", e)))?;
+            .map_err(|e| {
+                ho_std::error::HoError::ChannelError(format!("Failed to send message: {}", e))
+            })?;
 
         Ok(())
     }
@@ -379,8 +424,22 @@ impl GatewayModule<LlmRouter, ErgorsStorage> for DiscordGateway {
 
 // ============ SLASH COMMANDS ============
 
+/// Edgar - Ergors Discord Assistant
+#[poise::command(
+    slash_command,
+    subcommands(
+        "ask", "thread", "clear", "ingest", "sources", "delete", "config", "rlm"
+    )
+)]
+pub async fn edgar(_ctx: Context<'_>) -> Result<(), anyhow::Error> {
+    Ok(())
+}
+
 /// Check if guild is authorized (empty whitelist = all allowed)
-fn check_guild_authorization(data: &DiscordData, guild_id: Option<serenity::GuildId>) -> Result<(), anyhow::Error> {
+fn check_guild_authorization(
+    data: &DiscordData,
+    guild_id: Option<serenity::GuildId>,
+) -> Result<(), anyhow::Error> {
     // Empty whitelist means all guilds allowed
     if data.allowed_guild_ids.is_empty() {
         return Ok(());
@@ -393,15 +452,49 @@ fn check_guild_authorization(data: &DiscordData, guild_id: Option<serenity::Guil
         Ok(())
     } else {
         warn!("Unauthorized guild attempted access: {}", guild_id_str);
-        Err(anyhow::anyhow!("This bot is not authorized for this server"))
+        Err(anyhow::anyhow!(
+            "This bot is not authorized for this server"
+        ))
     }
 }
 
-/// Send a prompt to the AI (with optional RAG context injection)
-#[poise::command(slash_command, guild_only)]
-async fn prompt(
+/// Autocomplete topic categories from ingested document labels for this guild.
+async fn autocomplete_topic<'a>(
     ctx: Context<'_>,
-    #[description = "Your message to the AI"] message: String,
+    partial: &'a str,
+) -> impl Iterator<Item = String> + 'a {
+    let guild_id = ctx.guild_id().map(|g| g.to_string()).unwrap_or_default();
+    let guild_prefix = format!("discord:guild_{}/", guild_id);
+    let snapshot = ctx.data().storage.cs.latest_snapshot();
+
+    let topics =
+        match ho_std::document::DocumentStorage::list_documents(&snapshot, None, None).await {
+            Ok(docs) => {
+                let mut seen = std::collections::BTreeSet::new();
+                for (_, meta) in &docs {
+                    if meta.source.as_str().contains(&guild_prefix) {
+                        seen.insert(meta.name.clone());
+                    }
+                }
+                seen.into_iter().collect::<Vec<_>>()
+            }
+            Err(_) => vec![],
+        };
+
+    let partial_lower = partial.to_lowercase();
+    topics
+        .into_iter()
+        .filter(move |t| t.to_lowercase().contains(&partial_lower))
+}
+
+/// Ask a question about ingested documents
+#[poise::command(slash_command, guild_only)]
+async fn ask(
+    ctx: Context<'_>,
+    #[description = "Topic category (from ingested documents)"]
+    #[autocomplete = "autocomplete_topic"]
+    topic: String,
+    #[description = "Your question about this topic"] question: String,
 ) -> Result<(), anyhow::Error> {
     // Check guild authorization
     check_guild_authorization(ctx.data(), ctx.guild_id())?;
@@ -419,17 +512,52 @@ async fn prompt(
         .get_or_create_gateway_session("discord", &thread_id)
         .await?;
 
+    // Verify the topic exists for this guild
+    let guild_prefix = format!("discord:guild_{}/", guild_id);
+    let snapshot = ctx.data().storage.cs.latest_snapshot();
+    let all_docs =
+        ho_std::document::DocumentStorage::list_documents(&snapshot, None, None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+    let mut available_topics = std::collections::BTreeSet::new();
+    for (_, meta) in &all_docs {
+        if meta.source.as_str().contains(&guild_prefix) {
+            available_topics.insert(meta.name.clone());
+        }
+    }
+
+    if !available_topics.contains(&topic) {
+        let topics_list = if available_topics.is_empty() {
+            "No documents ingested yet. Use `/edgar ingest` to add documents.".to_string()
+        } else {
+            let list: Vec<_> = available_topics.iter().map(|t| format!("- `{}`", t)).collect();
+            format!("Available topics:\n{}", list.join("\n"))
+        };
+        ctx.say(format!(
+            "Topic `{}` not found.\n\n{}",
+            topic, topics_list
+        ))
+        .await?;
+        return Ok(());
+    }
+
+    // Prepend topic context to the query
+    let scoped_message = format!("[Topic: {}] {}", topic, question);
+
     // === TEST MODE: Skip LLM, return test response ===
     if ctx.data().test_mode {
         // Still retrieve context to test that path
-        let context_result = retrieve_guild_context(ctx.data(), &guild_id, &message).await;
+        let context_result =
+            retrieve_guild_context(ctx.data(), &guild_id, &scoped_message).await;
         let context_info = match context_result {
             Some(ContextResult::FinalAnswer(_)) => "RLM returned final answer (would skip LLM)",
             Some(ContextResult::AugmentedPrompt(_)) => "RAG context retrieved and augmented prompt",
             None => "No RAG/RLM context (direct LLM call would occur)",
         };
 
-        let response_content = generate_test_prompt_response(&message, &session_id, Some(context_info));
+        let response_content =
+            generate_test_prompt_response(&scoped_message, &session_id, Some(context_info));
         ctx.say(&response_content).await?;
 
         // Notify manager for metrics tracking
@@ -443,7 +571,8 @@ async fn prompt(
     }
 
     // === UNIFIED CONTEXT INJECTION (RAG or RLM) ===
-    let context_result = retrieve_guild_context(ctx.data(), &guild_id, &message).await;
+    let context_result =
+        retrieve_guild_context(ctx.data(), &guild_id, &scoped_message).await;
 
     let response_content = match context_result {
         Some(ContextResult::FinalAnswer(answer)) => {
@@ -454,7 +583,7 @@ async fn prompt(
             // Get content for LLM (augmented prompt or raw message)
             let content = match other {
                 Some(ContextResult::AugmentedPrompt(p)) => p,
-                None => message.clone(),
+                None => scoped_message.clone(),
                 _ => unreachable!(),
             };
 
@@ -465,7 +594,7 @@ async fn prompt(
                     content,
                     ..Default::default()
                 }],
-                model: "default".to_string(),
+                model: "rlm-primary".to_string(),
                 context: Some(PromptContext {
                     session_id: session_id.clone(),
                     user_id: user_id.clone(),
@@ -475,11 +604,19 @@ async fn prompt(
             };
 
             // Call LLM router
-            let response = match ctx.data().router.handle_request(&prompt_req, "default").await {
+            let response = match ctx
+                .data()
+                .router
+                .handle_request(&prompt_req, "rlm-primary")
+                .await
+            {
                 Ok(resp) => resp,
                 Err(e) => {
-                    error!("LLM router error: {}", e);
-                    ctx.say(format!("Error: {}", e)).await?;
+                    error!("LLM router error for role 'rlm-primary': {:#}", e);
+                    ctx.say(format!(
+                        "LLM routing failed: {}\n\nCheck `ergors provider list` and `ergors provider roles` to verify provider configuration.",
+                        e
+                    )).await?;
                     return Ok(());
                 }
             };
@@ -570,7 +707,7 @@ async fn clear(ctx: Context<'_>) -> Result<(), anyhow::Error> {
 async fn ingest(
     ctx: Context<'_>,
     #[description = "URL to fetch and ingest"] url: String,
-    #[description = "Label for this source (optional)"] label: Option<String>,
+    #[description = "Topic label for this document (used by /edgar ask)"] label: String,
     #[description = "Document type (markdown, text, code)"] doc_type: Option<String>,
 ) -> Result<(), anyhow::Error> {
     // Check guild authorization
@@ -586,7 +723,7 @@ async fn ingest(
     #[cfg(feature = "github-ingest")]
     {
         if url.starts_with("https://github.com/") || url.starts_with("http://github.com/") {
-            return crate::gateway::github_ingest::ingest_github_repo(&ctx, &url, label, doc_type)
+            return crate::gateway::github_ingest::ingest_github_repo(&ctx, &url, Some(label), doc_type)
                 .await;
         }
     }
@@ -616,57 +753,30 @@ async fn ingest(
                 &url,
                 false,
                 &e.to_string(),
-            ).await;
+            )
+            .await;
             return Ok(());
         }
     };
 
     // Build source URI with guild namespace
     let source_uri = format!("discord:guild_{}/url:{}", guild_id, url);
-    let detected_type = doc_type.unwrap_or_else(|| detect_doc_type(&url));
 
-    // Check if RAG is configured globally
-    let rag_config = match ctx.data().storage.get_rag_config().await {
-        Ok(Some(config)) => config,
-        Ok(None) => {
-            ctx.say("RAG not configured. Ask the bot admin to run `ergors rag configure`.").await?;
-            return Ok(());
-        }
-        Err(e) => {
-            ctx.say(format!("Error checking RAG config: {}", e)).await?;
-            return Ok(());
-        }
-    };
+    // Store document directly via DocumentStorage (no RAG/embedding required)
+    let mut delta = cnidarium::StateDelta::new(ctx.data().storage.cs.latest_snapshot());
+    match ho_std::document::DocumentStorage::store_document(
+        &mut delta,
+        content.as_bytes(),
+        &label,
+        &source_uri,
+    )
+    .await
+    {
+        Ok(doc_id) => {
+            let content_size = content.len();
+            ctx.data().storage.commit_delta(delta).await?;
 
-    // Create RAG instance with shared HTTP client for connection pooling
-    let rag = match crate::proxy::rag::new_remote_with_client(
-        &ctx.data().storage,
-        ctx.data().rag_client.clone(),
-        &rag_config.endpoint,
-        &rag_config.model,
-        rag_config.dimension as usize,
-    ) {
-        Ok(r) => r,
-        Err(e) => {
-            ctx.say(format!("Failed to initialize RAG: {}", e)).await?;
-            return Ok(());
-        }
-    };
-
-    let doc = ergors_rag::Document {
-        content,
-        uri: source_uri.clone(),
-        doc_type: detected_type.clone(),
-        tags: vec![format!("guild:{}", guild_id), format!("user:{}", user_id)],
-    };
-
-    match rag.ingest(doc, None).await {
-        Ok(chunk_ids) => {
-            let chunk_count = chunk_ids.len();
-
-            // Update guild RAG config stats
-            // Note: Stats are approximate - concurrent ingests may race on read-modify-write.
-            // For precise counts, query the actual RAG storage instead.
+            // Update guild stats (document count only, no chunk count)
             let mut guild_config = ctx
                 .data()
                 .storage
@@ -681,9 +791,11 @@ async fn ingest(
                 });
 
             guild_config.total_documents += 1;
-            guild_config.total_chunks += chunk_count as u32;
             guild_config.last_ingestion_at = chrono::Utc::now().timestamp();
-            ctx.data().storage.put_guild_rag_config(&guild_config).await?;
+            ctx.data()
+                .storage
+                .put_guild_rag_config(&guild_config)
+                .await?;
 
             // Audit log
             log_rag_audit(
@@ -693,23 +805,21 @@ async fn ingest(
                 "ingest",
                 &source_uri,
                 true,
-                &format!("{} chunks", chunk_count),
-            ).await;
+                &format!("doc_id={}, {} bytes", doc_id, content_size),
+            )
+            .await;
 
-            let display_name = label.unwrap_or_else(|| {
-                url.split('/')
-                    .next_back()
-                    .unwrap_or(&url)
-                    .chars()
-                    .take(SOURCE_DISPLAY_NAME_LEN)
-                    .collect()
-            });
+            let size_display = if content_size > 1024 {
+                format!("{:.1} KB", content_size as f64 / 1024.0)
+            } else {
+                format!("{} bytes", content_size)
+            };
 
             ctx.say(format!(
-                "Ingested **{}** chunks from `{}`\n\
-                 Type: `{}`\n\
-                 Source URI: `{}`",
-                chunk_count, display_name, detected_type, source_uri
+                "Ingested `{}`\n\
+                 Size: {}\n\
+                 Document ID: `{}`",
+                label, size_display, doc_id
             ))
             .await?;
         }
@@ -722,7 +832,8 @@ async fn ingest(
                 &source_uri,
                 false,
                 &e.to_string(),
-            ).await;
+            )
+            .await;
             ctx.say(format!("Failed to ingest: {}", e)).await?;
         }
     }
@@ -732,7 +843,7 @@ async fn ingest(
 
 /// Configure RAG settings for this guild
 #[poise::command(slash_command, guild_only)]
-async fn ragconfig(
+async fn config(
     ctx: Context<'_>,
     #[description = "Role that can ingest documents"] admin_role: Option<serenity::Role>,
     #[description = "Auto-inject context into prompts (true/false)"] auto_context: Option<bool>,
@@ -799,7 +910,11 @@ async fn ragconfig(
          ---\n\
          Documents: ~{} | Chunks: ~{}",
         admin_role_display,
-        if config.auto_context_enabled { "enabled" } else { "disabled" },
+        if config.auto_context_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
         config.max_context_chunks,
         config.min_similarity * 100.0,
         config.total_documents,
@@ -812,11 +927,13 @@ async fn ragconfig(
 
 /// Configure RLM settings for this guild
 #[poise::command(slash_command, guild_only)]
-async fn rlmconfig(
+async fn rlm(
     ctx: Context<'_>,
     #[description = "Mode (static, rlm, hybrid)"] mode: Option<String>,
     #[description = "Max RLM iterations (default: 10)"] max_iterations: Option<u32>,
     #[description = "Max sub-LLM calls (default: 50)"] max_sub_calls: Option<u32>,
+    #[description = "Primary model for RLM reasoning (deployment label or model name)"] primary_model: Option<String>,
+    #[description = "Sub-agent model for llm_query() calls"] sub_model: Option<String>,
 ) -> Result<(), anyhow::Error> {
     use ho_std::types::ergors::gateway::v1::RagMode;
 
@@ -870,6 +987,16 @@ async fn rlmconfig(
         changed = true;
     }
 
+    if let Some(m) = primary_model {
+        config.rlm_primary_model = m;
+        changed = true;
+    }
+
+    if let Some(m) = sub_model {
+        config.rlm_sub_model = m;
+        changed = true;
+    }
+
     if changed {
         ctx.data().storage.put_guild_rag_config(&config).await?;
     }
@@ -882,12 +1009,18 @@ async fn rlmconfig(
         _ => "Unknown",
     };
 
+    let primary_display = if config.rlm_primary_model.is_empty() { "rlm-primary (role)" } else { &config.rlm_primary_model };
+    let sub_display = if config.rlm_sub_model.is_empty() { "rlm-secondary (role)" } else { &config.rlm_sub_model };
+
     ctx.say(format!(
         "**RLM Configuration**\n\
          Mode: {}\n\
          Max iterations: {}\n\
-         Max sub-LLM calls: {}",
-        mode_name, config.rlm_max_iterations, config.rlm_max_sub_calls
+         Max sub-LLM calls: {}\n\
+         Primary model: {}\n\
+         Sub-agent model: {}",
+        mode_name, config.rlm_max_iterations, config.rlm_max_sub_calls,
+        primary_display, sub_display
     ))
     .await?;
 
@@ -896,39 +1029,52 @@ async fn rlmconfig(
 
 /// List ingested sources for this guild
 #[poise::command(slash_command, guild_only)]
-async fn ragsources(
+async fn sources(
     ctx: Context<'_>,
     #[description = "Maximum sources to show"] limit: Option<usize>,
 ) -> Result<(), anyhow::Error> {
     check_guild_authorization(ctx.data(), ctx.guild_id())?;
 
     let guild_id = ctx.guild_id().unwrap().to_string();
-    let prefix = format!("discord:guild_{}/", guild_id);
+    let guild_prefix = format!("discord:guild_{}/", guild_id);
     let limit = limit.unwrap_or(10).min(25);
 
-    let sources = ctx
-        .data()
-        .storage
-        .list_rag_sources_by_prefix(&prefix, limit)
-        .await?;
+    let snapshot = ctx.data().storage.cs.latest_snapshot();
+    let all_docs = ho_std::document::DocumentStorage::list_documents(&snapshot, None, None)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    if sources.is_empty() {
+    // Filter to this guild's documents (exclude .index docs from display)
+    let guild_docs: Vec<_> = all_docs
+        .iter()
+        .filter(|(_, meta)| {
+            let src = meta.source.as_str();
+            src.contains(&guild_prefix) && !src.ends_with("/.index")
+        })
+        .take(limit)
+        .collect();
+
+    if guild_docs.is_empty() {
         ctx.say(
             "No documents ingested yet.\n\
-             Use `/ingest <url>` to add documents to this guild's knowledge base.",
+             Use `/edgar ingest <url>` to add documents to this guild's knowledge base.",
         )
         .await?;
     } else {
-        let mut msg = format!("**Ingested Sources** ({} shown)\n", sources.len());
-        for src in &sources {
-            // Extract readable name from URI
-            let name = src
-                .uri
-                .strip_prefix(&prefix)
-                .and_then(|s| s.strip_prefix("url:"))
-                .unwrap_or(&src.uri);
-            let short_name: String = name.chars().take(SOURCE_LIST_DISPLAY_LEN).collect();
-            msg.push_str(&format!("- `{}` ({} chunks)\n", short_name, src.chunk_count));
+        let mut msg = format!("**Ingested Documents** ({} shown)\n", guild_docs.len());
+        for (doc_id, meta) in &guild_docs {
+            let short_name: String = meta.name.chars().take(SOURCE_LIST_DISPLAY_LEN).collect();
+            let size_display = if meta.size > 1024 {
+                format!("{:.1} KB", meta.size as f64 / 1024.0)
+            } else {
+                format!("{} bytes", meta.size)
+            };
+            msg.push_str(&format!(
+                "- `{}` ({}) [{}]\n",
+                short_name,
+                size_display,
+                &doc_id.as_hex()[..8]
+            ));
         }
         ctx.say(msg).await?;
     }
@@ -938,7 +1084,7 @@ async fn ragsources(
 
 /// Delete a source from this guild's knowledge base (admin only)
 #[poise::command(slash_command, guild_only)]
-async fn ragdelete(
+async fn delete(
     ctx: Context<'_>,
     #[description = "Source URI or URL to delete"] source: String,
 ) -> Result<(), anyhow::Error> {
@@ -949,51 +1095,60 @@ async fn ragdelete(
     let user_id = ctx.author().id.to_string();
     let expected_prefix = format!("discord:guild_{}/", guild_id);
 
-    // Allow user to pass just the URL or the full source URI
-    let source_uri = if source.starts_with(&expected_prefix) {
-        source.clone()
-    } else if source.starts_with("http") {
-        format!("{}url:{}", expected_prefix, source)
-    } else {
-        ctx.say("Invalid source. Provide the URL or full source URI.").await?;
-        return Ok(());
-    };
-
-    // Security: only allow deleting sources belonging to this guild
-    if !source_uri.starts_with(&expected_prefix) {
-        ctx.say("Can only delete sources from this guild.").await?;
-        return Ok(());
-    }
-
     ctx.defer().await?;
 
-    let deleted = ctx.data().storage.delete_rag_source(&source_uri).await?;
+    // Find documents matching the source in DocumentStorage
+    let snapshot = ctx.data().storage.cs.latest_snapshot();
+    let all_docs = ho_std::document::DocumentStorage::list_documents(&snapshot, None, None)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    if deleted > 0 {
-        // Update guild stats
-        if let Ok(Some(mut config)) = ctx.data().storage.get_guild_rag_config(&guild_id).await {
-            config.total_documents = config.total_documents.saturating_sub(1);
-            config.total_chunks = config.total_chunks.saturating_sub(deleted as u32);
-            if let Err(e) = ctx.data().storage.put_guild_rag_config(&config).await {
-                warn!("Failed to update guild RAG stats after delete: {}", e);
-            }
-        }
+    // Match by source URI containing the guild prefix and the user-provided source
+    let to_delete: Vec<_> = all_docs
+        .iter()
+        .filter(|(_, meta)| {
+            let src = meta.source.as_str();
+            src.contains(&expected_prefix)
+                && (src.contains(&source) || meta.name.contains(&source))
+        })
+        .collect();
 
-        log_rag_audit(
-            &ctx.data().storage,
-            &guild_id,
-            &user_id,
-            "delete",
-            &source_uri,
-            true,
-            &format!("{} chunks deleted", deleted),
-        ).await;
-
-        ctx.say(format!("Deleted {} chunks from `{}`", deleted, source_uri))
+    if to_delete.is_empty() {
+        ctx.say(format!("No documents found matching: `{}`", source))
             .await?;
-    } else {
-        ctx.say(format!("Source not found: `{}`", source_uri)).await?;
+        return Ok(());
     }
+
+    let delete_count = to_delete.len();
+    let mut delta = cnidarium::StateDelta::new(ctx.data().storage.cs.latest_snapshot());
+    for (doc_id, _) in &to_delete {
+        ho_std::document::DocumentStorage::delete_document(&mut delta, doc_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+    }
+    ctx.data().storage.commit_delta(delta).await?;
+
+    // Update guild stats
+    if let Ok(Some(mut config)) = ctx.data().storage.get_guild_rag_config(&guild_id).await {
+        config.total_documents = config.total_documents.saturating_sub(delete_count as u32);
+        if let Err(e) = ctx.data().storage.put_guild_rag_config(&config).await {
+            warn!("Failed to update guild stats after delete: {}", e);
+        }
+    }
+
+    log_rag_audit(
+        &ctx.data().storage,
+        &guild_id,
+        &user_id,
+        "delete",
+        &source,
+        true,
+        &format!("{} documents deleted", delete_count),
+    )
+    .await;
+
+    ctx.say(format!("Deleted {} document(s) matching `{}`", delete_count, source))
+        .await?;
 
     Ok(())
 }
@@ -1038,7 +1193,10 @@ impl ValidatedUrl {
             IpAddr::V4(v4) => v4.to_string(),
             IpAddr::V6(v6) => format!("[{}]", v6),
         };
-        format!("{}://{}:{}{}", self.scheme, ip_host, self.port, self.path_and_query)
+        format!(
+            "{}://{}:{}{}",
+            self.scheme, ip_host, self.port, self.path_and_query
+        )
     }
 }
 
@@ -1092,7 +1250,9 @@ fn validate_ingest_url(url_str: &str) -> Result<ValidatedUrl, &'static str> {
         return Err("Internal domain URLs are not allowed");
     }
 
-    let port = parsed.port().unwrap_or(if scheme == "https" { 443 } else { 80 });
+    let port = parsed
+        .port()
+        .unwrap_or(if scheme == "https" { 443 } else { 80 });
     let socket_addr = format!("{}:{}", host, port);
 
     // Resolve hostname and validate ALL returned IPs
@@ -1146,7 +1306,7 @@ fn is_private_or_loopback(ip: IpAddr) -> bool {
                 || ipv4.is_link_local()   // 169.254.0.0/16
                 || ipv4.is_broadcast()    // 255.255.255.255
                 || ipv4.is_unspecified()  // 0.0.0.0
-                || ipv4.octets()[0] == 0  // 0.0.0.0/8 (current network)
+                || ipv4.octets()[0] == 0 // 0.0.0.0/8 (current network)
         }
         IpAddr::V6(ipv6) => {
             let segments = ipv6.segments();
@@ -1287,7 +1447,11 @@ fn build_augmented_prompt(message: &str, rag: Option<&RagContext>) -> String {
                 .chunks
                 .iter()
                 .map(|c| {
-                    format!("[Source: {}]\n{}", source_display_name(&c.source_uri), c.content)
+                    format!(
+                        "[Source: {}]\n{}",
+                        source_display_name(&c.source_uri),
+                        c.content
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join("\n\n---\n\n");
@@ -1412,12 +1576,18 @@ async fn retrieve_guild_context(
 
             // Fallback to RAG if RLM fails or not available
             let rag_ctx = retrieve_guild_rag_context(data, guild_id, query).await?;
-            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(query, Some(&rag_ctx))))
+            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(
+                query,
+                Some(&rag_ctx),
+            )))
         }
         RagMode::Static => {
             // Existing RAG logic (returns augmented prompt)
             let rag_ctx = retrieve_guild_rag_context(data, guild_id, query).await?;
-            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(query, Some(&rag_ctx))))
+            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(
+                query,
+                Some(&rag_ctx),
+            )))
         }
         RagMode::Hybrid => {
             // Try RLM first (final answer), fallback to RAG (augmented prompt)
@@ -1430,12 +1600,18 @@ async fn retrieve_guild_context(
 
             // Fallback to RAG
             let rag_ctx = retrieve_guild_rag_context(data, guild_id, query).await?;
-            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(query, Some(&rag_ctx))))
+            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(
+                query,
+                Some(&rag_ctx),
+            )))
         }
         _ => {
             // Default to static RAG
             let rag_ctx = retrieve_guild_rag_context(data, guild_id, query).await?;
-            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(query, Some(&rag_ctx))))
+            Some(ContextResult::AugmentedPrompt(build_augmented_prompt(
+                query,
+                Some(&rag_ctx),
+            )))
         }
     }
 }
@@ -1464,6 +1640,16 @@ async fn query_rlm_service(
         guild_id: guild_id.to_string(),
         max_iterations: config.rlm_max_iterations,
         max_sub_calls: config.rlm_max_sub_calls,
+        primary_model: if config.rlm_primary_model.is_empty() {
+            "rlm-primary".to_string()
+        } else {
+            config.rlm_primary_model.clone()
+        },
+        sub_model: if config.rlm_sub_model.is_empty() {
+            "rlm-secondary".to_string()
+        } else {
+            config.rlm_sub_model.clone()
+        },
     };
 
     match rlm_service.query(rlm_query, documents).await {
@@ -1491,11 +1677,10 @@ async fn query_rlm_service(
     }
 }
 
-/// Retrieve RAG context for a guild's prompt.
+/// Retrieve RAG context for a guild's prompt (legacy fallback).
 ///
 /// Returns None if RAG is not configured/enabled, with explicit logging for errors.
-///
-/// Uses the shared `rag_client` from DiscordData for HTTP connection pooling.
+/// Note: New ingestion goes through DocumentStorage; this only queries pre-existing RAG data.
 async fn retrieve_guild_rag_context(
     data: &DiscordData,
     guild_id: &str,
@@ -1533,17 +1718,33 @@ async fn retrieve_guild_rag_context(
         }
     };
 
-    // Create RAG instance with shared HTTP client
+    // Create on-demand HTTP client for RAG queries (legacy fallback only)
+    let rag_client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .user_agent("ERGORS-RAG/1.0")
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("Failed to create RAG HTTP client: {}", e);
+            return None;
+        }
+    };
+
+    // Create RAG instance
     let rag = match crate::proxy::rag::new_remote_with_client(
         &data.storage,
-        data.rag_client.clone(),
+        rag_client,
         &rag_config.endpoint,
         &rag_config.model,
         rag_config.dimension as usize,
     ) {
         Ok(r) => r,
         Err(e) => {
-            warn!("Failed to create RAG instance for guild {}: {}", guild_id, e);
+            warn!(
+                "Failed to create RAG instance for guild {}: {}",
+                guild_id, e
+            );
             return None;
         }
     };
@@ -1572,17 +1773,15 @@ async fn retrieve_guild_rag_context(
 
     // Extract chunks (use internal types, not proto)
     let chunks: Vec<RagChunk> = match result {
-        ergors_rag::QueryResult::Verified(verified_chunks) => {
-            verified_chunks
-                .into_iter()
-                .filter(|c| c.similarity >= config.min_similarity)
-                .map(|c| RagChunk {
-                    content: c.content,
-                    source_uri: c.provenance.source_uri,
-                    similarity: c.similarity,
-                })
-                .collect()
-        }
+        ergors_rag::QueryResult::Verified(verified_chunks) => verified_chunks
+            .into_iter()
+            .filter(|c| c.similarity >= config.min_similarity)
+            .map(|c| RagChunk {
+                content: c.content,
+                source_uri: c.provenance.source_uri,
+                similarity: c.similarity,
+            })
+            .collect(),
         ergors_rag::QueryResult::Standard(search_results) => {
             // Fallback: use preview from metadata (less ideal but works)
             search_results
@@ -1694,9 +1893,7 @@ async fn fetch_url_content(
         .filter(|c| !c.is_ascii_graphic() && !c.is_ascii_whitespace())
         .count();
     if non_printable_count > 50 {
-        return Err(anyhow::anyhow!(
-            "Content appears to be binary, not text"
-        ));
+        return Err(anyhow::anyhow!("Content appears to be binary, not text"));
     }
 
     if is_html {
@@ -1719,7 +1916,8 @@ fn detect_doc_type(url: &str) -> String {
     if let Some(ext) = filename.rsplit('.').next() {
         match ext {
             "md" | "mdx" | "markdown" => return "markdown".to_string(),
-            "rs" | "py" | "js" | "ts" | "tsx" | "jsx" | "go" | "java" | "c" | "cpp" | "h" | "hpp" | "rb" | "php" | "swift" | "kt" | "scala" | "zig" | "hs" => {
+            "rs" | "py" | "js" | "ts" | "tsx" | "jsx" | "go" | "java" | "c" | "cpp" | "h"
+            | "hpp" | "rb" | "php" | "swift" | "kt" | "scala" | "zig" | "hs" => {
                 return "code".to_string()
             }
             "json" | "yaml" | "yml" | "toml" | "ini" | "cfg" | "conf" => {
@@ -1741,11 +1939,7 @@ mod tests {
 
     #[test]
     fn test_generate_test_prompt_response_basic() {
-        let response = generate_test_prompt_response(
-            "Hello, world!",
-            "session-123",
-            None,
-        );
+        let response = generate_test_prompt_response("Hello, world!", "session-123", None);
 
         assert!(response.contains("🧪 **TEST MODE RESPONSE**"));
         assert!(response.contains("Hello, world!"));
@@ -1769,11 +1963,7 @@ mod tests {
 
     #[test]
     fn test_generate_test_prompt_response_no_context() {
-        let response = generate_test_prompt_response(
-            "Another test",
-            "session-789",
-            None,
-        );
+        let response = generate_test_prompt_response("Another test", "session-789", None);
 
         assert!(response.contains("No RAG/RLM context retrieved"));
     }

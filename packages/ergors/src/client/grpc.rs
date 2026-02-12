@@ -13,9 +13,6 @@ use ho_std::traits::{HoConfigTrait, NetworkTopologyTrait, NodeIdentityTrait};
 use ho_std::types::ergors::management::v1::{
     management_service_server::ManagementService,
     AddDiscordAllowedGuildRequest,
-    // Workspace types
-    AddWorkspaceRequest,
-    AddWorkspaceResponse,
     // Akash deployment types (advance_akash_deployment is deprecated but still in proto)
     AdvanceAkashDeploymentRequest,
     AdvanceAkashDeploymentResponse,
@@ -27,8 +24,6 @@ use ho_std::types::ergors::management::v1::{
     CancelAkashDeploymentRequest,
     CompleteSessionRequest,
     CompleteSessionResponse,
-    CompleteTaskWorktreeRequest,
-    CompleteTaskWorktreeResponse,
     ConfigData,
     ConfigUpdate,
     ConfigureDiscordGatewayRequest,
@@ -40,8 +35,6 @@ use ho_std::types::ergors::management::v1::{
     // Session types
     CreateSessionRequest,
     CreateSessionResponse,
-    CreateTaskWorktreeRequest,
-    CreateTaskWorktreeResponse,
     DeleteChainConfigRequest,
     DeleteChainConfigResponse,
     DeleteCosmosKeyRequest,
@@ -52,7 +45,6 @@ use ho_std::types::ergors::management::v1::{
     EngineState,
     EngineStatus,
     FailSessionRequest,
-    FailTaskWorktreeRequest,
     GatewayInfo,
     GatewayStatusResponse,
     GetAkashDeploymentRequest,
@@ -73,8 +65,6 @@ use ho_std::types::ergors::management::v1::{
     GetSdlTemplateResponse,
     GetSessionRequest,
     GetSessionResponse,
-    GetWorkspaceRequest,
-    GetWorkspaceResponse,
     HealthUpdate,
     IdentityResponse,
     ImportCosmosKeyRequest,
@@ -109,10 +99,6 @@ use ho_std::types::ergors::management::v1::{
     // SDL template types
     ListSdlTemplatesRequest,
     ListSdlTemplatesResponse,
-    ListTaskWorktreesRequest,
-    ListTaskWorktreesResponse,
-    ListWorkspacesRequest,
-    ListWorkspacesResponse,
     LogEntry,
     LogStreamRequest,
     MigrateSessionRequest,
@@ -130,6 +116,7 @@ use ho_std::types::ergors::management::v1::{
     ProviderList,
     ProviderName,
     ProviderTestResult,
+    RemoveProviderRequest,
     QueryAkashBidsRequest,
     QueryAkashBidsResponse,
     QueryBalanceRequest,
@@ -139,13 +126,10 @@ use ho_std::types::ergors::management::v1::{
     RegisterSdlTemplateRequest,
     RegisterSdlTemplateResponse,
     RemoveDiscordAllowedGuildRequest,
-    RemoveWorkspaceRequest,
     RenderSdlTemplateRequest,
     RenderSdlTemplateResponse,
     RequestGrantRequest,
     RequestGrantResponse,
-    ResolveConflictRequest,
-    ResolveConflictResponse,
     ResumeSessionRequest,
     ResumeSessionResponse,
     RevokeFeeGrantRequest,
@@ -172,8 +156,6 @@ use ho_std::types::ergors::management::v1::{
     StreamSessionRequest,
     SyncSessionRequest,
     SyncSessionResponse,
-    SyncWorkspaceRequest,
-    SyncWorkspaceResponse,
     TokenIdRequest,
     TokenLabel,
     TokenList,
@@ -216,15 +198,12 @@ use ho_std::types::ergors::orch::v1::{
     RagSourceInfo,
     RagStatusRequest,
     RagStatusResponse,
-    // RLM types
-    RlmConfig,
     RlmConfigureRequest,
     RlmQueryRequest,
     RlmQueryResponse,
     // Document Storage types
     DeleteDocumentRequest,
     DeleteDocumentResponse,
-    DocumentInfo,
     IngestDocumentRequest,
     IngestDocumentResponse,
     ListDocumentsRequest,
@@ -355,8 +334,8 @@ impl ManagementServiceImpl {
         &self,
         content: String,
         uri: String,
-        doc_type: String,
-        tags: Vec<String>,
+        _doc_type: String,
+        _tags: Vec<String>,
     ) -> Result<Response<RagIngestResponse>, Status> {
         use ergors_rag::ingest::chunk_text;
         use ergors_rag::types::VerifiableChunk;
@@ -393,7 +372,7 @@ impl ManagementServiceImpl {
                     content_hash: *content_hash.as_bytes(),
                     embedding_hash: [0u8; 32], // No embedding
                     version: 0,
-                    ingested_at: now.clone(),
+                    ingested_at: now,
                     source_uri: uri.clone(),
                     uploader_id: None,
                     access_policy: None,
@@ -785,11 +764,15 @@ impl ManagementService for ManagementServiceImpl {
             }
         }
 
-        // Update in-memory akash context key store if available
+        // Update in-memory akash context key store AND key manager.
+        // The key manager must be rebuilt so it picks up the correct salt
+        // from the newly stored key (otherwise decrypt uses stale/zero salt).
         if let Some(ref akash_ctx) = self.state.akash {
             let mut key_store = akash_ctx.key_store.write().await;
             *key_store = store;
-            tracing::info!("✅ Updated in-memory key store");
+            let mut key_mgr = akash_ctx.key_manager.write().await;
+            *key_mgr = EncryptedCosmosKeyManager::from_store(&key_store);
+            tracing::info!("✅ Updated in-memory key store and key manager");
         }
 
         Ok(Response::new(ImportCosmosKeyResponse {
@@ -1126,6 +1109,9 @@ impl ManagementService for ManagementServiceImpl {
                 name: name.clone(),
                 configured: !provider.base_url.is_empty(),
                 enabled: provider.enabled,
+                base_url: provider.base_url.clone(),
+                keyless: provider.api_key_ref.is_empty(),
+                deployment_session_id: String::new(),
             })
             .collect();
 
@@ -1137,7 +1123,19 @@ impl ManagementService for ManagementServiceImpl {
                     name: entity.name.clone(),
                     configured: true,
                     enabled: entity.enabled,
+                    base_url: entity.base_url.clone(),
+                    keyless: true,
+                    deployment_session_id: String::new(),
                 });
+            }
+        }
+
+        // Match providers to active deployments
+        let deploy_cache = self.state.r.deployment_cache();
+        let cache = deploy_cache.cache.read().await;
+        for provider in &mut providers {
+            if let Some(endpoint) = cache.get(&provider.name) {
+                provider.deployment_session_id = endpoint.session_id.clone();
             }
         }
 
@@ -1192,7 +1190,7 @@ impl ManagementService for ManagementServiceImpl {
             };
 
             // Load existing store from Cnidarium (or create fresh)
-            use cnidarium::StateRead as _;
+            
             use ho_std::llm::state_ext::{StateReadExt as _, StateWriteExt as _};
             use ho_std::llm::EncryptedApiKeyManager;
 
@@ -1294,12 +1292,12 @@ impl ManagementService for ManagementServiceImpl {
                 entities[idx].base_url = req.base_url.clone();
                 tracing::info!("Updated LLM entity '{}' with base_url: {}", req.name, req.base_url);
             } else {
-                // Create new entity
+                // Create new entity — default_model is empty (no model substitution for manually added providers)
                 let entity = LlmEntity {
                     name: req.name.clone(),
                     base_url: req.base_url.clone(),
                     models: default_models.clone(),
-                    default_model: default_models.first().cloned().unwrap_or_default(),
+                    default_model: String::new(),
                     priority: entities.len() as u32 + 1,
                     enabled: true,
                     default_strategy: 0,
@@ -1350,6 +1348,22 @@ impl ManagementService for ManagementServiceImpl {
             pr.update_config(config);
 
             tracing::info!("✅ Updated proxy router with provider '{}' → {}", req.name, req.base_url);
+
+            // Register in LlmRouter so call_provider_by_name works immediately
+            let entity = LlmEntity {
+                name: req.name.clone(),
+                base_url: req.base_url.clone(),
+                models: default_models.clone(),
+                default_model: String::new(), // No model substitution for manually added providers
+                priority: 0,
+                enabled: true,
+                default_strategy: 0,
+                timeout_seconds: 30,
+                max_retries: 3,
+            };
+            if let Err(e) = self.state.r.register_provider(&entity).await {
+                tracing::warn!("Failed to register provider in LLM router: {}", e);
+            }
         }
 
         let ref_label = if req.no_key {
@@ -1370,25 +1384,326 @@ impl ManagementService for ManagementServiceImpl {
         request: Request<ProviderName>,
     ) -> Result<Response<ProviderTestResult>, Status> {
         let req = request.into_inner();
+        let name = req.name.to_lowercase();
 
-        // Check if provider exists in config
-        let llm_config = self.state.c.llm();
-        let provider_exists = llm_config.entities.iter().any(|e| e.name == req.name);
+        // Look up provider in proxy router config for base_url
+        let router_config = self
+            .state
+            .s
+            .get_proxy_router_config()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to load router config: {}", e)))?
+            .unwrap_or_default();
 
-        if !provider_exists {
+        let provider_cfg = router_config.providers.get(&name);
+        if provider_cfg.is_none() {
+            // Also check LLM entities (built-in providers)
+            let llm_config = self.state.c.llm();
+            let entity = llm_config.entities.iter().find(|e| e.name == name);
+            if entity.is_none() {
+                return Ok(Response::new(ProviderTestResult {
+                    success: false,
+                    latency_ms: 0,
+                    error_message: format!("Provider '{}' not found in config", name),
+                    base_url: String::new(),
+                    model_tested: String::new(),
+                }));
+            }
+        }
+
+        // Verify provider is registered in LlmRouter (catches registration gaps)
+        let llm_provider = self.state.r.get_provider(&name).await;
+        if llm_provider.is_none() {
             return Ok(Response::new(ProviderTestResult {
                 success: false,
                 latency_ms: 0,
-                error_message: format!("Provider '{}' not found", req.name),
+                error_message: format!(
+                    "Provider '{}' exists in config but is not registered in LLM router. \
+                     Try 'deploy register-providers' or restart the engine.",
+                    name
+                ),
+                base_url: String::new(),
+                model_tested: String::new(),
             }));
         }
 
-        // TODO: Implement actual provider test
-        Ok(Response::new(ProviderTestResult {
-            success: true,
-            latency_ms: 100,
-            error_message: String::new(),
-        }))
+        // Determine base_url: proxy router config first, then LLM entity
+        let base_url = provider_cfg
+            .map(|c| c.base_url.clone())
+            .or_else(|| {
+                let llm_config = self.state.c.llm();
+                llm_config
+                    .entities
+                    .iter()
+                    .find(|e| e.name == name)
+                    .map(|e| e.base_url.clone())
+            })
+            .unwrap_or_default();
+
+        // Determine model: check default_models (model_map override), fallback to provider name
+        let model = self
+            .state
+            .r
+            .get_default_model(&name)
+            .await
+            .unwrap_or_else(|| name.clone());
+
+        // Determine API key
+        let api_key: Option<String> = if let Some(cfg) = provider_cfg {
+            if cfg.api_key_ref.is_empty() {
+                // Keyless provider
+                None
+            } else {
+                // Try to resolve from encrypted key store
+                use ho_std::llm::state_ext::StateReadExt as _;
+                let snapshot = self.state.s.cs.latest_snapshot();
+                match snapshot.get_encrypted_api_key_store().await {
+                    Ok(Some(store)) => {
+                        use ho_std::llm::EncryptedApiKeyManager;
+                        let manager = EncryptedApiKeyManager::from_store(&store);
+                        // Can't decrypt without password, skip auth header for test
+                        let _ = manager;
+                        None
+                    }
+                    _ => None,
+                }
+            }
+        } else {
+            None
+        };
+
+        // Build minimal OpenAI-compatible test request
+        let test_body = serde_json::json!({
+            "model": model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1
+        });
+
+        let url = if base_url.ends_with('/') {
+            format!("{}v1/chat/completions", base_url)
+        } else {
+            format!("{}/v1/chat/completions", base_url)
+        };
+
+        // Execute real HTTP test
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| Status::internal(format!("Failed to create HTTP client: {}", e)))?;
+
+        let start = std::time::Instant::now();
+        let mut request_builder = client.post(&url).json(&test_body);
+        if let Some(key) = &api_key {
+            request_builder = request_builder.header("Authorization", format!("Bearer {}", key));
+        }
+
+        match request_builder.send().await {
+            Ok(response) => {
+                let latency = start.elapsed().as_millis() as u32;
+                let status = response.status();
+                if status.is_success() {
+                    Ok(Response::new(ProviderTestResult {
+                        success: true,
+                        latency_ms: latency,
+                        error_message: String::new(),
+                        base_url: base_url.clone(),
+                        model_tested: model,
+                    }))
+                } else {
+                    let body = response.text().await.unwrap_or_default();
+                    let error = if body.len() > 200 {
+                        format!("HTTP {} — {}", status, &body[..200])
+                    } else {
+                        format!("HTTP {} — {}", status, body)
+                    };
+                    Ok(Response::new(ProviderTestResult {
+                        success: false,
+                        latency_ms: latency,
+                        error_message: error,
+                        base_url: base_url.clone(),
+                        model_tested: model,
+                    }))
+                }
+            }
+            Err(e) => {
+                let latency = start.elapsed().as_millis() as u32;
+                Ok(Response::new(ProviderTestResult {
+                    success: false,
+                    latency_ms: latency,
+                    error_message: format!("Connection failed: {}", e),
+                    base_url: base_url.clone(),
+                    model_tested: model,
+                }))
+            }
+        }
+    }
+
+    async fn remove_provider(
+        &self,
+        request: Request<RemoveProviderRequest>,
+    ) -> Result<Response<OperationResult>, Status> {
+        let req = request.into_inner();
+        let name = req.name.to_lowercase();
+
+        if name.is_empty() {
+            return Err(Status::invalid_argument("Provider name is required"));
+        }
+
+        if req.custody_password.is_empty() {
+            return Err(Status::invalid_argument("Custody password is required"));
+        }
+
+        tracing::info!("Remove provider requested: {}", name);
+
+        // Verify custody password by attempting to unlock the key store
+        {
+            use ho_std::llm::state_ext::StateReadExt as _;
+            use ho_std::llm::EncryptedApiKeyManager;
+
+            let snapshot = self.state.s.cs.latest_snapshot();
+            if let Some(store) = snapshot
+                .get_encrypted_api_key_store()
+                .await
+                .map_err(|e| Status::internal(format!("Failed to load key store: {}", e)))?
+            {
+                let mut manager = EncryptedApiKeyManager::from_store(&store);
+                manager
+                    .unlock(&req.custody_password)
+                    .map_err(|_| Status::unauthenticated("Invalid custody password"))?;
+            } else {
+                return Err(Status::failed_precondition(
+                    "No key store found — run sentinel bootstrap first",
+                ));
+            }
+        }
+
+        let mut removed = Vec::new();
+
+        // 1. Remove from proxy router config
+        {
+            let mut pr = self.state.pr.write().await;
+            let mut config = pr.config().clone();
+
+            if config.providers.remove(&name).is_some() {
+                removed.push("proxy config");
+            }
+            config.model_routes.retain(|_, provider| provider != &name);
+            pr.update_config(config);
+        }
+
+        // 2. Remove LLM entity from Cnidarium
+        {
+            use ho_std::llm::state_ext::{StateReadExt, StateWriteExt};
+
+            let snapshot = self.state.s.cs.latest_snapshot();
+            let entities = snapshot
+                .get_llm_providers()
+                .await
+                .map_err(|e| Status::internal(format!("Failed to load LLM entities: {}", e)))?;
+
+            if entities.iter().any(|e| e.name == name) {
+                let mut delta = cnidarium::StateDelta::new(self.state.s.cs.latest_snapshot());
+                delta.delete_llm_provider(&name);
+                self.state
+                    .s
+                    .cs
+                    .commit(delta)
+                    .await
+                    .map_err(|e| Status::internal(format!("Failed to commit entity removal: {}", e)))?;
+                removed.push("llm entity");
+            }
+        }
+
+        // 3. Remove encrypted API key (if exists)
+        {
+            use ho_std::llm::state_ext::{StateReadExt as _, StateWriteExt as _};
+
+            let snapshot = self.state.s.cs.latest_snapshot();
+            if let Some(mut store) = snapshot
+                .get_encrypted_api_key_store()
+                .await
+                .map_err(|e| Status::internal(format!("Failed to load key store: {}", e)))?
+            {
+                let before = store.keys.len();
+                store.keys.retain(|k| k.provider_name != name);
+                if store.keys.len() < before {
+                    let mut delta = cnidarium::StateDelta::new(self.state.s.cs.latest_snapshot());
+                    delta.put_encrypted_api_key_store(&store);
+                    self.state
+                        .s
+                        .cs
+                        .commit(delta)
+                        .await
+                        .map_err(|e| Status::internal(format!("Failed to commit key removal: {}", e)))?;
+                    removed.push("api key");
+
+                    // Clear live key accessor
+                    let pr = self.state.pr.read().await;
+                    if let Some(accessor) = pr.key_accessor() {
+                        let mut guard = accessor.write().await;
+                        let _ = guard.set_key(&name, String::new()).await;
+                    }
+                }
+            }
+        }
+
+        // 4. Unassign from all engine roles
+        {
+            let mut config = self
+                .state
+                .s
+                .get_engine_role_config()
+                .await
+                .map_err(|e| Status::internal(format!("Failed to load engine role config: {}", e)))?
+                .unwrap_or_default();
+
+            let mut role_changed = false;
+            for mapping in &mut config.mappings {
+                if let Some(pos) = mapping.provider_ids.iter().position(|id| id == &name) {
+                    mapping.provider_ids.remove(pos);
+                    role_changed = true;
+                }
+            }
+
+            if role_changed {
+                config.version += 1;
+                config.updated_at = Some({
+                    let d = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    pbjson_types::Timestamp {
+                        seconds: d.as_secs() as i64,
+                        nanos: 0,
+                    }
+                });
+
+                self.state
+                    .s
+                    .put_engine_role_config(&config)
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!("Failed to persist role config: {}", e))
+                    })?;
+
+                let mut pr = self.state.pr.write().await;
+                pr.set_engine_role_config(Some(config));
+                removed.push("role assignments");
+            }
+        }
+
+        if removed.is_empty() {
+            Ok(Response::new(OperationResult {
+                success: false,
+                message: format!("Provider '{}' not found in any configuration", name),
+            }))
+        } else {
+            let msg = format!("Provider '{}' removed ({})", name, removed.join(", "));
+            tracing::info!("{}", msg);
+            Ok(Response::new(OperationResult {
+                success: true,
+                message: msg,
+            }))
+        }
     }
 
     // ============ Provider Role Assignments ============
@@ -2375,6 +2690,8 @@ impl ManagementService for ManagementServiceImpl {
             label: req.label.clone(),
             // Actual model name for inference routing (stamped onto endpoints)
             model_name: req.model_name.clone(),
+            // Per-service model name mapping
+            model_map: req.model_map.clone(),
         };
 
         // Persist to storage
@@ -3286,6 +3603,15 @@ impl ManagementService for ManagementServiceImpl {
         let mut errors = Vec::new();
 
         for endpoint in &workflow.service_endpoints {
+            // Skip endpoints without a model name — they are not inference providers
+            if endpoint.model_name.is_empty() {
+                tracing::debug!(
+                    "Skipping non-inference service '{}' (no model_name)",
+                    endpoint.service_name
+                );
+                continue;
+            }
+
             // Build provider label
             let label = if req.label_prefix.is_empty() {
                 endpoint.service_name.clone()
@@ -3299,13 +3625,17 @@ impl ManagementService for ManagementServiceImpl {
                 continue;
             }
 
-            // Create provider config
+            // Create provider config with default_model in metadata for restart persistence
+            let mut metadata = std::collections::HashMap::new();
+            metadata.insert("default_model".to_string(), endpoint.model_name.clone());
+
             let provider_config = InferenceProviderConfig {
                 provider_id: label.clone(),
                 base_url: endpoint.external_uri.clone(),
                 api_key_ref: String::new(), // Keyless provider
                 enabled: true,
                 provider_type: InferenceProviderType::Custom as i32,
+                metadata,
                 ..Default::default()
             };
 
@@ -3318,13 +3648,52 @@ impl ManagementService for ManagementServiceImpl {
             registered_labels.push(label);
         }
 
-        // Save updated config
+        // Save updated config and update in-memory state
         if !registered_labels.is_empty() {
+            // Persist to storage
             self.state
                 .s
                 .put_proxy_router_config(&router_config)
                 .await
                 .map_err(|e| Status::internal(format!("Failed to save router config: {}", e)))?;
+
+            // Update in-memory proxy router
+            {
+                let mut pr = self.state.pr.write().await;
+                pr.update_config(router_config);
+            }
+
+            // Register each provider in LlmRouter for call_provider_by_name
+            for label in &registered_labels {
+                let endpoint = workflow.service_endpoints.iter()
+                    .find(|ep| {
+                        let expected = if req.label_prefix.is_empty() {
+                            ep.service_name.clone()
+                        } else {
+                            format!("{}-{}", req.label_prefix, ep.service_name)
+                        };
+                        &expected == label
+                    });
+                if let Some(ep) = endpoint {
+                    use ho_std::types::ergors::orch::v1::LlmEntity;
+                    let entity = LlmEntity {
+                        name: label.clone(),
+                        base_url: ep.external_uri.clone(),
+                        // Provider responds to its own label name
+                        models: vec![label.clone()],
+                        // Actual upstream model name for substitution
+                        default_model: ep.model_name.clone(),
+                        priority: 0,
+                        enabled: true,
+                        default_strategy: 0,
+                        timeout_seconds: 60,
+                        max_retries: 3,
+                    };
+                    if let Err(e) = self.state.r.register_provider(&entity).await {
+                        tracing::warn!("Failed to register '{}' in LLM router: {}", label, e);
+                    }
+                }
+            }
 
             tracing::info!(
                 "Registered {} providers from deployment {}: {:?}",
@@ -3822,6 +4191,8 @@ impl ManagementService for ManagementServiceImpl {
                 } else {
                     50
                 },
+                primary_model: "default".to_string(),
+                sub_model: "default".to_string(),
             };
 
             match rlm_service.query(rlm_query, documents.into_iter().map(ergors_rlm::Document::from).collect()).await {
@@ -4749,6 +5120,13 @@ impl ManagementService for ManagementServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Failed to save gateway config: {}", e)))?;
 
+        // Hot-start the gateway if the manager is running (no engine restart needed)
+        if let Some(ref gm) = self.state.gm {
+            if let Err(e) = gm.start_one(&req.gateway_id).await {
+                tracing::warn!("Gateway {} enabled but failed to hot-start: {}. Will start on next engine restart.", req.gateway_id, e);
+            }
+        }
+
         Ok(Response::new(OperationResult {
             success: true,
             message: format!("Gateway {} enabled", req.gateway_id),
@@ -4783,19 +5161,17 @@ impl ManagementService for ManagementServiceImpl {
         &self,
         request: Request<ConfigureDiscordGatewayRequest>,
     ) -> Result<Response<OperationResult>, Status> {
-        use ho_std::traits::HoConfigTrait;
-
         let req = request.into_inner();
         tracing::info!("Configuring Discord gateway");
 
-        // Get node pubkey for encryption
-        let node_pubkey = self
-            .state
-            .c
-            .identity()
-            .public_key
-            .clone()
-            .ok_or_else(|| Status::internal("Node public key not available for encryption"))?;
+        // Get node pubkey from NetworkManifold (populated at runtime with actual key)
+        let node_pubkey = {
+            let nm = self.state.nm.lock().await;
+            nm.identity()
+                .public_key
+                .clone()
+                .ok_or_else(|| Status::internal("Node public key not available for encryption"))?
+        };
 
         // Get or create config
         let mut config = self
@@ -4845,10 +5221,6 @@ impl ManagementService for ManagementServiceImpl {
                 .settings
                 .insert("bot_token_encrypted".to_string(), "true".to_string());
             config.settings.remove("bot_token"); // Remove any plaintext token
-        }
-
-        if let Some(prefix) = req.command_prefix {
-            config.settings.insert("command_prefix".to_string(), prefix);
         }
 
         if let Some(respond_mentions) = req.respond_to_mentions {
@@ -4984,14 +5356,9 @@ impl ManagementService for ManagementServiceImpl {
                 .unwrap_or_default();
 
             Ok(Response::new(GetDiscordConfigResponse {
-                token_configured: config.settings.contains_key("bot_token"),
+                token_configured: config.settings.get("bot_token_encrypted").map(|s| s == "true").unwrap_or(false),
                 allowed_guild_ids,
                 allowed_channel_ids,
-                command_prefix: config
-                    .settings
-                    .get("command_prefix")
-                    .cloned()
-                    .unwrap_or_else(|| "!".to_string()),
                 respond_to_mentions: config
                     .settings
                     .get("respond_to_mentions")
@@ -5008,7 +5375,6 @@ impl ManagementService for ManagementServiceImpl {
                 token_configured: false,
                 allowed_guild_ids: vec![],
                 allowed_channel_ids: vec![],
-                command_prefix: "!".to_string(),
                 respond_to_mentions: true,
                 respond_to_dms: false,
             }))

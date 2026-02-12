@@ -6,6 +6,56 @@ use ho_std::types::ergors::gateway::v1::GuildRagConfig;
 
 const MAX_FILE_SIZE: usize = 1_000_000; // 1MB - matches existing constant
 
+/// File index for navigating within a consolidated githem document
+#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+struct FileIndex {
+    repo: String,
+    file_count: usize,
+    files: Vec<FileEntry>,
+}
+
+/// Single file entry with char offset into the consolidated document
+#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+struct FileEntry {
+    path: String,
+    offset: usize,  // char offset within consolidated doc
+    length: usize,  // char length of file content (excludes delimiter)
+}
+
+/// Build a file index mapping file paths to char offsets in the consolidated output.
+/// Uses the already-parsed `files` vec to know which paths to look for, then scans
+/// the consolidated text for `=== path ===\n` markers to compute content offsets.
+fn build_file_index(repo: &str, consolidated: &str, files: &[(String, String)]) -> FileIndex {
+    let mut entries = Vec::with_capacity(files.len());
+
+    for (path, _) in files {
+        let marker = format!("=== {} ===\n", path);
+        if let Some(marker_pos) = consolidated.find(&marker) {
+            let content_start = marker_pos + marker.len();
+            // Content extends until the next marker or end of string
+            let content_end = if let Some(next_marker) = consolidated[content_start..].find("\n=== ") {
+                // Trim trailing newlines before next marker
+                let raw_end = content_start + next_marker;
+                consolidated[content_start..raw_end].trim_end().len() + content_start
+            } else {
+                // Last file — trim trailing whitespace
+                consolidated[content_start..].trim_end().len() + content_start
+            };
+            entries.push(FileEntry {
+                path: path.clone(),
+                offset: content_start,
+                length: content_end - content_start,
+            });
+        }
+    }
+
+    FileIndex {
+        repo: repo.to_string(),
+        file_count: entries.len(),
+        files: entries,
+    }
+}
+
 /// Ingest a GitHub repository into guild RAG storage
 pub async fn ingest_github_repo(
     ctx: &PoiseContext<'_, crate::gateway::discord::DiscordData, anyhow::Error>,
@@ -38,23 +88,23 @@ pub async fn ingest_github_repo(
 
         // Determine filter preset based on doc_type hint or default to Standard
         let preset = match doc_type.as_deref() {
-            Some("documentation") | Some("docs") => FilterPreset::Standard, // Includes docs + code
+            Some("documentation") | Some("docs") => FilterPreset::Standard,
             Some("code") => FilterPreset::CodeOnly,
             Some("minimal") => FilterPreset::Minimal,
-            _ => FilterPreset::Standard, // Default to standard filtering
+            _ => FilterPreset::Standard,
         };
 
         // Configure ingestion options
         let options = IngestOptions {
             filter_preset: Some(preset),
             max_file_size: MAX_FILE_SIZE,
-            apply_default_filters: false, // Use preset only
+            apply_default_filters: false,
             ..Default::default()
         };
 
         // Clone and ingest repository
-        let repo_full_name = format!("{}/{}", parsed.owner, parsed.repo);
-        ctx.say(format!("Cloning repository: {}", repo_full_name))
+        let repo_name = format!("{}/{}", parsed.owner, parsed.repo);
+        ctx.say(format!("Cloning repository: {}", repo_name))
             .await?;
 
         let ingester = match Ingester::from_url_cached(url, options) {
@@ -76,7 +126,7 @@ pub async fn ingest_github_repo(
             }
         };
 
-        // Capture output from githem
+        // Capture consolidated output from githem
         let mut output = Vec::new();
         if let Err(e) = ingester.ingest(&mut output) {
             ctx.say(format!("Failed to ingest repository: {}", e))
@@ -96,9 +146,8 @@ pub async fn ingest_github_repo(
 
         let output_str = String::from_utf8_lossy(&output);
 
-        // Parse githem output into individual files
+        // Parse for file count reporting + index building
         let files = parse_githem_output(&output_str);
-
         if files.is_empty() {
             ctx.say("No files found in repository after filtering")
                 .await?;
@@ -108,67 +157,37 @@ pub async fn ingest_github_repo(
         ctx.say(format!("Processing {} files...", files.len()))
             .await?;
 
-        // Check RAG config
-        let rag_config = match ctx.data().storage.get_rag_config().await {
-            Ok(Some(config)) => config,
-            Ok(None) => {
-                ctx.say("RAG not configured. Ask the bot admin to run `ergors rag configure`.")
-                    .await?;
-                return Ok(());
-            }
-            Err(e) => {
-                ctx.say(format!("Error checking RAG config: {}", e))
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        // Create RAG instance
-        let rag = match crate::proxy::rag::new_remote_with_client(
-            &ctx.data().storage,
-            ctx.data().rag_client.clone(),
-            &rag_config.endpoint,
-            &rag_config.model,
-            rag_config.dimension as usize,
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                ctx.say(format!("Failed to initialize RAG: {}", e))
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        // Ingest each file individually for better retrieval granularity
-        let repo_name = format!("{}/{}", parsed.owner, parsed.repo);
-        let mut total_chunks = 0;
+        let source_uri = format!("discord:guild_{}/github:{}", guild_id, repo_name);
+        let total_bytes = output.len();
         let file_count = files.len();
 
-        for (file_path, content) in &files {
-            let source_uri = format!("github:{}/{}", repo_name, file_path);
-            let detected_type = detect_file_type(&file_path);
+        let mut delta = cnidarium::StateDelta::new(ctx.data().storage.cs.latest_snapshot());
 
-            let doc = ergors_rag::Document {
-                content: content.clone(),
-                uri: source_uri,
-                doc_type: detected_type,
-                tags: vec![
-                    format!("guild:{}", guild_id),
-                    format!("repo:{}", repo_name),
-                    format!("user:{}", user_id),
-                ],
-            };
+        // 1. Store consolidated document (single doc for entire repo)
+        ho_std::document::DocumentStorage::store_document(
+            &mut delta,
+            &output,
+            &repo_name,
+            &source_uri,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-            match rag.ingest(doc, None).await {
-                Ok(chunk_ids) => total_chunks += chunk_ids.len(),
-                Err(e) => {
-                    tracing::warn!("Failed to ingest {}: {}", file_path, e);
-                    // Continue with other files
-                }
-            }
-        }
+        // 2. Store file index (maps file paths to char offsets)
+        let index = build_file_index(&repo_name, &output_str, &files);
+        let index_bytes = serde_json::to_vec(&index).unwrap();
+        ho_std::document::DocumentStorage::store_document(
+            &mut delta,
+            &index_bytes,
+            &format!("{}/.index", repo_name),
+            &format!("{}/.index", source_uri),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        // Update guild stats
+        ctx.data().storage.commit_delta(delta).await?;
+
+        // Update guild stats (1 logical document per repo)
         let mut guild_config: GuildRagConfig = ctx
             .data()
             .storage
@@ -182,8 +201,7 @@ pub async fn ingest_github_repo(
                 ..Default::default()
             });
 
-        guild_config.total_documents += file_count as u32;
-        guild_config.total_chunks += total_chunks as u32;
+        guild_config.total_documents += 1;
         guild_config.last_ingestion_at = chrono::Utc::now().timestamp();
         ctx.data()
             .storage
@@ -198,16 +216,21 @@ pub async fn ingest_github_repo(
             "github_ingest",
             url,
             true,
-            &format!("{} files, {} chunks", files.len(), total_chunks),
+            &format!("{} files, {} bytes", file_count, total_bytes),
         )
         .await;
 
         let display_name = label.unwrap_or_else(|| repo_name.to_string());
+        let size_display = if total_bytes > 1024 * 1024 {
+            format!("{:.1} MB", total_bytes as f64 / (1024.0 * 1024.0))
+        } else if total_bytes > 1024 {
+            format!("{:.1} KB", total_bytes as f64 / 1024.0)
+        } else {
+            format!("{} bytes", total_bytes)
+        };
         ctx.say(format!(
-            "✓ Ingested **{}** ({} files, {} chunks)",
-            display_name,
-            files.len(),
-            total_chunks
+            "Ingested **{}** ({} files, {})",
+            display_name, file_count, size_display
         ))
         .await?;
 
@@ -254,20 +277,6 @@ fn parse_githem_output(output: &str) -> Vec<(String, String)> {
     files
 }
 
-/// Detect document type from file extension
-fn detect_file_type(path: &str) -> String {
-    let ext = path.rsplit('.').next().unwrap_or("");
-    match ext {
-        "md" | "mdx" => "markdown".to_string(),
-        "rs" | "py" | "js" | "ts" | "go" | "java" | "c" | "cpp" | "h" | "hpp" => {
-            "code".to_string()
-        }
-        "json" | "yaml" | "yml" | "toml" => "config".to_string(),
-        "txt" => "text".to_string(),
-        _ => "text".to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,10 +304,49 @@ Description here.
     }
 
     #[test]
-    fn test_detect_file_type() {
-        assert_eq!(detect_file_type("README.md"), "markdown");
-        assert_eq!(detect_file_type("src/main.rs"), "code");
-        assert_eq!(detect_file_type("config.yaml"), "config");
-        assert_eq!(detect_file_type("notes.txt"), "text");
+    fn test_build_file_index_offsets() {
+        let consolidated = "=== src/main.rs ===\nfn main() {}\n\n=== README.md ===\n# Hello\n";
+        let files = parse_githem_output(consolidated);
+        let index = build_file_index("owner/repo", consolidated, &files);
+
+        assert_eq!(index.repo, "owner/repo");
+        assert_eq!(index.file_count, 2);
+        assert_eq!(index.files.len(), 2);
+
+        // Verify first file offset points to actual content
+        let f0 = &index.files[0];
+        assert_eq!(f0.path, "src/main.rs");
+        let slice = &consolidated[f0.offset..f0.offset + f0.length];
+        assert_eq!(slice, "fn main() {}");
+
+        // Verify second file offset points to actual content
+        let f1 = &index.files[1];
+        assert_eq!(f1.path, "README.md");
+        let slice = &consolidated[f1.offset..f1.offset + f1.length];
+        assert_eq!(slice, "# Hello");
+    }
+
+    #[test]
+    fn test_build_file_index_single_file() {
+        let consolidated = "=== only.txt ===\nsome content here\n";
+        let files = parse_githem_output(consolidated);
+        let index = build_file_index("a/b", consolidated, &files);
+
+        assert_eq!(index.file_count, 1);
+        let f = &index.files[0];
+        assert_eq!(f.path, "only.txt");
+        let slice = &consolidated[f.offset..f.offset + f.length];
+        assert_eq!(slice, "some content here");
+    }
+
+    #[test]
+    fn test_build_file_index_roundtrip_json() {
+        let consolidated = "=== a.rs ===\nlet x = 1;\n=== b.rs ===\nlet y = 2;\n";
+        let files = parse_githem_output(consolidated);
+        let index = build_file_index("test/repo", consolidated, &files);
+
+        let json = serde_json::to_vec(&index).unwrap();
+        let decoded: FileIndex = serde_json::from_slice(&json).unwrap();
+        assert_eq!(index, decoded);
     }
 }

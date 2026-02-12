@@ -756,19 +756,6 @@ fn now_timestamp() -> pbjson_types::Timestamp {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_config_defaults() {
-        let config = SessionManagerConfig::default();
-        assert_eq!(config.max_session_depth, 10);
-        assert_eq!(config.max_children_per_session, 100);
-        assert!(config.enable_cross_node_sync);
-    }
-}
-
 // Orchestrator Session Integration
 //
 // Provides helper functions for integrating FractalSession with the CosmicOrchestrator.
@@ -957,5 +944,18 @@ impl OrchestratorSessionHelper {
     /// Get the session manager for direct access
     pub fn session_manager(&self) -> &Arc<SessionManager> {
         &self.session_manager
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_defaults() {
+        let config = SessionManagerConfig::default();
+        assert_eq!(config.max_session_depth, 10);
+        assert_eq!(config.max_children_per_session, 100);
+        assert!(config.enable_cross_node_sync);
     }
 }

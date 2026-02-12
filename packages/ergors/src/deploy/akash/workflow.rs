@@ -141,6 +141,8 @@ impl AkashWorkflowManager {
             label: label.unwrap_or_default(),
             // Actual model name (set later via CLI flag or API)
             model_name: String::new(),
+            // Per-service model mapping (set via --model-map flag)
+            model_map: HashMap::new(),
         };
 
         // Persist to storage

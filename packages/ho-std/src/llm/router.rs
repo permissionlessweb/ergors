@@ -10,6 +10,7 @@ use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 use tracing::{debug, info};
 
 /// Refactored LLM Router with dynamic provider management
@@ -18,8 +19,10 @@ use tracing::{debug, info};
 pub struct LlmRouter {
     /// HTTP c for API requests
     c: Client,
-    /// Registered ps mapped by name
-    ps: HashMap<String, Arc<dyn LlmProviderTrait>>,
+    /// Registered ps mapped by name (RwLock for runtime registration)
+    ps: RwLock<HashMap<String, Arc<dyn LlmProviderTrait>>>,
+    /// Provider name → upstream model name (for model substitution in call_provider_by_name)
+    default_models: RwLock<HashMap<String, String>>,
     /// In-memory cache of active Akash deployments for inference
     deployment_cache: Arc<DeploymentProviderCache>,
 }
@@ -38,11 +41,12 @@ impl LlmRouter {
                 .timeout(Duration::from_secs(cfg.timeout_seconds))
                 .build()
                 .map_err(|e| HoError::Cfg(format!("Failed to create HTTP c: {}", e)))?,
-            ps: HashMap::new(),
+            ps: RwLock::new(HashMap::new()),
+            default_models: RwLock::new(HashMap::new()),
             deployment_cache,
         };
 
-        r.register_all_providers(s, cfg.entities.clone()).await?;
+        r.register_all_providers_init(s, cfg.entities.clone()).await?;
 
         // TODO: Initial cache refresh from storage
         // r.deployment_cache.refresh(s).await?;
@@ -73,13 +77,15 @@ impl LlmRouter {
         }
 
         // PRIORITY 2: Check configured providers
-        let provider = self.find_provider_for_model(m).ok_or_else(|| {
-            let ap: Vec<String> = self.ps.keys().cloned().collect();
+        let ps = self.ps.read().await;
+        let provider = ps.values().find(|p| p.supports_model(m)).cloned().ok_or_else(|| {
+            let ap: Vec<String> = ps.keys().cloned().collect();
             HoError::Llm(format!(
                 "No provider found for model '{}'. Available providers: {:?}",
                 m, ap
             ))
         })?;
+        drop(ps);
 
         debug!("Routing req for m {} to provider {}", m, provider.name());
 
@@ -306,8 +312,8 @@ impl LlmRouter {
         })
     }
 
-    /// Register all ps configured in storage
-    async fn register_all_providers<S: StateRead>(
+    /// Register all ps configured in storage (init-time only)
+    async fn register_all_providers_init<S: StateRead>(
         &mut self,
         s: &S,
         entities: Vec<LlmEntity>,
@@ -315,18 +321,37 @@ impl LlmRouter {
         // Get all configured ps from storage
         let ents = s.get_llm_providers().await?;
         info!("Found {} LLM entities in storage", ents.len());
+        let mut ps = self.ps.write().await;
+        let mut dm = self.default_models.write().await;
         for entity in entities {
-            self.register_provider_from_entity(&entity)?;
+            let provider = Self::build_provider_from_entity(&entity)?;
+            debug!("Registered LLM provider: {}", entity.name);
+            if !entity.default_model.is_empty() {
+                dm.insert(entity.name.clone(), entity.default_model.clone());
+            }
+            ps.insert(entity.name.clone(), provider);
         }
 
         Ok(())
     }
 
-    /// Register a single provider from an LlmEntity configuration
-    ///
-    /// This method maps the entity name to the corresponding provider implementation
-    /// defined via the llm_entity! macro
-    fn register_provider_from_entity(&mut self, entity: &LlmEntity) -> HoResult<()> {
+    /// Register a provider at runtime from an LlmEntity.
+    /// Safe to call after initialization — uses internal RwLock.
+    pub async fn register_provider(&self, entity: &LlmEntity) -> HoResult<()> {
+        let provider = Self::build_provider_from_entity(entity)?;
+        let mut ps = self.ps.write().await;
+        info!("Runtime-registered LLM provider: {}", entity.name);
+        ps.insert(entity.name.clone(), provider);
+        drop(ps);
+        if !entity.default_model.is_empty() {
+            let mut dm = self.default_models.write().await;
+            dm.insert(entity.name.clone(), entity.default_model.clone());
+        }
+        Ok(())
+    }
+
+    /// Build a provider trait object from an LlmEntity configuration
+    fn build_provider_from_entity(entity: &LlmEntity) -> HoResult<Arc<dyn LlmProviderTrait>> {
         use crate::llm::*;
 
         let provider: Arc<dyn LlmProviderTrait> = match entity.name.to_lowercase().as_str() {
@@ -406,11 +431,12 @@ impl LlmRouter {
             // Default providers above are preferred for convenience, but any provider name is allowed
             custom_name => {
                 info!(
-                    "Registering custom provider '{}' (OpenAI-compatible) at {}. Preferred providers: openai, anthropic, grok, akashml, kimi, qwen, venice, ollama",
+                    "Registering custom provider '{}' (OpenAI-compatible) at {}",
                     custom_name, entity.base_url
                 );
                 // Use OpenAI provider as the base for custom providers (most APIs are OpenAI-compatible)
-                let mut p = OpenAiProvider::new(None).with_base_url(entity.base_url.clone());
+                // Set empty string api_key for keyless operation (skips Authorization header)
+                let mut p = OpenAiProvider::new(Some(String::new())).with_base_url(entity.base_url.clone());
                 // Add all configured models as supported
                 for m in &entity.models {
                     p.add_supported_model(m.clone());
@@ -419,30 +445,51 @@ impl LlmRouter {
             }
         };
 
-        debug!("Registered LLM provider: {}", entity.name);
-        self.ps.insert(entity.name.clone(), provider);
+        Ok(provider)
+    }
 
-        Ok(())
+    /// Call a specific provider by name (bypasses model-pattern matching).
+    /// Used by role-based routing where the provider is already known.
+    pub async fn call_provider_by_name(&self, name: &str, req: &PromptRequest) -> HoResult<PromptResponse> {
+        let ps = self.ps.read().await;
+        let provider = ps.get(name).cloned().ok_or_else(|| {
+            let available: Vec<String> = ps.keys().cloned().collect();
+            HoError::Llm(format!(
+                "Provider '{}' not found in LLM router. Registered providers: {:?}. \
+                 Was this provider added via 'provider add' with a base_url?",
+                name, available
+            ))
+        })?;
+        drop(ps);
+
+        // Substitute model name if a default_model override is registered
+        let model_override = self.default_models.read().await.get(name).cloned();
+        if let Some(model) = model_override {
+            let mut req = req.clone();
+            req.model = model;
+            return provider.call(&self.c, &req).await;
+        }
+        provider.call(&self.c, req).await
     }
 
     /// Get all registered ps
-    pub fn get_providers(&self) -> Vec<&Arc<dyn LlmProviderTrait>> {
-        self.ps.values().collect()
-    }
-
-    /// Find provider that supports the given m
-    fn find_provider_for_model(&self, m: &str) -> Option<&Arc<dyn LlmProviderTrait>> {
-        self.ps.values().find(|provider| provider.supports_model(m))
+    pub async fn get_providers(&self) -> Vec<Arc<dyn LlmProviderTrait>> {
+        self.ps.read().await.values().cloned().collect()
     }
 
     /// Get a specific provider by name
-    pub fn get_provider(&self, name: &str) -> Option<&Arc<dyn LlmProviderTrait>> {
-        self.ps.get(name)
+    pub async fn get_provider(&self, name: &str) -> Option<Arc<dyn LlmProviderTrait>> {
+        self.ps.read().await.get(name).cloned()
+    }
+
+    /// Get the default model name for a provider (if registered via model_map)
+    pub async fn get_default_model(&self, name: &str) -> Option<String> {
+        self.default_models.read().await.get(name).cloned()
     }
 
     /// Get the number of registered ps
-    pub fn provider_count(&self) -> usize {
-        self.ps.len()
+    pub async fn provider_count(&self) -> usize {
+        self.ps.read().await.len()
     }
 }
 

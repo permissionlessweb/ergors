@@ -36,12 +36,9 @@ impl LlmRouterConfig {
         neurons.default_entity = LlmModel::AkashMl as u32;
         neurons.default_strategy = ModelSelectionStrategy::Unspecified.into();
         neurons.timeout_seconds = 60;
-        neurons.entities = vec![
-            LlmModel::AkashMl.default_entity(),
-            LlmModel::Grok.default_entity(),
-            LlmModel::Anthropic.default_entity(),
-            LlmModel::OpenAi.default_entity(),
-        ];
+        // Start with zero providers — local-first engine, not a proxy to centralized APIs.
+        // Providers are registered explicitly via `provider add` or `deploy register-providers`.
+        neurons.entities = vec![];
         tracing::debug!("LlmRouterConfig: {:#?}", neurons);
         neurons
     }

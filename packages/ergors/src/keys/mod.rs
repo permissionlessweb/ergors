@@ -142,7 +142,7 @@ impl KeysCmd {
                 label,
                 default,
                 prefix,
-                coin_type,
+                coin_type: _,
             } => {
                 // Prompt for mnemonic (hidden input - never stored in history)
                 let phrase = get_mnemonic()?;

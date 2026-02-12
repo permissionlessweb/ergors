@@ -9,14 +9,9 @@ use ho_std::keys::commonware::NodePrivKey;
 use ho_std::types::ergors::management::v1::{
     management_service_client::ManagementServiceClient as ProtoClient,
     AddDiscordAllowedGuildRequest,
-    // Workspace types
-    AddWorkspaceRequest,
-    AddWorkspaceResponse,
     // Akash deployment types
     ApproveGrantRequest,
     CancelAkashDeploymentRequest,
-    CompleteTaskWorktreeRequest,
-    CompleteTaskWorktreeResponse,
     ConfigData,
     ConfigUpdate,
     ConfigureDiscordGatewayRequest,
@@ -24,15 +19,12 @@ use ho_std::types::ergors::management::v1::{
     CosmosKeyInfo,
     CreateAkashDeploymentRequest,
     CreateAkashDeploymentResponse,
-    CreateTaskWorktreeRequest,
-    CreateTaskWorktreeResponse,
     DeleteCosmosKeyRequest,
     DisableGatewayRequest,
     Empty,
     EnableGatewayRequest,
     EngineState,
     EngineStatus,
-    FailTaskWorktreeRequest,
     GatewayStatusResponse,
     GetAkashDeploymentRequest,
     GetAkashDeploymentResponse,
@@ -46,8 +38,6 @@ use ho_std::types::ergors::management::v1::{
     GetSdlDefaultsResponse,
     GetSdlTemplateRequest,
     GetSdlTemplateResponse,
-    GetWorkspaceRequest,
-    GetWorkspaceResponse,
     ImportCosmosKeyRequest,
     ImportCosmosKeyResponse,
     ListAkashDeploymentsRequest,
@@ -60,10 +50,6 @@ use ho_std::types::ergors::management::v1::{
     // SDL template types
     ListSdlTemplatesRequest,
     ListSdlTemplatesResponse,
-    ListTaskWorktreesRequest,
-    ListTaskWorktreesResponse,
-    ListWorkspacesRequest,
-    ListWorkspacesResponse,
     NodeIdRequest,
     NodeTypeRequest,
     OperationResult,
@@ -74,12 +60,12 @@ use ho_std::types::ergors::management::v1::{
     ProviderList,
     ProviderName,
     ProviderTestResult,
+    RemoveProviderRequest,
     QueryAkashBidsRequest,
     QueryAkashBidsResponse,
     QueryBalanceRequest,
     QueryBalanceResponse,
     RemoveDiscordAllowedGuildRequest,
-    RemoveWorkspaceRequest,
     RenderSdlTemplateRequest,
     RenderSdlTemplateResponse,
     RequestGrantRequest,
@@ -91,8 +77,6 @@ use ho_std::types::ergors::management::v1::{
     SetWorkflowEndpointsRequest,
     SetWorkflowEndpointsResponse,
     ShutdownRequest,
-    SyncWorkspaceRequest,
-    SyncWorkspaceResponse,
     TokenIdRequest,
     TokenLabel,
     TokenList,
@@ -171,8 +155,8 @@ impl tonic::service::Interceptor for ClientAuthInterceptor {
 
             let message = Blake3::hash(timestamp.as_bytes());
             let signature = key.sign(None, &message);
-            let pubkey_hex = hex::encode(&key.id().0.encode());
-            let sig_hex = hex::encode(&signature.encode());
+            let pubkey_hex = hex::encode(key.id().0.encode());
+            let sig_hex = hex::encode(signature.encode());
 
             req.metadata_mut()
                 .insert("x-timestamp", timestamp.parse().unwrap());
@@ -472,6 +456,24 @@ impl ManagementClient {
         Ok(response.into_inner())
     }
 
+    /// Remove a provider (requires custody password)
+    pub async fn remove_provider(
+        &mut self,
+        name: &str,
+        custody_password: &str,
+    ) -> Result<OperationResult> {
+        let response = self
+            .inner
+            .remove_provider(RemoveProviderRequest {
+                name: name.to_string(),
+                custody_password: custody_password.to_string(),
+            })
+            .await
+            .context("Failed to remove provider")?;
+
+        Ok(response.into_inner())
+    }
+
     // ============ Provider Role Assignments ============
 
     /// Assign a provider to an engine role
@@ -575,6 +577,7 @@ impl ManagementClient {
         auto_run: bool,
         label: &str,
         model_name: &str,
+        model_map: &[(String, String)],
     ) -> Result<CreateAkashDeploymentResponse> {
         let response = self
             .inner
@@ -589,6 +592,7 @@ impl ManagementClient {
                 auto_run,
                 label: label.to_string(),
                 model_name: model_name.to_string(),
+                model_map: model_map.iter().cloned().collect(),
             })
             .await
             .context("Failed to create Akash deployment")?;
@@ -1417,14 +1421,12 @@ impl ManagementClient {
     pub async fn configure_discord_gateway(
         &mut self,
         bot_token: &str,
-        command_prefix: Option<&str>,
         respond_to_mentions: Option<bool>,
     ) -> Result<OperationResult> {
         let response = self
             .inner
             .configure_discord_gateway(ConfigureDiscordGatewayRequest {
                 bot_token: bot_token.to_string(),
-                command_prefix: command_prefix.map(|s| s.to_string()),
                 respond_to_mentions,
             })
             .await

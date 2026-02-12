@@ -13,7 +13,7 @@ services:
       - "-c"
     args:
       - >-
-        python3 -m sglang.launch_server --model-path zai-org/GLM-4.7-Flash --tp-size 1 --host 0.0.0.0 --port 8000 --trust-remote-code --mem-fraction-static 0.87
+        python3 -m sglang.launch_server --model-path Qwen/Qwen2.5-Coder-7B-Instruct --tp-size 1 --host 0.0.0.0 --port 8000 --trust-remote-code --mem-fraction-static 0.87
     params:
       storage:
         shm:

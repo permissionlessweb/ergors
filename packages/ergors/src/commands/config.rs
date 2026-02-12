@@ -1191,7 +1191,7 @@ impl ConfigCmd {
             println!("No authorized CLI keys registered.");
         } else {
             println!("Authorized CLI Keys:");
-            println!("{:<66} {}", "PUBLIC KEY", "LABEL");
+            println!("{:<66} LABEL", "PUBLIC KEY");
             println!("{}", "-".repeat(80));
             for key in &result.keys {
                 println!("{:<66} {}", key.public_key_hex, key.label);

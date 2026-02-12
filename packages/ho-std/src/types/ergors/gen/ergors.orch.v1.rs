@@ -3232,6 +3232,13 @@ pub struct AkashDeploymentWorkflow {
     /// Stamped onto service endpoints when they are discovered
     #[prost(string, tag = "37")]
     pub model_name: ::prost::alloc::string::String,
+    /// Per-service model name mapping (service_name → upstream model name)
+    /// Overrides model_name for specific services when set
+    #[prost(map = "string, string", tag = "38")]
+    pub model_map: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
 }
 impl ::prost::Name for AkashDeploymentWorkflow {
     const NAME: &'static str = "AkashDeploymentWorkflow";
@@ -5422,6 +5429,10 @@ pub enum EngineRole {
     Embeddings = 3,
     /// Tool-calling specialized model
     ToolCalling = 4,
+    /// Primary LLM for RLM reasoning loop
+    RlmPrimary = 5,
+    /// Sub-agent LLM for RLM llm_query() calls
+    RlmSecondary = 6,
 }
 impl EngineRole {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -5435,6 +5446,8 @@ impl EngineRole {
             Self::SubAgent => "ENGINE_ROLE_SUB_AGENT",
             Self::Embeddings => "ENGINE_ROLE_EMBEDDINGS",
             Self::ToolCalling => "ENGINE_ROLE_TOOL_CALLING",
+            Self::RlmPrimary => "ENGINE_ROLE_RLM_PRIMARY",
+            Self::RlmSecondary => "ENGINE_ROLE_RLM_SECONDARY",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -5445,6 +5458,8 @@ impl EngineRole {
             "ENGINE_ROLE_SUB_AGENT" => Some(Self::SubAgent),
             "ENGINE_ROLE_EMBEDDINGS" => Some(Self::Embeddings),
             "ENGINE_ROLE_TOOL_CALLING" => Some(Self::ToolCalling),
+            "ENGINE_ROLE_RLM_PRIMARY" => Some(Self::RlmPrimary),
+            "ENGINE_ROLE_RLM_SECONDARY" => Some(Self::RlmSecondary),
             _ => None,
         }
     }

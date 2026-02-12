@@ -1,6 +1,6 @@
-# Edgar Cayce: Akash Documentation Bot
+# Edgar Cayce: Discord Knowledge Bot on Akash
 
-Deploy a Discord chatbot on Akash Network that answers questions about a GitHub repository using RAG.
+Deploy a Discord bot on Akash that answers questions about ingested documents using RLM (agentic code execution against source-of-truth files).
 
 The engine runs as a container on Akash. Secrets are bootstrapped at runtime via **sentinel mode** — zero secrets in the SDL.
 
@@ -8,7 +8,7 @@ The engine runs as a container on Akash. Secrets are bootstrapped at runtime via
 
 - Ergors CLI installed locally
 - Akash wallet funded with ~30 AKT
-- AkashML API key ([chatapi.akash.network](https://chatapi.akash.network))
+- At least two inference deployments on Akash (or LLM provider API keys)
 - Discord bot token ([discord.com/developers](https://discord.com/developers/applications))
 
 ## SDL Files
@@ -16,240 +16,247 @@ The engine runs as a container on Akash. Secrets are bootstrapped at runtime via
 | File | Purpose |
 |------|---------|
 | `sdls/engine/ergors-sentinel.yml` | Engine container (sentinel mode) |
-| `sdls/embeddings/qwen.yml` | Qwen3-VL-Embedding-8B for RAG embeddings |
-| `sdls/chat/kimi-k2.5.yml` | Kimi-K2.5 for chat completions |
+| `sdls/chat/local-inference.yml` | Chat models for RLM reasoning loops (deploys two services: `glm-flash` and `qwen-coder`) |
 
 ---
 
-## 00. Create Discord Bot
+## 1. Create the Discord Bot
 
 1. [discord.com/developers/applications](https://discord.com/developers/applications) > **New Application**
-2. **Bot** settings:
-   - Copy the bot token
-   - Enable **Message Content Intent**
-3. **OAuth2 > URL Generator**:
-   - Scopes: `bot`, `applications.commands`
-   - Permissions: Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Read Message History, Use Slash Commands
-4. Open the generated URL, select your server, authorize
-5. In your server: **Settings > Roles > Create Role** named `Akashic Record Keeper` — assign to users who can manage the knowledge base
+2. **Bot** tab — copy the token, enable **Message Content Intent**
+3. **OAuth2 > URL Generator** — scopes: `bot`, `applications.commands`; permissions: Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Read Message History, Use Slash Commands
+4. Open the generated URL, authorize in your server
+5. Create an admin role (e.g. `Akashic Record Keeper`) for users who manage the knowledge base
 
 ---
 
-## 1. Setup Local Client
+## 2. Initialize Local Client
 
 ```bash
 ergors init new
-ergors keys import-mnemonic --label "Deployer" --chain-id akashnet-2 --make-default
+ergors keys import-mnemonic --label "Deployer" --prefix akash --default
 ergors start &
 ```
 
-Note your admin public key from `~/.ergors/node_identity.enc` (the `public_key` field).
-
 ---
 
-## 2. Deploy Engine to Akash
+## 3. Deploy Engine to Akash
 
-Edit `sdls/engine/ergors-sentinel.yml` — replace `REPLACE_WITH_YOUR_ADMIN_PUBKEY_HEX` with your public key.
+Replace `REPLACE_WITH_YOUR_ADMIN_PUBKEY_HEX` in the SDL with your public key from `~/.ergors/node_identity.enc`.
 
 ```bash
 ergors deploy create --sdl sdls/engine/ergors-sentinel.yml --label edgar-cayce --auto
 ergors deploy endpoints edgar-cayce
 ```
 
-Save the HTTP and gRPC endpoints from the output.
+---
 
-### Verify Sentinel Ready
+## 4. Bootstrap the Sentinel
+
+All secrets are entered interactively (hidden input), encrypted end-to-end via X25519. The Akash provider sees only ciphertext.
 
 ```bash
-curl http://<engine-http-endpoint>/sentinel/health
+ergors sentinel bootstrap http://<engine-endpoint>:8080
 ```
 
-Returns the current phase, version, and a per-session X25519 public key:
+Prompts: local custody password, remote custody password, optional mnemonic, API keys per provider.
 
-```json
-{"phase":"awaiting_init","version":"0.1.0","session_pubkey":"<hex-encoded 32-byte X25519 pubkey>"}
+Verify the engine is live:
+
+```bash
+curl http://<engine-endpoint>/health
 ```
-
-Save the `session_pubkey` — all subsequent sentinel requests must encrypt their JSON body to this key.
 
 ---
 
-## 3. Bootstrap via Sentinel
+## 5. Deploy Inference Providers
 
-Use the CLI to bootstrap the sentinel. All secrets are entered interactively
-(hidden input) and encrypted end-to-end to the sentinel's ephemeral X25519 session key.
-The Akash provider proxy sees only ciphertext.
+Deploy two inference models — a stronger one for primary reasoning and a faster/cheaper one for sub-queries. Use `--model-map` to tell the engine which upstream model each service actually serves:
 
 ```bash
-ergors sentinel bootstrap http://<engine>:8080
+ergors deploy create \
+  --sdl sdls/chat/local-inference.yml \
+  --label inference-gpu \
+  --model-map glm-flash=Qwen/Qwen2.5-Coder-7B-Instruct \
+  --model-map qwen-coder=Qwen/Qwen2.5-Coder-7B-Instruct \
+  --interactive-bid \
+  --min-balance 1000000 \
+  --key-name default
 ```
 
-The command walks through the full handshake:
+`--model-map` maps SDL service names to the actual model name the inference server expects. Services without a mapping are not registered as inference providers.
 
-1. **GET /sentinel/health** — fetches the sentinel's X25519 session pubkey
-2. **POST /sentinel/init** — prompts for custody password + optional mnemonic (encrypted)
-3. **POST /sentinel/api-keys** — prompts for per-provider API keys (encrypted)
-4. **POST /sentinel/activate** — triggers handoff to full server
-
-Interactive prompts (hidden, never logged):
-
-| Prompt | Description |
-|--------|-------------|
-| Local custody password | Unlocks your admin Ed25519 signing key (or set `ERGORS_CUSTODY_PASSWORD`) |
-| Remote custody password | Encrypts the remote node's identity (min 8 chars) |
-| Mnemonic | BIP-39 phrase for deterministic key (Enter = generate new) |
-| API keys | Per-provider: Anthropic, OpenAI, Akash ML, xAI, plus custom |
-
-For automation / CI, pipe inputs via stdin (one per line):
+Wait for status `completed`, then register the deployed endpoints as providers:
 
 ```bash
-printf '%s\n' \
-  "remote-custody-pw" \
-  "abandon abandon abandon ... about" \
-  "sk-ant-xxx" \
-  "sk-openai-xxx" \
-  "" "" "" \
-| ERGORS_CUSTODY_PASSWORD=local-pw ergors sentinel bootstrap http://<engine>:8080
+ergors deploy register-providers inference-gpu
 ```
 
-### Verify
-
-```bash
-curl http://<engine>/health
-```
-
-Sentinel is gone. Full server is live.
-
-### Protocol Details (reference)
-
-Each request body is an encrypted envelope (plaintext rejected with 400):
-
-- **Encryption:** X25519 DH → `blake3_derive_key("ergors sentinel v1", shared)` → ChaCha20Poly1305
-- **Envelope:** `{"ephemeral_pubkey":"<hex>","nonce":"<hex>","ciphertext":"<hex>"}`
-- **Auth:** Ed25519 signature headers over the envelope: `x-signature`, `x-timestamp`, `x-public-key`
+This reads the deployment's service endpoints, skips any without a `model_name`, and registers the rest in both the proxy router and LLM router. Each provider's name matches the service name (`glm-flash`, `qwen-coder`).
 
 ---
 
-## 4. Configure Engine
+## 6. Test and Assign Providers
 
-Point your local CLI at the remote engine:
-
-```bash
-export ERGORS_GRPC_ADDR=http://<engine-grpc-endpoint>:50051
-```
-
-### Import Funded Wallet
+Verify each provider is reachable before assigning roles:
 
 ```bash
-ergors keys import-mnemonic --label "Edgar Cayce" --chain-id akashnet-2 --make-default
+ergors provider test glm-flash
+ergors provider test qwen-coder
 ```
 
-### Configure Discord
+Expected output:
+
+```
+glm-flash: OK (243ms)
+  URL:   http://provider.a100.kci.val.akash.pub:31499
+  Model: Qwen/Qwen2.5-Coder-7B-Instruct
+qwen-coder: OK (187ms)
+  URL:   http://provider.a100.kci.val.akash.pub:32611
+  Model: Qwen/Qwen2.5-Coder-7B-Instruct
+```
+
+The test sends a real HTTP request to `/v1/chat/completions` with the correct model name. If a provider is unreachable or returns an error, the output shows the failure reason.
+
+Assign engine roles:
 
 ```bash
-ergors gateway discord set-token
-ergors gateway discord allow-guild <your-guild-id>
-ergors gateway enable discord
+ergors provider assign glm-flash --role rlm-primary
+ergors provider assign qwen-coder --role rlm-secondary
 ```
 
-### Restart for Gateway Activation
+- **`rlm-primary`** — drives the root reasoning loop (pick your strongest reasoner)
+- **`rlm-secondary`** — used by sandboxed `llm_query()` sub-calls (can be cheaper/faster)
 
-Gateways register at boot. Add `ERGORS_CUSTODY_PASSWORD=<password>` to the engine SDL env block, then:
+If only `rlm-primary` is assigned, `rlm-secondary` calls automatically fall back to the primary provider.
+
+---
+
+## 7. Verify Provider Roles
+
+```bash
+ergors provider roles
+```
+
+Expected output:
+
+```
+Engine Role Assignments
+=======================
+  rlm-primary: glm-flash [primary]
+  rlm-secondary: qwen-coder [primary]
+```
+
+You can reassign roles at any time without restarting:
+
+```bash
+ergors provider unassign glm-flash --role rlm-primary
+ergors provider assign anthropic --role rlm-primary
+```
+
+---
+
+## 8. Configure Discord Gateway
+
+```bash
+ergors gateway discord setup <your-guild-id>
+```
+
+This prompts for the bot token (hidden), adds the guild to the allowlist, and enables the gateway. Restart the engine to activate:
 
 ```bash
 ergors deploy update-deployment edgar-cayce --sdl sdls/engine/ergors-sentinel.yml
-```
-
-Container restarts. Verify Discord connected:
-
-```bash
 ergors gateway status discord
 ```
 
 ---
 
-## 5. Deploy Inference
+## 9. Set RLM Mode and Admin Role (in Discord)
 
-```bash
-ergors deploy create --sdl sdls/embeddings/qwen.yml --label qwen-embeddings --auto
-ergors deploy create --sdl sdls/chat/kimi-k2.5.yml --label kimi-chat --auto
+In your Discord server, use these slash commands:
+
+```
+/edgar config admin_role:@Akashic Record Keeper
+/edgar rlm mode:rlm
 ```
 
-Wait for both, then verify:
+- **admin_role** — which Discord role can ingest/delete documents
+- **mode:rlm** — switches from static RAG to agentic reasoning loops
 
-```bash
-ergors deploy info qwen-embeddings
-ergors deploy info kimi-chat
-curl http://<engine>/v1/models
+By default, RLM routes to providers assigned via `rlm-primary` and `rlm-secondary` engine roles. You can override with explicit model names:
+
+```
+/edgar rlm primary_model:claude-sonnet-4-5-20250929
+/edgar rlm sub_model:glm-flash
 ```
 
-Both should appear as available models.
+When `primary_model` / `sub_model` are empty (default), the engine resolves them through role assignments set in step 6.
 
 ---
 
-## 6. Configure RAG
+## 10. Ingest a GitHub Repository
 
-```bash
-ergors rag configure --endpoint http://<qwen-endpoint>:<port> --model qwen-embeddings
-ergors rag status
-```
-
-Get the embedding endpoint from `ergors deploy endpoints qwen-embeddings`.
-
----
-
-## 7. Ingest Documentation
-
-In Discord (requires **Akashic Record Keeper** role):
+Requires the admin role set above.
 
 ```
-/ingest url:https://github.com/akash-network/website label:akash-docs doc_type:documentation
+/edgar ingest url:https://github.com/akash-network/website label:Akash Docs doc_type:documentation
 ```
+
+The `label` parameter is **required** — it defines the topic category that users select when asking questions. Multiple documents can share the same label to form a topic.
 
 Verify:
 
 ```
-/ragsources
+/edgar sources
 ```
 
 ---
 
-## 8. Ask Questions
+## 11. Ask a Question
 
 ```
-/prompt What are the hardware requirements for running an Akash provider?
+/edgar ask topic:Akash Docs question:What are the hardware requirements for running an Akash provider?
 ```
 
-Other commands:
+What happens:
 
-| Command | Action |
-|---------|--------|
-| `/prompt <question>` | Ask the bot |
-| `/thread <name>` | New conversation thread |
-| `/clear` | Reset current session |
-| `/ragsources` | List ingested sources |
-| `/ragstatus` | RAG stats |
+1. `/edgar ask` validates the topic exists for this guild
+2. Prepends `[Topic: Akash Docs]` to scope the query
+3. RLM receives the scoped query, calls `list_documents` and `search_in_document` against `DocumentStorage`
+4. The reasoning loop reads matching source files, extracts relevant sections, and synthesizes an answer
+5. The response is grounded in the ingested documents — not hallucinated from training data
+
+The `topic` field autocompletes from ingested document labels, so users see exactly what's available.
+
+---
+
+## Command Reference
+
+| Command | Description | Admin |
+|---------|-------------|-------|
+| `/edgar ask <topic> <question>` | Ask about ingested documents (topic autocompletes) | No |
+| `/edgar ingest <url> <label> [doc_type]` | Ingest URL or GitHub repo with topic label | Yes |
+| `/edgar sources [limit]` | List ingested documents | No |
+| `/edgar delete <source>` | Remove a document | Yes |
+| `/edgar thread [name]` | New conversation thread | No |
+| `/edgar clear` | Reset current session | No |
+| `/edgar config [admin_role]` | Set admin role | Yes |
+| `/edgar rlm [mode] [max_iterations] [max_sub_calls] [primary_model] [sub_model]` | Configure RLM mode and models | Yes |
 
 ---
 
 ## Management
 
-All commands require `ERGORS_GRPC_ADDR` set to the remote engine.
+All commands require `ERGORS_GRPC_ADDR` pointing to the remote engine.
 
 ```bash
-# Health
+# Check deployments
 ergors deploy info edgar-cayce
-ergors deploy info qwen-embeddings
-ergors deploy info kimi-chat
 
-# Top up escrow (10 AKT = 10000000 uakt)
+# Top up escrow (10 AKT)
 ergors deploy topup-escrow edgar-cayce 10000000
-ergors deploy topup-escrow qwen-embeddings 10000000
-ergors deploy topup-escrow kimi-chat 10000000
 
-# Shutdown (close inference first, then engine from local)
-ergors deploy close-deployment kimi-chat
-ergors deploy close-deployment qwen-embeddings
+# Shutdown
 unset ERGORS_GRPC_ADDR
 ergors deploy close-deployment edgar-cayce
 ```
@@ -261,9 +268,55 @@ ergors deploy close-deployment edgar-cayce
 | Symptom | Fix |
 |---------|-----|
 | Sentinel 401/403 | Wrong admin key or bad signature |
-| Sentinel 409 | Out-of-phase request — check `GET /sentinel/health` |
-| Sentinel 408 | Clock skew >5 min — sync system clock |
+| Sentinel 409 | Out-of-phase — check `GET /sentinel/health` |
 | Bot offline after restart | Missing `ERGORS_CUSTODY_PASSWORD` in SDL env |
-| `/ingest` denied | User needs Akashic Record Keeper role |
+| `/edgar ingest` denied | User needs the configured admin role |
+| `/edgar ask` topic not found | Ingest documents with that label first |
+| RLM returns generic answers | Verify mode is `rlm` via `/edgar rlm mode:rlm` |
+| RLM uses wrong model | Check `ergors provider roles` — assign providers to `rlm-primary` / `rlm-secondary` roles |
+| `provider test` fails with "not registered" | Run `ergors deploy register-providers <label>` to register deployment endpoints |
+| `provider test` connection refused | Deployment may still be starting — check `ergors deploy info <label>` |
 | No bids on deploy | Raise `amount` in SDL pricing section |
-| RAG empty results | Run `ergors rag configure` with correct endpoint |
+
+---
+
+## TL;DR
+
+```bash
+# reset and initialize
+ergors init unsafe-wipe
+ergors init new
+ergors keys import-mnemonic --label default --default --prefix akash --coin-type 118
+RUST_LOG=debug ergors start
+
+# setup discord bot
+ergors gateway discord setup <guild-id> --token <bot-token>
+
+# deploy inference with per-service model mapping
+ergors deploy create \
+  --sdl sdls/chat/local-inference.yml \
+  --label inference-gpu \
+  --model-map glm-flash=Qwen/Qwen2.5-Coder-7B-Instruct \
+  --model-map qwen-coder=Qwen/Qwen2.5-Coder-7B-Instruct \
+  --interactive-bid --min-balance 1000000 --key-name default
+
+# register deployed endpoints as providers
+ergors deploy register-providers inference-gpu
+
+# test providers are reachable
+ergors provider test glm-flash
+ergors provider test qwen-coder
+
+# assign engine roles
+ergors provider assign glm-flash --role rlm-primary
+ergors provider assign qwen-coder --role rlm-secondary
+
+# verify
+ergors provider roles
+```
+
+## What is the workflow we want to use?
+
+- determine what the question is asking
+- determine what specific tool we should use
+- use the tool

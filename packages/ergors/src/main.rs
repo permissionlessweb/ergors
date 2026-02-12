@@ -18,8 +18,8 @@ use ergors::{
     client::RlmDocService,
     commands::{
         call::CallCmd, config::ConfigCmd, init::InitCmd, sentinel::SentinelCmd, AskCmd,
-        BootstrapCmd, CliContext, DeployCmd, DocumentCmd, EngineCmd, NetworkCmd, NodeCmd,
-        ProviderCmd, RemoteConfigCmd, SdlCmd, WorkspaceCmd,
+        BootstrapCmd, CliContext, DeployCmd, DocumentCmd, EngineCmd, GatewayCmd, NetworkCmd,
+        NodeCmd, ProviderCmd, RemoteConfigCmd, SdlCmd, WorkspaceCmd,
     },
     config::ErgorsConfig,
     daemon::{Daemon, SignalHandler},
@@ -159,6 +159,10 @@ pub enum Commands {
 
     /// Make inference calls through the node's HTTP proxy
     Call(CallCmd),
+
+    /// Communication gateway management (Discord, Nostr, Element)
+    #[command(subcommand)]
+    Gateway(GatewayCmd),
 }
 
 fn main() -> Result<()> {
@@ -299,6 +303,7 @@ async fn execute_grpc_command(cli: &Cli) -> Result<()> {
         Commands::Ask(cmd) => cmd.execute(&ctx, client?).await?,
         Commands::Document(cmd) => cmd.execute(&ctx, client).await?,
         Commands::RuntimeConfig(cmd) => cmd.execute(&ctx, client?).await?,
+        Commands::Gateway(cmd) => cmd.execute(&ctx, client?).await?,
 
         // Local commands handled in main()
         Commands::Start { .. }

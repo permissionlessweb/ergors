@@ -5,12 +5,37 @@
 - toad support: <https://github.com/batrachianai/toad>
 - claw-machine support: <https://github.com/noahsaso/claw-machine>
   - configure mpc-like support mimicing: <https://github.com/7836246/claude-team-mcp>
-
+  
 ## OPTIMIZATIONS
 
-- ALL Actions responses should be json formatted for effective parsing with tools and in logs. we do not need fancy formatting for displaying, this will be wired in front ends
+### COMMAND IMPROVEMENTS
+
+#### `ergors deploy register-providers`
+
+- add model-map -> api-key flag option: give admins an interactive workflow to securely provide api keys given each model-map existing for a provider (they can specify to set api provider as no-api to not inlcude them in iteractive, or if not specified )
+
+- ALL ACTIONS responses should be json formatted for effective parsing with tools and in logs. we do not need fancy formatting for displaying, this will be wired in front ends
 - session reference and loading: should be able to name, list , create new sessions, referenced by the location of the project specified (similar to claude code,opencode etc)
-- refactor codebase: improve the location of logic, managed by separation of concern more effectively. lots of akash-sepcifc code scattered through out deploy
+- refactor codebase: improve the location of logic, lots of the grpc logic can be isolated and implemented into their respected folders for clear separations of concerns)
+
+- stream logs from deployment
+- ssh into deployments
+- sg-lang cookbooks
+
+> ergors provider default qwen-coder --no_key=true
+>
+> - does not display flags correctly (display all flags please)
+
+Caused by: code: 'Client specified an invalid argument', message: "API key is required (use no_key=true for keyless providers)"
+returniflost@groot e2e-improvements % ergors provider default qwen-coder --no_key=true
+
+> match --served-model-name with the service name for continuity and access of it
+
+edgar rlm:
+
+- primary model & sub_model
+  - display list of ccurent available models, and the base_urls
+  - use specific python rlm design // hooks
 
 ## COSMWASM
 
@@ -20,28 +45,20 @@
 - email-style addressing (cw-auth@node-ip/dns)
 - add flags for permissions to access cosmwasm contracts (mimicing wasmd functionality)
 - implement various authenticator middleware contracts (see smart-account implementations)
-- implement cw-oline: cosmwasm contract to organize sdl and deployment sequence of [o-line](https://github.com/permissionlessweb/o-line/tree/master/playbook/oline-sdl)
-- add custom proxy from vm to invoke engine actions (have a contract call the api endpoint of an engine to bootstrap,make infernece call, etc) (WE CAN DO THIS BY HAVING THE CONTRACT EMIT EVENT WITH PREDEFINED ATTRIBUTES!!)
 
 ## NETWORK
 
 **Issues**: [#4 Network Identity & Consensus](https://github.com/permissionlessweb/ergors/issues/4)
 
-- implement bft between nodes (state-sync application-state root hashes, bft-consensus of per-node state commitments)
-<!-- - designate supreme leader: allow consensus nodes to drop/not participate in conseunsus, as long as 1 node (supreme-leader) is still active we dont prohobit incrementing blocks.if supreme-leader drops, halt everything until they are back on. -->
-- register pper to participate to expect provision in commitment
-- nepoitc order: allow supreme leader to invite/expect other nodes to particiapte in simplex ordering, parameters for if liveness for node does not exist to continue without them
 - implement network topology data and access (alot of TODO's currently)
 - ensure api endpionts access/use are standardize thorughout logic (cosmos grpc,api/rpc)
 
 ## NODE ACTIONS
 
 - use label||session id for all cli commands
-- do not poll for workflow in cache if its closed (currently still polls for deployments closed on error during inital deplyoment workflow)
-- ensure all requests made to endpoing are saved in storage layer
-
+- ensure all requests made to endpoint are saved in storage layer (middleware handles this, so ensure middleware is sound and correctly implemented)
 - display known response from api for helping/debugging when incorrect api defintion is called (generic fallback page/api/cli)
-  - okapi
+- okapi: <https://github.com/GREsau/okapi/tree/master>
 
 ## SECURITY
 
@@ -65,6 +82,7 @@
 - on successful wallet password provision, escape process as workflow has been invoked
 - Do not use REST + polling + “is it done?” endpoints, use async jobs + webhook/callbacks + idempotency keys.
 - prompt to deploy via sdl -> cancel via (ctrl + c) on password prompt == label of deployment workflow still persist in storage instead of removed.
+- do not poll for workflow in cache if its closed (currently still polls for deployments closed on error during inital deplyoment workflow)
 
 ### STORAGE LAYER ARCHITECTURE
 
@@ -83,8 +101,6 @@ We can update how we keep track of the following values to a dedicated layer in 
 
 **Issues**: [#5 Configuration System Hardening](https://github.com/permissionlessweb/ergors/issues/5)
 
-- merge config and runtime-config into one command config
-
 ## ORCHESTRATOR SERVICE
 
 **Issues**: [#11 Agentic Workflow Enhancements](https://github.com/permissionlessweb/ergors/issues/11) | [#8 Testing Infrastructure](https://github.com/permissionlessweb/ergors/issues/8)
@@ -99,7 +115,7 @@ We can update how we keep track of the following values to a dedicated layer in 
 - <https://models.dev/>
 
 ### BOOTSTRAPPING
-
+- basic ssh bootst
 - implement connection with network node for bootstrapping
 - perform boostrapping functions and report/mitigate/handle results of bootstrapping
 

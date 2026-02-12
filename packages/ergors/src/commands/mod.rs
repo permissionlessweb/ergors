@@ -573,6 +573,9 @@ pub enum ProviderCmd {
         /// Register without an API key (for local/co-deployed inference)
         #[arg(long)]
         no_key: bool,
+        /// Assign an engine role in the same command
+        #[arg(long, value_parser = ["orchestration", "sub-agent", "embeddings", "tool-calling", "rlm-primary", "rlm-secondary"])]
+        role: Option<String>,
     },
     /// Test provider connectivity
     Test {
@@ -589,7 +592,7 @@ pub enum ProviderCmd {
         /// Provider name
         name: String,
         /// Engine role
-        #[arg(long, value_parser = ["orchestration", "sub-agent", "embeddings", "tool-calling"])]
+        #[arg(long, value_parser = ["orchestration", "sub-agent", "embeddings", "tool-calling", "rlm-primary", "rlm-secondary"])]
         role: String,
     },
     /// Unassign a provider from an engine role
@@ -597,8 +600,13 @@ pub enum ProviderCmd {
         /// Provider name
         name: String,
         /// Engine role
-        #[arg(long, value_parser = ["orchestration", "sub-agent", "embeddings", "tool-calling"])]
+        #[arg(long, value_parser = ["orchestration", "sub-agent", "embeddings", "tool-calling", "rlm-primary", "rlm-secondary"])]
         role: String,
+    },
+    /// Remove a configured provider (requires custody password)
+    Remove {
+        /// Provider name
+        name: String,
     },
     /// List all engine role assignments
     Roles,
@@ -612,8 +620,10 @@ fn parse_engine_role(s: &str) -> Result<ho_std::types::ergors::orch::v1::EngineR
         "sub-agent" => Ok(EngineRole::SubAgent),
         "embeddings" => Ok(EngineRole::Embeddings),
         "tool-calling" => Ok(EngineRole::ToolCalling),
+        "rlm-primary" => Ok(EngineRole::RlmPrimary),
+        "rlm-secondary" => Ok(EngineRole::RlmSecondary),
         _ => anyhow::bail!(
-            "Unknown engine role '{}'. Valid roles: orchestration, sub-agent, embeddings, tool-calling",
+            "Unknown engine role '{}'. Valid roles: orchestration, sub-agent, embeddings, tool-calling, rlm-primary, rlm-secondary",
             s
         ),
     }
@@ -627,6 +637,8 @@ pub(crate) fn format_engine_role(role: i32) -> &'static str {
         Ok(EngineRole::SubAgent) => "sub-agent",
         Ok(EngineRole::Embeddings) => "embeddings",
         Ok(EngineRole::ToolCalling) => "tool-calling",
+        Ok(EngineRole::RlmPrimary) => "rlm-primary",
+        Ok(EngineRole::RlmSecondary) => "rlm-secondary",
         _ => "unknown",
     }
 }
@@ -661,7 +673,21 @@ impl ProviderCmd {
                         } else {
                             "disabled"
                         };
-                        println!("  {} - {}", provider.name, status);
+                        let auth = if provider.keyless { "keyless" } else { "api-key" };
+                        let url = if provider.base_url.is_empty() {
+                            "-".to_string()
+                        } else {
+                            provider.base_url.clone()
+                        };
+                        let deploy = if provider.deployment_session_id.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  deploy:{:.8}", provider.deployment_session_id)
+                        };
+                        println!(
+                            "  {:<14} {}  {}  {}{}",
+                            provider.name, status, auth, url, deploy
+                        );
                     }
                 }
                 Ok(())
@@ -672,6 +698,7 @@ impl ProviderCmd {
                 base_url,
                 default,
                 no_key,
+                role,
             } => {
                 // Normalize provider name to lowercase for consistency
                 let name_lower = name.to_lowercase();
@@ -710,6 +737,16 @@ impl ProviderCmd {
                     if *default {
                         println!("Set as default provider");
                     }
+                    // Assign engine role if specified
+                    if let Some(role_str) = role {
+                        let engine_role = parse_engine_role(role_str)?;
+                        let role_result = client.assign_provider_role(&name_lower, engine_role).await?;
+                        if role_result.success {
+                            println!("Assigned role '{}' to provider '{}'", role_str, name_lower);
+                        } else {
+                            eprintln!("Warning: role assignment failed: {}", role_result.message);
+                        }
+                    }
                 } else {
                     eprintln!("Error: {}", result.message);
                     std::process::exit(1);
@@ -719,15 +756,31 @@ impl ProviderCmd {
             ProviderCmd::Test { name } => {
                 // Normalize provider name to lowercase
                 let name_lower = name.as_ref().map(|n| n.to_lowercase());
+                let print_result = |name: &str, result: &ho_std::types::ergors::management::v1::ProviderTestResult| {
+                    if result.success {
+                        println!("{}: OK ({}ms)", name, result.latency_ms);
+                        if !result.base_url.is_empty() {
+                            println!("  URL:   {}", result.base_url);
+                        }
+                        if !result.model_tested.is_empty() {
+                            println!("  Model: {}", result.model_tested);
+                        }
+                    } else {
+                        println!("{}: FAILED", name);
+                        if !result.base_url.is_empty() {
+                            println!("  URL:   {}", result.base_url);
+                        }
+                        if !result.model_tested.is_empty() {
+                            println!("  Model: {}", result.model_tested);
+                        }
+                        println!("  Error: {}", result.error_message);
+                    }
+                };
+
                 match name_lower {
                     Some(n) => {
                         let result = client.test_provider(&n).await?;
-
-                        if result.success {
-                            println!("{}: OK ({}ms)", n, result.latency_ms);
-                        } else {
-                            println!("{}: FAILED - {}", n, result.error_message);
-                        }
+                        print_result(&n, &result);
                     }
                     None => {
                         // Test all providers
@@ -736,15 +789,7 @@ impl ProviderCmd {
                         for provider in &list.providers {
                             if provider.configured {
                                 let result = client.test_provider(&provider.name).await?;
-
-                                if result.success {
-                                    println!("{}: OK ({}ms)", provider.name, result.latency_ms);
-                                } else {
-                                    println!(
-                                        "{}: FAILED - {}",
-                                        provider.name, result.error_message
-                                    );
-                                }
+                                print_result(&provider.name, &result);
                             }
                         }
                     }
@@ -786,6 +831,17 @@ impl ProviderCmd {
                 } else {
                     eprintln!("Error: {}", result.message);
                     std::process::exit(1);
+                }
+                Ok(())
+            }
+            ProviderCmd::Remove { name } => {
+                let password = rpassword::prompt_password("Custody password: ")
+                    .map_err(|e| anyhow::anyhow!("Failed to read password: {}", e))?;
+                let result = client.remove_provider(name, &password).await?;
+                if result.success {
+                    println!("{}", result.message);
+                } else {
+                    eprintln!("{}", result.message);
                 }
                 Ok(())
             }

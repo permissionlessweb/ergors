@@ -1241,6 +1241,8 @@ enum EngineRole {
   ENGINE_ROLE_SUB_AGENT = 2;      // Sub-agent task execution
   ENGINE_ROLE_EMBEDDINGS = 3;     // Embedding generation (RAG, search)
   ENGINE_ROLE_TOOL_CALLING = 4;   // Tool-calling specialized model
+  ENGINE_ROLE_RLM_PRIMARY = 5;    // Primary LLM for RLM reasoning loop
+  ENGINE_ROLE_RLM_SECONDARY = 6;  // Sub-agent LLM for RLM llm_query() calls
 }
 
 // Maps a single engine role to its assigned providers (ordered by priority)
@@ -1435,6 +1437,10 @@ message AkashDeploymentWorkflow {
   // Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8")
   // Stamped onto service endpoints when they are discovered
   string model_name = 37;
+
+  // Per-service model name mapping (service_name → upstream model name)
+  // Overrides model_name for specific services when set
+  map<string, string> model_map = 38;
 }
 
 // Workflow step log entry for audit

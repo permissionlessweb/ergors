@@ -17,7 +17,8 @@ class ReplEngine:
     """Executes RLM queries using an iterative REPL with a root LLM."""
 
     def __init__(self, documents: List[Dict[str, Any]], llm_query_fn: Callable[[str, str], str],
-                 doc_fns: Optional[Dict[str, Callable]] = None):
+                 doc_fns: Optional[Dict[str, Callable]] = None,
+                 primary_model: str = "default", sub_model: str = "default"):
         """
         Initialize REPL engine.
 
@@ -25,10 +26,14 @@ class ReplEngine:
             documents: List of Document dicts from Rust (legacy, may be empty)
             llm_query_fn: Callback for sub-LLM queries
             doc_fns: Document access callbacks {"list": fn, "get_section": fn, "search": fn}
+            primary_model: Model name for root RLM reasoning calls
+            sub_model: Model name for sandboxed llm_query() sub-calls
         """
         self.documents = documents
         self.llm_query_fn = llm_query_fn
         self.doc_fns = doc_fns or {}
+        self.primary_model = primary_model
+        self.sub_model = sub_model
         self.iterations = 0
         self.sub_llm_calls = 0
         self.total_cost = 0.0  # TODO: track cost from LLM responses
@@ -171,11 +176,11 @@ class ReplEngine:
 
     def _make_llm_query_wrapper(self, max_sub_calls: int) -> Callable:
         """Create wrapped llm_query function with call count tracking."""
-        def llm_query(prompt: str, model: str = "claude-3-5-sonnet") -> str:
+        def llm_query(prompt: str, model: str = None) -> str:
             if self.sub_llm_calls >= max_sub_calls:
                 raise Exception(f"Max sub-LLM calls ({max_sub_calls}) exceeded")
             self.sub_llm_calls += 1
-            return self.llm_query_fn(prompt, model)
+            return self.llm_query_fn(prompt, model or self.sub_model)
         return llm_query
 
     def _call_root_llm(self, messages: List[Dict[str, str]]) -> str:
@@ -190,7 +195,7 @@ class ReplEngine:
             for msg in messages  # Send FULL conversation history
         ])
 
-        return self.llm_query_fn(prompt, "claude-3-5-sonnet")
+        return self.llm_query_fn(prompt, self.primary_model)
 
     def _execute_code(self, code: str, globals_dict: Dict[str, Any]) -> str:
         """Execute code in restricted environment and capture output."""

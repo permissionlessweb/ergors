@@ -216,7 +216,6 @@ impl AutomatedDeployer {
         self.step_send_manifest(workflow).await?;
         let endpoints = self.step_retrieve_endpoints(workflow).await?;
         self.step_save_endpoints(workflow, endpoints).await?;
-        self.step_register_providers(workflow).await?;
 
         // Mark completed
         workflow.status = AkashWorkflowStatus::Completed as i32;
@@ -1162,16 +1161,21 @@ impl AutomatedDeployer {
             }
         }
 
-        // Convert to proto type, stamping model_name from workflow
+        // Convert to proto type, stamping model_name from model_map (per-service) or workflow fallback
         let endpoint_infos: Vec<AkashServiceEndpoint> = endpoints
             .into_iter()
-            .map(|(name, ep)| AkashServiceEndpoint {
-                service_name: name,
-                external_uri: ep.external_uri,
-                internal_port: ep.internal_port,
-                external_port: ep.external_port,
-                protocol: ep.protocol,
-                model_name: workflow.model_name.clone(),
+            .map(|(name, ep)| {
+                let model_name = workflow.model_map.get(&name)
+                    .cloned()
+                    .unwrap_or_else(|| workflow.model_name.clone());
+                AkashServiceEndpoint {
+                    service_name: name,
+                    external_uri: ep.external_uri,
+                    internal_port: ep.internal_port,
+                    external_port: ep.external_port,
+                    protocol: ep.protocol,
+                    model_name,
+                }
             })
             .collect();
 
@@ -1234,75 +1238,6 @@ impl AutomatedDeployer {
         }
         tracing::info!("  OK: Endpoints persisted to storage");
 
-        Ok(())
-    }
-
-    /// Step 12: Automatically register service endpoints as LLM providers.
-    async fn step_register_providers(&self, workflow: &AkashDeploymentWorkflow) -> Result<()> {
-        use ho_std::types::ergors::orch::v1::{InferenceProviderConfig, InferenceProviderType};
-
-        if workflow.service_endpoints.is_empty() {
-            tracing::info!("[Step 12/12] Register Providers - Skipped (no endpoints)");
-            return Ok(());
-        }
-
-        tracing::info!("[Step 12/12] Register Providers");
-        tracing::info!("  Auto-registering {} service(s) as LLM providers...", workflow.service_endpoints.len());
-
-        // Get current provider config
-        let mut router_config = self
-            .storage
-            .get_proxy_router_config()
-            .await?
-            .unwrap_or_default();
-
-        let mut registered = Vec::new();
-        let mut skipped = Vec::new();
-
-        for endpoint in &workflow.service_endpoints {
-            let label = endpoint.service_name.clone();
-
-            // Skip if provider already exists
-            if router_config.providers.contains_key(&label) {
-                tracing::debug!("  Provider '{}' already exists, skipping", label);
-                skipped.push(label);
-                continue;
-            }
-
-            // Create provider config
-            let provider_config = InferenceProviderConfig {
-                provider_id: label.clone(),
-                base_url: endpoint.external_uri.clone(),
-                api_key_ref: String::new(), // Keyless
-                enabled: true,
-                provider_type: InferenceProviderType::Custom as i32,
-                ..Default::default()
-            };
-
-            router_config.providers.insert(label.clone(), provider_config);
-
-            // Add model route: service-name/* → service-name
-            let wildcard_pattern = format!("{}/*", label);
-            router_config.model_routes.insert(wildcard_pattern, label.clone());
-
-            registered.push(label);
-        }
-
-        // Save updated config if any providers were registered
-        if !registered.is_empty() {
-            self.storage.put_proxy_router_config(&router_config).await?;
-
-            tracing::info!("  ✓ Registered {} provider(s):", registered.len());
-            for label in &registered {
-                tracing::info!("    - {}", label);
-            }
-        }
-
-        if !skipped.is_empty() {
-            tracing::info!("  ⊘ Skipped {} existing provider(s)", skipped.len());
-        }
-
-        tracing::info!("  OK: Providers registered and ready for inference");
         Ok(())
     }
 

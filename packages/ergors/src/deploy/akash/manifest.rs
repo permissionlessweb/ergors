@@ -228,7 +228,7 @@ pub struct ServiceEndpoint {
 /// Returns a map of service name → endpoint info.
 pub async fn query_service_endpoints(
     provider_uri: &str,
-    owner: &str,
+    _owner: &str,
     dseq: u64,
     gseq: u32,
     oseq: u32,

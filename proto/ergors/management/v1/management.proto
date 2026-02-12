@@ -47,6 +47,7 @@ service ManagementService {
   rpc ListProviders(Empty) returns (ProviderList);
   rpc ConfigureProvider(ProviderConfig) returns (OperationResult);
   rpc TestProvider(ProviderName) returns (ProviderTestResult);
+  rpc RemoveProvider(RemoveProviderRequest) returns (OperationResult);
 
   // Provider Role Assignments
   rpc AssignProviderRole(AssignProviderRoleRequest) returns (OperationResult);
@@ -478,6 +479,9 @@ message ProviderInfo {
   string name = 1;
   bool configured = 2;
   bool enabled = 3;
+  string base_url = 4;
+  bool keyless = 5;
+  string deployment_session_id = 6;
 }
 
 message ProviderConfig {
@@ -496,6 +500,13 @@ message ProviderTestResult {
   bool success = 1;
   uint32 latency_ms = 2;
   string error_message = 3;
+  string base_url = 4;
+  string model_tested = 5;
+}
+
+message RemoveProviderRequest {
+  string name = 1;
+  string custody_password = 2;
 }
 
 // Provider role assignment requests
@@ -1216,6 +1227,9 @@ message CreateAkashDeploymentRequest {
   string label = 9;
   // Actual model name for inference routing (e.g., "Qwen/Qwen3-235B-A22B-FP8")
   string model_name = 10;
+  // Per-service model name mapping (service_name → upstream model name)
+  // e.g., {"inference": "glm-4-flash", "embeddings": "bge-large-en-v1.5"}
+  map<string, string> model_map = 11;
 }
 
 // Create deployment response
@@ -1521,7 +1535,6 @@ message DisableGatewayRequest {
 
 message ConfigureDiscordGatewayRequest {
   string bot_token = 1;  // Will be encrypted
-  optional string command_prefix = 2;
   optional bool respond_to_mentions = 3;
 }
 
@@ -1539,7 +1552,6 @@ message GetDiscordConfigResponse {
   bool token_configured = 1;  // Token itself is never returned
   repeated string allowed_guild_ids = 2;
   repeated string allowed_channel_ids = 3;
-  string command_prefix = 4;
   bool respond_to_mentions = 5;
   bool respond_to_dms = 6;
 }

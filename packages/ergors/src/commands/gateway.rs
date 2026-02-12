@@ -44,8 +44,17 @@ pub enum GatewayCmd {
 #[cfg(feature = "discord")]
 #[derive(Subcommand)]
 pub enum DiscordCmd {
-    /// Set Discord bot token (encrypted via custody)
-    SetToken {
+    /// Quick setup: bot token + guild allowlist + enable gateway
+    Setup {
+        /// Discord guild (server) ID
+        guild_id: String,
+        /// Bot token (prompts interactively if not provided)
+        #[arg(long)]
+        token: Option<String>,
+    },
+
+    /// Set Discord bot token (from Developer Portal -> Bot -> Token)
+    SetBotToken {
         /// Bot token (will prompt interactively if not provided)
         #[arg(long)]
         token: Option<String>,
@@ -192,7 +201,54 @@ impl GatewayCmd {
 impl DiscordCmd {
     pub async fn execute(&self, ctx: &CliContext, mut client: ManagementClient) -> Result<()> {
         match self {
-            DiscordCmd::SetToken { token } => {
+            DiscordCmd::Setup { guild_id, token } => {
+                let bot_token = match token {
+                    Some(t) => t.clone(),
+                    None => {
+                        rpassword::prompt_password("Enter Discord bot token: ")
+                            .map_err(|e| anyhow::anyhow!("Failed to read token: {}", e))?
+                    }
+                };
+
+                if bot_token.is_empty() {
+                    return Err(anyhow::anyhow!("Token cannot be empty"));
+                }
+
+                // Step 1: Configure bot token
+                let result = client
+                    .configure_discord_gateway(&bot_token, None)
+                    .await?;
+                if !result.success {
+                    return Err(anyhow::anyhow!("Failed to configure token: {}", result.message));
+                }
+                println!("Bot token configured (encrypted)");
+
+                // Step 2: Add guild to allowlist
+                let result = client.add_discord_allowed_guild(guild_id).await?;
+                if !result.success {
+                    return Err(anyhow::anyhow!("Failed to add guild: {}", result.message));
+                }
+                println!("Guild {} added to allowlist", guild_id);
+
+                // Step 3: Enable gateway
+                let result = client.enable_gateway("discord").await?;
+                if !result.success {
+                    return Err(anyhow::anyhow!("Failed to enable gateway: {}", result.message));
+                }
+                println!("Discord gateway enabled");
+
+                println!();
+                println!("Setup complete! The bot will connect automatically.");
+                println!();
+                println!("If the engine isn't running yet:");
+                println!("  ergors start");
+                println!();
+                println!("Next steps in Discord:");
+                println!("  1. Set admin role: /edgar config admin_role:@YourRole");
+                println!("  2. Test with: /edgar prompt message:Hello");
+                Ok(())
+            }
+            DiscordCmd::SetBotToken { token } => {
                 let bot_token = match token {
                     Some(t) => t.clone(),
                     None => {
@@ -207,7 +263,7 @@ impl DiscordCmd {
                 }
 
                 let result = client
-                    .configure_discord_gateway(&bot_token, None, None)
+                    .configure_discord_gateway(&bot_token, None)
                     .await?;
 
                 if ctx.json {
@@ -275,7 +331,6 @@ impl DiscordCmd {
                             "token_configured": response.token_configured,
                             "allowed_guild_ids": response.allowed_guild_ids,
                             "allowed_channel_ids": response.allowed_channel_ids,
-                            "command_prefix": response.command_prefix,
                             "respond_to_mentions": response.respond_to_mentions,
                             "respond_to_dms": response.respond_to_dms,
                         }))?
@@ -291,7 +346,6 @@ impl DiscordCmd {
                             "not configured"
                         }
                     );
-                    println!("Command Prefix:   {}", response.command_prefix);
                     println!("Respond to @:     {}", response.respond_to_mentions);
                     println!("Respond to DMs:   {}", response.respond_to_dms);
                     println!();
@@ -319,9 +373,14 @@ impl DiscordCmd {
                 println!("Slash commands are automatically registered when the bot starts.");
                 println!();
                 println!("Available commands:");
-                println!("  /prompt <message> - Send a prompt to the AI");
-                println!("  /thread [name]    - Create a new conversation thread");
-                println!("  /clear            - Clear conversation history in current thread");
+                println!("  /edgar prompt <message>      - Send a prompt to the AI");
+                println!("  /edgar thread [name]         - Create a new conversation thread");
+                println!("  /edgar clear                 - Clear conversation history");
+                println!("  /edgar ingest <url>          - Ingest URL or GitHub repo (admin)");
+                println!("  /edgar sources [limit]       - List ingested documents");
+                println!("  /edgar delete <source>       - Delete a document (admin)");
+                println!("  /edgar config [admin_role]   - Configure RAG settings (admin)");
+                println!("  /edgar rlm [mode]            - Configure RLM mode (admin)");
                 Ok(())
             }
         }
