@@ -11,6 +11,11 @@ import traceback
 from typing import Any, Dict, Optional
 from repl_engine import ReplEngine
 
+# Save real stdin/stdout BEFORE any redirect_stdout can replace them.
+# These are the actual pipes to the Rust parent process.
+_real_stdout = sys.stdout
+_real_stdin = sys.stdin
+
 
 def main():
     """Main loop: read JSON requests from stdin, execute, write JSON responses to stdout."""
@@ -22,7 +27,7 @@ def main():
     while True:
         try:
             # Read JSON-RPC request from stdin
-            line = sys.stdin.readline()
+            line = _real_stdin.readline()
             if not line:
                 break  # EOF, parent closed pipe
 
@@ -45,8 +50,8 @@ def main():
                 }
 
             # Write JSON response to stdout
-            sys.stdout.write(json.dumps(response) + "\n")
-            sys.stdout.flush()
+            _real_stdout.write(json.dumps(response) + "\n")
+            _real_stdout.flush()
 
         except (KeyboardInterrupt, EOFError):
             # Parent process shutting down — exit cleanly
@@ -62,8 +67,8 @@ def main():
                 },
                 "id": req_id if 'req_id' in locals() else None
             }
-            sys.stdout.write(json.dumps(error_response) + "\n")
-            sys.stdout.flush()
+            _real_stdout.write(json.dumps(error_response) + "\n")
+            _real_stdout.flush()
 
 
 def execute_rlm_query(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -91,10 +96,10 @@ def execute_rlm_query(params: Dict[str, Any]) -> Dict[str, Any]:
             "params": params or {},
             "id": method
         }
-        sys.stdout.write(json.dumps(request) + "\n")
-        sys.stdout.flush()
+        _real_stdout.write(json.dumps(request) + "\n")
+        _real_stdout.flush()
 
-        response_line = sys.stdin.readline()
+        response_line = _real_stdin.readline()
         response = json.loads(response_line)
 
         if "error" in response and response["error"]:

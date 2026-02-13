@@ -22,6 +22,7 @@ pub struct AppConfig {
     pub max_latency_ms: u64,
     pub error_rate: f32,
     pub models: Vec<ModelInfo>,
+    pub rlm_mode: bool,
 }
 
 /// Simulate network/inference latency.

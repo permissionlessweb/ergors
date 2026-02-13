@@ -14,7 +14,9 @@
 #   --skip-inference   Skip mock inference provider (Docker)
 #   --skip-ethereum   Skip Ethereum/Anvil setup
 #   --verbose          Enable verbose output
-#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|sdl-storage|chain-config|sentinel|document|provider-roles|all)
+#   --test SUITE       Run only specific test suite (network|grants|deployment|security|contracts|api|bootstrap|ethereum|inference|sdl-storage|chain-config|sentinel|document|provider-roles|rlm|rlm-live|all)
+#   --provider-url URL Base URL for live inference provider (rlm-live suite)
+#   --provider-key KEY API key for live provider (omit for keyless)
 #   --akash-home PATH  Set Akash repo location
 #   --help             Show this help message
 #
@@ -72,6 +74,10 @@ source "${SCRIPT_DIR}/tests/sentinel.sh"
 source "${SCRIPT_DIR}/tests/document.sh"
 # shellcheck source=tests/provider_roles.sh
 source "${SCRIPT_DIR}/tests/provider_roles.sh"
+# shellcheck source=tests/rlm.sh
+source "${SCRIPT_DIR}/tests/rlm.sh"
+# shellcheck source=tests/rlm_live.sh
+source "${SCRIPT_DIR}/tests/rlm_live.sh"
 
 # =============================================================================
 # Configuration
@@ -107,6 +113,8 @@ while [[ $# -gt 0 ]]; do
         --skip-inference) SKIP_INFERENCE=true; shift ;;
         --verbose) VERBOSE=true; shift ;;
         --test) TEST_SUITE="$2"; shift 2 ;;
+        --provider-url) RLM_LIVE_PROVIDER_URL="$2"; shift 2 ;;
+        --provider-key) RLM_LIVE_PROVIDER_KEY="$2"; shift 2 ;;
         --akash-home) AKASH_HOME="$2"; shift 2 ;;
         --help|-h) print_help; exit 0 ;;
         *) log_error "Unknown option: $1"; exit 1 ;;
@@ -114,6 +122,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 export VERBOSE
+export RLM_LIVE_PROVIDER_URL="${RLM_LIVE_PROVIDER_URL:-}"
+export RLM_LIVE_PROVIDER_KEY="${RLM_LIVE_PROVIDER_KEY:-}"
 
 # Auto-skip heavy infrastructure for suites that only need the ERGORS network
 case "$TEST_SUITE" in
@@ -122,9 +132,14 @@ case "$TEST_SUITE" in
         SKIP_ETHEREUM=true
         SKIP_INFERENCE=true
         ;;
-    security|inference)
+    security|inference|rlm)
         SKIP_AKASH=true
         SKIP_ETHEREUM=true
+        ;;
+    rlm-live)
+        SKIP_AKASH=true
+        SKIP_ETHEREUM=true
+        SKIP_INFERENCE=true
         ;;
     grants|bootstrap)
         SKIP_ETHEREUM=true
@@ -440,6 +455,14 @@ run_tests() {
             run_network_tests  # Ensure nodes are up
             run_provider_roles_tests
             ;;
+        rlm)
+            run_network_tests  # Ensure nodes are up
+            run_rlm_tests
+            ;;
+        rlm-live)
+            run_network_tests  # Ensure nodes are up
+            run_rlm_live_tests
+            ;;
         all)
             # Phase 1: Network tests
             run_network_tests
@@ -482,10 +505,13 @@ run_tests() {
 
             # Phase 13: Sentinel mode tests (standalone, no network needed)
             run_sentinel_tests
+
+            # Phase 14: RLM agentic loop tests
+            run_rlm_tests
             ;;
         *)
             log_error "Unknown test suite: $TEST_SUITE"
-            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, chain-config, sentinel, document, provider-roles, all"
+            log_error "Valid options: network, grants, deployment, security, contracts, api, bootstrap, ethereum, inference, sdl-storage, chain-config, sentinel, document, provider-roles, rlm, rlm-live, all"
             exit 1
             ;;
     esac

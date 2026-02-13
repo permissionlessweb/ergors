@@ -573,6 +573,11 @@ pub enum ProviderCmd {
         /// Register without an API key (for local/co-deployed inference)
         #[arg(long)]
         no_key: bool,
+        /// Upstream model name sent to the inference server
+        /// (e.g., "Qwen/Qwen2.5-Coder-7B-Instruct").
+        /// Without this, the provider label is sent as the model name.
+        #[arg(long)]
+        model_name: Option<String>,
         /// Assign an engine role in the same command
         #[arg(long, value_parser = ["orchestration", "sub-agent", "embeddings", "tool-calling", "rlm-primary", "rlm-secondary"])]
         role: Option<String>,
@@ -698,6 +703,7 @@ impl ProviderCmd {
                 base_url,
                 default,
                 no_key,
+                model_name,
                 role,
             } => {
                 // Normalize provider name to lowercase for consistency
@@ -730,10 +736,13 @@ impl ProviderCmd {
                     anyhow::bail!("API key cannot be empty");
                 }
 
-                let result = client.configure_provider(&name_lower, &key, base_url.as_deref(), *default, *no_key).await?;
+                let result = client.configure_provider(&name_lower, &key, base_url.as_deref(), *default, *no_key, model_name.as_deref()).await?;
 
                 if result.success {
                     println!("Provider '{}' configured ({})", name_lower, result.message);
+                    if let Some(m) = model_name {
+                        println!("Model name: {} (upstream substitution)", m);
+                    }
                     if *default {
                         println!("Set as default provider");
                     }
@@ -799,7 +808,7 @@ impl ProviderCmd {
             ProviderCmd::Default { name } => {
                 // Normalize provider name to lowercase
                 let name_lower = name.to_lowercase();
-                let result = client.configure_provider(&name_lower, "", None, true, false).await?;
+                let result = client.configure_provider(&name_lower, "", None, true, false, None).await?;
 
                 if result.success {
                     println!("Default provider set to: {}", name_lower);

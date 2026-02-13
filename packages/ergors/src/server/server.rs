@@ -288,7 +288,7 @@ impl Server {
         }
 
         // Load proxy router config from storage and populate with LLM entities
-        let mut proxy_router_config = match storage_arc.get_proxy_router_config().await {
+        let proxy_router_config = match storage_arc.get_proxy_router_config().await {
             Ok(Some(stored_config)) => {
                 tracing::info!(
                     "📍 Loaded proxy router config from storage (version {})",

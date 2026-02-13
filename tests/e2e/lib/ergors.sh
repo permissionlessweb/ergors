@@ -1250,6 +1250,7 @@ ergors_start_mock_provider() {
     # Start as background process
     log_verbose "Starting mock provider on port $provider_port..."
     TESTDATA_MODE=true \
+    RLM_MODE=true \
     MIN_LATENCY_MS=0 \
     MAX_LATENCY_MS=50 \
     PORT="$provider_port" \

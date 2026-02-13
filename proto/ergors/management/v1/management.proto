@@ -490,6 +490,9 @@ message ProviderConfig {
   bool set_as_default = 3;
   string base_url = 4;
   bool no_key = 5;
+  // Upstream model name — substituted into requests so the inference server
+  // receives the actual model identifier instead of the provider label or role keyword
+  string model_name = 6;
 }
 
 message ProviderName {
