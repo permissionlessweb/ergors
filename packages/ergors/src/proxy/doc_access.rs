@@ -82,30 +82,87 @@ impl EngineDocumentAccess {
     }
 
     /// Retrieve document content+metadata, using cache if available.
+    ///
+    /// Supports prefix-based lookup: if `doc_id` is shorter than the full 64-char
+    /// blake3 hex, resolves to the unique document matching that prefix. This is
+    /// necessary because LLMs truncate IDs in their output (e.g. `a27cf7b213fd`)
+    /// and reuse those truncated strings in subsequent API calls.
     async fn get_document_cached(&self, doc_id: &str) -> Result<(Vec<u8>, DocumentMetadata)> {
-        // Check cache first
+        // Resolve prefix to full ID if needed
+        let full_id = self.resolve_doc_id(doc_id).await?;
+
+        // Check cache first (always keyed by full ID)
         {
             let cache = self.cache.read().await;
-            if let Some(entry) = cache.get(doc_id) {
+            if let Some(entry) = cache.get(&full_id) {
                 return Ok(entry.clone());
             }
         }
 
         // Cache miss — fetch from storage
         let snapshot = self.storage.cs.latest_snapshot();
-        let id = DocumentId::from_hex(doc_id.to_string())
+        let id = DocumentId::from_hex(full_id.clone())
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         let result = DocumentStorage::retrieve_document(&snapshot, &id)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        // Store in cache (bounded)
+        // Store in cache (bounded, keyed by full ID)
         {
             let mut cache = self.cache.write().await;
-            cache.insert(doc_id.to_string(), result.clone());
+            cache.insert(full_id, result.clone());
         }
 
         Ok(result)
+    }
+
+    /// Resolve a potentially truncated doc_id to the full 64-char hex ID.
+    ///
+    /// LLMs often pass mangled IDs copied from their own print output, e.g.:
+    ///   - `"a27cf7b213fd"` (truncated prefix)
+    ///   - `"a27cf7b213fd... permissionlessweb/akash-deploy-rs"` (prefix + display text)
+    ///   - `"a27cf7b213fd... name (1234 bytes)"` (full display line)
+    ///
+    /// This extracts the leading hex chars and resolves via prefix match.
+    async fn resolve_doc_id(&self, doc_id: &str) -> Result<String> {
+        // Extract leading hex characters (stop at first non-hex char)
+        let hex_prefix: String = doc_id
+            .trim()
+            .chars()
+            .take_while(|c| c.is_ascii_hexdigit())
+            .collect();
+
+        // Full-length ID — use directly
+        if hex_prefix.len() == 64 {
+            return Ok(hex_prefix);
+        }
+
+        // Prefix lookup — must be at least 8 chars to avoid ambiguity
+        if hex_prefix.len() < 8 {
+            anyhow::bail!(
+                "Document ID too short: '{}' (extracted '{}', need at least 8 hex chars)",
+                doc_id, hex_prefix
+            );
+        }
+
+        let snapshot = self.storage.cs.latest_snapshot();
+        let docs = DocumentStorage::list_documents(&snapshot, Some(100), Some(0))
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        let matches: Vec<_> = docs
+            .iter()
+            .filter(|(id, _)| id.as_hex().starts_with(&hex_prefix))
+            .collect();
+
+        match matches.len() {
+            0 => anyhow::bail!("No document found matching prefix: {}", hex_prefix),
+            1 => Ok(matches[0].0.as_hex().to_string()),
+            n => anyhow::bail!(
+                "Ambiguous document prefix '{}' matches {} documents",
+                hex_prefix, n
+            ),
+        }
     }
 }
 
@@ -310,5 +367,37 @@ mod tests {
             .unwrap();
 
         assert_eq!(section, "456789");
+    }
+
+    #[tokio::test]
+    async fn test_prefix_based_document_lookup() {
+        let (storage, _tmp) = setup_test_storage().await;
+
+        let content = b"Prefix lookup test content";
+        let doc_id = {
+            let mut delta = StateDelta::new(storage.cs.latest_snapshot());
+            let id = DocumentStorage::store_document(&mut delta, content, "prefix.txt", "test")
+                .await
+                .unwrap();
+            storage.cs.commit(delta).await.unwrap();
+            id
+        };
+
+        let access = EngineDocumentAccess::new(storage);
+        let full_hex = doc_id.as_hex();
+
+        // 12-char prefix (what LLMs typically truncate to)
+        let prefix = &full_hex[..12];
+        let section = access.get_document_section(prefix, 0, 26).await.unwrap();
+        assert_eq!(section, "Prefix lookup test content");
+
+        // Search also works with prefix
+        let results = access.search_in_document(prefix, "lookup", 5).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].content.contains("lookup"));
+
+        // Too-short prefix (< 8 chars) should fail
+        let short = &full_hex[..4];
+        assert!(access.get_document_section(short, 0, 10).await.is_err());
     }
 }

@@ -330,6 +330,11 @@ impl ManagementServiceImpl {
 
     /// Simple document ingestion: chunk and store without embeddings.
     /// Used by `ergors ask ingest-file` for document storage without an embedder.
+    /// Simple ingestion: store full document to DocumentStorage (content-addressed).
+    ///
+    /// When skip_embeddings=true, there's no vector search capability, so RagStorage
+    /// chunking serves no consumer. EngineDocumentAccess (RLM callbacks) reads from
+    /// DocumentStorage directly — single write, JIT access via list/search/get_section.
     async fn rag_ingest_simple(
         &self,
         content: String,
@@ -337,13 +342,9 @@ impl ManagementServiceImpl {
         _doc_type: String,
         _tags: Vec<String>,
     ) -> Result<Response<RagIngestResponse>, Status> {
-        use ergors_rag::ingest::chunk_text;
-        use ergors_rag::types::VerifiableChunk;
-        use ergors_rag::storage::RagStorage;
-        use uuid::Uuid;
+        use ho_std::document::DocumentStorage;
 
-        let chunks_text = chunk_text(&content, 1000);
-        if chunks_text.is_empty() {
+        if content.is_empty() {
             return Ok(Response::new(RagIngestResponse {
                 success: true,
                 chunk_count: 0,
@@ -352,48 +353,33 @@ impl ManagementServiceImpl {
             }));
         }
 
-        let now = pbjson_types::Timestamp {
-            seconds: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-            nanos: 0,
-        };
+        let doc_name = uri.rsplit('/').next().unwrap_or(&uri);
+        let mut delta = cnidarium::StateDelta::new(self.state.s.cs.latest_snapshot());
 
-        let rag_storage = RagStorage::new(Arc::new(self.state.s.cs.clone()));
-
-        let verifiable_chunks: Vec<VerifiableChunk> = chunks_text
-            .iter()
-            .map(|text| {
-                let content_hash = ::blake3::hash(text.as_bytes());
-                VerifiableChunk {
-                    chunk_id: Uuid::new_v4(),
-                    content: text.clone(),
-                    content_hash: *content_hash.as_bytes(),
-                    embedding_hash: [0u8; 32], // No embedding
-                    version: 0,
-                    ingested_at: now,
-                    source_uri: uri.clone(),
-                    uploader_id: None,
-                    access_policy: None,
-                    commit_ref: None,
-                    previous_version: None,
+        match DocumentStorage::store_document(&mut delta, content.as_bytes(), doc_name, &uri).await
+        {
+            Ok(doc_id) => match self.state.s.cs.commit(delta).await {
+                Ok(_) => {
+                    tracing::info!("Document stored: id={}, name={}", doc_id, doc_name);
+                    Ok(Response::new(RagIngestResponse {
+                        success: true,
+                        chunk_count: 1,
+                        chunk_ids: vec![doc_id.to_string()],
+                        message: format!("Document stored: {}", doc_name),
+                    }))
                 }
-            })
-            .collect();
-
-        let ids: Vec<String> = verifiable_chunks.iter().map(|c| c.chunk_id.to_string()).collect();
-        let count = verifiable_chunks.len() as u32;
-
-        match rag_storage.put_chunks_batch(&verifiable_chunks).await {
-            Ok(()) => Ok(Response::new(RagIngestResponse {
-                success: true,
-                chunk_count: count,
-                chunk_ids: ids,
-                message: format!("Ingested {} chunks (no embeddings)", count),
-            })),
+                Err(e) => {
+                    tracing::error!("Failed to commit document: {}", e);
+                    Ok(Response::new(RagIngestResponse {
+                        success: false,
+                        chunk_count: 0,
+                        chunk_ids: vec![],
+                        message: format!("Failed to commit: {}", e),
+                    }))
+                }
+            },
             Err(e) => {
-                tracing::error!("Failed to store chunks: {}", e);
+                tracing::error!("Failed to store document: {}", e);
                 Ok(Response::new(RagIngestResponse {
                     success: false,
                     chunk_count: 0,
@@ -1345,16 +1331,24 @@ impl ManagementService for ManagementServiceImpl {
             }
 
             // Update the router with the new config
-            pr.update_config(config);
+            pr.update_config(config.clone());
+            drop(pr);
 
-            tracing::info!("✅ Updated proxy router with provider '{}' → {}", req.name, req.base_url);
+            // Persist proxy router config to storage (so test_provider and restarts see it)
+            self.state
+                .s
+                .put_proxy_router_config(&config)
+                .await
+                .map_err(|e| Status::internal(format!("Failed to persist router config: {}", e)))?;
+
+            tracing::info!("Updated proxy router with provider '{}' → {}", req.name, req.base_url);
 
             // Register in LlmRouter so call_provider_by_name works immediately
             let entity = LlmEntity {
                 name: req.name.clone(),
                 base_url: req.base_url.clone(),
                 models: default_models.clone(),
-                default_model: String::new(), // No model substitution for manually added providers
+                default_model: req.model_name.clone(),
                 priority: 0,
                 enabled: true,
                 default_strategy: 0,
@@ -1386,59 +1380,59 @@ impl ManagementService for ManagementServiceImpl {
         let req = request.into_inner();
         let name = req.name.to_lowercase();
 
-        // Look up provider in proxy router config for base_url
-        let router_config = self
-            .state
-            .s
-            .get_proxy_router_config()
-            .await
-            .map_err(|e| Status::internal(format!("Failed to load router config: {}", e)))?
-            .unwrap_or_default();
-
-        let provider_cfg = router_config.providers.get(&name);
-        if provider_cfg.is_none() {
-            // Also check LLM entities (built-in providers)
-            let llm_config = self.state.c.llm();
-            let entity = llm_config.entities.iter().find(|e| e.name == name);
-            if entity.is_none() {
-                return Ok(Response::new(ProviderTestResult {
-                    success: false,
-                    latency_ms: 0,
-                    error_message: format!("Provider '{}' not found in config", name),
-                    base_url: String::new(),
-                    model_tested: String::new(),
-                }));
-            }
-        }
-
-        // Verify provider is registered in LlmRouter (catches registration gaps)
+        // Primary check: is the provider registered in LlmRouter? (runtime source of truth)
         let llm_provider = self.state.r.get_provider(&name).await;
         if llm_provider.is_none() {
+            // Provider not in LlmRouter — check if it exists in storage but wasn't loaded
+            let router_config = self
+                .state
+                .s
+                .get_proxy_router_config()
+                .await
+                .unwrap_or(None)
+                .unwrap_or_default();
+            let in_storage = router_config.providers.contains_key(&name);
+            let hint = if in_storage {
+                format!(
+                    "Provider '{}' exists in storage but is not loaded in LLM router. \
+                     Restart the engine or re-add it via 'provider add'.",
+                    name
+                )
+            } else {
+                let available = self.state.r.get_provider_names().await;
+                format!(
+                    "Provider '{}' not found. Available: {:?}. \
+                     Add it via 'provider add' or 'deploy register-providers'.",
+                    name, available
+                )
+            };
             return Ok(Response::new(ProviderTestResult {
                 success: false,
                 latency_ms: 0,
-                error_message: format!(
-                    "Provider '{}' exists in config but is not registered in LLM router. \
-                     Try 'deploy register-providers' or restart the engine.",
-                    name
-                ),
+                error_message: hint,
                 base_url: String::new(),
                 model_tested: String::new(),
             }));
         }
 
-        // Determine base_url: proxy router config first, then LLM entity
-        let base_url = provider_cfg
-            .map(|c| c.base_url.clone())
-            .or_else(|| {
-                let llm_config = self.state.c.llm();
-                llm_config
-                    .entities
-                    .iter()
-                    .find(|e| e.name == name)
-                    .map(|e| e.base_url.clone())
-            })
-            .unwrap_or_default();
+        // Get base_url from in-memory proxy router (not storage — always in sync)
+        let base_url = {
+            let pr = self.state.pr.read().await;
+            let config = pr.config();
+            config
+                .providers
+                .get(&name)
+                .map(|c| c.base_url.clone())
+                .or_else(|| {
+                    let llm_config = self.state.c.llm();
+                    llm_config
+                        .entities
+                        .iter()
+                        .find(|e| e.name == name)
+                        .map(|e| e.base_url.clone())
+                })
+                .unwrap_or_default()
+        };
 
         // Determine model: check default_models (model_map override), fallback to provider name
         let model = self
@@ -1448,28 +1442,17 @@ impl ManagementService for ManagementServiceImpl {
             .await
             .unwrap_or_else(|| name.clone());
 
-        // Determine API key
-        let api_key: Option<String> = if let Some(cfg) = provider_cfg {
-            if cfg.api_key_ref.is_empty() {
-                // Keyless provider
-                None
-            } else {
-                // Try to resolve from encrypted key store
-                use ho_std::llm::state_ext::StateReadExt as _;
-                let snapshot = self.state.s.cs.latest_snapshot();
-                match snapshot.get_encrypted_api_key_store().await {
-                    Ok(Some(store)) => {
-                        use ho_std::llm::EncryptedApiKeyManager;
-                        let manager = EncryptedApiKeyManager::from_store(&store);
-                        // Can't decrypt without password, skip auth header for test
-                        let _ = manager;
-                        None
-                    }
-                    _ => None,
+        // Determine API key from in-memory proxy router
+        let api_key: Option<String> = {
+            let pr = self.state.pr.read().await;
+            let config = pr.config();
+            match config.providers.get(&name) {
+                Some(cfg) if !cfg.api_key_ref.is_empty() => {
+                    // Has key ref but can't decrypt without password — skip auth for test
+                    None
                 }
+                _ => None, // Keyless or not in proxy config
             }
-        } else {
-            None
         };
 
         // Build minimal OpenAI-compatible test request
@@ -3602,21 +3585,41 @@ impl ManagementService for ManagementServiceImpl {
         let mut registered_labels = Vec::new();
         let mut errors = Vec::new();
 
-        for endpoint in &workflow.service_endpoints {
-            // Skip endpoints without a model name — they are not inference providers
-            if endpoint.model_name.is_empty() {
-                tracing::debug!(
-                    "Skipping non-inference service '{}' (no model_name)",
-                    endpoint.service_name
-                );
-                continue;
-            }
+        // Log what we're working with for debugging
+        tracing::info!(
+            "Registering providers from deployment '{}' with {} endpoints, model_map: {:?}",
+            req.session_id,
+            workflow.service_endpoints.len(),
+            workflow.model_map
+        );
 
+        for endpoint in &workflow.service_endpoints {
             // Build provider label
             let label = if req.label_prefix.is_empty() {
                 endpoint.service_name.clone()
             } else {
                 format!("{}-{}", req.label_prefix, endpoint.service_name)
+            };
+
+            // Resolve model name: endpoint stamped value > workflow model_map > workflow model_name > service name
+            let model_name = if !endpoint.model_name.is_empty() {
+                endpoint.model_name.clone()
+            } else if let Some(mapped) = workflow.model_map.get(&endpoint.service_name) {
+                tracing::info!(
+                    "Service '{}' model resolved from workflow model_map: {}",
+                    endpoint.service_name, mapped
+                );
+                mapped.clone()
+            } else if !workflow.model_name.is_empty() {
+                workflow.model_name.clone()
+            } else {
+                // Use service name as model — provider will serve whatever model it's configured with
+                tracing::warn!(
+                    "Service '{}' has no model mapping — using service name as provider label. \
+                     For model substitution, redeploy with --model-map {}=<model-name>",
+                    endpoint.service_name, endpoint.service_name
+                );
+                String::new()
             };
 
             // Check if label already exists
@@ -3627,7 +3630,9 @@ impl ManagementService for ManagementServiceImpl {
 
             // Create provider config with default_model in metadata for restart persistence
             let mut metadata = std::collections::HashMap::new();
-            metadata.insert("default_model".to_string(), endpoint.model_name.clone());
+            if !model_name.is_empty() {
+                metadata.insert("default_model".to_string(), model_name.clone());
+            }
 
             let provider_config = InferenceProviderConfig {
                 provider_id: label.clone(),
@@ -3676,13 +3681,21 @@ impl ManagementService for ManagementServiceImpl {
                     });
                 if let Some(ep) = endpoint {
                     use ho_std::types::ergors::orch::v1::LlmEntity;
+                    // Re-resolve model name same way as above
+                    let resolved_model = if !ep.model_name.is_empty() {
+                        ep.model_name.clone()
+                    } else if let Some(mapped) = workflow.model_map.get(&ep.service_name) {
+                        mapped.clone()
+                    } else if !workflow.model_name.is_empty() {
+                        workflow.model_name.clone()
+                    } else {
+                        String::new()
+                    };
                     let entity = LlmEntity {
                         name: label.clone(),
                         base_url: ep.external_uri.clone(),
-                        // Provider responds to its own label name
                         models: vec![label.clone()],
-                        // Actual upstream model name for substitution
-                        default_model: ep.model_name.clone(),
+                        default_model: resolved_model,
                         priority: 0,
                         enabled: true,
                         default_strategy: 0,
@@ -3703,7 +3716,19 @@ impl ManagementService for ManagementServiceImpl {
             );
         }
 
-        let message = if !errors.is_empty() {
+        let message = if registered_labels.is_empty() && errors.is_empty() {
+            // No providers registered and no conflicts — likely a model_map mismatch
+            let service_names: Vec<String> = workflow.service_endpoints.iter()
+                .map(|ep| ep.service_name.clone())
+                .collect();
+            format!(
+                "0 providers registered. Service endpoints: {:?}. \
+                 model_map keys: {:?}. Ensure --model-map keys match SDL service names exactly, \
+                 or endpoints are stamped with model_name.",
+                service_names,
+                workflow.model_map.keys().collect::<Vec<_>>()
+            )
+        } else if !errors.is_empty() {
             format!(
                 "Registered {} providers. Warnings: {}",
                 registered_labels.len(),

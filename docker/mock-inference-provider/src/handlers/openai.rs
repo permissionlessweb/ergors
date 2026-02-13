@@ -73,6 +73,21 @@ pub async fn chat_handler(
             .into_response();
     }
 
+    // RLM mode: return scripted responses based on conversation context
+    if state.config.rlm_mode {
+        if let Some(content) = crate::handlers::rlm::rlm_chat_response(&req.messages) {
+            return Json(serde_json::json!({
+                "id": "chatcmpl-rlm-mock",
+                "object": "chat.completion",
+                "created": 1700000000,
+                "model": req.model,
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 200, "total_tokens": 300}
+            }))
+            .into_response();
+        }
+    }
+
     Json(serde_json::json!({
         "id": "chatcmpl-mock-001",
         "object": "chat.completion",

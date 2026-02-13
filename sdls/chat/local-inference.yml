@@ -1,7 +1,7 @@
 ---
 version: "2.0"
 services:
-  glm-flash:
+  qwen1:
     image: lmsysorg/sglang:dev-cu13
     expose:
       - port: 8000
@@ -13,7 +13,7 @@ services:
       - "-c"
     args:
       - >-
-        python3 -m sglang.launch_server --model-path Qwen/Qwen2.5-Coder-7B-Instruct --tp-size 1 --host 0.0.0.0 --port 8000 --trust-remote-code --mem-fraction-static 0.87
+        python3 -m sglang.launch_server --model-path Qwen/Qwen2.5-Coder-7B-Instruct --tp-size 1 --host 0.0.0.0 --port 8000 --trust-remote-code --mem-fraction-static 0.87 --served-model-name qwen1
     params:
       storage:
         shm:
@@ -22,7 +22,7 @@ services:
           mount: /root/.cache
           readOnly: false
 
-  qwen-coder:
+  qwen2:
     image: lmsysorg/sglang:dev-cu13
     expose:
       - port: 8000
@@ -34,7 +34,7 @@ services:
       - "-c"
     args:
       - >-
-        python3 -m sglang.launch_server --model-path Qwen/Qwen2.5-Coder-7B-Instruct --tp-size 1 --host 0.0.0.0 --port 8000 --trust-remote-code --mem-fraction-static 0.87
+        python3 -m sglang.launch_server --model-path Qwen/Qwen2.5-Coder-7B-Instruct --tp-size 1 --host 0.0.0.0 --port 8000 --trust-remote-code --mem-fraction-static 0.87  --served-model-name qwen2
     params:
       storage:
         shm:
@@ -45,7 +45,7 @@ services:
 
 profiles:
   compute:
-    glm-flash:
+    qwen1:
       resources:
         cpu:
           units: 16
@@ -70,7 +70,7 @@ profiles:
               nvidia:
                 - model: a100
                   ram: 80Gi
-    qwen-coder:
+    qwen2:
       resources:
         cpu:
           units: 16
@@ -98,19 +98,19 @@ profiles:
   placement:
     dcloud:
       pricing:
-        glm-flash:
+        qwen1:
           denom: uakt
           amount: 500000
-        qwen-coder:
+        qwen2:
           denom: uakt
           amount: 500000
 
 deployment:
-  glm-flash:
+  qwen1:
     dcloud:
-      profile: glm-flash
+      profile: qwen1
       count: 1
-  qwen-coder:
+  qwen2:
     dcloud:
-      profile: qwen-coder
+      profile: qwen2
       count: 1

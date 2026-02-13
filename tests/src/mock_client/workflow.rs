@@ -214,6 +214,7 @@ impl MockWorkflowEngine {
             lease_id_info: None,
             options: None,
             service_endpoints: Vec::new(),
+            model_map: HashMap::new(),
         }
     }
 

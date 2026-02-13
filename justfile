@@ -214,6 +214,8 @@ e2e suite="all" *args="":
             echo "  sentinel         Sentinel mode tests (standalone)"
             echo "  document         Document storage tests (ingest, retrieve, list, delete)"
             echo "  provider-roles   Engine role assignment tests (assign, unassign, list)"
+            echo "  rlm              RLM agentic loop tests (REPL, callbacks, convergence)"
+            echo "  rlm-live         RLM with live inference (--provider-url URL [--provider-key KEY])"
             echo ""
             echo "Usage: just e2e <suite> [options]"
             echo "Run 'just e2e help' for detailed documentation"
@@ -242,6 +244,8 @@ e2e suite="all" *args="":
             echo "  chain-config     Chain configuration"
             echo "  sentinel         Sentinel mode (standalone)"
             echo "  provider-roles   Engine role assignments"
+            echo "  rlm              RLM agentic loop"
+            echo "  rlm-live         RLM with live inference (--provider-url URL [--provider-key KEY])"
             echo ""
             echo "OPTIONS:"
             echo "  --skip-build        Skip building ergors binary"
@@ -271,7 +275,7 @@ e2e suite="all" *args="":
 
         *)
             # Validate suite name
-            VALID_SUITES=(all network grants deployment security contracts api bootstrap ethereum inference sdl-storage chain-config sentinel document provider-roles)
+            VALID_SUITES=(all network grants deployment security contracts api bootstrap ethereum inference sdl-storage chain-config sentinel document provider-roles rlm rlm-live)
             SUITE_VALID=false
             for valid in "${VALID_SUITES[@]}"; do
                 if [[ "{{suite}}" == "$valid" ]]; then
@@ -284,8 +288,8 @@ e2e suite="all" *args="":
                 echo "❌ Unknown test suite: {{suite}}"
                 echo ""
                 echo "Available suites:"
-                echo "  all, network, grants, deployment, security, contracts, api,"
-                echo "  bootstrap, ethereum, inference, sdl-storage, chain-config, sentinel, document, provider-roles"
+                echo "  all, network, grants, deployment, security, contracts, api, bootstrap,"
+                echo "  ethereum, inference, sdl-storage, chain-config, sentinel, document, provider-roles, rlm, rlm-live"
                 echo ""
                 echo "Run 'just e2e list' to see all suites"
                 echo "Run 'just e2e help' for detailed help"
@@ -501,3 +505,5 @@ e2e-sec := "e2e security"
 e2e-sen := "e2e sentinel"
 e2e-doc := "e2e document"
 e2e-roles := "e2e provider-roles"
+e2e-rlm := "e2e rlm"
+e2e-rlm-live := "e2e rlm-live"

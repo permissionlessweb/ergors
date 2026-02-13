@@ -157,20 +157,30 @@ impl LlmRouter {
         );
 
         // Extract temperature and max_tokens from llm_config
-        let (temperature, max_tokens) = req
+        let temperature = req
             .llm_config
             .as_ref()
-            .map(|cfg| (cfg.temperature as f64, cfg.max_tokens as i64))
-            .unwrap_or((0.7f64, 1024i64));
+            .map(|cfg| cfg.temperature as f64)
+            .unwrap_or(0.7f64);
+        let max_tokens = req
+            .llm_config
+            .as_ref()
+            .map(|cfg| cfg.max_tokens as i64)
+            .unwrap_or(0);
 
         // Convert PromptRequest to OpenAI-compatible JSON
-        let openai_request = serde_json::json!({
+        let mut openai_request = serde_json::json!({
             "model": deployment.model_name(), // Use actual model name (falls back to label)
             "messages": req.messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
             "stream": false, // TODO: Support streaming
         });
+
+        // Only include max_tokens when explicitly set (> 0).
+        // Protobuf u32 default is 0, meaning "not set" — omit to let server use its default.
+        if max_tokens > 0 {
+            openai_request["max_tokens"] = serde_json::json!(max_tokens);
+        }
 
         // Make the request (auth headers stripped)
         let response = self
@@ -485,6 +495,11 @@ impl LlmRouter {
     /// Get the default model name for a provider (if registered via model_map)
     pub async fn get_default_model(&self, name: &str) -> Option<String> {
         self.default_models.read().await.get(name).cloned()
+    }
+
+    /// Get all registered provider names
+    pub async fn get_provider_names(&self) -> Vec<String> {
+        self.ps.read().await.keys().cloned().collect()
     }
 
     /// Get the number of registered ps

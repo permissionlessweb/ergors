@@ -559,6 +559,10 @@ pub struct ProviderConfig {
     pub base_url: ::prost::alloc::string::String,
     #[prost(bool, tag = "5")]
     pub no_key: bool,
+    /// Upstream model name — substituted into requests so the inference server
+    /// receives the actual model identifier instead of the provider label or role keyword
+    #[prost(string, tag = "6")]
+    pub model_name: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ProviderConfig {
     const NAME: &'static str = "ProviderConfig";

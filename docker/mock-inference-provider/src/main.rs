@@ -62,6 +62,10 @@ struct Args {
     /// Enable verbose logging
     #[arg(short, long, env = "VERBOSE")]
     verbose: bool,
+
+    /// Enable RLM-aware response mode for agentic loop testing
+    #[arg(long, env = "RLM_MODE")]
+    rlm_mode: bool,
 }
 
 #[tokio::main]
@@ -114,6 +118,7 @@ async fn main() {
         max_latency_ms: args.max_latency_ms,
         error_rate: args.error_rate,
         models,
+        rlm_mode: args.rlm_mode,
     };
 
     let state = AppState {
@@ -165,6 +170,7 @@ async fn main() {
         .route("/info", get(handlers::tgi::info_handler))
         // Debug (test introspection)
         .route("/debug/last-headers", get(handlers::debug::last_headers_handler))
+        .route("/debug/rlm-reset", post(handlers::debug::rlm_reset_handler))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
